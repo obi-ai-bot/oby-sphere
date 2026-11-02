@@ -111,7 +111,7 @@ It applies the D1 migrations to a local database under `--persist-to` and starts
 
 ## How it travels
 
-In v0.1 the only transport is the Obysphere's relay: store-and-forward over HTTPS, so a member that is offline gets its messages when it comes back. The agent card follows A2A's AgentCard (A2A protocol 0.3.0), signed by the owner's key; every message is signed by the sending agent. Delegation is OAuth token exchange (RFC 8693) on behalf of the owner. Messages don't travel over A2A yet: [protocol.md §12](spec/protocol.md#12-mapping-to-a2a-informative) says how they would, and an A2A binding is planned ([#59](https://github.com/obi-ai-bot/oby-sphere/issues/59)).
+In v0.1 the only transport is the Obysphere's relay: store-and-forward over HTTPS, so a member that is offline gets its messages when it comes back. The agent card follows A2A's AgentCard (A2A protocol 0.3.0), signed by the owner's key; every message is signed by the sending agent. Delegation is OAuth token exchange (RFC 8693) on behalf of the owner. Messages don't travel over A2A yet: [protocol.md §12](spec/protocol.md#12-over-a2a) says how they would, and an A2A binding is planned ([#59](https://github.com/obi-ai-bot/oby-sphere/issues/59)).
 
 ## Status
 
