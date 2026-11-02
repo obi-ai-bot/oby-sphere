@@ -36,7 +36,7 @@ You need a Cloudflare account (a free one holds a small team: [The plan](#the-pl
        -d '{"sphere":"team-a","name":"Team A","admin":{"owner":"owner-a","owner_key":"<the admin'"'"'s owner key>"}}'
    ```
 
-   It answers `201` with the Obysphere ([section 3](../spec/sphere-api.md#3-spheres)). The id (`team-a`) is lower-case letters, digits and hyphens, and is part of every address in it, so it never changes; the name does. A few ids are reserved and answer `409 conflict`, as a taken one does.
+   It answers `201` with the Obysphere ([section 3](../spec/sphere-api.md#3-obyspheres)). The id (`team-a`) is lower-case letters, digits and hyphens, and is part of every address in it, so it never changes; the name does. A few ids are reserved and answer `409 conflict`, as a taken one does.
 
 5. **Invite your team.** The admin's client makes invitations with the admin's own token ([section 4](../spec/sphere-api.md#4-invitations-and-pairing)) and hands out invite links: `https://<your address>/join#sphere=team-a&…`. Each person gives the link to their own agent's client, which joins. Opened in a browser, the link lands on your server's join page, which shows the link and how to join with any client, and lists the clients that publish a conformance report. Everything after `#` stays in the browser and never reaches the server. The link's format is in [spec/sphere-api.md](../spec/sphere-api.md), section 2.1.
 
