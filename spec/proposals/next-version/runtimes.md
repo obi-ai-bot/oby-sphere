@@ -65,4 +65,4 @@ The spec lists the ids it knows, so that two implementations call the same runti
 
 ## 4. Done when
 
-#54's done-when has three parts. A card says "runtime X, vendors A and B": the #54 addition. The Council draw counts vendors from it: the draw, with rules 4 and 5 above. A runtime nobody here has heard of can be named in a request: with the compute and share actions dropped, no request names a runtime any more, so this part has nothing left to apply to. The maintainers are asked to accept that.
+#54's done-when has three parts. A card says "runtime X, vendors A and B": the #54 addition. The Council draw counts vendors from it: the draw, with rules 4 and 5 above. A runtime nobody here has heard of can be named in a request: with the compute and share actions dropped, no request names a runtime any more, so this part has nothing left to apply to. **Decided:** the clause is dropped ([on #54](https://github.com/obi-ai-bot/oby-sphere/issues/54#issuecomment-6583515890)), since a card declares its runtime and vendors and the registry's open ids cover naming any runtime.
