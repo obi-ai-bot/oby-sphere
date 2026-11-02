@@ -191,9 +191,9 @@ What a draw needs from the directory is each entry's set of people: one person, 
 
 ## 7. Left open, not part of D9 to D13
 
-These were listed as open, each with a recommendation, when D9 to D13 were decided; the decision on #61 doesn't settle them.
+These were listed as open, each with a recommendation, when D9 to D13 were decided; the decision on #61 doesn't settle them. The first has been decided since.
 
-- **Organisations answering for organisations** (a team inside a company). Recommended: not yet; answerers are persons. Nesting can come when a real use needs it.
+- **Organisations answering for organisations** (a team inside a company). **Decided: no** ([on #61](https://github.com/obi-ai-bot/oby-sphere/issues/61#issuecomment-6583514650)): only named people answer for an organisation or a project, which keeps who answers one step away from the agent. It can be revisited if someone needs nested owners.
 - **Treating every organisation alike** in a receiver's or an Obysphere's rules, for example declining all requests from organisations without listing them. Recommended: a policy rule field for the sender's owner kind (`from_kind: "person" | "org"`), added when someone asks for it.
 - **Membership facts in the record.** Recommended: yes, at a version boundary, with a charter's change as the first kind of membership entry ([README.md, "Other breaking changes to gather"](README.md#other-breaking-changes-to-gather)). Until then, the directory's charter history with its seq ranges is what a verifier reads.
 

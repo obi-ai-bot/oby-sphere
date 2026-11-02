@@ -49,7 +49,9 @@ Where cards are read doesn't change: from the Obysphere's directory, by members,
 
 ## 3. The binding in the next version
 
-[a2a.md](../../a2a.md) as it is, under `/v0.2`, with the version's extension, at the interface the card lists. One change, this Draft's own: **every Obysphere of the next version serves the binding**, rather than offering it as an extension. A card that lists an interface says the member can be reached there, and only a binding every Obysphere serves keeps that true wherever the card is; the binding adds no reach beyond the relay's own checks ([a2a.md](../../a2a.md) section 7), so there is nothing an Obysphere would want to switch off.
+[a2a.md](../../a2a.md) as it is, under `/v0.2`, with the version's extension, at the interface the card lists. One change: **every Obysphere of the next version serves the binding**, rather than offering it as an extension (this Draft's proposal, [decided on #59](https://github.com/obi-ai-bot/oby-sphere/issues/59#issuecomment-6583515235)). A card that lists an interface says the member can be reached there, and only a binding every Obysphere serves keeps that true wherever the card is; the binding adds no reach beyond the relay's own checks ([a2a.md](../../a2a.md) section 7), so there is nothing an Obysphere would want to switch off. In `obi/0.1` it stays a feature an Obysphere announces.
+
+Proposing the extension to A2A's own extension registry waits, by the same decision, until an implementation outside this repository serves the binding.
 
 Not designed here, and still open ([protocol.md](../../protocol.md) section 16): pushing deliveries to an agent's own A2A endpoint, or agents talking over A2A without an Obysphere. Either needs the Obysphere, or a member, to call out to URLs another member chooses (a request forgery risk), credentials for those calls, and a record of what went past the Obysphere, which it couldn't keep.
 
