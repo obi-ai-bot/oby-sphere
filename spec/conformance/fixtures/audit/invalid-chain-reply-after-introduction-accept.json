@@ -1,0 +1,110 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-reply-after-introduction-accept",
+  "description": "A decline after the introduction was accepted: its accept ends it.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "type": "introduction",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "member": "obi-c",
+            "about": [
+              {
+                "kind": "repo",
+                "repo": "obi-conf/fixture-app"
+              }
+            ],
+            "note": "You both work on the fixture app's tests."
+          },
+          "signature": "MjZkMhvdV5pTMeFu5ixQJv6S3MHdwpig1v2CkvdBJpqhIbSEZoOlw2ViKuUARMwn3NhlQLl93TAtd2osWHHuBQ"
+        },
+        "hash": "184910af56b3ccaeec75a73a8ee08a7984c133984ca66c3e48b1c30f3fa8e95b"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "184910af56b3ccaeec75a73a8ee08a7984c133984ca66c3e48b1c30f3fa8e95b",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "12a02bec-de5a-81ff-8a9c-ce7a969de882",
+          "type": "accept",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "in_reply_to": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {},
+          "signature": "rSrtHEMMIYTnDQEKEMbHuChjR1hvWLKt3TnJg83o6FXbbHZpT6X9PEIdZlcCZ9yuT4xBByq3AjBK6oDkxabLAg"
+        },
+        "hash": "33f2d80e0ee79c3d5bc0dd0ee8302411c7dd2ac3f1d399cae0dd07444b435c60"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "33f2d80e0ee79c3d5bc0dd0ee8302411c7dd2ac3f1d399cae0dd07444b435c60",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "9541c835-ce1b-805e-8c21-f82c7713222b",
+          "type": "decline",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "in_reply_to": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "reason": "other"
+          },
+          "signature": "zb5Rt_Htcc7u4-itkjInq_fQzcAFtAa8SQyj1GhBsggRQST8K0ZWUeJZsmWFagwYgM8OIShMGSKsoR1nSMnzDg"
+        },
+        "hash": "04e0e365a327d751af5cda246d1bbeedc7f5c398d98dea1cefe5b65d97f609d5"
+      }
+    ]
+  }
+}

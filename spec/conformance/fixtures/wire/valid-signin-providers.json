@@ -1,0 +1,21 @@
+{
+  "case": "wire",
+  "name": "valid-signin-providers",
+  "description": "The providers a server signs people in with.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/signin-providers.response"
+  },
+  "input": {
+    "providers": [
+      {
+        "id": "google",
+        "name": "Google"
+      },
+      {
+        "id": "acme-sso",
+        "name": "Acme SSO"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "case": "wire",
+  "name": "invalid-policy-put-classes-empty",
+  "description": "An empty to_classes list: a rule that lists classes lists at least one.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/policy-put.request"
+  },
+  "input": {
+    "expected_version": 0,
+    "rules": [
+      {
+        "id": "team-reviews",
+        "from_owner": "*",
+        "to_owner": "*",
+        "actions": [
+          "review_request"
+        ],
+        "repos": [
+          "*"
+        ],
+        "to_classes": []
+      }
+    ]
+  }
+}

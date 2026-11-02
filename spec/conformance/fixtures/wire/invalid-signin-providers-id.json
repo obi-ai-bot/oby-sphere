@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "invalid-signin-providers-id",
+  "description": "A provider id that can't be a path segment.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/signin-providers.response"
+  },
+  "input": {
+    "providers": [
+      {
+        "id": "Acme SSO",
+        "name": "Acme SSO"
+      }
+    ]
+  }
+}

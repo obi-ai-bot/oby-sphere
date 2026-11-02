@@ -1,0 +1,95 @@
+{
+  "description": "Known answers for sealing an envelope's words (protocol.md section 9.1). x25519 keys are raw 32 bytes, base64url; info is the HKDF info's bytes, base64url; each value's sealed form is its ciphertext and tag, base64url.",
+  "recipient": {
+    "obi": "obi-a",
+    "x25519_private": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ",
+    "seal_public_key": "cVxdGx3xP6ukmLWS_ddsSFv2l39jhYpQ5-ztTJtmAWY",
+    "seal_key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw"
+  },
+  "sender_x25519_private": "L7GzXb1U1bo-w1oQmWzjIs8DP8_QsoviA67vAU8Bj-U",
+  "enc": "H9unj7g9AComhfLbwc_tpgplMDNJyGkTwiH1xIgVli4",
+  "shared": "4DiGcP8oR5DBX-3cPcxD49rSOgodLq6rJUc57f3FUjA",
+  "info": "b2JpLzAuMSBzZWFsCnsiZnJvbSI6Im9iaS1iIiwiaWQiOiIyOTNlY2M5Ny0zOWJlLTg5ZGYtODJkNy05MThkMzAxZjE4ZmEiLCJzcGhlcmUiOiJjb25mLXNwaGVyZSIsInRvIjoib2JpLWEiLCJ0eXBlIjoicmV2aWV3X3JlcXVlc3QifQ",
+  "hkdf_output": "vV4e82n0xe2pHo1bXNM-QfYFmUfTXoaXKRoTo_yVU3U",
+  "values": [
+    {
+      "pointer": "/goal",
+      "nonce": "pWCp6jm3-HuwPhR7",
+      "sealed": "JfH9UzfAMi_SdSDJzZZ0__cNYe1h9d55-sAfA_bFd7071Li2rSrvZl7kCyRoAw6ZkyGZcwBxBGY"
+    },
+    {
+      "pointer": "/summary",
+      "nonce": "GlGSuj14Jcomskpy",
+      "sealed": "wEuzuqDvQVRr_CJKUy0EqGDHxPEETPCpMb0nkrtgZdgT1MsHFVUik7tvnojwI71w-wF1K0zHv5pzWG8n_w"
+    },
+    {
+      "pointer": "/acceptance/1/note",
+      "nonce": "72ND1pLCdK3Ib9Kt",
+      "sealed": "0G4zzlvvYOQ_VGYa7aAPQs8rfAJQi9hqBCnIX-i7W49guqC9yc107rQ3Idtw4lwlGA"
+    }
+  ],
+  "plain": {
+    "protocol": "obi/0.1",
+    "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "type": "review_request",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "goal": "Add an average helper to the fixture app",
+      "repo": "obi-conf/fixture-app",
+      "base_branch": "main",
+      "head_branch": "feature/average",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "acceptance": [
+        {
+          "kind": "tests_pass"
+        },
+        {
+          "kind": "no_blocker_findings",
+          "note": "Blockers need a fix before merge."
+        }
+      ],
+      "summary": "Adds src/average.js and touches src/greet.js."
+    }
+  },
+  "sealed": {
+    "protocol": "obi/0.1",
+    "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "type": "review_request",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "goal": "JfH9UzfAMi_SdSDJzZZ0__cNYe1h9d55-sAfA_bFd7071Li2rSrvZl7kCyRoAw6ZkyGZcwBxBGY",
+      "repo": "obi-conf/fixture-app",
+      "base_branch": "main",
+      "head_branch": "feature/average",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "acceptance": [
+        {
+          "kind": "tests_pass"
+        },
+        {
+          "kind": "no_blocker_findings",
+          "note": "0G4zzlvvYOQ_VGYa7aAPQs8rfAJQi9hqBCnIX-i7W49guqC9yc107rQ3Idtw4lwlGA"
+        }
+      ],
+      "summary": "wEuzuqDvQVRr_CJKUy0EqGDHxPEETPCpMb0nkrtgZdgT1MsHFVUik7tvnojwI71w-wF1K0zHv5pzWG8n_w"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+      "enc": "H9unj7g9AComhfLbwc_tpgplMDNJyGkTwiH1xIgVli4"
+    },
+    "signature": "H_nIki52zktwdYEy7fjnmp8DHCHflcV7HY5ZWJue7WO74lkRONcvo7enoZHpOouq1psW2mDWlh3dtHG6GidsDA"
+  }
+}

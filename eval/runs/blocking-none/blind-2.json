@@ -1,0 +1,62 @@
+{
+ "case": "blocking-none",
+ "seat": "blind-2",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T23:26:24.673Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "Engine/Review.swift",
+   "line": 189,
+   "end_line": 207,
+   "severity": "minor",
+   "title": "Unsorted previous review is quoted whole under a \"found blocking\" heading",
+   "detail": "When the earlier review didn't sort its findings (`review.blocking` is nil/empty), `previous(_:summary:pr:)` falls back to quoting the reviewer's entire summary — including its \"Worth doing later\" items and the VERDICT line — under the heading \"# What Oby's review N … found blocking, quoted\" (line 199) and the follow-up prompt's \"What it found blocking is quoted in …\" (Review.swift:153). The follow-up reviewer is told everything in that file is blocking, even parts the original review explicitly called non-blocking, which can make it re-flag or second-guess things that were never meant to block."
+  },
+  {
+   "file": "Engine/Review.swift",
+   "line": 300,
+   "end_line": 307,
+   "severity": "minor",
+   "title": "A prose paragraph between bullets silently ends the current heading's list",
+   "detail": "In `findings`, a non-bulleted, non-indented line that follows a blank line ends the current section (`section = nil`) whenever `last != nil` (lines 300-307). If a reviewer writes explanatory prose between two bullets under the same `Blocking:`/`Worth doing later:` heading (e.g. \"Blocking:\\n- item one\\n\\nSome context.\\n\\n- item two\"), the second bullet is treated as `unsorted` rather than blocking, even though it's clearly still under the Blocking heading. `decide` stays safe in this case (it defers to the review's own verdict rather than wrongly approving), but `result.blocking` loses that finding, so a follow-up review built from `Review.previous` may not see it quoted explicitly."
+  }
+ ],
+ "cost_usd": 1.3985007000000005,
+ "turns": 29,
+ "duration_ms": 346170,
+ "usage": {
+  "input_tokens": 1276,
+  "cache_creation_input_tokens": 84281,
+  "cache_read_input_tokens": 1433929,
+  "output_tokens": 30541,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 84281,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 2752,
+    "cache_read_input_tokens": 86866,
+    "cache_creation_input_tokens": 1105,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1105
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

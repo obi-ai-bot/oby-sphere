@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "valid-assertion-aud-sphere-url-port",
+  "description": "The Obysphere's URL with a port, on this machine.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "http://127.0.0.1:8787/v0.1/spheres/conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "d4c925a7-c8cb-84ec-88a8-36641c44d610",
+    "scope": "admin"
+  }
+}

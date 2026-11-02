@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/token.response.schema.json",
   "title": "POST /v0.1/oauth/token answer",
-  "description": "RFC 8693 token exchange response. The access token is opaque.",
+  "description": "RFC 8693 token exchange response. The access token is opaque; bound to a key when the request carried a DPoP proof (RFC 9449).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,7 +23,11 @@
       "const": "urn:ietf:params:oauth:token-type:access_token"
     },
     "token_type": {
-      "const": "Bearer"
+      "enum": [
+        "Bearer",
+        "DPoP"
+      ],
+      "description": "`DPoP` for a token bound to the key of the DPoP proof the request carried (spec/identity.md section 4.6), `Bearer` otherwise."
     },
     "expires_in": {
       "type": "integer",

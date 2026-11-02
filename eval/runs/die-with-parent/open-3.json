@@ -1,0 +1,53 @@
+{
+ "case": "die-with-parent",
+ "seat": "open-3",
+ "model": "sonnet",
+ "earlier": 1,
+ "started": "2026-10-27T23:41:49.983Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "Engine/Jobs.swift",
+   "line": 634,
+   "severity": "minor",
+   "title": "Removing --die-with-parent drops the only cleanup for abruptly-killed runners outside systemd",
+   "detail": "PR_SET_PDEATHSIG (what --die-with-parent sets) used to fire whenever the spawning thread's process exited for any reason, including an ungraceful crash or `kill -9` of the whole runner, not just the idle-Dispatch-thread case this change targets. The fix drops the flag unconditionally and relies entirely on systemd's default KillMode=control-group (Runner/oby-runner.service doesn't set it explicitly) to reap leftover bwrap/agent trees. That covers the documented systemd deployment, but Runner/README.md also documents running the binary directly for development/testing (`OBY_HOME=$(mktemp -d) … .build/release/oby-runner`), and RunnerTests itself spawns real bwrap sandboxes via the `bubblewrapRuns` tests. In those non-systemd contexts a hard crash or SIGKILL of the runner/test binary now leaves sandboxed child processes running indefinitely with nothing to reap them, where before this change they were (prematurely, which was the bug, but also incidentally on a real crash). No equivalent safety net (e.g. killing the bwrap process group, or re-adding die-with-parent while keeping the spawning thread alive) was added for the non-systemd paths."
+  }
+ ],
+ "cost_usd": 0.1950906,
+ "turns": 17,
+ "duration_ms": 66337,
+ "usage": {
+  "input_tokens": 524,
+  "cache_creation_input_tokens": 13070,
+  "cache_read_input_tokens": 99602,
+  "output_tokens": 5628,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 13070,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 653,
+    "cache_read_input_tokens": 13885,
+    "cache_creation_input_tokens": 2875,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 2875
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

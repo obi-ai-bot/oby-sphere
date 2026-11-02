@@ -1,0 +1,45 @@
+name: Change to a standard
+description: Propose a change to a standard in spec/, its schemas or its conformance cases.
+labels: ["standard: core"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        How a standard changes is in [GOVERNANCE.md](https://github.com/obi-ai-bot/oby-sphere/blob/dev/GOVERNANCE.md#how-a-standard-changes), and the kinds of change in [spec/README.md](https://github.com/obi-ai-bot/oby-sphere/blob/dev/spec/README.md#versions). For an obvious mistake, a pull request is enough. Change the label if the change is to another standard.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What doesn't work, or what can't be said today. Link the text it concerns.
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who it affects
+      description: Which implementations, members or Obyspheres, and how.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What would change
+      description: The rule, the messages and the conformance cases that would pin it.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of change
+      options:
+        - Addition (everything valid before is still valid and means the same)
+        - Breaking (something valid before is no longer valid, or means something else)
+        - Clarification (no message, schema or fixture changes)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: others
+    attributes:
+      label: Could an implementation other than yours follow it?
+      description: A change only one implementation could follow is not ready.

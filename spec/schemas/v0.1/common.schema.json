@@ -56,7 +56,7 @@
       "pattern": "^[A-Za-z0-9_-]{43}$"
     },
     "domain": {
-      "description": "A domain name, lower case: what a Google Workspace calls itself (its `hd` claim), like `example.com`.",
+      "description": "A domain name, lower case, like `example.com`: an account's domain as its sign-in provider says it (a Google Workspace's `hd` claim, for one; spec/sphere-api.md section 3.1).",
       "type": "string",
       "minLength": 4,
       "maxLength": 253,
@@ -85,6 +85,36 @@
       "minLength": 86,
       "maxLength": 86,
       "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "seal_key_id": {
+      "description": "`x25519:` followed by base64url (no padding) of SHA-256 over the 32 raw bytes of an Obi's seal key (spec/identity.md section 2).",
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 50,
+      "pattern": "^x25519:[A-Za-z0-9_-]{43}$"
+    },
+    "x25519_public_key": {
+      "description": "An X25519 public key: the 32 raw bytes, base64url without padding.",
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "seal": {
+      "description": "How an envelope's words are sealed for its recipient (spec/protocol.md section 9.1): the suite, the recipient's seal key, and the sender's new X25519 key for this envelope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suite", "key_id", "enc"],
+      "properties": {
+        "suite": { "const": "x25519-hkdf-sha256-chacha20poly1305" },
+        "key_id": { "$ref": "#/$defs/seal_key_id" },
+        "enc": { "$ref": "#/$defs/x25519_public_key" }
+      }
+    },
+    "sealed_text": {
+      "description": "One text value sealed for the envelope's recipient: its ChaCha20-Poly1305 ciphertext and tag, base64url without padding (spec/protocol.md section 9.1). Only the sealed schemas (sealed/) use it, and each use sets its minLength and maxLength from the plain field's.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
     },
     "hash": {
       "description": "A SHA-256 digest in lower-case hex.",
@@ -212,15 +242,54 @@
     },
     "action_type": {
       "description": "Every action type. There is no free-text message type.",
-      "enum": ["review_request", "question", "handoff", "run_request", "status", "accept", "decline", "result", "answer", "run_progress", "run_return", "run_cancel", "share_offer", "share_status", "share_revoke"]
+      "enum": ["review_request", "question", "handoff", "run_request", "status", "accept", "decline", "result", "answer", "run_progress", "run_return", "run_cancel", "share_offer", "share_status", "share_revoke", "cancel", "introduction"]
     },
     "request_type": {
       "description": "The action types that start an exchange.",
-      "enum": ["review_request", "question", "handoff", "run_request", "share_offer"]
+      "enum": ["review_request", "question", "handoff", "run_request", "share_offer", "introduction"]
     },
     "agent": {
       "description": "The coding agent a run_request runs: its own CLI, with the member's own account.",
       "enum": ["claude", "codex"]
+    },
+    "feature_id": {
+      "description": "The name of an addition to obi/0.1 (spec/README.md, 'Versions'; spec/identity.md section 2.3): a lower-case letter, then up to 63 lower-case letters, digits and _. An id a reader doesn't know means nothing to it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "class_id": {
+      "description": "A conformance class a member claims (spec/identity.md section 2.3), as the conformance suite defines them (spec/conformance/README.md, 'The classes a case belongs to'): a lower-case letter, then up to 63 lower-case letters, digits and _. An id a reader doesn't know is one from a later suite.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "topic_id": {
+      "description": "What a member can help with, as an id: a lower-case letter or digit, then up to 63 lower-case letters, digits and - (spec/identity.md section 2.3). An identifier, not words: it can be matched, never followed.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "follows": {
+      "description": "The id of an earlier request between the same two members, in either direction, that this request follows up (spec/protocol.md section 5.19). Comes with the feature follow_up.",
+      "$ref": "#/$defs/uuid"
+    },
+    "runtime_id": {
+      "description": "The id of an agent runtime: the program that acts as a member's agent (spec/identity.md section 2.3, which lists the known ones). Any id that matches is valid.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "vendor_id": {
+      "description": "The id of a model vendor (spec/identity.md section 2.3, which lists the known ones). Any id that matches is valid.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
     },
     "model_id": {
       "description": "A model name as the agent's CLI takes it.",

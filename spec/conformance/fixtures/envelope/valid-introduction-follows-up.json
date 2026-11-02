@@ -1,0 +1,46 @@
+{
+  "case": "envelope",
+  "name": "valid-introduction-follows-up",
+  "description": "An introduction that follows up the question it came from.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "5fa38214-92a6-8236-8ba6-d1bd9fb3c3cb",
+    "type": "introduction",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "5fa38214-92a6-8236-8ba6-d1bd9fb3c3cb",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "member": "obi-c",
+      "about": [
+        {
+          "kind": "repo",
+          "repo": "obi-conf/fixture-app"
+        }
+      ],
+      "note": "You both work on the fixture app's tests.",
+      "follows": "99ef2cd0-75ad-8e0b-8815-6c4eecd9ed32"
+    },
+    "signature": "BwVP8-dgBKRqs2Q3CZnM-lOaA0l1Jv3Wk9AMXPYjls6z9PBCFgiq4tK1gHJsHWH775jKwjypH84m1jLLvTGPCg"
+  }
+}

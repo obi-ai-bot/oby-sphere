@@ -3,27 +3,41 @@
 import type { Deps, Env } from "./env.ts";
 import { ApiError, INTERNAL_MESSAGE, apiError, errorResponse } from "./http.ts";
 import { tokenEndpoint } from "./oauth.ts";
+import { getTask, noPushNotifications, notSupported, sendMessage } from "./routes/a2a.ts";
 import { audit } from "./routes/audit.ts";
 import { openChannel } from "./routes/channels.ts";
 import { deleteDevice, deleteRelay, openRelay, putDevice, putRelay } from "./routes/relays.ts";
 import { deleteRunner, putRunner } from "./routes/runner.ts";
-import { getMemberRoute, invite, listMembers, previewInvitation, redeem, revoke, updateCard, withdrawInvitation } from "./routes/members.ts";
+import { getMemberRoute, invite, listInvitations, listMembers, previewInvitation, redeem, revoke, updateCard, withdrawInvitation } from "./routes/members.ts";
 import { ack, deliveries, send } from "./routes/messages.ts";
 import { getPolicy, putPolicy } from "./routes/policy.ts";
-import { createSphere, getSphereRoute, health, joinPage } from "./routes/spheres.ts";
-import { finishSignIn, startSignIn } from "./signin.ts";
+import { createSphere, deleteAdmin, deleteImage, deleteSphere, features, getImage, getSphereRoute, health, joinPage, putAdmin, putImage, updateSphere } from "./routes/spheres.ts";
+import { finishSignIn, listSignIns, startSignIn } from "./signin.ts";
 
 type Handler = (request: Request, env: Env, deps: Deps, ...params: string[]) => Promise<Response> | Response;
 
 const SEGMENT = "([^/]+)";
+/** A member's card url, where the A2A binding's interface is (spec/a2a.md section 3), and a task id in it. */
+const MEMBER = `^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}`;
+const TASK = "([^/:]+)";
 const ROUTES: [string, RegExp, Handler][] = [
   ["GET", /^\/v0\.1\/health$/, health],
+  ["GET", /^\/v0\.1\/features$/, features],
   ["GET", /^\/join$/, joinPage],
   ["POST", /^\/v0\.1\/spheres$/, createSphere],
   ["POST", /^\/v0\.1\/oauth\/token$/, tokenEndpoint],
-  ["POST", /^\/v0\.1\/signin\/google$/, startSignIn],
-  ["POST", /^\/v0\.1\/signin\/google\/callback$/, finishSignIn],
+  ["GET", /^\/v0\.1\/signin$/, listSignIns],
+  ["POST", new RegExp(`^/v0\\.1/signin/${SEGMENT}$`), startSignIn],
+  ["POST", new RegExp(`^/v0\\.1/signin/${SEGMENT}/callback$`), finishSignIn],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}$`), getSphereRoute],
+  ["PATCH", new RegExp(`^/v0\\.1/spheres/${SEGMENT}$`), updateSphere],
+  ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}$`), deleteSphere],
+  ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/image$`), getImage],
+  ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/image$`), putImage],
+  ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/image$`), deleteImage],
+  ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/admins/${SEGMENT}$`), putAdmin],
+  ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/admins/${SEGMENT}$`), deleteAdmin],
+  ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations$`), listInvitations],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations$`), invite],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations/${SEGMENT}$`), withdrawInvitation],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations/${SEGMENT}/preview$`), previewInvitation],
@@ -41,6 +55,19 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/channels/${SEGMENT}$`), openChannel],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), putRunner],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), deleteRunner],
+  // The A2A binding (spec/a2a.md): A2A 1.0's HTTP+JSON paths, under each member's card url.
+  ["POST", new RegExp(`${MEMBER}/message:send$`), sendMessage],
+  ["GET", new RegExp(`${MEMBER}/tasks/${TASK}$`), getTask],
+  ["POST", new RegExp(`${MEMBER}/message:stream$`), notSupported("no streaming (streaming: false): send with message:send and read the task")],
+  ["GET", new RegExp(`${MEMBER}/tasks/${TASK}:subscribe$`), notSupported("no streaming (streaming: false): read the task")],
+  ["POST", new RegExp(`${MEMBER}/tasks/${TASK}:subscribe$`), notSupported("no streaming (streaming: false): read the task")],
+  ["GET", new RegExp(`${MEMBER}/tasks$`), notSupported("no task list: read each task by its id")],
+  ["POST", new RegExp(`${MEMBER}/tasks/${TASK}:cancel$`), notSupported("a request is called off only by its sender's signed cancel (protocol.md section 5.17), sent with message:send")],
+  ["POST", new RegExp(`${MEMBER}/tasks/${TASK}/pushNotificationConfigs$`), noPushNotifications],
+  ["GET", new RegExp(`${MEMBER}/tasks/${TASK}/pushNotificationConfigs$`), noPushNotifications],
+  ["GET", new RegExp(`${MEMBER}/tasks/${TASK}/pushNotificationConfigs/${SEGMENT}$`), noPushNotifications],
+  ["DELETE", new RegExp(`${MEMBER}/tasks/${TASK}/pushNotificationConfigs/${SEGMENT}$`), noPushNotifications],
+  ["GET", new RegExp(`${MEMBER}/extendedAgentCard$`), notSupported("no extended card: the member's card is the directory's")],
   ["PUT", new RegExp(`^/v0\\.1/relay/${SEGMENT}$`), putRelay],
   ["DELETE", new RegExp(`^/v0\\.1/relay/${SEGMENT}$`), deleteRelay],
   ["GET", new RegExp(`^/v0\\.1/relay/${SEGMENT}$`), openRelay],

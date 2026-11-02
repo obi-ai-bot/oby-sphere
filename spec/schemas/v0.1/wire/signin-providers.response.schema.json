@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/signin-providers.response.schema.json",
+  "title": "GET /v0.1/signin answer",
+  "description": "The identity providers this Obysphere server signs people in with, in the operator's order (spec/sphere-api.md section 3.1). Empty when it signs nobody in.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "providers"
+  ],
+  "properties": {
+    "providers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
+            "description": "The provider's id: the sign-in's path, /v0.1/signin/<id>."
+          },
+          "name": {
+            "$ref": "../common.schema.json#/$defs/line_text",
+            "x-obi-text": "data",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Its name, for a client to show."
+          }
+        }
+      }
+    }
+  }
+}

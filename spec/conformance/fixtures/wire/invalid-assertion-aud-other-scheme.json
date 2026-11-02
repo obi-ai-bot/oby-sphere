@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "invalid-assertion-aud-other-scheme",
+  "description": "An `aud` URL that isn't http or https.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/actor.claims"
+  },
+  "input": {
+    "iss": "obi-a",
+    "sub": "obi-a",
+    "aud": "wss://sphere.example.com/v0.1/spheres/conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "15cfe86f-3eb2-8b40-8d29-1043153ffeeb"
+  }
+}

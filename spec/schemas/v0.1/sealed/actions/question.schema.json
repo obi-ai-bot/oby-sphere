@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/question.schema.json",
+  "title": "question body (sealed)",
+  "description": "Ask another Obi something its owner knows, has decided, or has let it tell. One question goes to one Obi: to ask several, send one to each (spec/protocol.md, 'question'). Sealed: derived from actions/question.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "text"
+  ],
+  "properties": {
+    "text": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 10688,
+      "description": "The question, in the asker's words."
+    },
+    "about": {
+      "$ref": "../common.schema.json#/$defs/refs",
+      "description": "What it is about: repositories, pull requests, issues, or the receiving Obi's jobs."
+    },
+    "choices": {
+      "description": "Allowed answers, when it is multiple choice.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "../common.schema.json#/$defs/sealed_text",
+        "x-obi-text": "sealed",
+        "minLength": 23,
+        "maxLength": 555
+      }
+    },
+    "follows": {
+      "$ref": "../common.schema.json#/$defs/follows"
+    }
+  }
+}

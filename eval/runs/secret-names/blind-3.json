@@ -1,0 +1,53 @@
+{
+ "case": "secret-names",
+ "seat": "blind-3",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:51:04.492Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "changes_requested",
+ "findings": [
+  {
+   "file": "Engine/Publish.swift",
+   "line": 312,
+   "severity": "major",
+   "title": "Keyword allow-list uses substring matching, so ordinary passphrase words slip through",
+   "detail": "onlyNames() decides a quoted value is \"just a name\" (and therefore not a leak) whenever it is camelCase or dash/underscore/dot-joined with no digits AND its lowercased form *contains* one of [\"secret\",\"token\",\"password\",\"passwd\",\"key\",\"client\",\"vault\",\"entry\",\"access\",\"name\",\"id\"]. Because this is a substring test rather than a per-word match, very common English words accidentally contain these tokens: \"id\" occurs in liquid/rapid/avoid/guide/wide/decide/provide/..., \"key\" occurs in monkey/turkey/donkey/whiskey/hockey, \"name\" occurs in surname/nickname/rename. A genuine diceware-style passphrase value such as `password = \"mighty-river-liquid-stone\"` or `apiKey = \"whiskeyBarrelCanyon\"` is all-lowercase/camelCase with no digits and contains \"id\"/\"key\" as a substring, so breaks()/onlyNames() will treat it as a mere \"name for a secret\" and silently drop the finding. This directly contradicts the change's stated guarantee that \"weak passwords, passphrases and real keys still count\": a real secret that happens to use a common dictionary word containing one of these substrings will no longer be flagged by the scanner, a regression in the security control the feature is supposed to strengthen. The existing test's passphrase example (\"correct-horse-battery-staple\") happens not to contain any of the listed substrings, so the test suite does not catch this."
+  }
+ ],
+ "cost_usd": 0.3538896,
+ "turns": 7,
+ "duration_ms": 173188,
+ "usage": {
+  "input_tokens": 226,
+  "cache_creation_input_tokens": 21222,
+  "cache_read_input_tokens": 29772,
+  "output_tokens": 14417,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 21222,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 47,
+    "output_tokens": 13303,
+    "cache_read_input_tokens": 7781,
+    "cache_creation_input_tokens": 17131,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 17131
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

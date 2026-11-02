@@ -1,0 +1,12 @@
+{
+  "case": "wire",
+  "name": "valid-features-takes-none",
+  "description": "An Obysphere that takes no addition.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": []
+  }
+}

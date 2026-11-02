@@ -1,0 +1,113 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-cancel-run-request",
+  "description": "A cancel in a run_request's exchange: its sender calls it off with run_cancel.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "type": "run_request",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "title": "Write tests for average()",
+            "agent": "claude",
+            "model": "sonnet",
+            "repo": "obi-conf/fixture-app",
+            "base_branch": "main",
+            "base_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+            "branch": "oby/tests-average",
+            "bundle": {
+              "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+              "bytes": 48213
+            },
+            "size": "small",
+            "max_minutes": 120
+          },
+          "signature": "zl-tYHIoHf0Wlyh0_p0ed9mq418u0tbRRfx6OmMOuv4KsV_qkPtqaAittZevv9MwJlyp337YLa8ZIEkcXDdHDg"
+        },
+        "hash": "4ec1b0cb502d367223615ce4106f340aff4c0b79d15c130f5308026695df5727"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "4ec1b0cb502d367223615ce4106f340aff4c0b79d15c130f5308026695df5727",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "4f92d8da-234c-8bf3-82ab-83954a7398af",
+          "type": "accept",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "in_reply_to": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {},
+          "signature": "uH8lnfKvQ6R9A1Cn6NsArdyJHZFC9AWfNL7DUsDWl4E6UjRUHIoMJxCh2hNUVsuOUft1klGKgg2gupnYC7TaDQ"
+        },
+        "hash": "076ed6132a86d025ddb504ec10cb8b58b34f5d04bc59c33d1994e1fe6c3ed53e"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "076ed6132a86d025ddb504ec10cb8b58b34f5d04bc59c33d1994e1fe6c3ed53e",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "6fe08caa-dc3e-8215-8bfb-ee3629342008",
+          "type": "cancel",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "in_reply_to": "728f831b-6e11-87d7-8141-3ddc76a417fd",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "JPaIwTrGTlfCg9YfwIQj8wsfTYZ9m7VWAf0dway6W9PRx-NwV8dvW1PifHgvTo-a9p25lHia6XWnSGfCaaOzAA"
+        },
+        "hash": "d95cc5128fa2587a033a15b0bd700ff0e0d94ae5b3e447c528763a95c3d42a69"
+      }
+    ]
+  }
+}

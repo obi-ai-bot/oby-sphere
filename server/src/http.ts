@@ -8,14 +8,14 @@ export const MAX_BODY_BYTES = 131072;
 export type ErrorCode =
   | "bad_request" | "invalid_envelope" | "wrong_sphere" | "bad_signature" | "unknown_key" | "expired" | "clock_skew"
   | "duplicate" | "policy_denied" | "unknown_recipient" | "recipient_revoked" | "bad_reply" | "unauthorized"
-  | "insufficient_scope" | "forbidden" | "not_found" | "conflict" | "invitation_invalid" | "card_invalid"
-  | "payload_too_large" | "rate_limited" | "internal";
+  | "insufficient_scope" | "forbidden" | "not_found" | "conflict" | "feature_not_taken" | "invitation_invalid" | "card_invalid"
+  | "payload_too_large" | "rate_limited" | "internal" | "not_sealed";
 
 const STATUS: Record<ErrorCode, number> = {
   bad_request: 400, invalid_envelope: 400, wrong_sphere: 400, unknown_key: 400, bad_signature: 400, expired: 400,
-  clock_skew: 400, card_invalid: 400, unauthorized: 401, insufficient_scope: 403, forbidden: 403, policy_denied: 403,
+  clock_skew: 400, card_invalid: 400, not_sealed: 400, unauthorized: 401, insufficient_scope: 403, forbidden: 403, policy_denied: 403,
   recipient_revoked: 403, invitation_invalid: 403, not_found: 404, unknown_recipient: 404, duplicate: 409,
-  bad_reply: 409, conflict: 409, payload_too_large: 413, rate_limited: 429, internal: 500,
+  bad_reply: 409, conflict: 409, feature_not_taken: 409, payload_too_large: 413, rate_limited: 429, internal: 500,
 };
 
 /**
@@ -34,11 +34,14 @@ export class ApiError extends Error {
   readonly details: string[];
   /** Seconds, for the `Retry-After` header of a `429 rate_limited`. */
   readonly retryAfter: number | undefined;
-  constructor(code: ErrorCode, message: string, details: string[] = [], retryAfter?: number) {
+  /** More headers for the answer (a 401's `WWW-Authenticate`). */
+  readonly headers: Record<string, string>;
+  constructor(code: ErrorCode, message: string, details: string[] = [], retryAfter?: number, headers: Record<string, string> = {}) {
     super(message);
     this.code = code;
     this.details = details;
     this.retryAfter = retryAfter;
+    this.headers = headers;
   }
 }
 
@@ -58,7 +61,7 @@ export function json(status: number, body: unknown, headers: Record<string, stri
 
 export function errorResponse(e: ApiError): Response {
   const details = e.details.slice(0, 20).map((d) => oneLine(d, 300));
-  const headers: Record<string, string> = e.retryAfter !== undefined ? { "Retry-After": String(e.retryAfter) } : {};
+  const headers: Record<string, string> = { ...e.headers, ...(e.retryAfter !== undefined ? { "Retry-After": String(e.retryAfter) } : {}) };
   return json(STATUS[e.code], { error: { code: e.code, message: oneLine(e.message, 500), ...(details.length ? { details } : {}) } }, headers);
 }
 

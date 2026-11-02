@@ -5,7 +5,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import { handle } from "../src/app";
 import { canonicalize } from "../src/protocol/json";
-import { BASE, BRIEF, RESULT, World, expectSchema, newKey, signEnvelope, team } from "./helpers";
+import { BASE, BRIEF, RESULT, TEAM_REVIEWS, World, expectSchema, makeCard, newKey, newSealKey, sealedText, signEnvelope, team, type SealKey } from "./helpers";
 
 const review = (w: World) => w.envelope("obi-ernesto", "obi-wellington", "review_request", BRIEF);
 
@@ -373,5 +373,93 @@ describe("text is data", () => {
     expect((await w.send(env, tokenB)).status).toBe(202);
     const d = await w.call("GET", "/v0.1/spheres/e2e/deliveries", { token: await w.obiToken("obi-wellington") });
     expect(d.body.deliveries[0].envelope).toEqual(env);
+  });
+});
+
+describe("sealed words (protocol.md section 9.1)", () => {
+  /** wellington's Obi seals: its card has a seal key. ernesto's has none, sangam's has one. */
+  async function sealingTeam(): Promise<{ w: World; seal: SealKey }> {
+    const w = new World();
+    const seal = await newSealKey();
+    expect((await w.create()).status).toBe(201);
+    expect((await w.join("wellington", "obi-wellington", ["review_request"], seal)).status).toBe(201);
+    expect((await w.join("ernesto", "obi-ernesto")).status).toBe(201);
+    expect((await w.join("sangam", "obi-sangam", ["review_request"], await newSealKey())).status).toBe(201);
+    expect((await w.putPolicy([TEAM_REVIEWS])).status).toBe(200);
+    return { w, seal };
+  }
+  const sealedBrief = { ...BRIEF, goal: sealedText(70), summary: sealedText(160) };
+  const sealFor = (key: SealKey) => ({ suite: "x25519-hkdf-sha256-chacha20poly1305", key_id: key.keyId, enc: b64(32) });
+  const b64 = (n: number) => sealedText(n - 16);
+
+  it("relays a sealed message byte for byte, and its entry holds only what was sealed", async () => {
+    const { w, seal } = await sealingTeam();
+    // ernesto's Obi can't seal yet: its words go in the clear, and the chain shows them.
+    const plain = await w.envelope("obi-ernesto", "obi-wellington", "review_request", BRIEF);
+    expect((await w.send(plain, await w.obiToken("obi-ernesto"))).status).toBe(202);
+    const env = await w.envelope("obi-ernesto", "obi-wellington", "review_request", sealedBrief, { seal: sealFor(seal) });
+    expect((await w.send(env, await w.obiToken("obi-ernesto"))).status).toBe(202);
+    const d = await w.call("GET", "/v0.1/spheres/e2e/deliveries", { token: await w.obiToken("obi-wellington") });
+    expectSchema("deliveriesResponse", d.body);
+    expect(canonicalize(d.body.deliveries[1].envelope)).toBe(canonicalize(env));
+    const audit = await w.call("GET", "/v0.1/spheres/e2e/audit", { token: await w.ownerToken() });
+    expectSchema("auditResponse", audit.body);
+    expect(JSON.stringify(audit.body.entries[0])).toContain("OBI-E2E-DATA-CANARY");
+    expect(canonicalize(audit.body.entries[1].envelope)).toBe(canonicalize(env));
+    expect(JSON.stringify(audit.body.entries[1])).not.toContain("OBI-E2E-DATA-CANARY");
+  });
+
+  it("refuses words in the clear between two Obis that seal (400 not_sealed), and takes them from one that can't yet", async () => {
+    const { w } = await sealingTeam();
+    const plain = await w.send(await w.envelope("obi-sangam", "obi-wellington", "review_request", BRIEF), await w.obiToken("obi-sangam"));
+    expect(plain.status).toBe(400);
+    expectSchema("error", plain.body);
+    expect(plain.body.error.code).toBe("not_sealed");
+    // ernesto's card has no seal key: its Obi can't seal yet, and its team keeps working with it.
+    const old = await w.send(await w.envelope("obi-ernesto", "obi-wellington", "review_request", BRIEF), await w.obiToken("obi-ernesto"));
+    expect(old.status).toBe(202);
+  });
+
+  it("refuses a seal for another key, or for an Obi whose card has none (400 invalid_envelope)", async () => {
+    const { w, seal } = await sealingTeam();
+    const other = await w.send(await w.envelope("obi-ernesto", "obi-wellington", "review_request", sealedBrief, { seal: sealFor(await newSealKey()) }), await w.obiToken("obi-ernesto"));
+    expect(other.status).toBe(400);
+    expect(other.body.error.code).toBe("invalid_envelope");
+    const request = await w.envelope("obi-ernesto", "obi-wellington", "review_request", sealedBrief, { seal: sealFor(seal) });
+    expect((await w.send(request, await w.obiToken("obi-ernesto"))).status).toBe(202);
+    // ernesto's card has no seal key: wellington's Obi replies in the clear, never sealed.
+    const sealedAccept = await w.reply(request, "accept", {}, { seal: sealFor(seal) });
+    const refused = await w.send(sealedAccept, await w.obiToken("obi-wellington"));
+    expect(refused.status).toBe(400);
+    expect(refused.body.error.code).toBe("invalid_envelope");
+    expect((await w.send(await w.reply(request, "accept", {}), await w.obiToken("obi-wellington"))).status).toBe(202);
+  });
+
+  it("refuses sealed words in the clear or too long for their field (400 invalid_envelope)", async () => {
+    const { w, seal } = await sealingTeam();
+    const token = await w.obiToken("obi-ernesto");
+    for (const body of [{ ...sealedBrief, summary: BRIEF.summary }, { ...sealedBrief, goal: "A".repeat(1089) }]) {
+      const r = await w.send(await w.envelope("obi-ernesto", "obi-wellington", "review_request", body, { seal: sealFor(seal) }), token);
+      expect(r.status).toBe(400);
+      expect(r.body.error.code).toBe("invalid_envelope");
+    }
+  });
+
+  it("still refuses a sealed request the policy doesn't allow (403 policy_denied)", async () => {
+    const { w, seal } = await sealingTeam();
+    const r = await w.send(await w.envelope("obi-ernesto", "obi-wellington", "review_request", { ...sealedBrief, repo: "obi-e2e/other-app" }, { seal: sealFor(seal) }), await w.obiToken("obi-ernesto"));
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe("policy_denied");
+  });
+
+  it("takes a card's seal key only when seal_key_id is its hash (400 card_invalid)", async () => {
+    const w = new World();
+    expect((await w.create()).status).toBe(201);
+    const inv = await w.invite("ernesto", "obi-ernesto");
+    const ownerKey = await w.ownerKey("ernesto");
+    const card = await makeCard({ sphere: "e2e", obi: "obi-ernesto", owner: "ernesto", ownerKey, obiKey: await newKey(), issuedAt: w.clock.ts(), seal: { ...(await newSealKey()), keyId: (await newSealKey()).keyId } });
+    const r = await w.call("POST", `/v0.1/spheres/e2e/invitations/${inv.body.invitation_id}/redeem`, { body: { secret: inv.body.secret, owner_key: ownerKey.publicKey, card } });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe("card_invalid");
   });
 });

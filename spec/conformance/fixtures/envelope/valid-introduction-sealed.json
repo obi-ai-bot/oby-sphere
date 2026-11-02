@@ -1,0 +1,54 @@
+{
+  "case": "envelope",
+  "name": "valid-introduction-sealed",
+  "description": "An introduction whose note is sealed for obi-a: the member introduced and what it is about stay in the clear, for the Obysphere to check.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "0d8f1d2b-87e7-8019-8d85-455eff378a34",
+    "type": "introduction",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "0d8f1d2b-87e7-8019-8d85-455eff378a34",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "member": "obi-c",
+      "about": [
+        {
+          "kind": "repo",
+          "repo": "obi-conf/fixture-app"
+        }
+      ],
+      "note": "_3RzW4r2n7oqxjCz-PSGUtfOwVsh79hFuhCQeVr6TFzib2IfK1U2XkLPJ0KnwivdBjv-AvhzLY-4"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+      "enc": "UmcAHlPGFhmaa8JxWqTjr2voaAuRxWxd8k7szzW6EAg"
+    },
+    "signature": "EePFxmBR3XzbWZ4nEIKkTyVU-zdJjYystogAoxGNxit1vBLnxiFziDx6GZwb0T5ZQz8TENMv9yYPH8UiCJ4nBA"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/decline.schema.json",
+  "title": "decline body (sealed)",
+  "description": "No to a request. Ends the exchange. Sealed: derived from actions/decline.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "enum": [
+        "policy",
+        "owner_declined",
+        "busy",
+        "expired",
+        "out_of_scope",
+        "other",
+        "share_used",
+        "unavailable"
+      ],
+      "description": "In a run_request's exchange, only unavailable, expired, out_of_scope or share_used (protocol.md section 4, rule 9)."
+    },
+    "by_rule": {
+      "$ref": "../common.schema.json#/$defs/rule_id",
+      "description": "The remembered decision that declined it, when the owner was not asked."
+    },
+    "note": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 1088
+    }
+  }
+}

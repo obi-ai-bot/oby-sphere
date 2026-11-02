@@ -1,0 +1,53 @@
+{
+ "case": "die-with-parent",
+ "seat": "open-2",
+ "model": "sonnet",
+ "earlier": 0,
+ "started": "2026-10-27T23:39:01.788Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "Engine/Jobs.swift",
+   "line": 630,
+   "severity": "minor",
+   "title": "Removing --die-with-parent leaves orphaned bwrap trees when the runner dies ungracefully outside systemd",
+   "detail": "PR_SET_PDEATHSIG (what --die-with-parent sets) fires whenever the thread that spawned bwrap exits for any reason, including the whole runner process being killed or crashing, not just the idle-Dispatch-thread case this change targets. Dropping the flag entirely means the only remaining safety net for an abruptly-dying runner is systemd's default KillMode=control-group (Runner/oby-runner.service does not set it explicitly, relying on the default). That protects the documented systemd deployment, but Runner/README.md also documents running the binary directly for development/testing (`OBY_HOME=$(mktemp -d) … .build/release/oby-runner`) and `swift test` itself spawns real bwrap sandboxes (RunnerTests/RunnerTests.swift's bubblewrapRuns tests). In those contexts a hard crash or `kill -9` of the runner (or test binary) now leaves `sleep`/agent processes and their bwrap monitors running indefinitely with no cgroup to reap them, whereas before this change they would at least have been killed (too early, which was the bug, but also as an inadvertent safety net on crash). The fix doesn't add any equivalent fallback (e.g. a cgroup/process-group kill, or re-adding die-with-parent together with a technique that keeps the spawning thread alive) for non-systemd execution paths."
+  }
+ ],
+ "cost_usd": 0.5064982000000001,
+ "turns": 24,
+ "duration_ms": 167366,
+ "usage": {
+  "input_tokens": 916,
+  "cache_creation_input_tokens": 30911,
+  "cache_read_input_tokens": 348454,
+  "output_tokens": 14197,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 30911,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 657,
+    "cache_read_input_tokens": 30894,
+    "cache_creation_input_tokens": 3707,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 3707
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

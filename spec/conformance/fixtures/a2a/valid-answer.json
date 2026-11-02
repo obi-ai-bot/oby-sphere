@@ -1,0 +1,59 @@
+{
+  "case": "a2a",
+  "name": "valid-answer",
+  "description": "An answer, a reply: its taskId is the exchange's correlation_id.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-b",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "message": {
+      "messageId": "897125dc-b204-859e-8a02-2a0e2abd20ce",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "data": {
+            "protocol": "obi/0.1",
+            "id": "897125dc-b204-859e-8a02-2a0e2abd20ce",
+            "type": "answer",
+            "from": "obi-a",
+            "to": "obi-b",
+            "sphere": "conf-sphere",
+            "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+            "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+            "created_at": "2026-10-14T11:59:00Z",
+            "expires_at": "2026-10-14T13:00:00Z",
+            "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+            "body": {
+              "by": "owner",
+              "text": "No: keep full precision.",
+              "choice": 1
+            },
+            "signature": "C7ncHB_r-B6OQ9LrNCaoKemiJwnsekLHA_B_jAYYjeANN9__2yxhcLdhC-QN6Ul8TOxRjWa-ZFf2ilaDj6ddBw"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "extensions": [
+        "urn:obi-sphere:ext:obi:0.1"
+      ],
+      "taskId": "293ecc97-39be-89df-82d7-918d301f18fa"
+    },
+    "configuration": {
+      "returnImmediately": true
+    }
+  }
+}

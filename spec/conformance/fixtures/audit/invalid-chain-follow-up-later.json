@@ -1,0 +1,91 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-follow-up-later",
+  "description": "A question that follows up one recorded after it.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "b3e30017-2d44-8742-89c7-cd301f6cf535",
+          "type": "question",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "b3e30017-2d44-8742-89c7-cd301f6cf535",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "text": "And for an empty list?",
+            "follows": "889bcb28-0a61-8d5a-8ba3-b199781b4321"
+          },
+          "signature": "YBQAE8zuIXiqx8AT8V34qjnGB3iYSiQGxkeN5E5ms0hULrkx5P7gdN-f0rzNyq-AcPOmUDxSSbgGntiJn_GzDA"
+        },
+        "hash": "7b947bfe9f19afd424082840d739abef97236bb26f334c28d99e21af93900105"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "7b947bfe9f19afd424082840d739abef97236bb26f334c28d99e21af93900105",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "889bcb28-0a61-8d5a-8ba3-b199781b4321",
+          "type": "question",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "889bcb28-0a61-8d5a-8ba3-b199781b4321",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "text": "Should average() round to two decimals?",
+            "about": [
+              {
+                "kind": "repo",
+                "repo": "obi-conf/fixture-app"
+              }
+            ],
+            "choices": [
+              "Yes",
+              "No"
+            ]
+          },
+          "signature": "kDZQ-RrKYdryNszQor36mHNhv9qrTu9HPTXv7h9-LGmcFsUayIBPYBII926s1ALWMPhQNzK2j3LDRNc6KV4UAg"
+        },
+        "hash": "29dc67a43e292b1c1299460fce0ee91e229c4b15a9c4ca14b2b0b67327da39ec"
+      }
+    ]
+  }
+}

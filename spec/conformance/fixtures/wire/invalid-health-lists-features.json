@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "invalid-health-lists-features",
+  "description": "The features in health: health stays as it was, for implementations from before.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/health.response"
+  },
+  "input": {
+    "ok": true,
+    "protocol": "obi/0.1",
+    "seal": true,
+    "features": [
+      "card_runtime"
+    ]
+  }
+}

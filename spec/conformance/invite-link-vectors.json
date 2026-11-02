@@ -1,0 +1,524 @@
+{
+  "description": "Known answers for invite links (spec/sphere-api.md section 2.1). Each valid link reads to its fields; each invalid one is not a link; each opened link, under this file's client scheme, stands for its https link or for nothing. Secrets and ids here are made up.",
+  "scheme": "example-client",
+  "valid": [
+    {
+      "name": "named",
+      "description": "A named invitation: one agent of one owner, with what the link says of its Sphere and who sent it.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme%20%26%20co&by=owner-a&for=owner-b&obi=obi-b&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "Acme & co",
+        "by": "owner-a",
+        "for": "owner-b",
+        "obi": "obi-b",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "open",
+      "description": "An open invitation: no for or obi.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme&by=owner-a&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "Acme",
+        "by": "owner-a",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "open-domain",
+      "description": "An open invitation for one domain's people.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme&by=owner-a&domain=example.com&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "Acme",
+        "by": "owner-a",
+        "domain": "example.com",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "least",
+      "description": "Only what a client needs to redeem it: sphere, id and secret.",
+      "link": "https://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "any-order",
+      "description": "The keys in another order: order doesn't matter.",
+      "link": "https://sphere.example.com/join#secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&id=9187a87a-3126-424c-8861-8811bba1a5ec&sphere=acme",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "unknown-key",
+      "description": "A key this version doesn't know: ignored.",
+      "link": "https://sphere.example.com/join#sphere=acme&v=2&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "repeated-key",
+      "description": "A key given twice: the first one counts.",
+      "link": "https://sphere.example.com/join#sphere=acme&sphere=other&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "plus-is-a-plus",
+      "description": "A + is a plus sign, never a space; a space is %20.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=C++%20team%2B&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "C++ team+",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "utf-8",
+      "description": "A name outside ASCII, percent-encoded as UTF-8.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=%C3%9Cbersicht%20%E2%9C%93&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "Übersicht ✓",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "empty-name",
+      "description": "An empty name or by: as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=&by=&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "empty-part",
+      "description": "An empty part between two &: skipped.",
+      "link": "https://sphere.example.com/join#sphere=acme&&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "port",
+      "description": "A server on another port.",
+      "link": "https://sphere.example.com:8443/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com:8443",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "loopback-http",
+      "description": "A Sphere on this machine, over plain http.",
+      "link": "http://127.0.0.1:8793/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "http://127.0.0.1:8793",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "host-case",
+      "description": "A host in upper case: the base is written in lower case.",
+      "link": "https://Sphere.Example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "empty-domain",
+      "description": "An empty domain: as if left out, so an open invitation for anyone.",
+      "link": "https://sphere.example.com/join#sphere=acme&domain=&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "empty-for-and-obi",
+      "description": "An empty for and obi: as if both were left out, so an open invitation.",
+      "link": "https://sphere.example.com/join#sphere=acme&for=&obi=&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "part-without-equals",
+      "description": "A part with no =: a key with an empty value, so as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&name&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "name-control-character",
+      "description": "A name with a control character: not one line of text, so as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme%00co&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "name-bidi-override",
+      "description": "A by with a right-to-left override: as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&by=%E2%80%AEevil&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "name-too-long",
+      "description": "A name of 101 characters: as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "name-longest",
+      "description": "A name of 100 characters, some outside ASCII: kept.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9%C3%A9&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      }
+    },
+    {
+      "name": "loopback-localhost",
+      "description": "localhost over plain http.",
+      "link": "http://localhost:8793/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "http://localhost:8793",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "loopback-ipv6",
+      "description": "[::1] over plain http.",
+      "link": "http://[::1]:8793/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "http://[::1]:8793",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "idn-a-label",
+      "description": "A host in another script, written as its A-label (xn--).",
+      "link": "https://xn--sphre-gra.example/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://xn--sphre-gra.example",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "repeated-then-empty",
+      "description": "A key given twice, the first empty: the first counts, and an empty value is as if left out.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "name": "raw-space",
+      "description": "A space a writer would have encoded, found raw: taken as it is.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme co&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fields": {
+        "base": "https://sphere.example.com",
+        "sphere": "acme",
+        "name": "Acme co",
+        "id": "9187a87a-3126-424c-8861-8811bba1a5ec",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "http-public",
+      "description": "Plain http to a host other than this machine.",
+      "link": "http://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "other-scheme",
+      "description": "A scheme other than https or http.",
+      "link": "ftp://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "no-fragment",
+      "description": "Nothing after #.",
+      "link": "https://sphere.example.com/join#"
+    },
+    {
+      "name": "no-hash",
+      "description": "No # at all.",
+      "link": "https://sphere.example.com/join"
+    },
+    {
+      "name": "path-slash",
+      "description": "A path other than /join.",
+      "link": "https://sphere.example.com/join/#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "path-prefix",
+      "description": "A path under another one: the server is at its host's root.",
+      "link": "https://sphere.example.com/sphere/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "query",
+      "description": "A query: the link has none, and what the server sees carries nothing of the invitation.",
+      "link": "https://sphere.example.com/join?sphere=acme#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "user-info",
+      "description": "A user name before the host.",
+      "link": "https://someone@sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "no-secret",
+      "description": "No secret.",
+      "link": "https://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec"
+    },
+    {
+      "name": "empty-secret",
+      "description": "An empty secret.",
+      "link": "https://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret="
+    },
+    {
+      "name": "short-secret",
+      "description": "A secret of 42 characters: it is 43.",
+      "link": "https://sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "no-sphere",
+      "description": "No sphere.",
+      "link": "https://sphere.example.com/join#id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "sphere-with-slash",
+      "description": "A sphere id that would change the request's path: ids are lower-case letters, digits and hyphens.",
+      "link": "https://sphere.example.com/join#sphere=acme%2F..%2Fother&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "id-not-uuid",
+      "description": "An invitation id that isn't a lower-case UUID.",
+      "link": "https://sphere.example.com/join#sphere=acme&id=9187A87A-3126-424C-8861-8811BBA1A5EC&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "for-without-obi",
+      "description": "for without obi: they come together.",
+      "link": "https://sphere.example.com/join#sphere=acme&for=owner-b&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "obi-without-for",
+      "description": "obi without for: they come together.",
+      "link": "https://sphere.example.com/join#sphere=acme&obi=obi-b&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "domain-upper-case",
+      "description": "A domain in upper case: domains are written lower case.",
+      "link": "https://sphere.example.com/join#sphere=acme&domain=Example.com&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "bad-escape",
+      "description": "A % that starts no escape.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=100%zz&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "not-utf-8",
+      "description": "Escaped bytes that aren't UTF-8.",
+      "link": "https://sphere.example.com/join#sphere=acme&name=%FF&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "not-a-link",
+      "description": "Text that isn't a URL.",
+      "link": "join acme"
+    },
+    {
+      "name": "dot-segments",
+      "description": "A path that only a URL parser would tidy into /join.",
+      "link": "https://sphere.example.com/x/../join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "backslash",
+      "description": "A backslash for the slash before join.",
+      "link": "https://sphere.example.com\\join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "empty-query",
+      "description": "An empty query: the link has none at all.",
+      "link": "https://sphere.example.com/join?#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "path-upper-case",
+      "description": "/JOIN: the path is exactly /join.",
+      "link": "https://sphere.example.com/JOIN#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "host-percent-escape",
+      "description": "A host with a percent escape, which a URL parser would turn into another host.",
+      "link": "https://sphere.example.com%2eevil.example/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "host-fullwidth-dot",
+      "description": "A host with a dot of another script, which a URL parser would turn into a plain dot.",
+      "link": "https://sphere.example．com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "host-whitespace",
+      "description": "A tab inside the host.",
+      "link": "https://sphere.exam\tple.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "empty-user-info",
+      "description": "An empty user name before the host.",
+      "link": "https://@sphere.example.com/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "host-unicode",
+      "description": "A host not written as an A-label.",
+      "link": "https://sphère.example/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "repeated-first-empty-required",
+      "description": "sphere given twice, the first empty: the first counts, so no sphere.",
+      "link": "https://sphere.example.com/join#sphere=&sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "host-decimal-ip",
+      "description": "A host a URL parser would read as another address (2130706433 is 127.0.0.1).",
+      "link": "http://2130706433:8793/join#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ],
+  "opened": [
+    {
+      "name": "scheme",
+      "description": "A client's own scheme: it stands for the https link.",
+      "opened": "example-client://join/sphere.example.com#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "scheme-port",
+      "description": "With a port.",
+      "opened": "example-client://join/sphere.example.com:8443#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": "https://sphere.example.com:8443/join#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "other-scheme",
+      "description": "Another client's scheme: not this client's link.",
+      "opened": "oby://join/sphere.example.com#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-other-action",
+      "description": "Not join.",
+      "opened": "example-client://claim/sphere.example.com#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-path",
+      "description": "A path after the host.",
+      "opened": "example-client://join/sphere.example.com/x#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-query",
+      "description": "A query.",
+      "opened": "example-client://join/sphere.example.com?a=b#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-user-info",
+      "description": "A user name before the host.",
+      "opened": "example-client://join/someone@sphere.example.com#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-no-host",
+      "description": "No host.",
+      "opened": "example-client://join/#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": null
+    },
+    {
+      "name": "scheme-bad-fragment",
+      "description": "A fragment that isn't an invitation's: no secret.",
+      "opened": "example-client://join/sphere.example.com#sphere=acme&id=9187a87a-3126-424c-8861-8811bba1a5ec",
+      "link": null
+    },
+    {
+      "name": "scheme-upper-case",
+      "description": "The client's scheme in upper case: a scheme's case doesn't count.",
+      "opened": "EXAMPLE-CLIENT://join/sphere.example.com#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "link": "https://sphere.example.com/join#sphere=acme&name=Acme&id=9187a87a-3126-424c-8861-8811bba1a5ec&secret=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ]
+}

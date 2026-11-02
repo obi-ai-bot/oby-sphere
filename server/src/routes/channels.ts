@@ -2,7 +2,7 @@
 // connecting and to what, then hands the WebSocket to the exchange's ChannelRelay (src/channel.ts),
 // which pairs the two sides and forwards their frames without reading them.
 
-import { bearer, requireActor, requireScope, tokenHash } from "../auth.ts";
+import { bearer, presented, requireActor, requireScope, tokenHash } from "../auth.ts";
 import { requireSphere } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
 import { apiError } from "../http.ts";
@@ -60,7 +60,7 @@ export async function openChannel(request: Request, env: Env, deps: Deps, sphere
   if ((live?.n ?? 0) >= MAX_OPEN_CHANNELS) throw apiError("rate_limited", `an Obi may be in at most ${MAX_OPEN_CHANNELS} live job exchanges at once`);
   const relay = env.CHANNELS.get(env.CHANNELS.idFromName(`${sphere.id}/${correlationId}`));
   // The relay checks this token stays unrevoked (a card rotation or a revocation revokes it).
-  const token = /^Bearer (.+)$/.exec(request.headers.get("Authorization") ?? "")![1]!;
+  const token = presented(request)!.token;
   // The Worker's clock, as the relay's alarms read it (zero apart in production; a test's own clock otherwise).
   const headers = new Headers({ Upgrade: "websocket", "X-Obi-Clock-Offset": String(deps.now() - Date.now()), "X-Obi-Token": await tokenHash(token), "X-Obi-Role": role, "X-Obi-Sphere": sphere.id, "X-Obi-Exchange": correlationId, "X-Obi-Guest": row.from_obi, "X-Obi-Host": row.to_obi });
   return relay.fetch("https://channel.internal/", { headers });

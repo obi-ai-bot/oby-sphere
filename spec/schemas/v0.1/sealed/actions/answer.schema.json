@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/answer.schema.json",
+  "title": "answer body (sealed)",
+  "description": "The answer to a question. Ends the exchange. `by` says who answered: the Obi by itself, from what its owner let it tell, or its owner in their own words (spec/protocol.md, 'answer'). Sealed: derived from actions/answer.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "by",
+    "text"
+  ],
+  "properties": {
+    "by": {
+      "enum": [
+        "obi",
+        "owner"
+      ],
+      "description": "obi: the receiving Obi answered by itself, from what a sharing rule of its owner allows. owner: its owner wrote the answer."
+    },
+    "text": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 10688,
+      "description": "The answer."
+    },
+    "refs": {
+      "$ref": "../common.schema.json#/$defs/refs",
+      "description": "What the answer draws on."
+    },
+    "choice": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "The index of the choice picked, when the question had choices."
+    },
+    "by_rule": {
+      "$ref": "../common.schema.json#/$defs/rule_id",
+      "description": "The one sharing rule of its owner the Obi answered under. Only with by: obi."
+    }
+  },
+  "if": {
+    "required": [
+      "by"
+    ],
+    "properties": {
+      "by": {
+        "const": "owner"
+      }
+    }
+  },
+  "then": {
+    "not": {
+      "required": [
+        "by_rule"
+      ]
+    }
+  }
+}

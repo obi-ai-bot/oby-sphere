@@ -1,7 +1,7 @@
 {
   "case": "wire",
   "name": "valid-invitation-open-domain",
-  "description": "An open invitation for one Google Workspace's people.",
+  "description": "An open invitation for one domain's people.",
   "expect": "accept",
   "context": {
     "schema": "wire/invitation.request"

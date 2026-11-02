@@ -1,0 +1,19 @@
+{
+  "case": "wire",
+  "name": "invalid-assertion-aud-query",
+  "description": "An `aud` URL with a query.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "https://sphere.example.com/v0.1/spheres/conf-sphere?x=1",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "be741348-90ca-87da-809e-2d73f7a42a0b",
+    "scope": "admin"
+  }
+}

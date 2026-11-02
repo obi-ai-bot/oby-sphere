@@ -1,0 +1,11 @@
+{
+  "case": "wire",
+  "name": "invalid-features-list-missing",
+  "description": "An answer without the list.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {}
+}

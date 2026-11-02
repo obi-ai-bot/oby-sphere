@@ -5,24 +5,45 @@
 import { env } from "cloudflare:test";
 import { expect } from "vitest";
 import { handle } from "../src/app";
-import { b64url, keyIdOf } from "../src/protocol/crypto";
+import { b64url, keyIdOf, sealKeyIdOrNull } from "../src/protocol/crypto";
 import { canonicalBytes, utf8 } from "../src/protocol/json";
 import { envelopeSigningInput, timestamp } from "../src/protocol/envelope";
 import { cardSigningInput } from "../src/protocol/card";
 import * as validators from "../src/protocol/validators.generated.js";
-import { KeyCache } from "../src/signin";
+import { Issuers } from "../src/signin";
 
 export const BASE = "http://sphere.test";
 export const OPERATOR = env.SPHERE_OPERATOR_TOKEN;
 
-/** Google, as the tests play it: one RSA key that signs every ID token (test/signin.test.ts). */
+/** Google, as the tests play it: one RSA key, made for this run, that signs every ID token (test/signin.test.ts). */
 export const GOOGLE_KEY = (await crypto.subtle.generateKey(
   { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
   true,
   ["sign", "verify"],
 )) as CryptoKeyPair;
 const googleJwk = { ...((await crypto.subtle.exportKey("jwk", GOOGLE_KEY.publicKey)) as JsonWebKey), kid: "test-google-key" };
-export const GOOGLE = new KeyCache(async () => [googleJwk]);
+
+/** Another OpenID Connect provider, as the tests play it: its issuer, its discovery document, and an ES256 key made for this run. */
+export const IDP = { issuer: "https://idp.test", authorize: "https://idp.test/authorize", jwks: "https://idp.test/keys", kid: "test-idp-key" };
+export const IDP_KEY = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+const idpJwk = { ...((await crypto.subtle.exportKey("jwk", IDP_KEY.publicKey)) as JsonWebKey), kid: IDP.kid, use: "sig", alg: "ES256" };
+/** The test provider's Ed25519 key, for EdDSA ID tokens. */
+export const IDP_ED_KEY = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+const idpEdJwk = { ...((await crypto.subtle.exportKey("jwk", IDP_ED_KEY.publicKey)) as JsonWebKey), kid: "test-idp-ed-key" };
+
+/** What the Sphere fetches from issuers, answered here: Google's keys, and the test provider's discovery and keys. */
+export const ISSUERS_GET = async (url: string): Promise<Response> => {
+  if (url === "https://www.googleapis.com/oauth2/v3/certs") return Response.json({ keys: [googleJwk] });
+  if (url === `${IDP.issuer}/.well-known/openid-configuration`) {
+    return Response.json({ issuer: IDP.issuer, authorization_endpoint: IDP.authorize, jwks_uri: IDP.jwks, response_types_supported: ["code", "id_token"], response_modes_supported: ["query", "fragment", "form_post"], id_token_signing_alg_values_supported: ["ES256"] });
+  }
+  if (url === IDP.jwks) return Response.json({ keys: [idpJwk, idpEdJwk, { kty: "oct", kid: "a-shared-secret", k: "c2VjcmV0" }] });
+  // An issuer whose document names another issuer, and one whose endpoints aren't https.
+  if (url === "https://other-idp.test/.well-known/openid-configuration") return Response.json({ issuer: IDP.issuer, authorization_endpoint: IDP.authorize, jwks_uri: IDP.jwks });
+  if (url === "https://plain-idp.test/.well-known/openid-configuration") return Response.json({ issuer: "https://plain-idp.test", authorization_endpoint: "http://127.0.0.1:9/authorize", jwks_uri: "http://127.0.0.1:9/keys" });
+  return new Response("not found", { status: 404 });
+};
+export const ISSUERS = new Issuers(ISSUERS_GET);
 
 /** The Sphere's clock in the tests: starts at 2026-10-14T12:00:00Z, moves only when told. */
 export class Clock {
@@ -76,7 +97,27 @@ export interface CardOptions {
   accepts?: string[];
   cardSeq?: number;
   issuedAt: string;
+  /** The Obi's seal key (protocol.md section 9.1): its id and public key. */
+  seal?: SealKey;
+  /** More params, such as `features`, `runtime` and `vendors` (identity.md section 2.3). */
+  params?: Record<string, unknown>;
+  /** The card's `version`, when not 0.1.0. */
+  version?: string;
 }
+
+export interface SealKey {
+  keyId: string;
+  publicKey: string;
+}
+
+/** A seal key as a card publishes it. The Sphere only hashes and compares it, so any 32 bytes do. */
+export async function newSealKey(): Promise<SealKey> {
+  const publicKey = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  return { keyId: (await sealKeyIdOrNull(publicKey))!, publicKey };
+}
+
+/** What the Sphere sees of `bytes` bytes of words, sealed: base64url of their ciphertext and tag. */
+export const sealedText = (bytes: number): string => b64url(crypto.getRandomValues(new Uint8Array(bytes + 16)));
 
 const SKILLS: Record<string, { name: string; description: string }> = {
   review_request: { name: "Review a change", description: "Reviews a change for its owner and answers with typed findings." },
@@ -84,6 +125,7 @@ const SKILLS: Record<string, { name: string; description: string }> = {
   handoff: { name: "Take a handoff", description: "Runs a piece of work for its owner." },
   run_request: { name: "Run a job on this Mac", description: "Runs a teammate's job in a VM of its own, with the teammate's own account." },
   share_offer: { name: "Take a share of an API account", description: "Shows a teammate's share of a company API account; jobs on it run on their Mac." },
+  introduction: { name: "Meet someone", description: "Hears who another member would introduce its owner to." },
 };
 
 export async function makeCard(o: CardOptions): Promise<Record<string, unknown>> {
@@ -94,7 +136,7 @@ export async function makeCard(o: CardOptions): Promise<Record<string, unknown>>
     description: "A personal delegate for an engineer.",
     url: `${BASE}/v0.1/spheres/${o.sphere}/members/${o.obi}`,
     preferredTransport: "HTTP+JSON",
-    version: "0.1.0",
+    version: o.version ?? "0.1.0",
     capabilities: {
       streaming: false,
       pushNotifications: false,
@@ -105,6 +147,8 @@ export async function makeCard(o: CardOptions): Promise<Record<string, unknown>>
           params: {
             protocol: "obi/0.1", sphere: o.sphere, obi_id: o.obi, owner: o.owner, owner_key: o.ownerKey.publicKey, key_id: o.obiKey.keyId,
             public_key: o.obiKey.publicKey, accepts, card_seq: o.cardSeq ?? 1, issued_at: o.issuedAt,
+            ...(o.seal ? { seal_key_id: o.seal.keyId, seal_public_key: o.seal.publicKey } : {}),
+            ...o.params,
           },
         },
       ],
@@ -140,13 +184,14 @@ export function makeCall(clock: Clock, workerEnv: Cloudflare.Env = env) {
       body = JSON.stringify(o.body);
       headers["Content-Type"] ??= "application/json";
     }
-    const res = await handle(new Request(BASE + path, { method, headers, body }), workerEnv, { now: clock.now, google: GOOGLE });
+    const res = await handle(new Request(BASE + path, { method, headers, body }), workerEnv, { now: clock.now, issuers: ISSUERS });
     const text = await res.text();
     let parsed: unknown = text;
     try {
       parsed = JSON.parse(text);
     } catch {}
-    if (res.status >= 400 && !path.startsWith("/v0.1/oauth/token")) expectSchema("error", parsed);
+    // The A2A binding's paths answer A2A's errors (spec/a2a.md section 6), every other path the Obysphere's own.
+    if (res.status >= 400 && !path.startsWith("/v0.1/oauth/token")) expectSchema(res.headers.get("Content-Type") === "application/a2a+json" ? "a2aError" : "error", parsed);
     return { status: res.status, body: parsed, headers: res.headers };
   };
 }
@@ -208,12 +253,12 @@ export class World {
     return this.call("POST", `/v0.1/spheres/${this.sphere}/invitations`, { token: await this.ownerToken(), body: { owner, obi, expires_in: expiresIn } });
   }
 
-  async join(owner: string, obi: string, accepts = ["review_request"]): Promise<Answer> {
+  async join(owner: string, obi: string, accepts = ["review_request"], seal?: SealKey): Promise<Answer> {
     const inv = await this.invite(owner, obi);
     expect(inv.status, JSON.stringify(inv.body)).toBe(201);
     const ownerKey = await this.ownerKey(owner);
     const key = await newKey();
-    const card = await makeCard({ sphere: this.sphere, obi, owner, ownerKey, obiKey: key, accepts, issuedAt: this.clock.ts() });
+    const card = await makeCard({ sphere: this.sphere, obi, owner, ownerKey, obiKey: key, accepts, issuedAt: this.clock.ts(), ...(seal ? { seal } : {}) });
     const r = await this.call("POST", `/v0.1/spheres/${this.sphere}/invitations/${inv.body.invitation_id}/redeem`, { body: { secret: inv.body.secret, owner_key: ownerKey.publicKey, card } });
     if (r.status === 201) this.obis.set(obi, { owner, key, accepts });
     return r;

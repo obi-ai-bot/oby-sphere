@@ -1,0 +1,45 @@
+{
+ "case": "die-with-parent",
+ "seat": "blind-1",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:54:38.866Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [],
+ "cost_usd": 0.37483039999999995,
+ "turns": 23,
+ "duration_ms": 118690,
+ "usage": {
+  "input_tokens": 866,
+  "cache_creation_input_tokens": 23083,
+  "cache_read_input_tokens": 279358,
+  "output_tokens": 9948,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 23083,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 238,
+    "cache_read_input_tokens": 26181,
+    "cache_creation_input_tokens": 592,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 592
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

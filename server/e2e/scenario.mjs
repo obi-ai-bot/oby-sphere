@@ -210,7 +210,13 @@ const steps = [
         assert(Date.now() < deadline, "GET /v0.1/health didn't answer 200 within 60 seconds");
         await sleep(250);
       }
-      assert(same(health.body, { ok: true, protocol: "obi/0.1" }), `health: ${show(health.body)}`);
+      // A Sphere that takes sealed words says `seal: true` (protocol.md section 9.1); one deployed before doesn't.
+      assert(same({ seal: true, ...health.body }, { ok: true, protocol: "obi/0.1", seal: true }), `health: ${show(health.body)}`);
+      // The features it takes and offers (sphere-api.md section 2): the phone relay, locally.
+      if (!REMOTE) {
+        const listed = await c.call("GET", "/v0.1/features");
+        assert(listed.status === 200 && ["dpop", "phone_relay", "signin_providers", "sphere_url_aud"].every((id) => listed.body.features.includes(id)), `features: ${listed.status} ${show(listed.body)}`);
+      }
       // 1.1b Nothing on the port reaches the D1 around the Sphere's checks: wrangler's Local
       // Explorer and local observability (on by default, no token, any SQL) are off, so their
       // paths are the Sphere's own 404.

@@ -86,7 +86,15 @@ test("a Node Sphere is claimed once, answers only over HTTPS, relays, and keeps 
 
   // Unclaimed: health and the claim answer, nothing else does.
   assert.equal((await fetch(`${base}/v0.1/health`)).status, 200);
-  assert.equal((await fetch(`${base}/claim`)).status, 200);
+  const listed = (await (await fetch(`${base}/v0.1/features`)).json()).features;
+  for (const id of ["dpop", "phone_relay", "signin_providers", "sphere_url_aud"]) assert.ok(listed.includes(id), `features: ${listed}`);
+  const claimPage = await fetch(`${base}/claim`);
+  assert.equal(claimPage.status, 200);
+  // The page says how to claim it with curl, for any operator; its one script is the one the CSP allows.
+  const page = await claimPage.text();
+  assert.match(page, /curl -sS --fail-with-body --data @- -H 'Content-Type: application\/json' <span id="host"><\/span>\/v0\.1\/claim &&/);
+  const script = /<script>(.*)<\/script>/s.exec(page)[1];
+  assert.ok(claimPage.headers.get("Content-Security-Policy").includes(`'sha256-${createHash("sha256").update(script).digest("base64")}'`));
   const early = await post("/v0.1/spheres", {}, { Authorization: `Bearer ${operatorToken}` });
   assert.equal(early.status, 403);
   assert.match((await early.json()).error.message, /isn't claimed yet/);

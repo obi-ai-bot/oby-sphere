@@ -1,0 +1,148 @@
+{
+  "case": "card",
+  "name": "invalid-card-sixty-five-features",
+  "description": "One feature more than a card may list.",
+  "expect": "reject",
+  "reason": "card_invalid",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "bound_owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w"
+  },
+  "input": {
+    "protocolVersion": "0.3.0",
+    "name": "owner-a's Obi",
+    "description": "A personal delegate for an engineer.",
+    "url": "https://sphere.example.invalid/v0.1/spheres/conf-sphere/members/obi-a",
+    "preferredTransport": "HTTP+JSON",
+    "version": "0.1.0",
+    "capabilities": {
+      "streaming": false,
+      "pushNotifications": false,
+      "extensions": [
+        {
+          "uri": "urn:obi-sphere:ext:obi:0.1",
+          "required": true,
+          "params": {
+            "protocol": "obi/0.1",
+            "sphere": "conf-sphere",
+            "obi_id": "obi-a",
+            "owner": "owner-a",
+            "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w",
+            "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+            "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+            "accepts": [
+              "review_request",
+              "question"
+            ],
+            "card_seq": 1,
+            "issued_at": "2026-10-14T11:59:00Z",
+            "features": [
+              "card_runtime",
+              "feature_00",
+              "feature_01",
+              "feature_02",
+              "feature_03",
+              "feature_04",
+              "feature_05",
+              "feature_06",
+              "feature_07",
+              "feature_08",
+              "feature_09",
+              "feature_10",
+              "feature_11",
+              "feature_12",
+              "feature_13",
+              "feature_14",
+              "feature_15",
+              "feature_16",
+              "feature_17",
+              "feature_18",
+              "feature_19",
+              "feature_20",
+              "feature_21",
+              "feature_22",
+              "feature_23",
+              "feature_24",
+              "feature_25",
+              "feature_26",
+              "feature_27",
+              "feature_28",
+              "feature_29",
+              "feature_30",
+              "feature_31",
+              "feature_32",
+              "feature_33",
+              "feature_34",
+              "feature_35",
+              "feature_36",
+              "feature_37",
+              "feature_38",
+              "feature_39",
+              "feature_40",
+              "feature_41",
+              "feature_42",
+              "feature_43",
+              "feature_44",
+              "feature_45",
+              "feature_46",
+              "feature_47",
+              "feature_48",
+              "feature_49",
+              "feature_50",
+              "feature_51",
+              "feature_52",
+              "feature_53",
+              "feature_54",
+              "feature_55",
+              "feature_56",
+              "feature_57",
+              "feature_58",
+              "feature_59",
+              "feature_60",
+              "feature_61",
+              "feature_62",
+              "feature_63"
+            ],
+            "runtime": {
+              "id": "claude",
+              "version": "2.1.0"
+            },
+            "vendors": [
+              "anthropic"
+            ]
+          }
+        }
+      ]
+    },
+    "defaultInputModes": [
+      "application/json"
+    ],
+    "defaultOutputModes": [
+      "application/json"
+    ],
+    "skills": [
+      {
+        "id": "review_request",
+        "name": "Review a change",
+        "description": "Reviews a change for its owner and answers with typed findings.",
+        "tags": [
+          "obi-action"
+        ]
+      },
+      {
+        "id": "question",
+        "name": "Answer a question",
+        "description": "Answers what its owner knows or decided.",
+        "tags": [
+          "obi-action"
+        ]
+      }
+    ],
+    "signatures": [
+      {
+        "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImVkMjU1MTk6QU5WX3N1bXA1ckpXdWV2X1lJNjZUTjFKS0UwdV9wTU5jUlFtaHB4UjdfQSIsInR5cCI6IkpPU0UifQ",
+        "signature": "VZN9r0n3yGIbmKcan2fEEUOKkXUkjC2T6ZsQ6D1bOYL_dwCCY_TBWmPpYX5z9dIuHghbI1i8U3NG8BA1X8TiBQ"
+      }
+    ]
+  }
+}

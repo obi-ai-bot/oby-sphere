@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/handoff.schema.json",
+  "title": "handoff body (sealed)",
+  "description": "Hand a piece of work to another Obi, which runs it for its own owner. Sealed: derived from actions/handoff.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "goal",
+    "repo",
+    "base_branch",
+    "acceptance"
+  ],
+  "properties": {
+    "goal": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 1088,
+      "description": "The destination, one line."
+    },
+    "repo": {
+      "$ref": "../common.schema.json#/$defs/repo"
+    },
+    "base_branch": {
+      "$ref": "../common.schema.json#/$defs/branch"
+    },
+    "issue": {
+      "$ref": "../common.schema.json#/$defs/issue_number"
+    },
+    "pr": {
+      "$ref": "../common.schema.json#/$defs/pr_number"
+    },
+    "acceptance": {
+      "$ref": "../common.schema.json#/$defs/acceptance"
+    },
+    "summary": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 10688
+    },
+    "follows": {
+      "$ref": "../common.schema.json#/$defs/follows"
+    }
+  }
+}

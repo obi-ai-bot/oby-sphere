@@ -1,0 +1,62 @@
+{
+ "case": "keychain-found-time",
+ "seat": "blind-2",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:58:28.083Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "core/crates/obid/src/jobs.rs",
+   "line": 11291,
+   "end_line": 11310,
+   "severity": "minor",
+   "title": "keychain_has's per-directory cache is never pruned for directories that stop being queried",
+   "detail": "SEEN is a process-lifetime static Vec keyed by config_dir. An entry is only removed/refreshed when the same config_dir is looked up again (via the retain() call before push). If an account is deleted or its config_dir otherwise stops being queried while it still has a cached 'found' entry, that entry stays in the Vec forever (it's never evicted on expiry, only overwritten on a fresh lookup for that same dir). On a long-running obid process that churns through many accounts over time this grows unboundedly instead of being bounded by the number of currently-configured accounts."
+  },
+  {
+   "file": "core/crates/obid/src/jobs.rs",
+   "line": 11298,
+   "end_line": 11300,
+   "severity": "minor",
+   "title": "keychain_has's cache bypasses the keychain_on() toggle, unlike cursor_keychain_has",
+   "detail": "cursor_keychain_has() re-checks cursor_keychain_on() on every call before consulting its cache (line 11437), so turning the Cursor Keychain copy off takes effect immediately. keychain_has(), by contrast, returns the cached 'found' result (line 11298-11300) without checking keychain_on() at all; the on/off check only happens inside keychain() on a cache miss. If the Claude Keychain copy is turned off while a recent positive result is cached, has_login/signed_in can keep reporting a login as present for up to LOOK_EVERY (2s) after it should have stopped being considered, diverging from the parallel Cursor implementation added in the same change."
+  }
+ ],
+ "cost_usd": 0.6066885000000001,
+ "turns": 27,
+ "duration_ms": 164934,
+ "usage": {
+  "input_tokens": 1072,
+  "cache_creation_input_tokens": 39204,
+  "cache_read_input_tokens": 537115,
+  "output_tokens": 13761,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 39204,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 45,
+    "output_tokens": 717,
+    "cache_read_input_tokens": 38995,
+    "cache_creation_input_tokens": 3899,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 3899
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

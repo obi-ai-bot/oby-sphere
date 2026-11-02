@@ -1,0 +1,3204 @@
+{
+ "description": "Known-answer vectors for the Council draw (spec/council/draw.md). `pool` builds a pool record from the directory; `draw` draws seats from a pool record and a beacon's randomness; `anchor` gives the envelope id that fixes a pool hash in the chain; `round` gives the beacon round that follows an anchor; `beacon` is drand's quicknet and one real round of it, whose randomness is the SHA-256 of its signature; `beacon_checks` say whether a round's signature verifies with quicknet's public key. Outputs compare as JSON values: member order doesn't matter, array order does. The answers come from clerk/vectors/draw.py, written apart from both implementations.",
+ "version": 1,
+ "beacon": {
+  "chain": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+  "public_key": "83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a",
+  "genesis_time": 1692803367,
+  "period": 3,
+  "round": 1000000,
+  "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe72",
+  "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+ },
+ "beacon_checks": [
+  {
+   "name": "quicknet round 1000000, as drand published it",
+   "round": 1000000,
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe72",
+   "valid": true
+  },
+  {
+   "name": "the same signature for another round",
+   "round": 1000001,
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe72",
+   "valid": false
+  },
+  {
+   "name": "one bit of the signature changed",
+   "round": 1000000,
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe73",
+   "valid": false
+  },
+  {
+   "name": "a signature that isn't a curve point",
+   "round": 1000000,
+   "signature": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false
+  },
+  {
+   "name": "a signature of the wrong length",
+   "round": 1000000,
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe",
+   "valid": false
+  },
+  {
+   "name": "the identity point as the signature",
+   "round": 1000000,
+   "signature": "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "valid": false
+  },
+  {
+   "name": "the same signature, uncompressed",
+   "round": 1000000,
+   "signature": "03ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe7201776ff7408b39c5f6f9fa50746efd7eea17fbb61f2e7b9c849ff0528e5a3deeedd029d0df345199963d75ba93b5a02a",
+   "valid": false
+  },
+  {
+   "name": "round 0, which no beacon has",
+   "round": 0,
+   "signature": "83ad29e4c409f9470fc2ef02f90214df49e02b441a1a241a82d622d9f608ef98fd8b11a029f1bee9d9e83b45088abe72",
+   "valid": false
+  }
+ ],
+ "pool": [
+  {
+   "name": "pool: the author's agents are out, one agent per owner (the lowest id), cards that don't take the request are out",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-alice",
+      "owner": "alice",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "anthropic"
+      ]
+     },
+     {
+      "obi_id": "obi-dan",
+      "owner": "dan",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "openai"
+      ]
+     },
+     {
+      "obi_id": "obi-bob-2",
+      "owner": "bob",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "openai"
+      ]
+     },
+     {
+      "obi_id": "obi-bob",
+      "owner": "bob",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "anthropic"
+      ]
+     },
+     {
+      "obi_id": "obi-carol",
+      "owner": "carol",
+      "accepts": [
+       "question"
+      ],
+      "vendors": [
+       "anthropic"
+      ]
+     },
+     {
+      "obi_id": "obi-erin",
+      "owner": "erin",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-frank",
+      "owner": "frank",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "openai",
+       "anthropic",
+       "openai"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "draw": 1,
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "entries": [
+     {
+      "id": "obi-bob",
+      "owner": "bob",
+      "vendors": [
+       "anthropic"
+      ]
+     },
+     {
+      "id": "obi-dan",
+      "owner": "dan",
+      "vendors": [
+       "openai"
+      ]
+     },
+     {
+      "id": "obi-erin",
+      "owner": "erin",
+      "vendors": []
+     },
+     {
+      "id": "obi-frank",
+      "owner": "frank",
+      "vendors": [
+       "anthropic",
+       "openai"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "pool: two excluded owners (author and convener), given unsorted",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "zed",
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-zed",
+      "owner": "zed",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "openai"
+      ]
+     },
+     {
+      "obi_id": "obi-alice",
+      "owner": "alice",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-bob",
+      "owner": "bob",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       "anthropic"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "draw": 1,
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice",
+     "zed"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "entries": [
+     {
+      "id": "obi-bob",
+      "owner": "bob",
+      "vendors": [
+       "anthropic"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "pool: nobody eligible",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-alice",
+      "owner": "alice",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "draw": 1,
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "entries": []
+   }
+  },
+  {
+   "name": "pool: entries and exclude sorted as UTF-8 bytes; the lowest obi_id of an owner by bytes",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "😀",
+     "ﬁ"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-😀",
+      "owner": "z",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-ﬁ",
+      "owner": "z",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-a",
+      "owner": "ﬁ",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-b",
+      "owner": "y",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "draw": 1,
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "ﬁ",
+     "😀"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "entries": [
+     {
+      "id": "obi-b",
+      "owner": "y",
+      "vendors": []
+     },
+     {
+      "id": "obi-ﬁ",
+      "owner": "z",
+      "vendors": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "pool error: an obi_id twice",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-bob",
+      "owner": "bob",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     },
+     {
+      "obi_id": "obi-bob",
+      "owner": "carol",
+      "accepts": [
+       "review_request",
+       "question"
+      ]
+     }
+    ]
+   },
+   "error": "bad_members"
+  },
+  {
+   "name": "pool error: a member without accepts",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-bob",
+      "owner": "bob"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "pool error: an unknown member",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [],
+    "extra": 1
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "pool error: motion is not 64 lower-case hex",
+   "input": {
+    "sphere": "e2e",
+    "motion": "EA6F11ED199C05ACC23557A8036947F5CA4B0322E553E7CAEECC0CC51E235E7C",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": []
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "pool error: an empty vendor id",
+   "input": {
+    "sphere": "e2e",
+    "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+    "at": {
+     "seq": 41,
+     "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+    },
+    "request": "review_request",
+    "exclude": [
+     "alice"
+    ],
+    "seats": 3,
+    "verifiers": 0,
+    "diversity": {
+     "owners": 0,
+     "vendors": 0
+    },
+    "members": [
+     {
+      "obi_id": "obi-bob",
+      "owner": "bob",
+      "accepts": [
+       "review_request",
+       "question"
+      ],
+      "vendors": [
+       ""
+      ]
+     }
+    ]
+   },
+   "error": "bad_input"
+  }
+ ],
+ "draw": [
+  {
+   "name": "draw: three seats from seven, no diversity asked",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "05c2ead9da64b64d9646628eef3dbdc20614b0083d28ece24d582f7a38808ce3",
+    "seed": "266c9d5db164cdf626dd8ec956ab8aa657e6e0dc1ea0bf09d1e7f706368390e5",
+    "order": [
+     "obi-frank",
+     "obi-carol",
+     "obi-dan",
+     "obi-heidi",
+     "obi-erin",
+     "obi-grace",
+     "obi-bob"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-frank",
+     "obi-carol",
+     "obi-dan"
+    ],
+    "verifiers": [],
+    "vendors": 3,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: three seats, two vendors, one verifier",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+    "seed": "dc3cd154a3bc1b9526aed785aca60339c96118e2252ad3a6787760ede9834935",
+    "order": [
+     "obi-heidi",
+     "obi-grace",
+     "obi-bob",
+     "obi-dan",
+     "obi-erin",
+     "obi-carol",
+     "obi-frank"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-heidi",
+     "obi-bob",
+     "obi-dan"
+    ],
+    "verifiers": [
+     "obi-grace"
+    ],
+    "vendors": 2,
+    "skipped": [
+     "obi-grace"
+    ]
+   }
+  },
+  {
+   "name": "draw: three seats, three vendors (skips seats whose vendor is already there)",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 3,
+      "vendors": 3
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "5d051e0a0983b30fbc0905f7ee7ce8be615915555e69c6950de247df82a7b481",
+    "seed": "eb0e6428d4e43e86891935ffc5d9883b7eb0ffdb0629de8e020c4f471bf501e3",
+    "order": [
+     "obi-grace",
+     "obi-frank",
+     "obi-erin",
+     "obi-dan",
+     "obi-heidi",
+     "obi-carol",
+     "obi-bob"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-frank",
+     "obi-erin",
+     "obi-dan"
+    ],
+    "verifiers": [],
+    "vendors": 3,
+    "skipped": [
+     "obi-grace"
+    ]
+   }
+  },
+  {
+   "name": "draw: another seed, another order",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "1f4ef2bcd2f072a743a910b5c1e18fae3505da8bb32f76726552f6bf8192d14d"
+   },
+   "output": {
+    "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+    "seed": "adc462f874e7931277c9ccc4e09c45605201795cb4a85299f0478463c2dd977a",
+    "order": [
+     "obi-heidi",
+     "obi-grace",
+     "obi-dan",
+     "obi-bob",
+     "obi-frank",
+     "obi-erin",
+     "obi-carol"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-heidi",
+     "obi-dan",
+     "obi-bob"
+    ],
+    "verifiers": [
+     "obi-grace"
+    ],
+    "vendors": 2,
+    "skipped": [
+     "obi-grace"
+    ]
+   }
+  },
+  {
+   "name": "draw: the first seat declined; the others keep their seats",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-heidi"
+    ]
+   },
+   "output": {
+    "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+    "seed": "dc3cd154a3bc1b9526aed785aca60339c96118e2252ad3a6787760ede9834935",
+    "order": [
+     "obi-heidi",
+     "obi-grace",
+     "obi-bob",
+     "obi-dan",
+     "obi-erin",
+     "obi-carol",
+     "obi-frank"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-grace",
+     "obi-bob",
+     "obi-dan"
+    ],
+    "verifiers": [
+     "obi-erin"
+    ],
+    "vendors": 2,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: two seats and the verifier declined",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-bob",
+     "obi-grace",
+     "obi-dan"
+    ]
+   },
+   "output": {
+    "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+    "seed": "dc3cd154a3bc1b9526aed785aca60339c96118e2252ad3a6787760ede9834935",
+    "order": [
+     "obi-heidi",
+     "obi-grace",
+     "obi-bob",
+     "obi-dan",
+     "obi-erin",
+     "obi-carol",
+     "obi-frank"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-heidi",
+     "obi-erin",
+     "obi-frank"
+    ],
+    "verifiers": [
+     "obi-carol"
+    ],
+    "vendors": 2,
+    "skipped": [
+     "obi-carol"
+    ]
+   }
+  },
+  {
+   "name": "draw: one vendor in the pool, two asked: unmet",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "89bf96a4abc0d46092c6071ba0b71ae8edf7be7d99e2454dd7b968dee8d88a91",
+    "seed": "593e9f9972512c9143529953cac09c211e623d45d4d220ff5d18ea45bdd7c784",
+    "order": [
+     "obi-bob",
+     "obi-carol",
+     "obi-erin",
+     "obi-dan"
+    ],
+    "outcome": "unmet",
+    "seats": [],
+    "verifiers": [],
+    "vendors": 0,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: one vendor, none asked: drawn",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 3,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "42512eea7f62570b7a783cf63a8be27a4da1cdc1b6055686c17e914010241a5f",
+    "seed": "8cf49fcedc6d270661e86d5262953e70c9b61d324a70fde8508655b466355263",
+    "order": [
+     "obi-carol",
+     "obi-erin",
+     "obi-dan",
+     "obi-bob"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-carol",
+     "obi-erin",
+     "obi-dan"
+    ],
+    "verifiers": [],
+    "vendors": 1,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: too few left for the seats and the verifier after declines: unmet",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-carol"
+    ]
+   },
+   "output": {
+    "pool_hash": "ab5794ee43716824f9df34f190cdc8d299f573c3f4c1963af886b75c69daf0e0",
+    "seed": "8170b196079139828c2dd46c3ed99d24c666430cbf381c8dff375bab4c88c957",
+    "order": [
+     "obi-bob",
+     "obi-carol",
+     "obi-erin",
+     "obi-dan"
+    ],
+    "outcome": "unmet",
+    "seats": [],
+    "verifiers": [],
+    "vendors": 0,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: agents declaring no vendor or several sit but count for none",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 2,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 2,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": []
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "9fdc86c8e11b181f0561343529a8459edcad5d4aa5281ba868567bf3b021c76c",
+    "seed": "259e066a78f80dcbd500210975026804ecb8649a0a26875575ab28d7ca0c82ff",
+    "order": [
+     "obi-carol",
+     "obi-bob",
+     "obi-erin",
+     "obi-dan"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-erin",
+     "obi-dan"
+    ],
+    "verifiers": [],
+    "vendors": 2,
+    "skipped": [
+     "obi-carol",
+     "obi-bob"
+    ]
+   }
+  },
+  {
+   "name": "draw: only multi-vendor agents: they can't make two vendors, unmet",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 2,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 2,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "google",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "53a89e3fecf6dd3dfce3c01abc3b90eba465487919a06a4e791bf0f78f93f6d4",
+    "seed": "6fb57fa7dfd68d39c7c2c7a4b3512bc9d20ed19590cabdd07eb68ce57f7befa5",
+    "order": [
+     "obi-bob",
+     "obi-carol"
+    ],
+    "outcome": "unmet",
+    "seats": [],
+    "verifiers": [],
+    "vendors": 0,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: an empty pool is unmet",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": []
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "dc2f8e9eca2432297a9a835f826172ac0a1e58080e9d2c2a1acc3e5d64f89e4d",
+    "seed": "5f9931fbe8b484f023056b6561a0a6cd229bc2ac184d20a6f11cb36df5eceea5",
+    "order": [],
+    "outcome": "unmet",
+    "seats": [],
+    "verifiers": [],
+    "vendors": 0,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: three seats and a verifier, no diversity",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "c95a69e7566b86060b3220bb2a209deacd0f07376d5966d93bff117d0e8fc041",
+    "seed": "5205958d7f16d116cda5e25793bace63a7b2cca3e4462d294d08894ad42c9ffa",
+    "order": [
+     "obi-dan",
+     "obi-erin",
+     "obi-bob",
+     "obi-heidi",
+     "obi-frank",
+     "obi-carol",
+     "obi-grace"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-dan",
+     "obi-erin",
+     "obi-bob"
+    ],
+    "verifiers": [
+     "obi-heidi"
+    ],
+    "vendors": 2,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: a seat declines and the verifier, next in the order, becomes a seat",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-dan"
+    ]
+   },
+   "output": {
+    "pool_hash": "c95a69e7566b86060b3220bb2a209deacd0f07376d5966d93bff117d0e8fc041",
+    "seed": "5205958d7f16d116cda5e25793bace63a7b2cca3e4462d294d08894ad42c9ffa",
+    "order": [
+     "obi-dan",
+     "obi-erin",
+     "obi-bob",
+     "obi-heidi",
+     "obi-frank",
+     "obi-carol",
+     "obi-grace"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-erin",
+     "obi-bob",
+     "obi-heidi"
+    ],
+    "verifiers": [
+     "obi-frank"
+    ],
+    "vendors": 1,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: ids sort as UTF-8 bytes, not UTF-16 code units (U+FB01 before U+1F600)",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "ﬁ",
+      "😀"
+     ],
+     "seats": 2,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-z",
+       "owner": "z",
+       "vendors": []
+      },
+      {
+       "id": "obi-ﬁ",
+       "owner": "o-ﬁ",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-😀",
+       "owner": "o-😀",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "output": {
+    "pool_hash": "5132657a21bad32260892ac7efc6b4a8d20b93d5f923b33456c7caae64a2dfd8",
+    "seed": "a55c3a90a09df15a2e761b1e1b67e78490a157041359201cb4d0db965f795a30",
+    "order": [
+     "obi-😀",
+     "obi-ﬁ",
+     "obi-z"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-😀",
+     "obi-ﬁ"
+    ],
+    "verifiers": [],
+    "vendors": 2,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw: every entry a seat",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 4,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 4,
+      "vendors": 1
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "1f4ef2bcd2f072a743a910b5c1e18fae3505da8bb32f76726552f6bf8192d14d"
+   },
+   "output": {
+    "pool_hash": "c90f8f7d74465a320579713e819204e906cb2a36d798bb1298c490f434f64fd1",
+    "seed": "89d025b58ba025b61c78d9a66a5228613a952da54db01a43658ebccd84fa6179",
+    "order": [
+     "obi-carol",
+     "obi-dan",
+     "obi-erin",
+     "obi-bob"
+    ],
+    "outcome": "drawn",
+    "seats": [
+     "obi-carol",
+     "obi-dan",
+     "obi-erin",
+     "obi-bob"
+    ],
+    "verifiers": [],
+    "vendors": 1,
+    "skipped": []
+   }
+  },
+  {
+   "name": "draw error: not an object",
+   "input": [],
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: no randomness",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    }
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: randomness in upper case",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "B22AAD4794F7451896F7A371AA46106FD84D919F3F569ACD5B2FDDF1D1440AF3"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: an unknown member in the pool",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ],
+     "note": "x"
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: an entry without vendors",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob"
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: a seat count that isn't an integer",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": "3",
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: declined isn't a list of ids",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": "obi-bob"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: entries out of order",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": []
+      },
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: an entry twice",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": []
+      },
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: an owner twice",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": []
+      },
+      {
+       "id": "obi-bob-2",
+       "owner": "bob",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: vendors out of order",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "openai",
+        "anthropic"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: an excluded owner's agent in the pool",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-alice",
+       "owner": "alice",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: entries in UTF-16 order, not UTF-8",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-😀",
+       "owner": "a",
+       "vendors": []
+      },
+      {
+       "id": "obi-ﬁ",
+       "owner": "b",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: a draw version this text doesn't define",
+   "input": {
+    "pool": {
+     "draw": 2,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_version"
+  },
+  {
+   "name": "draw error: no draw version",
+   "input": {
+    "pool": {
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "draw error: exclude out of order",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "zed",
+      "alice"
+     ],
+     "seats": 1,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": []
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_pool"
+  },
+  {
+   "name": "draw error: no seats",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 0,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 0,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_panel"
+  },
+  {
+   "name": "draw error: more owners asked than seats",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 2,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 3,
+      "vendors": 0
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_panel"
+  },
+  {
+   "name": "draw error: more vendors asked than seats",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 2,
+     "verifiers": 0,
+     "diversity": {
+      "owners": 2,
+      "vendors": 3
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3"
+   },
+   "error": "bad_panel"
+  },
+  {
+   "name": "draw error: a declined id not in the pool",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-zed"
+    ]
+   },
+   "error": "bad_declined"
+  },
+  {
+   "name": "draw error: a declined id twice",
+   "input": {
+    "pool": {
+     "draw": 1,
+     "sphere": "e2e",
+     "motion": "ea6f11ed199c05acc23557a8036947f5ca4b0322e553e7caeecc0cc51e235e7c",
+     "at": {
+      "seq": 41,
+      "hash": "70c7e2676c07211de10c99222022d2273223c47a98143b4cecad7085998cad4b"
+     },
+     "request": "review_request",
+     "exclude": [
+      "alice"
+     ],
+     "seats": 3,
+     "verifiers": 1,
+     "diversity": {
+      "owners": 3,
+      "vendors": 2
+     },
+     "entries": [
+      {
+       "id": "obi-bob",
+       "owner": "bob",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-carol",
+       "owner": "carol",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-dan",
+       "owner": "dan",
+       "vendors": [
+        "openai"
+       ]
+      },
+      {
+       "id": "obi-erin",
+       "owner": "erin",
+       "vendors": [
+        "anthropic"
+       ]
+      },
+      {
+       "id": "obi-frank",
+       "owner": "frank",
+       "vendors": [
+        "google"
+       ]
+      },
+      {
+       "id": "obi-grace",
+       "owner": "grace",
+       "vendors": []
+      },
+      {
+       "id": "obi-heidi",
+       "owner": "heidi",
+       "vendors": [
+        "anthropic",
+        "openai"
+       ]
+      }
+     ]
+    },
+    "randomness": "b22aad4794f7451896f7a371aa46106fd84d919f3f569acd5b2fddf1d1440af3",
+    "declined": [
+     "obi-bob",
+     "obi-bob"
+    ]
+   },
+   "error": "bad_declined"
+  }
+ ],
+ "anchor": [
+  {
+   "name": "anchor for obi-bob",
+   "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+   "to": "obi-bob",
+   "id": "e56d885f-d213-8f9b-bb24-12cd0cf7030b"
+  },
+  {
+   "name": "anchor for obi-dan",
+   "pool_hash": "c505f1e78d70de4c7674b52ec6b3bb35ea20406e8cdf3595260d6ec5722f22d1",
+   "to": "obi-dan",
+   "id": "4c15f286-ac1d-81d8-86a0-174f0b817726"
+  },
+  {
+   "name": "anchor for a pool hash of zeros",
+   "pool_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "to": "obi-bob",
+   "id": "ca5fecf9-9469-88e2-9e2d-d81d5e040487"
+  }
+ ],
+ "round": [
+  {
+   "name": "quicknet: anchored exactly 300 seconds before round 1000000's time: the round after it",
+   "anchored_at": "2023-09-27T08:24:24Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1000001
+  },
+  {
+   "name": "quicknet: anchored 301 seconds before round 1000000's time: that round",
+   "anchored_at": "2023-09-27T08:24:23Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1000000
+  },
+  {
+   "name": "quicknet: one second later: still the round after it",
+   "anchored_at": "2023-09-27T08:24:25Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1000001
+  },
+  {
+   "name": "quicknet: three seconds later: the next one",
+   "anchored_at": "2023-09-27T08:24:27Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1000002
+  },
+  {
+   "name": "quicknet: 2026",
+   "anchored_at": "2026-10-27T12:00:00Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 33433113
+  },
+  {
+   "name": "before the beacon began: round 1",
+   "anchored_at": "2020-01-01T00:00:00Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1
+  },
+  {
+   "name": "the Unix epoch itself",
+   "anchored_at": "1970-01-01T00:00:00Z",
+   "genesis_time": 1692803367,
+   "period": 3,
+   "round": 1
+  },
+  {
+   "name": "a beacon with a 30-second period",
+   "anchored_at": "2026-10-27T12:00:00Z",
+   "genesis_time": 1595431050,
+   "period": 30,
+   "round": 6589057
+  }
+ ]
+}

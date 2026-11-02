@@ -1,0 +1,40 @@
+{
+  "case": "envelope",
+  "name": "invalid-follows-not-an-id",
+  "description": "A follow-up that names its earlier exchange in words.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "eebb3317-219c-80ec-8f43-b16906064e49",
+    "type": "question",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "eebb3317-219c-80ec-8f43-b16906064e49",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "text": "Following up?",
+      "follows": "the question about averages"
+    },
+    "signature": "biwwdR7O_5OsUdD6h1XT4ZxG8NMhYEaxawDAMMHlMbOF3l0kPT0Tp7nf1CpLcaGSrSyUOek2mcLZ1F4DyAk-Cw"
+  }
+}

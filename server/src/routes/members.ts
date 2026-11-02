@@ -7,12 +7,12 @@ import {
 } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
 import { apiError, json, readJson } from "../http.ts";
-import { cardParams, verifyCard, type AgentCard } from "../protocol/card.ts";
+import { cardParams, featuresUsed, publishingProblem, verifyCard, type AgentCard } from "../protocol/card.ts";
 import { constantTimeEqual, keyIdOf, randomToken, sha256, sha256Hex, uuid } from "../protocol/crypto.ts";
 import { timestamp } from "../protocol/envelope.ts";
 import { canonicalize, utf8 } from "../protocol/json.ts";
 import { schemaErrors } from "../protocol/schemas.ts";
-import { checkSignIn, type SignIn } from "../signin.ts";
+import { checkSignIn, signsIn, type SignIn } from "../signin.ts";
 import { visibleRunners } from "./runner.ts";
 
 const nowS = (deps: Deps) => Math.floor(deps.now() / 1000);
@@ -21,6 +21,17 @@ const nowS = (deps: Deps) => Math.floor(deps.now() / 1000);
 const obiTaken = async (db: D1Database, sphere: string, obi: string) => (await getMember(db, sphere, obi)) !== null;
 const keyTaken = async (db: D1Database, sphere: string, keyId: string) =>
   (await db.prepare("SELECT 1 AS taken FROM member_keys WHERE sphere = ?1 AND key_id = ?2").bind(sphere, keyId).first()) !== null;
+
+/** 409 feature_not_taken for a card that publishes an addition another active member doesn't take
+ *  yet (identity.md section 2.3, "Publishing a card with an addition"). What the card it replaces
+ *  (`current`) carries already isn't held back, so a member can always rotate its key. */
+async function requirePublishable(db: D1Database, sphere: string, obi: string, card: AgentCard, current?: AgentCard): Promise<void> {
+  const carried = new Set(current ? featuresUsed(cardParams(current)) : []);
+  if (featuresUsed(cardParams(card)).every((f) => carried.has(f))) return;
+  const rows = await db.prepare("SELECT obi, card FROM members WHERE sphere = ?1 AND status = 'active' AND obi != ?2").bind(sphere, obi).all<{ obi: string; card: string }>();
+  const problem = publishingProblem(cardParams(card), rows.results.map((r) => ({ obi: r.obi, card: JSON.parse(r.card) as AgentCard })), carried);
+  if (problem) throw apiError("feature_not_taken", problem);
+}
 
 // ---------------------------------------------------------------------------------------------
 // POST /v0.1/spheres/{sphere}/invitations
@@ -34,20 +45,54 @@ export async function invite(request: Request, env: Env, deps: Deps, sphereId: s
   const errors = schemaErrors("invitationRequest", body);
   if (errors.length) throw apiError("bad_request", "the body doesn't match invitation.request", errors);
   // A named invitation (owner and obi) is used once; an open one by up to max_uses Obis.
-  const req = body as unknown as { owner?: string; obi?: string; expires_in: number; max_uses?: number; domain?: string };
+  const req = body as unknown as { owner?: string; obi?: string; expires_in: number; max_uses?: number; domain?: string; label?: string };
   // Only a Sphere server that signs people in can tell who is at a domain (section 3.1).
-  if (req.domain !== undefined && !env.GOOGLE_CLIENT_ID?.trim()) throw apiError("forbidden", "this Sphere server has no sign-in, so it can't limit an invitation to a domain");
+  if (req.domain !== undefined && !signsIn(env)) throw apiError("forbidden", "this Sphere server has no sign-in, so it can't limit an invitation to a domain");
   if (req.obi !== undefined && (await obiTaken(env.DB, sphere.id, req.obi))) throw apiError("conflict", `${req.obi} is or was a member: Obi ids are never reused`);
   const id = uuid();
   const secret = randomToken(32);
   const expiresAt = nowS(deps) + req.expires_in;
   const maxUses = req.max_uses ?? 1;
-  await env.DB.prepare("INSERT INTO invitations (id, sphere, owner, obi, secret_sha256, expires_at_s, max_uses, domain) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
-    .bind(id, sphere.id, req.owner ?? null, req.obi ?? null, await sha256Hex(utf8(secret)), expiresAt, maxUses, req.domain ?? null)
+  await env.DB.prepare(
+    "INSERT INTO invitations (id, sphere, owner, obi, secret_sha256, expires_at_s, max_uses, domain, label, created_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+  )
+    .bind(id, sphere.id, req.owner ?? null, req.obi ?? null, await sha256Hex(utf8(secret)), expiresAt, maxUses, req.domain ?? null, req.label ?? null, nowS(deps))
     .run();
   const named = req.owner !== undefined ? { owner: req.owner, obi: req.obi } : {};
   const domain = req.domain !== undefined ? { domain: req.domain } : {};
-  return json(201, { invitation_id: id, sphere: sphere.id, ...named, max_uses: maxUses, ...domain, secret, expires_at: timestamp(expiresAt) });
+  const label = req.label !== undefined ? { label: req.label } : {};
+  return json(201, { invitation_id: id, sphere: sphere.id, ...named, max_uses: maxUses, ...domain, ...label, secret, expires_at: timestamp(expiresAt) });
+}
+
+// ---------------------------------------------------------------------------------------------
+// GET /v0.1/spheres/{sphere}/invitations: for its admins, those that can still be used, the
+// newest first, with what each was for. Never a secret: only its hash is kept.
+
+export async function listInvitations(request: Request, env: Env, deps: Deps, sphereId: string): Promise<Response> {
+  const sphere = await requireSphere(env.DB, sphereId);
+  const caller = await bearer(request, env, sphere, nowS(deps));
+  requireScope(caller, "admin");
+  requireOwnerToken(caller);
+  const { results } = await env.DB.prepare(
+    `SELECT id, owner, obi, label, max_uses, uses, domain, created_at_s, expires_at_s FROM invitations
+      WHERE sphere = ?1 AND uses < max_uses AND expires_at_s > ?2 ORDER BY created_at_s DESC, rowid DESC LIMIT 1000`,
+  ).bind(sphere.id, nowS(deps)).all<{
+    id: string; owner: string | null; obi: string | null; label: string | null; max_uses: number; uses: number; domain: string | null;
+    created_at_s: number | null; expires_at_s: number;
+  }>();
+  return json(200, {
+    sphere: sphere.id,
+    invitations: results.map((r) => ({
+      invitation_id: r.id,
+      ...(r.owner !== null ? { owner: r.owner, obi: r.obi } : {}),
+      ...(r.label !== null ? { label: r.label } : {}),
+      max_uses: r.max_uses,
+      uses: r.uses,
+      ...(r.domain !== null ? { domain: r.domain } : {}),
+      ...(r.created_at_s !== null ? { created_at: timestamp(r.created_at_s) } : {}),
+      expires_at: timestamp(r.expires_at_s),
+    })),
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -152,6 +197,8 @@ export async function redeem(request: Request, env: Env, deps: Deps, sphereId: s
     // 6 and 7. Ids are never reused.
     if (await keyTaken(env.DB, sphere.id, p.key_id)) throw apiError("conflict", "another member uses this key_id");
     if (await obiTaken(env.DB, sphere.id, p.obi_id)) throw apiError("conflict", `${p.obi_id} is or was a member: Obi ids are never reused`);
+    // 8. No addition another active member doesn't take.
+    await requirePublishable(env.DB, sphere.id, p.obi_id, req.card);
 
     const joinedAt = timestamp(now);
     const owner: OwnerRow = bound ?? { sphere: sphere.id, owner: p.owner, owner_key: req.owner_key, owner_key_id: await keyIdOf(req.owner_key) };
@@ -241,6 +288,7 @@ export async function updateCard(request: Request, env: Env, deps: Deps, sphereI
     const current = keys.find((k) => k.valid_until_seq === null);
     const rotate = current?.key_id !== p.key_id;
     if (rotate && (await keyTaken(env.DB, sphere.id, p.key_id))) throw apiError("conflict", "this key_id is in use");
+    await requirePublishable(env.DB, sphere.id, obi, card, JSON.parse(member.card) as AgentCard);
     const h = sphere.head_seq;
     const statements = [env.DB.prepare("UPDATE members SET card = ?1, card_seq = ?2 WHERE sphere = ?3 AND obi = ?4").bind(canonicalize(card), p.card_seq, sphere.id, obi)];
     let newKeys = keys;

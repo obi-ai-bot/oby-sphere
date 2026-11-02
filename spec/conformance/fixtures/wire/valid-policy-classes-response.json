@@ -1,0 +1,29 @@
+{
+  "case": "wire",
+  "name": "valid-policy-classes-response",
+  "description": "A GET /policy answer carrying a class rule.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/policy"
+  },
+  "input": {
+    "version": 2,
+    "updated_at": "2026-10-14T12:00:00Z",
+    "rules": [
+      {
+        "id": "team-reviews",
+        "from_owner": "*",
+        "to_owner": "*",
+        "actions": [
+          "run_request"
+        ],
+        "repos": [
+          "*"
+        ],
+        "to_classes": [
+          "executor"
+        ]
+      }
+    ]
+  }
+}

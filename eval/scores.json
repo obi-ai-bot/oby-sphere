@@ -1,0 +1,529 @@
+{
+ "window": 5,
+ "cases": [
+  {
+   "id": "secret-names",
+   "pr": 120,
+   "fixed_by": 129,
+   "seats": [
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.4766838
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": true,
+     "blockers": 1,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.5822202
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 1,
+     "cost": 0.3538896
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": true,
+     "blockers": 1,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.5939652
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": true,
+     "blockers": 1,
+     "false_blockers": 0,
+     "findings": 1,
+     "cost": 0.3777069
+    }
+   ],
+   "single": {
+    "answered_caught": 1,
+    "answered": 5,
+    "caught": 1,
+    "caught_blocking": 0.6,
+    "false_blockers": 0,
+    "cost": 0.47689314000000005
+   },
+   "panel3": {
+    "n": 10,
+    "caught": 1,
+    "stops": 1,
+    "false_vetoes": 0,
+    "cost": 1.43067942
+   },
+   "panel5": {
+    "n": 1,
+    "caught": 1,
+    "stops": 1,
+    "false_vetoes": 0,
+    "cost": 2.3844657000000002
+   },
+   "open3": {
+    "outcome": "reject",
+    "caught": true,
+    "stops_for_the_bug": true,
+    "false_vetoes": 0,
+    "cost": 1.00753,
+    "herding": 1,
+    "seats": [
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 2,
+      "cost": 0.4766838
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": true,
+      "blockers": 1,
+      "false_blockers": 0,
+      "findings": 2,
+      "cost": 0.25613280000000005
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": true,
+      "blockers": 1,
+      "false_blockers": 0,
+      "findings": 2,
+      "cost": 0.27471340000000005
+     }
+    ]
+   },
+   "blind3_first": {
+    "outcome": "reject",
+    "caught": true,
+    "stops_for_the_bug": true,
+    "false_vetoes": 0,
+    "cost": 1.4127936,
+    "herding": 1
+   },
+   "described": {
+    "single": 1,
+    "panel3": 1,
+    "panel5": 1,
+    "blind3": true,
+    "open3": true
+   },
+   "runs": 7,
+   "answered": 7,
+   "out_of_budget": 0,
+   "failed": 2,
+   "run_cost": 2.9153119000000003
+  },
+  {
+   "id": "die-with-parent",
+   "pr": 94,
+   "fixed_by": 109,
+   "seats": [
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 0,
+     "cost": 0.37483039999999995
+    },
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 0,
+     "cost": 0.20778680000000002
+    },
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 0,
+     "cost": 0.2919387
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.3158805
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 1,
+     "cost": 0.38090949999999996
+    }
+   ],
+   "single": {
+    "answered_caught": 0.4,
+    "answered": 5,
+    "caught": 0.4,
+    "caught_blocking": 0,
+    "false_blockers": 0,
+    "cost": 0.31426918
+   },
+   "panel3": {
+    "n": 10,
+    "caught": 0.9,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 0.9428075399999999
+   },
+   "panel5": {
+    "n": 1,
+    "caught": 1,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 1.5713458999999999
+   },
+   "open3": {
+    "outcome": "approve",
+    "caught": true,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 1.0764192000000001,
+    "herding": 0.5,
+    "seats": [
+     {
+      "ok": true,
+      "caught": false,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 0,
+      "cost": 0.37483039999999995
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 1,
+      "cost": 0.5064982000000001
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 1,
+      "cost": 0.1950906
+     }
+    ]
+   },
+   "blind3_first": {
+    "outcome": "approve",
+    "caught": false,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 0.8745558999999999,
+    "herding": null
+   },
+   "described": {
+    "single": 0,
+    "panel3": 0,
+    "panel5": 0,
+    "blind3": false,
+    "open3": false
+   },
+   "runs": 7,
+   "answered": 7,
+   "out_of_budget": 0,
+   "failed": 2,
+   "run_cost": 2.2729347
+  },
+  {
+   "id": "keychain-found-time",
+   "pr": 1526,
+   "fixed_by": 1527,
+   "seats": [
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 1.0951915
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.6066885000000001
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.7814999999999999
+    },
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 1,
+     "cost": 0.5412195000000001
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 0.8472655999999998
+    }
+   ],
+   "single": {
+    "answered_caught": 0.8,
+    "answered": 5,
+    "caught": 0.8,
+    "caught_blocking": 0,
+    "false_blockers": 0,
+    "cost": 0.77437302
+   },
+   "panel3": {
+    "n": 10,
+    "caught": 1,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 2.32311906
+   },
+   "panel5": {
+    "n": 1,
+    "caught": 1,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 3.8718651
+   },
+   "open3": {
+    "outcome": "approve",
+    "caught": true,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 1.8359078000000002,
+    "herding": 1,
+    "seats": [
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 2,
+      "cost": 1.0951915
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 3,
+      "cost": 0.4173489
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 3,
+      "cost": 0.3233674
+     }
+    ]
+   },
+   "blind3_first": {
+    "outcome": "approve",
+    "caught": true,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 2.48338,
+    "herding": 0.75
+   },
+   "described": {
+    "single": 0,
+    "panel3": 0,
+    "panel5": 0,
+    "blind3": false,
+    "open3": false
+   },
+   "runs": 7,
+   "answered": 7,
+   "out_of_budget": 0,
+   "failed": 4,
+   "run_cost": 5.9342579
+  },
+  {
+   "id": "blocking-none",
+   "pr": 113,
+   "fixed_by": 140,
+   "seats": [
+    {
+     "ok": false,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 0,
+     "cost": 1.5711141
+    },
+    {
+     "ok": true,
+     "caught": true,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 2,
+     "cost": 1.3985007000000005
+    },
+    {
+     "ok": false,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 0,
+     "cost": 1.5188235999999997
+    },
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 1,
+     "cost": 1.2341184
+    },
+    {
+     "ok": true,
+     "caught": false,
+     "caught_blocking": false,
+     "blockers": 0,
+     "false_blockers": 0,
+     "findings": 3,
+     "cost": 1.4004087
+    }
+   ],
+   "single": {
+    "answered_caught": 0.3333333333333333,
+    "answered": 3,
+    "caught": 0.2,
+    "caught_blocking": 0,
+    "false_blockers": 0,
+    "cost": 1.4245930999999998
+   },
+   "panel3": {
+    "n": 10,
+    "caught": 0.6,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 4.273779299999999
+   },
+   "panel5": {
+    "n": 1,
+    "caught": 1,
+    "stops": 0,
+    "false_vetoes": 0,
+    "cost": 7.122965499999999
+   },
+   "open3": {
+    "outcome": "no_quorum",
+    "caught": true,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 4.3470337,
+    "herding": 0,
+    "seats": [
+     {
+      "ok": false,
+      "caught": false,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 0,
+      "cost": 1.5711141
+     },
+     {
+      "ok": false,
+      "caught": false,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 0,
+      "cost": 1.5789252999999999
+     },
+     {
+      "ok": true,
+      "caught": true,
+      "caught_blocking": false,
+      "blockers": 0,
+      "false_blockers": 0,
+      "findings": 1,
+      "cost": 1.1969943
+     }
+    ]
+   },
+   "blind3_first": {
+    "outcome": "no_quorum",
+    "caught": true,
+    "stops_for_the_bug": false,
+    "false_vetoes": 0,
+    "cost": 4.4884384,
+    "herding": 0
+   },
+   "described": {
+    "single": 0,
+    "panel3": 0,
+    "panel5": 0,
+    "blind3": false,
+    "open3": false
+   },
+   "runs": 7,
+   "answered": 4,
+   "out_of_budget": 3,
+   "failed": 7,
+   "run_cost": 10.3321544
+  }
+ ]
+}

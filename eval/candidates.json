@@ -1,0 +1,635 @@
+{
+ "description": "The 63 candidate pairs after README.md's step 2, as `python3 eval/mine.py <oby checkout> --candidates` lists them (smallest fix first), with how far each was read when the cases were chosen. `subject only`: the fix's and the earlier change's subjects were read, not their diffs. The cases were picked to differ in kind (a security loophole, process lifecycle, a timing detail, parsing) among pairs whose fix subject names a defect, and reading stopped once four were in hand: the fewest that could show a difference. That is a choice, not a sample, and RESULTS.md's limits say so.",
+ "candidates": [
+  {
+   "fix": "9f5b1b1c99",
+   "fix_subject": "fix(apps): Clear done clears finished jobs whose pull request is still open (#280) (#308)",
+   "fix_lines": 2,
+   "intro": "bbfbb89f95",
+   "intro_subject": "fix(apps): Clear done hides only settled jobs, never ones still in flight (#280) (#289)",
+   "blamed_lines": 2,
+   "intro_stat": "9 files changed, 164 insertions(+), 35 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "a5dac83c4e",
+   "fix_subject": "fix(obid): a job that only reads declines its own plan, never asks the owner (#701)",
+   "fix_lines": 2,
+   "intro": "0d2349cffb",
+   "intro_subject": "fix(obid): a Plan-mode job waits for the owner to approve its plan (#609) (#694)",
+   "blamed_lines": 2,
+   "intro_stat": "10 files changed, 256 insertions(+), 26 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "195a51d7e0",
+   "fix_subject": "fix(review): a review may use an account in its weekly reserve, last, so it never waits forever (#277)",
+   "fix_lines": 2,
+   "intro": "3b15af5700",
+   "intro_subject": "fix(engine): route work by weekly pace, reviews to accounts ahead of it (#176) (#202)",
+   "blamed_lines": 2,
+   "intro_stat": "10 files changed, 287 insertions(+), 94 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "fe406358a5",
+   "fix_subject": "fix(mac): register obid's login item again when a stale registration keeps it down (#791)",
+   "fix_lines": 2,
+   "intro": "58d4755ce9",
+   "intro_subject": "feat(mac, obid): Oby.app carries obid and runs it as This Mac's engine; the Swift runner retires (#692)",
+   "blamed_lines": 2,
+   "intro_stat": "13 files changed, 499 insertions(+), 35 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "3126a6a52a",
+   "fix_subject": "fix(engine): a job waiting for an answer keeps waiting across runner restarts, and isn't a f\u2026 (#206) (#261)",
+   "fix_lines": 3,
+   "intro": "cb5709db77",
+   "intro_subject": "feat: talk to a job, while it runs or after it ends (#49)",
+   "blamed_lines": 2,
+   "intro_stat": "8 files changed, 270 insertions(+), 23 deletions(-)",
+   "reading": "dropped: the fix adds keeping a waiting job across runner restarts, which #49 never claimed"
+  },
+  {
+   "fix": "a9fb84e66f",
+   "fix_subject": "fix(electron): Show me's label and idle follow its Replay and the lean build (#1513)",
+   "fix_lines": 4,
+   "intro": "0b6b488f79",
+   "intro_subject": "feat(electron): Show me plays, with a small pointer, typing and Replay (#1511)",
+   "blamed_lines": 2,
+   "intro_stat": "4 files changed, 156 insertions(+), 49 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "00777ba82a",
+   "fix_subject": "fix(jobs): discard copied module caches for reviews (#350) (#362)",
+   "fix_lines": 4,
+   "intro": "824b826387",
+   "intro_subject": "feat(runner): warm job builds and yield CPU (#321) (#332)",
+   "blamed_lines": 4,
+   "intro_stat": "10 files changed, 244 insertions(+), 11 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "a9fb84e66f",
+   "fix_subject": "fix(electron): Show me's label and idle follow its Replay and the lean build (#1513)",
+   "fix_lines": 4,
+   "intro": "f288f103b0",
+   "intro_subject": "feat(electron): a sample Obysphere tour in Oby's first conversation (#1509)",
+   "blamed_lines": 2,
+   "intro_stat": "9 files changed, 387 insertions(+), 72 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "d2e816ad7d",
+   "fix_subject": "fix(mac): invite links that work: drop a team link the Obysphere no longer has, and copy each email invite's link (#1473)",
+   "fix_lines": 4,
+   "intro": "ce4d8e69b6",
+   "intro_subject": "feat(mac): an Obysphere's admins rename it, give it a picture, share the role, see who's invited and delete it (#1450)",
+   "blamed_lines": 2,
+   "intro_stat": "6 files changed, 456 insertions(+), 49 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "d2e816ad7d",
+   "fix_subject": "fix(mac): invite links that work: drop a team link the Obysphere no longer has, and copy each email invite's link (#1473)",
+   "fix_lines": 4,
+   "intro": "16e052cd7f",
+   "intro_subject": "feat(mac): the Obysphere's side panel and its settings page, as Sangam designed them (#1449)",
+   "blamed_lines": 2,
+   "intro_stat": "9 files changed, 539 insertions(+), 120 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "0486ba9a47",
+   "fix_subject": "fix(mac): a new task stays new across launches (C8) (#702)",
+   "fix_lines": 4,
+   "intro": "4d08d5c42b",
+   "intro_subject": "feat(mac): work grouped by kind, or by status (#496) (#522)",
+   "blamed_lines": 4,
+   "intro_stat": "7 files changed, 568 insertions(+), 115 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "23b53a2cd4",
+   "fix_subject": "fix(mac): restart obid when an update replaced it, so the new app never talks to the old engine (#1352)",
+   "fix_lines": 5,
+   "intro": "fe406358a5",
+   "intro_subject": "fix(mac): register obid's login item again when a stale registration keeps it down (#791)",
+   "blamed_lines": 2,
+   "intro_stat": "2 files changed, 109 insertions(+), 2 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "23b53a2cd4",
+   "fix_subject": "fix(mac): restart obid when an update replaced it, so the new app never talks to the old engine (#1352)",
+   "fix_lines": 5,
+   "intro": "60e1e7599a",
+   "intro_subject": "fix(mac): obid recovers after an install by itself, and a translocated Oby asks to be moved (#812)",
+   "blamed_lines": 3,
+   "intro_stat": "3 files changed, 171 insertions(+), 38 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "009808756e",
+   "fix_subject": "fix(review): no dead ends: Oby reviews fixes after an approval, up to 6 times (#139) (#298)",
+   "fix_lines": 5,
+   "intro": "15d160f58c",
+   "intro_subject": "fix(review): keep reviewing while each round fixes the last blocker (#224) (#240)",
+   "blamed_lines": 4,
+   "intro_stat": "18 files changed, 166 insertions(+), 75 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "c813d5e7dc",
+   "fix_subject": "fix(island): the hover line wraps to two lines instead of being cut (#191) (#194)",
+   "fix_lines": 5,
+   "intro": "c0b8dcbaf4",
+   "intro_subject": "fix(island): keep the hover line below the camera on notched Macs (#150) (#153)",
+   "blamed_lines": 5,
+   "intro_stat": "3 files changed, 240 insertions(+), 63 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "a454f721ea",
+   "fix_subject": "fix: retry reviews after capacity failures (#264) (#356)",
+   "fix_lines": 5,
+   "intro": "3b15af5700",
+   "intro_subject": "fix(engine): route work by weekly pace, reviews to accounts ahead of it (#176) (#202)",
+   "blamed_lines": 2,
+   "intro_stat": "10 files changed, 287 insertions(+), 94 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "a454f721ea",
+   "fix_subject": "fix: retry reviews after capacity failures (#264) (#356)",
+   "fix_lines": 5,
+   "intro": "1eb426ae95",
+   "intro_subject": "fix: reviews wait for an account with room, Clear done keeps what needs you, merged PRs aren't publ\u2026 (#96)",
+   "blamed_lines": 2,
+   "intro_stat": "10 files changed, 470 insertions(+), 31 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "cc08ef3497",
+   "fix_subject": "fix(review): verify blockers and collect findings (#368) (#371)",
+   "fix_lines": 5,
+   "intro": "93bb3c9fdd",
+   "intro_subject": "feat(review): only blocking findings request changes, follow-ups check only what blocked, 2 rounds (#113)",
+   "blamed_lines": 4,
+   "intro_stat": "3 files changed, 522 insertions(+), 31 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "87b228176e",
+   "fix_subject": "fix(runner): Oby's agents can read earlier sessions' digests in Tetrix (#214) (#222)",
+   "fix_lines": 5,
+   "intro": "6a6cfa9301",
+   "intro_subject": "feat(engine): every agent asks Tetrix first, and Oby checks it (#130) (#132)",
+   "blamed_lines": 5,
+   "intro_stat": "16 files changed, 630 insertions(+), 34 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "905a55a17d",
+   "fix_subject": "fix(runner): keep packed refs current in agent boxes (#334) (#352)",
+   "fix_lines": 6,
+   "intro": "f8b79b53d9",
+   "intro_subject": "fix(runner): agents run in bubblewrap on Linux, so they can't read the runner's logins (#57)",
+   "blamed_lines": 2,
+   "intro_stat": "7 files changed, 131 insertions(+), 9 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "905a55a17d",
+   "fix_subject": "fix(runner): keep packed refs current in agent boxes (#334) (#352)",
+   "fix_lines": 6,
+   "intro": "f061052163",
+   "intro_subject": "fix(publish): fetches into one clone run one at a time and retry a lost ref race (#235) (#239)",
+   "blamed_lines": 2,
+   "intro_stat": "5 files changed, 211 insertions(+), 12 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "0f04fb2169",
+   "fix_subject": "fix(review): a blocker that comes back after progress gets one more round (#318) (#325)",
+   "fix_lines": 6,
+   "intro": "15d160f58c",
+   "intro_subject": "fix(review): keep reviewing while each round fixes the last blocker (#224) (#240)",
+   "blamed_lines": 3,
+   "intro_stat": "18 files changed, 166 insertions(+), 75 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "da87103ad1",
+   "fix_subject": "fix(engine): Publish by hand clears work already on the base, and a cut-off Claude Code picks up once (#81)",
+   "fix_lines": 6,
+   "intro": "d070c4a427",
+   "intro_subject": "feat(engine): a job that ends done with commits opens its PR by itself (#75) (#76)",
+   "blamed_lines": 2,
+   "intro_stat": "18 files changed, 404 insertions(+), 100 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "1875f6f0af",
+   "fix_subject": "fix(obid): Keychain found-time from the ask; the door checks agents' calls (#1527)",
+   "fix_lines": 7,
+   "intro": "3b1b591840",
+   "intro_subject": "perf(obid): status stops asking security on every call (#1526)",
+   "blamed_lines": 2,
+   "intro_stat": "1 file changed, 39 insertions(+), 6 deletions(-)",
+   "reading": "kept (keychain-found-time): the fix's first part names a timing defect in #1526's own cache code"
+  },
+  {
+   "fix": "44f4e3a3d4",
+   "fix_subject": "fix(obid): a job is rebased onto its moved base before it checks and publishes (#1408)",
+   "fix_lines": 7,
+   "intro": "a5615270a5",
+   "intro_subject": "fix(obid): a job a restart cut short picks up at its phase, not with a new agent turn (#1406)",
+   "blamed_lines": 4,
+   "intro_stat": "4 files changed, 266 insertions(+), 32 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "02e8dfd318",
+   "fix_subject": "fix(engine): gate publication on Apple builds (#345) (#353)",
+   "fix_lines": 7,
+   "intro": "3878f6d80f",
+   "intro_subject": "fix(publish): push rebased branches with force-with-lease and rebase conflicted PRs (#159) (#189)",
+   "blamed_lines": 2,
+   "intro_stat": "6 files changed, 411 insertions(+), 30 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "1875f6f0af",
+   "fix_subject": "fix(obid): Keychain found-time from the ask; the door checks agents' calls (#1527)",
+   "fix_lines": 7,
+   "intro": "ee829b4f66",
+   "intro_subject": "perf(obid): answer as soon as obid listens (#1523)",
+   "blamed_lines": 5,
+   "intro_stat": "4 files changed, 457 insertions(+), 48 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "81ab22f105",
+   "fix_subject": "fix(brain): give the brain six turns to read work.md and fix its JSON (#550)",
+   "fix_lines": 8,
+   "intro": "ec03a49bcc",
+   "intro_subject": "fix(brain): retry transient empty Claude failures (#179)",
+   "blamed_lines": 2,
+   "intro_stat": "2 files changed, 109 insertions(+), 7 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "81ab22f105",
+   "fix_subject": "fix(brain): give the brain six turns to read work.md and fix its JSON (#550)",
+   "fix_lines": 8,
+   "intro": "6c61fdcf9d",
+   "intro_subject": "feat(brain): steady chat planning (#305) (#314)",
+   "blamed_lines": 4,
+   "intro_stat": "7 files changed, 151 insertions(+), 63 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "667525386f",
+   "fix_subject": "fix(review): route repeat reviews through author jobs (#411) (#413)",
+   "fix_lines": 8,
+   "intro": "351ff54116",
+   "intro_subject": "feat(orchestrator): route job events through chat (#351) (#365)",
+   "blamed_lines": 6,
+   "intro_stat": "9 files changed, 405 insertions(+), 21 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "ebe0b81217",
+   "fix_subject": "fix(review): \"Blocking: none.\" has no blocking findings (#66) (#140)",
+   "fix_lines": 9,
+   "intro": "93bb3c9fdd",
+   "intro_subject": "feat(review): only blocking findings request changes, follow-ups check only what blocked, 2 rounds (#113)",
+   "blamed_lines": 9,
+   "intro_stat": "3 files changed, 522 insertions(+), 31 deletions(-)",
+   "reading": "kept (blocking-none): the fix names a parsing defect in #113's findings parser"
+  },
+  {
+   "fix": "5395f906d3",
+   "fix_subject": "fix(mac): first launch shows why Oby's engine isn't there (#1494)",
+   "fix_lines": 10,
+   "intro": "7e9c81625b",
+   "intro_subject": "fix(mac): discover obid token for This Mac (#487)",
+   "blamed_lines": 7,
+   "intro_stat": "10 files changed, 159 insertions(+), 40 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "750a8a25b2",
+   "fix_subject": "fix(obid): investigate jobs run in their mode again; only reviews are read-only (#720)",
+   "fix_lines": 10,
+   "intro": "5e0dfedfb4",
+   "intro_subject": "fix(obid): reviews and investigations run read-only; a review that commits fails (#630) (#697)",
+   "blamed_lines": 10,
+   "intro_stat": "11 files changed, 254 insertions(+), 60 deletions(-)",
+   "reading": "dropped: the owner changed a decision (investigations made read-only by #630, then not), not a defect"
+  },
+  {
+   "fix": "f7384d8c75",
+   "fix_subject": "fix(runner): Oby's squash merge closes no issue, and reviews don't block on its description (#167) (#192)",
+   "fix_lines": 10,
+   "intro": "3878f6d80f",
+   "intro_subject": "fix(publish): push rebased branches with force-with-lease and rebase conflicted PRs (#159) (#189)",
+   "blamed_lines": 3,
+   "intro_stat": "6 files changed, 411 insertions(+), 30 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "a004b4495d",
+   "fix_subject": "fix(obid): a follow-up publishes the first job's commits it carries (#770) (#782)",
+   "fix_lines": 11,
+   "intro": "aa19bcdf4e",
+   "intro_subject": "fix(obid): a job that ends failed or stopped counts the commits it kept (#757) (#761)",
+   "blamed_lines": 7,
+   "intro_stat": "3 files changed, 83 insertions(+), 13 deletions(-)",
+   "reading": "dropped: the fix changes how a follow-up counts commits, behaviour #761 didn't define"
+  },
+  {
+   "fix": "48e279be07",
+   "fix_subject": "fix(engine): auto-publish only jobs that finish in this run, and never work already on the base (#80)",
+   "fix_lines": 11,
+   "intro": "d070c4a427",
+   "intro_subject": "feat(engine): a job that ends done with commits opens its PR by itself (#75) (#76)",
+   "blamed_lines": 6,
+   "intro_stat": "18 files changed, 404 insertions(+), 100 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "f02e7afd7c",
+   "fix_subject": "fix(publish): only real names pass the secret scan (#129)",
+   "fix_lines": 12,
+   "intro": "009e427bfe",
+   "intro_subject": "fix(publish): a name for a secret isn't a secret (#120)",
+   "blamed_lines": 12,
+   "intro_stat": "2 files changed, 34 insertions(+), 2 deletions(-)",
+   "reading": "kept (secret-names): the fix names a loophole in #120's own matching code, visible in its 36-line diff"
+  },
+  {
+   "fix": "aecb1b2403",
+   "fix_subject": "fix(publish): repair secret scan findings in commit history (#404) (#407)",
+   "fix_lines": 12,
+   "intro": "31a04934ee",
+   "intro_subject": "fix(publish): retry secret scan findings in a fix round (#336) (#346)",
+   "blamed_lines": 4,
+   "intro_stat": "4 files changed, 71 insertions(+), 4 deletions(-)",
+   "reading": "dropped: the fix adds history repair to the secret-scan round, a feature the earlier change didn't attempt"
+  },
+  {
+   "fix": "f061052163",
+   "fix_subject": "fix(publish): fetches into one clone run one at a time and retry a lost ref race (#235) (#239)",
+   "fix_lines": 12,
+   "intro": "48e279be07",
+   "intro_subject": "fix(engine): auto-publish only jobs that finish in this run, and never work already on the base (#80)",
+   "blamed_lines": 6,
+   "intro_stat": "4 files changed, 206 insertions(+), 11 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "b28c28374b",
+   "fix_subject": "fix(obid): fill each Account's usage and serve the weekly reserve (#450) (#745)",
+   "fix_lines": 12,
+   "intro": "33eb13bff7",
+   "intro_subject": "fix(obid): skip Claude accounts whose login can't reach the sandbox (#626) (#640)",
+   "blamed_lines": 3,
+   "intro_stat": "7 files changed, 266 insertions(+), 28 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "7fb8cc835a",
+   "fix_subject": "fix(runner): Xcode Cloud failures go back to their author, conflicts are rebased, and the me\u2026 (#122) (#263)",
+   "fix_lines": 12,
+   "intro": "6fd2c2a138",
+   "intro_subject": "fix(runner): every job claims its files, and a conflict Oby rebases isn't a failure (#209) (#211)",
+   "blamed_lines": 5,
+   "intro_stat": "15 files changed, 634 insertions(+), 52 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "2066f0398c",
+   "fix_subject": "fix(obid): a Cursor plan in Plan mode waits for the owner's OK (#1452)",
+   "fix_lines": 14,
+   "intro": "a5dac83c4e",
+   "intro_subject": "fix(obid): a job that only reads declines its own plan, never asks the owner (#701)",
+   "blamed_lines": 5,
+   "intro_stat": "3 files changed, 25 insertions(+), 5 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "2066f0398c",
+   "fix_subject": "fix(obid): a Cursor plan in Plan mode waits for the owner's OK (#1452)",
+   "fix_lines": 14,
+   "intro": "0d2349cffb",
+   "intro_subject": "fix(obid): a Plan-mode job waits for the owner to approve its plan (#609) (#694)",
+   "blamed_lines": 9,
+   "intro_stat": "10 files changed, 256 insertions(+), 26 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "473250a422",
+   "fix_subject": "fix(mac): pair a device over Tailscale when the gateway is on the tailnet (#792)",
+   "fix_lines": 17,
+   "intro": "080bcba9cb",
+   "intro_subject": "feat(mac): Pair a device sends you to Remote access and back (#700)",
+   "blamed_lines": 7,
+   "intro_stat": "4 files changed, 113 insertions(+), 16 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "1bb22bfcca",
+   "fix_subject": "fix(runner): agents see only the tools' folders of home, not the rest of it (#58)",
+   "fix_lines": 17,
+   "intro": "f8b79b53d9",
+   "intro_subject": "fix(runner): agents run in bubblewrap on Linux, so they can't read the runner's logins (#57)",
+   "blamed_lines": 17,
+   "intro_stat": "7 files changed, 131 insertions(+), 9 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "ab4d62d491",
+   "fix_subject": "fix(engine): \"stop everything\" stops every running and queued job (#74)",
+   "fix_lines": 17,
+   "intro": "cb5709db77",
+   "intro_subject": "feat: talk to a job, while it runs or after it ends (#49)",
+   "blamed_lines": 2,
+   "intro_stat": "8 files changed, 270 insertions(+), 23 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "bf6d0a67fd",
+   "fix_subject": "fix(mac): an invite opened before first launch opens after it, and updating from 0.3.0 shows the new first launch once (#1427)",
+   "fix_lines": 17,
+   "intro": "4c18fb7bf8",
+   "intro_subject": "feat(mac): host your own Obysphere from Settings, and open oby://join links (#1374)",
+   "blamed_lines": 8,
+   "intro_stat": "9 files changed, 446 insertions(+), 19 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "ab4d62d491",
+   "fix_subject": "fix(engine): \"stop everything\" stops every running and queued job (#74)",
+   "fix_lines": 17,
+   "intro": "9202f6f0a0",
+   "intro_subject": "feat: many jobs from one message, epics, balanced routing and stronger models (#45)",
+   "blamed_lines": 6,
+   "intro_stat": "14 files changed, 487 insertions(+), 108 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "4eac0882c6",
+   "fix_subject": "fix(engine): log brain turns, end empty jobs honestly, agents commit unsigned as the owner (#69)",
+   "fix_lines": 19,
+   "intro": "f6a437c5f3",
+   "intro_subject": "feat: work on GitHub issues, and jobs that loop until done (#44)",
+   "blamed_lines": 2,
+   "intro_stat": "12 files changed, 445 insertions(+), 53 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "fd410bf52c",
+   "fix_subject": "fix(release): pick the R2 account for wrangler, run the checks one at a time, resume at the upload (#1349)",
+   "fix_lines": 20,
+   "intro": "d2e2b0fb9b",
+   "intro_subject": "perf(release): skip suites that already passed, warm caches, overlap steps (#837)",
+   "blamed_lines": 13,
+   "intro_stat": "4 files changed, 394 insertions(+), 85 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "3f83d4ad3c",
+   "fix_subject": "fix(obid): say why when no brain answers, instead of guessing (#783)",
+   "fix_lines": 21,
+   "intro": "34169a3d23",
+   "intro_subject": "feat(obid): background model calls fail fast; only the turn someone waits on retries (#537) (#562)",
+   "blamed_lines": 3,
+   "intro_stat": "2 files changed, 134 insertions(+), 9 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "256fb53bed",
+   "fix_subject": "fix(brain): \"finish issue N from PR M\" is dispatched, starting from the PR's head (#219) (#251)",
+   "fix_lines": 21,
+   "intro": "4eac0882c6",
+   "intro_subject": "fix(engine): log brain turns, end empty jobs honestly, agents commit unsigned as the owner (#69)",
+   "blamed_lines": 2,
+   "intro_stat": "9 files changed, 363 insertions(+), 28 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "3f83d4ad3c",
+   "fix_subject": "fix(obid): say why when no brain answers, instead of guessing (#783)",
+   "fix_lines": 21,
+   "intro": "ed74c1d910",
+   "intro_subject": "feat(obid): every brain turn records its calls' model, time, tokens, cache and cost (#533) (#559)",
+   "blamed_lines": 2,
+   "intro_stat": "5 files changed, 401 insertions(+), 21 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "256fb53bed",
+   "fix_subject": "fix(brain): \"finish issue N from PR M\" is dispatched, starting from the PR's head (#219) (#251)",
+   "fix_lines": 21,
+   "intro": "9202f6f0a0",
+   "intro_subject": "feat: many jobs from one message, epics, balanced routing and stronger models (#45)",
+   "blamed_lines": 3,
+   "intro_stat": "14 files changed, 487 insertions(+), 108 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "256fb53bed",
+   "fix_subject": "fix(brain): \"finish issue N from PR M\" is dispatched, starting from the PR's head (#219) (#251)",
+   "fix_lines": 21,
+   "intro": "6fd2c2a138",
+   "intro_subject": "fix(runner): every job claims its files, and a conflict Oby rebases isn't a failure (#209) (#211)",
+   "blamed_lines": 2,
+   "intro_stat": "15 files changed, 634 insertions(+), 52 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "8f39403fe4",
+   "fix_subject": "fix(obid): waiting Claude Codes, judged under their lock and cleaned at start (#760)",
+   "fix_lines": 23,
+   "intro": "10009a396f",
+   "intro_subject": "perf(obid): a new conversation finds its Claude Code started (#742)",
+   "blamed_lines": 5,
+   "intro_stat": "10 files changed, 416 insertions(+), 67 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "33b59eceb5",
+   "fix_subject": "fix(obid): words for a queued or wrapping-up job wait for it (#930) (#1433)",
+   "fix_lines": 23,
+   "intro": "44f4e3a3d4",
+   "intro_subject": "fix(obid): a job is rebased onto its moved base before it checks and publishes (#1408)",
+   "blamed_lines": 2,
+   "intro_stat": "4 files changed, 610 insertions(+), 8 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "7331d17c46",
+   "fix_subject": "fix(runner): end agents with their whole process group, and what they leave behind (#109)",
+   "fix_lines": 24,
+   "intro": "0e755f7c76",
+   "intro_subject": "fix(engine): agents outlive the idle thread that started them (#94)",
+   "blamed_lines": 2,
+   "intro_stat": "2 files changed, 22 insertions(+), 1 deletion(-)",
+   "reading": "kept (die-with-parent): the fix names what #94's dropped flag broke, visible in its diff"
+  },
+  {
+   "fix": "33eb13bff7",
+   "fix_subject": "fix(obid): skip Claude accounts whose login can't reach the sandbox (#626) (#640)",
+   "fix_lines": 24,
+   "intro": "fddbe5cbbb",
+   "intro_subject": "fix(mac): sign Claude in to a file the job sandbox can use (#482)",
+   "blamed_lines": 2,
+   "intro_stat": "4 files changed, 19 insertions(+), 6 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "005d864836",
+   "fix_subject": "fix(review): escalate after three reviews (#370) (#373)",
+   "fix_lines": 24,
+   "intro": "009808756e",
+   "intro_subject": "fix(review): no dead ends: Oby reviews fixes after an approval, up to 6 times (#139) (#298)",
+   "blamed_lines": 2,
+   "intro_stat": "3 files changed, 38 insertions(+), 10 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "005d864836",
+   "fix_subject": "fix(review): escalate after three reviews (#370) (#373)",
+   "fix_lines": 24,
+   "intro": "93bb3c9fdd",
+   "intro_subject": "feat(review): only blocking findings request changes, follow-ups check only what blocked, 2 rounds (#113)",
+   "blamed_lines": 3,
+   "intro_stat": "3 files changed, 522 insertions(+), 31 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "bbfbb89f95",
+   "fix_subject": "fix(apps): Clear done hides only settled jobs, never ones still in flight (#280) (#289)",
+   "fix_lines": 25,
+   "intro": "1eb426ae95",
+   "intro_subject": "fix: reviews wait for an account with room, Clear done keeps what needs you, merged PRs aren't publ\u2026 (#96)",
+   "blamed_lines": 17,
+   "intro_stat": "10 files changed, 470 insertions(+), 31 deletions(-)",
+   "reading": "subject only"
+  },
+  {
+   "fix": "fe15ae4847",
+   "fix_subject": "fix(electron): add a Claude Code, Codex or Cursor account from Settings \u203a Accounts (#1535)",
+   "fix_lines": 25,
+   "intro": "8f5a3aa036",
+   "intro_subject": "fix(obid, electron): every account's usage is read while an app looks; Cursor says it reports none (#1529)",
+   "blamed_lines": 5,
+   "intro_stat": "16 files changed, 535 insertions(+), 20 deletions(-)",
+   "reading": "subject only"
+  }
+ ]
+}

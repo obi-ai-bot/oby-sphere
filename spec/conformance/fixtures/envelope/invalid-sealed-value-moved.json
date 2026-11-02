@@ -1,0 +1,62 @@
+{
+  "case": "envelope",
+  "name": "invalid-sealed-value-moved",
+  "description": "The goal's and the summary's sealed values swapped, then signed: each opens only where it was sealed.",
+  "expect": "reject",
+  "reason": "seal_invalid",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "type": "review_request",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "goal": "wEuzuqDvQVRr_CJKUy0EqGDHxPEETPCpMb0nkrtgZdgT1MsHFVUik7tvnojwI71w-wF1K0zHv5pzWG8n_w",
+      "repo": "obi-conf/fixture-app",
+      "base_branch": "main",
+      "head_branch": "feature/average",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "acceptance": [
+        {
+          "kind": "tests_pass"
+        },
+        {
+          "kind": "no_blocker_findings",
+          "note": "0G4zzlvvYOQ_VGYa7aAPQs8rfAJQi9hqBCnIX-i7W49guqC9yc107rQ3Idtw4lwlGA"
+        }
+      ],
+      "summary": "JfH9UzfAMi_SdSDJzZZ0__cNYe1h9d55-sAfA_bFd7071Li2rSrvZl7kCyRoAw6ZkyGZcwBxBGY"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+      "enc": "H9unj7g9AComhfLbwc_tpgplMDNJyGkTwiH1xIgVli4"
+    },
+    "signature": "Mml98rpG9PXr7vT_9n2WeHtfUbUcoqboC4Ap1U3G8KniKUlGuIURrmeC_7ccRv0R_eftE3H8pfq8TzIBNg6NCg"
+  }
+}

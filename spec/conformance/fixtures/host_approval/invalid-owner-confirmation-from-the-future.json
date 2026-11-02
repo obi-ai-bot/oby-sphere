@@ -1,0 +1,54 @@
+{
+  "case": "host_approval",
+  "name": "invalid-owner-confirmation-from-the-future",
+  "description": "The owner's confirmation is signed 31 seconds after the receiver's now.",
+  "expect": "reject",
+  "reason": "no_owner_confirmation",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "request": {
+      "correlation_id": "2ac36530-cea3-8d60-867b-b4c208f57ac0",
+      "repo": "acme/app",
+      "pr": 12,
+      "base_branch": "main",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "expires_at": "2026-10-14T13:00:00Z"
+    },
+    "member": true,
+    "owner_login": "wellington",
+    "standing_permission": false
+  },
+  "input": {
+    "owner_confirmations": [
+      {
+        "correlation_id": "2ac36530-cea3-8d60-867b-b4c208f57ac0",
+        "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+        "signed_at": "2026-10-14T12:00:31Z",
+        "from_owner_device": true,
+        "used_before": false
+      }
+    ],
+    "code_host": {
+      "codeowners": "# Code owners of acme/app\n*                     @acme/maintainers\n*.md                  @carol\n/src/                 @alice\ndocs/*                @dana\n/scripts/release.sh   @bob   # the release script\n",
+      "changed_files": [
+        "src/app.js",
+        "test/app.test.js"
+      ],
+      "files_complete": true,
+      "reviews": [],
+      "teams": {
+        "acme/maintainers": [
+          "bob",
+          "wellington"
+        ]
+      },
+      "permissions": {
+        "alice": "write",
+        "bob": "maintain",
+        "carol": "write",
+        "dana": "admin",
+        "wellington": "write"
+      }
+    }
+  }
+}

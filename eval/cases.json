@@ -1,0 +1,43 @@
+{
+  "description": "The evaluation's cases: pull requests in obi-ai-bot/oby (public) whose bug a later commit fixed. `commit` is the pull request's squash-merge commit and `base` its parent, so a seat reviews the change `base..commit` in a checkout of `commit`. `lines` are the lines of `commit`'s version that the fix removed or changed and that `commit` wrote (git blame through the fix's parent): a finding catches the bug when it names one of those files and its lines come within `window` of one of those lines. `bug` says, in this evaluation's words, what the fix's message says went wrong. eval/README.md says how the cases were chosen.",
+  "repository": "obi-ai-bot/oby",
+  "window": 5,
+  "cases": [
+    {
+      "id": "secret-names",
+      "pr": 120,
+      "commit": "009e427bfe4b3c0a283f1368db25d4acccd30c81",
+      "base": "d414ef0ed51ebf2915b42508834a9c03ef2ff43b",
+      "fixed_by": { "pr": 129, "commit": "f02e7afd7cf895e49f76957c626a76c9c561e067" },
+      "bug": "The secret scan lets a \"password or secret\" value through as a mere name whenever it holds one of the keywords anywhere, so real secrets such as my-secret-password, or monkeyForestTree (\"key\" in monkey), pass the scan.",
+      "lines": { "Engine/Publish.swift": [297, 298, 299, 300, 301, 304, 307, 308, 309, 310, 311, 312] }
+    },
+    {
+      "id": "die-with-parent",
+      "pr": 94,
+      "commit": "0e755f7c76068f3fc43b21d293c0b0b9820065ee",
+      "base": "1caea9fc4e6143973d0f8a83503a7631bb95a2a6",
+      "fixed_by": { "pr": 109, "commit": "7331d17c461ac925e124e4d3078e50a46f7ec2b1" },
+      "bug": "With bubblewrap's --die-with-parent dropped, stopping an agent signals only the outer bwrap process: the sandbox's own process and the agent inside it keep running after Stop.",
+      "lines": { "Engine/Jobs.swift": [632, 633] }
+    },
+    {
+      "id": "keychain-found-time",
+      "pr": 1526,
+      "commit": "3b1b591840b5fce30bda35d91bc058d5ece71bef",
+      "base": "ee829b4f667f16c5cb5aed1d4ffdb6dfdda606fb",
+      "fixed_by": { "pr": 1527, "commit": "1875f6f0af3c5ceb745f87e2e9051a254dd3c78e" },
+      "bug": "A Keychain item found is cached from when the slow security call answered, not from when it was asked, so a removed login keeps showing as signed in for longer than the 2 seconds promised.",
+      "lines": { "core/crates/obid/src/jobs.rs": [11308, 11450] }
+    },
+    {
+      "id": "blocking-none",
+      "pr": 113,
+      "commit": "93bb3c9fddd18165c11bb7af7c3ae7ea43483005",
+      "base": "7331d17c461ac925e124e4d3078e50a46f7ec2b1",
+      "fixed_by": { "pr": 140, "commit": "ebe0b812178c0787c7cd59d6c59a1241935904f6" },
+      "bug": "A review whose Blocking heading says \"none\" still has the lines after it read as blocking findings, so an approving review turns into changes requested.",
+      "lines": { "Engine/Review.swift": [170, 254, 255, 264, 266, 269, 295, 297, 317] }
+    }
+  ]
+}

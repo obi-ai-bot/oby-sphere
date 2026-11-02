@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/result.schema.json",
+  "title": "result body (sealed)",
+  "description": "Finishes a review_request, a handoff or a run_request: a review's verdict and findings, a handoff's outcome, or a guest job's. `for` says which. A question is answered by `answer`, never by a result. Sealed: derived from actions/result.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "oneOf": [
+    {
+      "title": "result of a review_request",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "for",
+        "outcome",
+        "repo",
+        "head_sha",
+        "findings"
+      ],
+      "properties": {
+        "for": {
+          "const": "review_request"
+        },
+        "outcome": {
+          "enum": [
+            "approved",
+            "changes_requested",
+            "failed"
+          ]
+        },
+        "repo": {
+          "$ref": "../common.schema.json#/$defs/repo"
+        },
+        "head_sha": {
+          "$ref": "../common.schema.json#/$defs/sha"
+        },
+        "findings": {
+          "$ref": "../common.schema.json#/$defs/findings"
+        },
+        "acceptance": {
+          "$ref": "../common.schema.json#/$defs/acceptance_results"
+        },
+        "by_rule": {
+          "$ref": "../common.schema.json#/$defs/rule_id"
+        },
+        "summary": {
+          "$ref": "../common.schema.json#/$defs/sealed_text",
+          "x-obi-text": "sealed",
+          "minLength": 23,
+          "maxLength": 21355
+        },
+        "host_review": {
+          "enum": [
+            "approved",
+            "asked",
+            "unable"
+          ],
+          "description": "Only in answer to a request with approve_on_host, and only when outcome is approved: approved, the receiver posted an approving review of head_sha on the code host as its owner; asked, neither its owner's confirmation of this exchange nor a code owner's approval was there, so it asked its owner; unable, it didn't: the review fell short of the receiver's own bar (its own check didn't pass, or its review found a blocker, whatever the request's conditions), it has no code-host login or no permission to approve there, or the pull request isn't repo's own, goes into another branch than base_branch, or moved on from head_sha."
+        }
+      },
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "enum": [
+              "approved",
+              "changes_requested"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "acceptance"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "host_review"
+            ]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "const": "approved"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "result of a handoff",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "for",
+        "outcome",
+        "repo",
+        "acceptance"
+      ],
+      "properties": {
+        "for": {
+          "const": "handoff"
+        },
+        "outcome": {
+          "enum": [
+            "done",
+            "failed"
+          ]
+        },
+        "repo": {
+          "$ref": "../common.schema.json#/$defs/repo"
+        },
+        "head_branch": {
+          "$ref": "../common.schema.json#/$defs/branch"
+        },
+        "head_sha": {
+          "$ref": "../common.schema.json#/$defs/sha"
+        },
+        "pr": {
+          "$ref": "../common.schema.json#/$defs/pr_number"
+        },
+        "acceptance": {
+          "$ref": "../common.schema.json#/$defs/acceptance_results"
+        },
+        "by_rule": {
+          "$ref": "../common.schema.json#/$defs/rule_id"
+        },
+        "summary": {
+          "$ref": "../common.schema.json#/$defs/sealed_text",
+          "x-obi-text": "sealed",
+          "minLength": 23,
+          "maxLength": 21355
+        }
+      }
+    },
+    {
+      "title": "result of a run_request",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "for",
+        "outcome",
+        "repo"
+      ],
+      "properties": {
+        "for": {
+          "const": "run_request"
+        },
+        "outcome": {
+          "enum": [
+            "done",
+            "failed"
+          ]
+        },
+        "repo": {
+          "$ref": "../common.schema.json#/$defs/repo"
+        },
+        "commits": {
+          "$ref": "../common.schema.json#/$defs/bundle",
+          "description": "The job's commits, a git bundle on the job channel. Absent when it made none."
+        },
+        "head_sha": {
+          "$ref": "../common.schema.json#/$defs/sha"
+        },
+        "cost_cents": {
+          "$ref": "../common.schema.json#/$defs/cents",
+          "description": "On a share of the receiver's owner's API account (protocol.md section 15): what the job's model calls cost at list price."
+        }
+      }
+    }
+  ]
+}

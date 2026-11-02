@@ -13,6 +13,7 @@
     "issue": { "$ref": "../common.schema.json#/$defs/issue_number" },
     "pr": { "$ref": "../common.schema.json#/$defs/pr_number" },
     "acceptance": { "$ref": "../common.schema.json#/$defs/acceptance" },
-    "summary": { "$ref": "../common.schema.json#/$defs/block_text", "x-obi-text": "data", "minLength": 1, "maxLength": 2000 }
+    "summary": { "$ref": "../common.schema.json#/$defs/block_text", "x-obi-text": "data", "minLength": 1, "maxLength": 2000 },
+    "follows": { "$ref": "../common.schema.json#/$defs/follows" }
   }
 }

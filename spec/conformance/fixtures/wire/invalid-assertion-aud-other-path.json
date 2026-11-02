@@ -1,0 +1,19 @@
+{
+  "case": "wire",
+  "name": "invalid-assertion-aud-other-path",
+  "description": "An `aud` URL that isn't an Obysphere's: its path is /v0.1/spheres/<sphere>.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "https://sphere.example.com/v0.1/spheres/conf-sphere/members",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "8edbcdab-521b-86d9-816b-86f2621bfd26",
+    "scope": "admin"
+  }
+}

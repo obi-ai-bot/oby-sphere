@@ -1,0 +1,14 @@
+{
+  "case": "wire",
+  "name": "invalid-signin-request-return-query",
+  "description": "A return_to with a query of its own.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/signin.request"
+  },
+  "input": {
+    "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w",
+    "return_to": "http://127.0.0.1:53682/cb?next=1"
+  }
+}

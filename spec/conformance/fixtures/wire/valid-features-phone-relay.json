@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-phone-relay",
+  "description": "An Obysphere that takes card_runtime and offers the phone relay.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime",
+      "phone_relay"
+    ]
+  }
+}

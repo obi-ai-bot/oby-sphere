@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/a2a-task.schema.json",
+  "title": "GET {member url}/tasks/{id} answer (a2a)",
+  "description": "An exchange between the caller and the URL's member, as an A2A 1.0 Task (spec/a2a.md section 5): every envelope of the exchange, as recorded, one message each, and a state read from the chain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "contextId",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "description": "The exchange's request `id`, its `correlation_id`.",
+      "$ref": "../common.schema.json#/$defs/uuid"
+    },
+    "contextId": {
+      "$ref": "../common.schema.json#/$defs/uuid"
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "timestamp"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "TASK_STATE_SUBMITTED",
+            "TASK_STATE_WORKING",
+            "TASK_STATE_COMPLETED",
+            "TASK_STATE_FAILED",
+            "TASK_STATE_REJECTED",
+            "TASK_STATE_CANCELED"
+          ]
+        },
+        "timestamp": {
+          "description": "The `recorded_at` of the exchange's latest entry.",
+          "$ref": "../common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "history": {
+      "description": "The exchange's envelopes in the chain's order: the latest 50 at most, and the latest historyLength of them when it is given.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/message"
+      }
+    },
+    "metadata": {
+      "description": "Only in a SendMessage answer: the send's receipt, as the relay answers it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "urn:obi-sphere:ext:obi:0.1"
+      ],
+      "properties": {
+        "urn:obi-sphere:ext:obi:0.1": {
+          "$ref": "send.response.schema.json"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "message": {
+      "description": "One envelope of the exchange, as an A2A 1.0 Message.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageId",
+        "contextId",
+        "taskId",
+        "role",
+        "parts",
+        "extensions",
+        "metadata"
+      ],
+      "properties": {
+        "messageId": {
+          "$ref": "../common.schema.json#/$defs/uuid"
+        },
+        "contextId": {
+          "$ref": "../common.schema.json#/$defs/uuid"
+        },
+        "taskId": {
+          "$ref": "../common.schema.json#/$defs/uuid"
+        },
+        "role": {
+          "description": "ROLE_USER when the caller sent it, ROLE_AGENT when the URL's member did.",
+          "enum": [
+            "ROLE_USER",
+            "ROLE_AGENT"
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "data",
+              "mediaType"
+            ],
+            "properties": {
+              "data": {
+                "description": "The envelope exactly as the chain keeps it: one with `seal` is checked against the sealed envelope schema (spec/protocol.md section 9.1).",
+                "if": {
+                  "required": [
+                    "seal"
+                  ]
+                },
+                "then": {
+                  "$ref": "../sealed/envelope.schema.json"
+                },
+                "else": {
+                  "$ref": "../envelope.schema.json"
+                }
+              },
+              "mediaType": {
+                "const": "application/json"
+              }
+            }
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "const": "urn:obi-sphere:ext:obi:0.1"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "urn:obi-sphere:ext:obi:0.1"
+          ],
+          "properties": {
+            "urn:obi-sphere:ext:obi:0.1": {
+              "description": "The entry's receipt: the envelope's id, its seq (by which its reader judges the sender's key), its hash and when it was recorded.",
+              "$ref": "send.response.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

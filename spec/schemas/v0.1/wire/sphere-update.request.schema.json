@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/sphere-update.request.schema.json",
+  "title": "PATCH /v0.1/spheres/{sphere} request",
+  "description": "An admin renames the Sphere (spec/sphere-api.md section 3). Its id, and so its address, never changes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "name": {
+      "$ref": "../common.schema.json#/$defs/line_text",
+      "x-obi-text": "data",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  }
+}

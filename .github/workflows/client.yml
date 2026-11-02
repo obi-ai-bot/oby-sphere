@@ -1,0 +1,97 @@
+# The client library (client/): types, unit tests, the conformance suite with the library as the
+# implementation, its example against a local Sphere (`pnpm run e2e`), and its build. Then the MCP
+# connector built on it (connector/): types, unit tests, its end-to-end run against a local Sphere,
+# and its build. Last, the A2A binding's run (server/e2e/a2a.mjs), with the connector as its member.
+#
+# A draft pull request runs the workflow but skips its jobs, unless it has the `full-ci` label
+# (that takes effect on the next push after labelling); marking it ready for review runs
+# everything on the same head.
+name: Client
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  client:
+    name: Client library
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'full-ci')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # pnpm's version comes from client/package.json (packageManager), the same as server/'s and spec/'s.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: client/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            client/pnpm-lock.yaml
+            connector/pnpm-lock.yaml
+            server/pnpm-lock.yaml
+            spec/pnpm-lock.yaml
+
+      - name: Install
+        run: |
+          (cd spec && pnpm install --frozen-lockfile)
+          (cd server && pnpm install --frozen-lockfile)
+          (cd client && pnpm install --frozen-lockfile)
+          (cd connector && pnpm install --frozen-lockfile)
+
+      - name: Types
+        working-directory: client
+        run: pnpm run check
+
+      - name: Unit tests
+        working-directory: client
+        run: pnpm test
+
+      - name: Conformance suite (spec/conformance/run.mjs --impl with the library's checker)
+        working-directory: client
+        run: pnpm run conformance
+
+      - name: The example against a local Sphere, the chain checked by the reference verifier too
+        working-directory: client
+        run: pnpm run e2e
+
+      - name: Build and pack
+        working-directory: client
+        run: pnpm pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Connector types
+        working-directory: connector
+        run: pnpm run check
+
+      - name: Connector unit tests
+        working-directory: connector
+        run: pnpm test
+
+      - name: The connector against a local Sphere, a scripted Oby and a scripted MCP client
+        working-directory: connector
+        run: pnpm run e2e
+
+      - name: The A2A binding against a local Sphere, an A2A agent asking and the connector answering (spec/a2a.md)
+        working-directory: server
+        run: pnpm run a2a
+
+      - name: Connector build and pack
+        working-directory: connector
+        run: pnpm pack --pack-destination "$RUNNER_TEMP"

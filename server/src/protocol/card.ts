@@ -1,76 +1,10 @@
-// Agent cards (spec/identity.md section 2): the owner's detached JWS over the card, and the
-// checks of section 2.2. `name`, `description` and the skills' words are data: never read here.
+// The client library's card module (client/src/card.ts), as copied into lib/ by
+// scripts/sync-client.mjs, with this server's own list of the additions it takes.
 
-import { fromB64url, keyIdOrNull, verifyEd25519 } from "./crypto.ts";
-import { canonicalBytes, utf8, type JsonObject } from "./json.ts";
-import { CLOCK_SKEW_SECONDS, OK, fail, seconds, type Verdict } from "./envelope.ts";
-import { matches, schemaErrors } from "./schemas.ts";
-import { b64url } from "./crypto.ts";
+import { notTakenProblem as notTakenFor, type AgentCard } from "./lib/card.ts";
+import { FEATURES } from "./features.ts";
 
-export const CARD_EXTENSION_URI = "urn:obi-sphere:ext:obi:0.1";
+export * from "./lib/card.ts";
 
-export interface CardParams {
-  protocol: string;
-  sphere: string;
-  obi_id: string;
-  owner: string;
-  owner_key: string;
-  key_id: string;
-  public_key: string;
-  accepts: string[];
-  card_seq: number;
-  issued_at: string;
-}
-
-export interface AgentCard {
-  url: string;
-  skills: { id: string }[];
-  capabilities: { extensions: { params: CardParams }[] };
-  signatures: { protected: string; signature: string }[];
-  [key: string]: unknown;
-}
-
-/** The Obi extension's params of a card that matched the schema. */
-export const cardParams = (card: AgentCard): CardParams => card.capabilities.extensions[0]!.params;
-
-export function cardSigningInput(card: Record<string, unknown>, protectedHeader: string): Uint8Array {
-  const { signatures: _signatures, ...unsigned } = card;
-  return utf8(`${protectedHeader}.${b64url(canonicalBytes(unsigned))}`);
-}
-
-export interface CardContext {
-  /** The checker's clock: a timestamp or seconds since 1970. Without it, issued_at isn't checked. */
-  now?: string | number;
-  /** The owner key the Sphere bound for the card's owner, when there is one (check 6). */
-  bound_owner_key?: string | null;
-}
-
-/** identity.md section 2.2. Codes: `card_invalid`, or `bad_signature` when only the signature fails. */
-export async function verifyCard(value: unknown, ctx: CardContext): Promise<Verdict> {
-  const errors = schemaErrors("agentCard", value);
-  if (errors.length) return fail("card_invalid", errors.join("; "));
-  const card = value as AgentCard;
-  const params = cardParams(card);
-  if ((await keyIdOrNull(params.public_key)) !== params.key_id) return fail("card_invalid", "key_id does not match public_key");
-  if (params.owner_key === params.public_key) return fail("card_invalid", "the Obi's key must not be its owner's key");
-  const skills = card.skills.map((s) => s.id).sort().join(",");
-  if (skills !== [...params.accepts].sort().join(",")) return fail("card_invalid", "skills and accepts differ");
-  const urlTail = `/v0.1/spheres/${params.sphere}/members/${params.obi_id}`;
-  if (!card.url.endsWith(urlTail)) return fail("card_invalid", `url must end with ${urlTail}`);
-  if (ctx.bound_owner_key && ctx.bound_owner_key !== params.owner_key) return fail("card_invalid", "signed by another key than the owner's bound key");
-  const sig = card.signatures[0]!;
-  let header: unknown;
-  try {
-    header = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fromB64url(sig.protected)));
-  } catch {
-    return fail("card_invalid", "the protected header is not JSON");
-  }
-  if (!matches("jwsHeader", header) || (header as JsonObject).typ !== "JOSE") return fail("card_invalid", "the protected header must be {alg: EdDSA, kid, typ: JOSE}");
-  if ((header as JsonObject).kid !== (await keyIdOrNull(params.owner_key))) return fail("card_invalid", "kid is not the owner key's id");
-  if (!(await verifyEd25519(params.owner_key, cardSigningInput(card, sig.protected), sig.signature))) return fail("bad_signature", "the owner's signature does not verify");
-  if (ctx.now !== undefined) {
-    const now = typeof ctx.now === "number" ? ctx.now : seconds(ctx.now);
-    if (seconds(params.issued_at) > now + CLOCK_SKEW_SECONDS) return fail("card_invalid", "issued in the future");
-  }
-  return OK;
-}
+/** Why a message or a policy that uses `features` can't go in yet (sphere-api.md sections 5 and 6.1, check 11), against this server's FEATURES. */
+export const notTakenProblem = (features: string[], active: { obi: string; card: AgentCard }[]): string | null => notTakenFor(features, active, FEATURES);

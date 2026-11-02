@@ -1,0 +1,91 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-follow-up-unknown",
+  "description": "A question that follows up an exchange the chain doesn't have.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "889bcb28-0a61-8d5a-8ba3-b199781b4321",
+          "type": "question",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "889bcb28-0a61-8d5a-8ba3-b199781b4321",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "text": "Should average() round to two decimals?",
+            "about": [
+              {
+                "kind": "repo",
+                "repo": "obi-conf/fixture-app"
+              }
+            ],
+            "choices": [
+              "Yes",
+              "No"
+            ]
+          },
+          "signature": "kDZQ-RrKYdryNszQor36mHNhv9qrTu9HPTXv7h9-LGmcFsUayIBPYBII926s1ALWMPhQNzK2j3LDRNc6KV4UAg"
+        },
+        "hash": "448a3a0d5c12b19f014937b8a4f0f6d913ebb565968cf6ef3bee9a09a4d01d45"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "448a3a0d5c12b19f014937b8a4f0f6d913ebb565968cf6ef3bee9a09a4d01d45",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "98eb0e60-a929-8570-83ae-0537050ef2d9",
+          "type": "question",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "98eb0e60-a929-8570-83ae-0537050ef2d9",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "text": "And for an empty list?",
+            "follows": "ad6472b0-29cf-8821-8a7f-6337b80b6275"
+          },
+          "signature": "Hri2rcaRoWtjQoX3274Yqfget5M2zd4fTWNgcpayys66YErGktQKWU8J3ejilqDFNI_Ijvgbi2meZeSNhaqvBQ"
+        },
+        "hash": "e06f913d79c6431a65afa570f6a13d8cc991c4e4e91e0bf806bde7126e5fea7e"
+      }
+    ]
+  }
+}

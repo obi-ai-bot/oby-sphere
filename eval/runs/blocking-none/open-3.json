@@ -1,0 +1,54 @@
+{
+ "case": "blocking-none",
+ "seat": "open-3",
+ "model": "sonnet",
+ "earlier": 0,
+ "started": "2026-10-27T23:46:23.863Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "Engine/Review.swift",
+   "line": 301,
+   "end_line": 319,
+   "severity": "major",
+   "title": "findings() silently drops non-bulleted text under an unrecognized heading, letting decide() auto-approve over it",
+   "detail": "findings(_:) only ever records a line as `unsorted` when it is a list item (`if item != nil { found.unsorted.append(text) }`, line 309). When a reviewer writes a real concern as plain prose (no `-`/`*`/number) under a heading Oby doesn't recognise (e.g. \"Security concern:\\nTokens are logged in plaintext.\"), the heading-reset branch (lines 301-307) sets `section = nil`, and the following prose line hits the `guard let section else { ... }` branch with `item == nil`, so it is discarded entirely - never added to `blocking`, `later`, or even `unsorted`. If the same review also happens to use a recognised heading elsewhere (e.g. a `Worth doing later:` list), `sorted` becomes true, so `decide()` no longer falls back to the model's own last line; since `findings.blocking` is empty and `findings.unsorted` is also empty (the real finding was dropped, not counted), `decide()` returns `.approved` even though the reviewer's last line said `VERDICT: CHANGES REQUESTED` and flagged a genuine, unclassified problem. This defeats the stated goal of this very change (\"never approve over a finding Oby couldn't place\"): the `unsorted` safety net only covers content written as markdown list items, not prose, under a heading the parser doesn't know. `aFollowUpReview...`/`findingsOutsideTheKnownHeadingsKeepTheReviewersVerdict` tests only exercise the bulleted case under an unknown heading, not the prose case, so this gap is untested."
+  }
+ ],
+ "cost_usd": 1.1969943,
+ "turns": 29,
+ "duration_ms": 353049,
+ "usage": {
+  "input_tokens": 1141,
+  "cache_creation_input_tokens": 71827,
+  "cache_read_input_tokens": 1059441,
+  "output_tokens": 29599,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 71827,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 16606,
+    "cache_read_input_tokens": 74104,
+    "cache_creation_input_tokens": 1413,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1413
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

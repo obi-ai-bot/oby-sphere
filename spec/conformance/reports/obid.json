@@ -1,0 +1,38 @@
+{
+  "suite": "obi/0.1",
+  "report_version": 1,
+  "label": "obid (Oby)",
+  "generated_at": "2026-10-28T17:11:48Z",
+  "runs": [
+    {
+      "mode": "receiver",
+      "at": "2026-10-28T17:11:48Z"
+    }
+  ],
+  "classes": {
+    "participant": {
+      "message": null,
+      "behaviour": {
+        "ran": 8,
+        "passed": 8
+      },
+      "status": "incomplete"
+    },
+    "executor": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    },
+    "holder": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    },
+    "approver": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    }
+  },
+  "commit": null
+}

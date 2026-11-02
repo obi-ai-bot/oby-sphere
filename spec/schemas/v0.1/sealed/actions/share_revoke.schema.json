@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/share_revoke.schema.json",
+  "title": "share_revoke body (sealed)",
+  "description": "The key holder takes a share back. Ends the share_offer's exchange: the receiver's Obi stops offering it at once. Sealed: derived from actions/share_revoke.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "grant"
+  ],
+  "properties": {
+    "grant": {
+      "$ref": "../common.schema.json#/$defs/grant_id"
+    }
+  }
+}

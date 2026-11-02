@@ -124,7 +124,7 @@
     "skills": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 5,
+      "maxItems": 6,
       "items": {
         "$ref": "#/$defs/skill"
       },
@@ -176,6 +176,74 @@
             "card_seq",
             "issued_at"
           ],
+          "dependentRequired": {
+            "seal_key_id": ["seal_public_key"],
+            "seal_public_key": ["seal_key_id"],
+            "runtime": ["features"],
+            "vendors": ["features"],
+            "classes": ["features"]
+          },
+          "if": {
+            "required": [
+              "classes"
+            ]
+          },
+          "then": {
+            "properties": {
+              "features": {
+                "contains": {
+                  "const": "card_classes"
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "topics"
+                ]
+              },
+              "then": {
+                "required": [
+                  "features"
+                ],
+                "properties": {
+                  "features": {
+                    "contains": {
+                      "const": "card_topics"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "accepts"
+                ],
+                "properties": {
+                  "accepts": {
+                    "contains": {
+                      "const": "introduction"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "features"
+                ],
+                "properties": {
+                  "features": {
+                    "contains": {
+                      "const": "introduction"
+                    }
+                  }
+                }
+              }
+            }
+          ],
           "properties": {
             "protocol": {
               "$ref": "common.schema.json#/$defs/protocol"
@@ -201,10 +269,18 @@
               "$ref": "common.schema.json#/$defs/public_key",
               "description": "The Obi's Ed25519 public key."
             },
+            "seal_key_id": {
+              "$ref": "common.schema.json#/$defs/seal_key_id",
+              "description": "The id of the X25519 key other Obis seal this Obi's words for (spec/protocol.md section 9.1). With seal_public_key, or neither."
+            },
+            "seal_public_key": {
+              "$ref": "common.schema.json#/$defs/x25519_public_key",
+              "description": "The Obi's seal key: an X25519 public key it made for sealing, apart from its signing key."
+            },
             "accepts": {
               "type": "array",
               "minItems": 1,
-              "maxItems": 5,
+              "maxItems": 6,
               "uniqueItems": true,
               "items": {
                 "$ref": "common.schema.json#/$defs/request_type"
@@ -219,6 +295,70 @@
             },
             "issued_at": {
               "$ref": "common.schema.json#/$defs/timestamp"
+            },
+            "features": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/feature_id"
+              },
+              "contains": {
+                "const": "card_runtime"
+              },
+              "description": "The additions to obi/0.1 this agent takes (spec/identity.md section 2.3). The list comes with the feature card_runtime, so it always names it."
+            },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "version"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "common.schema.json#/$defs/runtime_id"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[0-9A-Za-z.+-]{1,64}$",
+                  "description": "The runtime's version, as it names its own."
+                }
+              },
+              "description": "The agent runtime this member runs, as its owner declares it (spec/identity.md section 2.3). Declared, not proven. Needs features."
+            },
+            "vendors": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/vendor_id"
+              },
+              "description": "The model vendors this member may use, as its owner declares them (spec/identity.md section 2.3). Declared, not proven. Needs features."
+            },
+            "classes": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/class_id"
+              },
+              "description": "The conformance classes this member claims, as its owner declares them (spec/identity.md section 2.3). A claim, not a result: a report backs it. Comes with the feature card_classes, which features then names."
+            },
+            "topics": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/topic_id"
+              },
+              "description": "What this member can help with, as ids its owner chose (spec/identity.md section 2.3). Comes with the feature card_topics, which features then names."
             }
           }
         }

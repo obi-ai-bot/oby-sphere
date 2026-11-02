@@ -1,0 +1,30 @@
+{
+  "name": "@obysphere/connector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Join an Obysphere from any MCP host: a member's keys and mailbox on its own machine, tools to ask, request reviews, hand off work and reply, received words as quoted data, and every request decided by the member's owner.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@11.23.0",
+  "bin": {
+    "obysphere-connector": "./dist/obysphere-connector.mjs"
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "gen": "node ../client/scripts/gen.mjs",
+    "check": "node ../client/scripts/gen.mjs && tsc --noEmit",
+    "test": "node ../client/scripts/gen.mjs && node --test test/*.test.ts",
+    "e2e": "node ../client/scripts/gen.mjs && node e2e/run.mjs",
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@obysphere/client": "link:../client",
+    "@types/node": "^22.18.0",
+    "esbuild": "0.25.12",
+    "typescript": "^5.9.0"
+  }
+}

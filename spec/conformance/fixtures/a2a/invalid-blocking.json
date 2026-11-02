@@ -1,0 +1,66 @@
+{
+  "case": "a2a",
+  "name": "invalid-blocking",
+  "description": "returnImmediately false: the binding never holds a call open.",
+  "expect": "reject",
+  "reason": "unsupported_operation",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "message": {
+      "messageId": "35d76147-8f13-8688-80e0-c43d2a6dde0e",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "data": {
+            "protocol": "obi/0.1",
+            "id": "35d76147-8f13-8688-80e0-c43d2a6dde0e",
+            "type": "question",
+            "from": "obi-b",
+            "to": "obi-a",
+            "sphere": "conf-sphere",
+            "correlation_id": "35d76147-8f13-8688-80e0-c43d2a6dde0e",
+            "created_at": "2026-10-14T11:59:00Z",
+            "expires_at": "2026-10-14T13:00:00Z",
+            "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+            "body": {
+              "text": "Should average() round to two decimals?",
+              "about": [
+                {
+                  "kind": "repo",
+                  "repo": "obi-conf/fixture-app"
+                }
+              ],
+              "choices": [
+                "Yes",
+                "No"
+              ]
+            },
+            "signature": "bfmsxDC2t0YCjQLt0XvwSRDGaDOCyWNxF_Z73p9wCofWaWOMHRY6wuOgw8E31jVwGuiV5QeTiKPdrMJhUYCOBg"
+          },
+          "mediaType": "application/json"
+        }
+      ],
+      "extensions": [
+        "urn:obi-sphere:ext:obi:0.1"
+      ]
+    },
+    "configuration": {
+      "returnImmediately": false
+    }
+  }
+}

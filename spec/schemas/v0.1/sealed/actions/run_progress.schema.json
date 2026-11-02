@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/run_progress.schema.json",
+  "title": "run_progress body (sealed)",
+  "description": "Where a run_request's job is on the receiver's Mac, without finishing it. Only in a run_request's exchange. Sealed: derived from actions/run_progress.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state"
+  ],
+  "properties": {
+    "state": {
+      "enum": [
+        "queued",
+        "starting",
+        "running"
+      ]
+    }
+  }
+}
