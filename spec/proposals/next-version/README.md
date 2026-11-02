@@ -62,9 +62,9 @@ All thirteen are **decided**, each as this Draft recommended, by the maintainer,
 
 After D1 to D13, the maintainer decided four points this Draft had left open, each on its issue:
 
-- **No early switch** ([#52](https://github.com/obi-ai-bot/oby-sphere/issues/52#issuecomment-6583514196)): an Obysphere switches only once every active member has a next-version card, and an admin who can't wait removes inactive members first. The `suspended` member status this Draft had proposed for members not ready at the switch is dropped; the server refuses the switch instead ([migration.md, section 4](migration.md#4-the-switch-d8)).
+- **No early switch** ([#52](https://github.com/obi-ai-bot/oby-sphere/issues/52#issuecomment-6583514196)): an Obysphere switches only once every active member has a next-version card, and an admin who can't wait first revokes the members that have stopped taking part. The `suspended` member status this Draft had proposed for members not ready at the switch is dropped. How the server holds to this, by refusing the switch within its one step, is the Draft's own ([migration.md, section 4](migration.md#4-the-switch-d8)).
 - **Only people answer for an organisation** ([#61](https://github.com/obi-ai-bot/oby-sphere/issues/61#issuecomment-6583514650)): an organisation can't answer for another. It can be revisited if someone needs nested owners ([owners.md, section 7](owners.md#7-left-open-not-part-of-d9-to-d13)).
-- **Every `sphere/0.2` Obysphere serves the A2A binding** ([#59](https://github.com/obi-ai-bot/oby-sphere/issues/59#issuecomment-6583515235)); in `obi/0.1` it stays a feature an Obysphere announces. Proposing the extension to A2A's own extension registry waits until an implementation outside this repository serves the binding ([a2a-card.md, section 3](a2a-card.md#3-the-binding-in-the-next-version)).
+- **Every `sphere/0.2` Obysphere MUST serve the A2A binding** ([#59](https://github.com/obi-ai-bot/oby-sphere/issues/59#issuecomment-6583515235)); in `obi/0.1` it stays a feature an Obysphere announces. Proposing the extension to A2A's own extension registry waits until an implementation outside this repository serves the binding ([a2a-card.md, section 3](a2a-card.md#3-the-binding-in-the-next-version)).
 - **#54's last clause is dropped** ([#54](https://github.com/obi-ai-bot/oby-sphere/issues/54#issuecomment-6583515890)): a runtime named in a request has nothing left to apply to once the compute and share actions are gone ([runtimes.md, section 4](runtimes.md#4-done-when)).
 
 ## Why a new version
@@ -100,13 +100,14 @@ Each is this Draft's own, written into the document named with its reason, and n
 - tokens bound by DPoP required for an agent's tokens, bound to its own key, once the #60 addition defines them (below);
 - policy matched scope by scope, and no remembered accept keyed by a topic ([core-and-profiles.md, section 8](core-and-profiles.md#8-scopes-policy-and-remembered-decisions));
 - a result consistent with its request, checked by the Obysphere at send, the chain's verifier and the requester ([core-and-profiles.md, section 5](core-and-profiles.md#5-a-request-for-work));
-- the card in A2A 1.0's shape names the Obysphere's token as its security scheme, `DPoP`, and lists the binding's one interface; and every Obysphere serves the A2A binding, so the interface a card lists is always there ([a2a-card.md, sections 2 and 3](a2a-card.md#2-the-card)), which the maintainer has since decided ([above](#open-points-decided-since)).
+- the card in A2A 1.0's shape names the Obysphere's token as its security scheme, `DPoP`, and lists the binding's one interface ([a2a-card.md, section 2](a2a-card.md#2-the-card));
+- the switch checked within its own step, refused with `409 conflict` while a member or an organisation isn't ready, and the Obysphere's resource listing the active members that have no next-version card yet ([migration.md, section 4](migration.md#4-the-switch-d8)).
 
 Accepted with the decisions, on [#51](https://github.com/obi-ai-bot/oby-sphere/issues/51#issuecomment-6456517079): #51's two exceptions in the next version's fixtures, the old marker `by Oby:` and agent ids carried over ([identifiers.md, section 6](identifiers.md#6-done-when)).
 
 ## Additions to `obi/0.1`, folded in
 
-These come to `obi/0.1` behind features, and all of them are merged: #54 (obi-ai-bot/oby-sphere#70), #57's classes on the card (obi-ai-bot/oby-sphere#74) and its policy rule that requires a class (obi-ai-bot/oby-sphere#88), #53 (obi-ai-bot/oby-sphere#76), #62 (obi-ai-bot/oby-sphere#69), #60's server side (obi-ai-bot/oby-sphere#84) and #59 (obi-ai-bot/oby-sphere#89). The next version takes each as its addition defines it, without the feature flag, unless this table says otherwise. This Draft's rows for #57's policy rule and #60 were written before those two merged, and haven't been checked against their merged text yet.
+These come to `obi/0.1` behind features, and all of them are merged: #54 (obi-ai-bot/oby-sphere#70), #57's classes on the card (obi-ai-bot/oby-sphere#74) and its policy rule that requires a class (obi-ai-bot/oby-sphere#88), #53 (obi-ai-bot/oby-sphere#76), #62 (obi-ai-bot/oby-sphere#69), #60's server side (obi-ai-bot/oby-sphere#84) and #59 (obi-ai-bot/oby-sphere#89). The next version takes each as its addition defines it, without the feature flag, unless this table says otherwise. This Draft's rows for #57's policy rule, #60 and #62 were written before those three merged, and haven't been checked against their merged text yet.
 
 | Addition | Issue | In the next version |
 |---|---|---|
