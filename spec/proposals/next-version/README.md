@@ -101,13 +101,13 @@ Each is this Draft's own, written into the document named with its reason, and n
 - policy matched scope by scope, and no remembered accept keyed by a topic ([core-and-profiles.md, section 8](core-and-profiles.md#8-scopes-policy-and-remembered-decisions));
 - a result consistent with its request, checked by the Obysphere at send, the chain's verifier and the requester ([core-and-profiles.md, section 5](core-and-profiles.md#5-a-request-for-work));
 - the card in A2A 1.0's shape names the Obysphere's token as its security scheme, `DPoP`, and lists the binding's one interface ([a2a-card.md, section 2](a2a-card.md#2-the-card));
-- the switch checked within its own step, refused with `409 conflict` while a member or an organisation isn't ready, and the Obysphere's resource listing the active members that have no next-version card yet ([migration.md, section 4](migration.md#4-the-switch-d8)).
+- the switch checked within its own step, refused with `409 conflict` while a member or an organisation isn't ready, and the Obysphere's resource listing who isn't ready yet ([migration.md, section 4](migration.md#4-the-switch-d8)).
 
 Accepted with the decisions, on [#51](https://github.com/obi-ai-bot/oby-sphere/issues/51#issuecomment-6456517079): #51's two exceptions in the next version's fixtures, the old marker `by Oby:` and agent ids carried over ([identifiers.md, section 6](identifiers.md#6-done-when)).
 
 ## Additions to `obi/0.1`, folded in
 
-These come to `obi/0.1` behind features, and all of them are merged: #54 (obi-ai-bot/oby-sphere#70), #57's classes on the card (obi-ai-bot/oby-sphere#74) and its policy rule that requires a class (obi-ai-bot/oby-sphere#88), #53 (obi-ai-bot/oby-sphere#76), #62 (obi-ai-bot/oby-sphere#69), #60's server side (obi-ai-bot/oby-sphere#84) and #59 (obi-ai-bot/oby-sphere#89). The next version takes each as its addition defines it, without the feature flag, unless this table says otherwise. This Draft's rows for #57's policy rule, #60 and #62 were written before those three merged, and haven't been checked against their merged text yet.
+These come to `obi/0.1` behind features, and all of them are merged: #54 (obi-ai-bot/oby-sphere#70), #57's classes on the card (obi-ai-bot/oby-sphere#74) and its policy rule that requires a class (obi-ai-bot/oby-sphere#88), #53 (obi-ai-bot/oby-sphere#76), #62 (obi-ai-bot/oby-sphere#69), #60's spec text and server side (obi-ai-bot/oby-sphere#84; its client side is still open) and #59 (obi-ai-bot/oby-sphere#89). The next version takes each as its addition defines it, without the feature flag, unless this table says otherwise. This Draft's rows for #57's policy rule, #60 and #62 were written before those three merged, and haven't been checked against their merged text yet.
 
 | Addition | Issue | In the next version |
 |---|---|---|
