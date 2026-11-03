@@ -10,6 +10,7 @@ import { deleteRunner, putRunner } from "./routes/runner.ts";
 import { getMemberRoute, invite, listMembers, previewInvitation, redeem, revoke, updateCard, withdrawInvitation } from "./routes/members.ts";
 import { ack, deliveries, send } from "./routes/messages.ts";
 import { getPolicy, putPolicy } from "./routes/policy.ts";
+import { post, posts } from "./routes/room.ts";
 import { createSphere, getSphereRoute, health, joinPage } from "./routes/spheres.ts";
 import { finishSignIn, startSignIn } from "./signin.ts";
 
@@ -37,6 +38,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/messages$`), send],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/deliveries$`), deliveries],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/deliveries/ack$`), ack],
+  ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/room/posts$`), post],
+  ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/room/posts$`), posts],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/audit$`), audit],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/channels/${SEGMENT}$`), openChannel],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), putRunner],
