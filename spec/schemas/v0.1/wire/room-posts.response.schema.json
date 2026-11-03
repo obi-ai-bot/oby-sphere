@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/room-posts.response.schema.json",
+  "title": "GET /v0.1/spheres/{sphere}/room/posts answer",
+  "description": "The room's posts after a cursor, oldest first, each as its sender signed it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["posts"],
+  "properties": {
+    "posts": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seq", "recorded_at", "post"],
+        "properties": {
+          "seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+          "recorded_at": { "$ref": "../common.schema.json#/$defs/timestamp" },
+          "post": { "$ref": "room-post.request.schema.json" }
+        }
+      }
+    }
+  }
+}
