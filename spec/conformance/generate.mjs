@@ -789,6 +789,16 @@ export function buildFixtures() {
   wireCase("invalid-invitation-preview-request-short-secret", "A secret that isn't 43 base64url characters.", "wire/invitation-preview.request", { secret: "A".repeat(42) }, "reject");
   wireCase("valid-invitation-preview-response", "The Sphere's name, its active members and the invitation's expiry.", "wire/invitation-preview.response", { sphere: SPHERE, name: "Conformance sphere", member_count: 2, expires_at: NOW }, "accept");
   wireCase("invalid-invitation-preview-response-members", "A preview that lists members: it gives only their count.", "wire/invitation-preview.response", { sphere: SPHERE, name: "Conformance sphere", member_count: 1, expires_at: NOW, members: ["obi-a"] }, "reject");
+  // A room post (sphere-api.md section 6.5), as the schema judges it: the signature is the Obysphere's check.
+  const ROOM = "wire/room-post.request";
+  const roomPost = (extra) => ({ id: uuidFor("wire-room-post"), sphere: SPHERE, from: "obi-a", kind: "need", by: "obi", created_at: NOW, key_id: `ed25519:${"K".repeat(43)}`, copies: [{ to: "obi-b", seal: { suite: "x25519-hkdf-sha256-chacha20poly1305", key_id: `x25519:${"S".repeat(43)}`, enc: "E".repeat(43) }, text: "T".repeat(64) }], signature: "G".repeat(86), ...extra });
+  wireCase("valid-room-post", "A post with one sealed copy.", ROOM, roomPost({}), "accept");
+  wireCase("valid-room-post-say-by-owner", "The owner's own words, in reply to another post.", ROOM, roomPost({ kind: "say", by: "owner", reply_to: uuidFor("wire-room-post-before") }), "accept");
+  wireCase("invalid-room-post-unknown-kind", "A kind that isn't one of the five.", ROOM, roomPost({ kind: "chat" }), "reject");
+  wireCase("invalid-room-post-say-by-obi", "`say` is only ever the owner's.", ROOM, roomPost({ kind: "say" }), "reject");
+  wireCase("invalid-room-post-no-copies", "A post nobody can open.", ROOM, roomPost({ copies: [] }), "reject");
+  wireCase("invalid-room-post-words-in-the-clear", "A copy's text that isn't base64url: words in the clear.", ROOM, roomPost({ copies: [{ ...roomPost({}).copies[0], text: "what everyone is working on" }] }), "reject");
+  wireCase("invalid-room-post-extra-field", "A field the schema doesn't have, to carry words or instructions.", ROOM, roomPost({ text: "hello" }), "reject");
   // Policy, with a rule that may require a conformance class (sphere-api.md section 5, the
   // policy_classes feature): from_classes/to_classes are 1 to 16 distinct class ids.
   const POLICY_PUT = "wire/policy-put.request", POLICY = "wire/policy";

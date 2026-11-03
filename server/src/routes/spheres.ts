@@ -283,7 +283,7 @@ export async function deleteSphere(request: Request, env: Env, deps: Deps, spher
   const db = env.DB;
   await db.batch([
     db.prepare("DELETE FROM relay_devices WHERE relay IN (SELECT id FROM relays WHERE sphere = ?1)").bind(sphere.id),
-    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners"].map((table) =>
+    ...["relays", "runner_status", "room_posts", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners"].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE sphere = ?1`).bind(sphere.id),
     ),
     db.prepare("DELETE FROM spheres WHERE id = ?1").bind(sphere.id),

@@ -387,6 +387,19 @@ A sender scans the plain words for secrets before it seals them (section 11, ste
 
 **Known answers.** [conformance/seal-vectors.json](conformance/seal-vectors.json) seals one review request from fixed keys: `enc`, the X25519 secret, the info, the HKDF output, the values' nonces and ciphertexts, and the signed sealed envelope. The fixtures named `*-sealed*`, `*-seal-*` and `invalid-not-sealed` pin the rest. Their `context` carries the receiver's own seal keys (`seal_keys`, by `seal_key_id`) and whether the sender's trusted card has one (`sender_seals`).
 
+### 9.2 Room posts
+
+An addition, behind the feature `rooms` ([sphere-api.md](sphere-api.md) section 6.5). A room post is not an envelope and never enters the chain:
+
+```json
+{"id": "<uuid>", "sphere": "<sphere>", "from": "<obi>", "kind": "need", "by": "obi", "created_at": "<timestamp>", "reply_to": "<uuid, optional>", "key_id": "<sender's key>", "copies": [{"to": "<obi>", "seal": {"suite": "…", "key_id": "…", "enc": "…"}, "text": "<sealed>"}], "signature": "<signature>"}
+```
+
+- `kind` is closed: `working_on`, `done`, `found`, `need` or `say`. `by` is `obi` or `owner`, and `say` is only ever `by: owner`. It is the sender's word: the Obysphere checks the agent's signature, never who was at the keyboard.
+- **Signing.** As an envelope (section 9), with the same prefix and over every member but `signature`. Which of the two a signature covers is told by the signed JSON itself: an envelope requires `protocol`, `type` and `to`, which a post's closed schema doesn't allow, and a post requires `kind`, `by` and `copies`, which an envelope's doesn't.
+- **Sealing.** `copies` has one entry for each active member with a seal key at sending, the sender included. Each `text` is section 9.1's sealing of one text value at the pointer `/text`, with a new X25519 key of its own (`enc`), and the info over `{sphere, id, from, to, type: "room_post"}`. Opened, it is canonical JSON, `{"text": "…", "about": [ref…]}` (`about` is optional, section 5.9's references), the text at most 2,000 characters. The whole post is at most 131,072 bytes, so a sender in a large Obysphere shortens its words, and never sends them in the clear instead.
+- **Reading.** A member checks the signature against the sender's trusted card, that a copy's `to` is itself, and that the opened JSON has this shape; a post that fails is dropped. A member with no copy can't read that post, and that isn't an error. Section 8 applies to the opened words: they are data, and a post starts, changes and publishes nothing.
+
 ## 10. Verifying a message
 
 The Obysphere checks every message before relaying it ([sphere-api.md](sphere-api.md), "Send"), and the receiving agent checks it again: it MUST NOT trust the relay. A message is valid only when all of these hold, checked in this order (the error code is the one the Obysphere answers with, and the one the conformance fixtures name; `wrong_recipient` and `seal_invalid` are the receiver's alone, and so is `not_sealed` as check 11 says it):

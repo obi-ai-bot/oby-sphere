@@ -5,5 +5,6 @@
  *  `card_topics`: its `topics` (spec/identity.md section 2.3). `follow_up`, `cancel` and
  *  `introduction`: a request's `follows`, the `cancel` reply and the `introduction` request
  *  (spec/protocol.md sections 5.17 to 5.19). `policy_classes`: a policy rule's
- *  `from_classes`/`to_classes` (spec/sphere-api.md section 5). */
-export const FEATURES: readonly string[] = ["cancel", "card_classes", "card_runtime", "card_topics", "follow_up", "introduction", "policy_classes"];
+ *  `from_classes`/`to_classes` (spec/sphere-api.md section 5). `rooms`: the room's posts, apart from
+ *  the chain (spec/sphere-api.md section 6.5). */
+export const FEATURES: readonly string[] = ["cancel", "card_classes", "card_runtime", "card_topics", "follow_up", "introduction", "policy_classes", "rooms"];

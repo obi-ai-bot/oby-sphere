@@ -1,0 +1,31 @@
+{
+  "case": "wire",
+  "name": "invalid-room-post-say-by-obi",
+  "description": "`say` is only ever the owner's.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/room-post.request"
+  },
+  "input": {
+    "id": "a38308f1-2502-84d8-83d8-865ccaf3c3d5",
+    "sphere": "conf-sphere",
+    "from": "obi-a",
+    "kind": "say",
+    "by": "obi",
+    "created_at": "2026-10-14T12:00:00Z",
+    "key_id": "ed25519:KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+    "copies": [
+      {
+        "to": "obi-b",
+        "seal": {
+          "suite": "x25519-hkdf-sha256-chacha20poly1305",
+          "key_id": "x25519:SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+          "enc": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+        },
+        "text": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+      }
+    ],
+    "signature": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+  }
+}

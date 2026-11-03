@@ -82,6 +82,7 @@ To rotate the operator token, run `wrangler secret put SPHERE_OPERATOR_TOKEN --e
 
 | Version | Code | Deployed | D1 after it |
 |---|---|---|---|
+| `1a8e16f4-6fd0-4656-86f4-39895df0da16` | `5d0bbfe` (branch `feat/room-on-live`), the room on `5faa423`, not yet in `dev` | 2026-11-03 | `0006`, `0008` |
 | `950df0ce-111d-4596-9f7a-cd14baaf1dce` | `5faa423`, the join page says where to get Oby (#31) | 2026-10-26 | `0006` |
 | `4eac49a0-39c9-4586-a1e7-d13a9df9b0f4` | `41d5a27`, sealed Obi-to-Obi words (#29) | 2026-10-26 | `0006` |
 | `0bb487e3-3311-4b4b-9785-bfc571dae708` | `829e1d4`, an Obysphere's admin edits (#27) | 2026-10-26 | `0006` |
@@ -97,6 +98,7 @@ Before each migration, take a Time Travel bookmark (`wrangler d1 time-travel inf
 
 | Just before | Bookmark |
 |---|---|
+| `0008`, the room | `00000032-00000002-00005118-e17a625a64895fbff71f8a4b7f3c855f` |
 | `5faa423` (no migration) | `00000020-00000002-00005110-ae17faf2965a1e17c52b2f74fbf791ea` |
 | `41d5a27` (no migration) | `0000001d-00000010-00005110-01eb1d3fb983aa460f537a09176dc7ee` |
 | `0005` | `0000000b-00000000-0000510d-0f64a7599f457852f2ffab55f956e91a` |
