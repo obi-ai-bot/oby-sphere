@@ -38,6 +38,7 @@ const EXPORTS = {
   cardUpdateRequest: "wire/card-update.request.schema.json",
   policyPutRequest: "wire/policy-put.request.schema.json",
   ackRequest: "wire/ack.request.schema.json",
+  roomPostRequest: "wire/room-post.request.schema.json",
   jwsHeader: "wire/jws-header.schema.json",
   delegationClaims: "wire/delegation.claims.schema.json",
   actorClaims: "wire/actor.claims.schema.json",
@@ -57,6 +58,8 @@ const EXPORTS = {
   sendResponse: "wire/send.response.schema.json",
   deliveriesResponse: "wire/deliveries.response.schema.json",
   ackResponse: "wire/ack.response.schema.json",
+  roomPostResponse: "wire/room-post.response.schema.json",
+  roomPostsResponse: "wire/room-posts.response.schema.json",
   auditResponse: "wire/audit.response.schema.json",
   // The A2A binding (spec/a2a.md): what it reads, and what it answers.
   a2aSendRequest: "wire/a2a-send.request.schema.json",

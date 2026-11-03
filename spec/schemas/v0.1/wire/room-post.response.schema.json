@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/room-post.response.schema.json",
+  "title": "POST /v0.1/spheres/{sphere}/room/posts answer",
+  "description": "The post was stored: its id, its place in the room, and when.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "seq", "recorded_at"],
+  "properties": {
+    "id": { "$ref": "../common.schema.json#/$defs/uuid" },
+    "seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "recorded_at": { "$ref": "../common.schema.json#/$defs/timestamp" }
+  }
+}

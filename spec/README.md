@@ -44,6 +44,7 @@ A version of a standard is named by its **protocol constant**. Core's is `obi/0.
 | `follow_up` | A request's `follows`: the earlier exchange it follows up | [protocol.md](protocol.md) section 5.19 |
 | `cancel` | The `cancel` reply: a request's sender calls it off | [protocol.md](protocol.md) section 5.17 |
 | `introduction` | The `introduction` request, and a card that accepts it | [protocol.md](protocol.md) section 5.18 |
+| `rooms` | The Obysphere's room: posts sealed for each member, kept apart from the chain, so no member's card has to list it | [sphere-api.md](sphere-api.md) section 6.5 |
 | `policy_classes` | A policy rule's `from_classes`/`to_classes`; an agent that reads them lists it in its card's `features` | [sphere-api.md](sphere-api.md) section 5 |
 | `a2a` | An optional extension of the HTTP binding, not of the messages: a member's card `url` is an A2A 1.0 interface that takes the members' signed envelopes, unchanged, and shows their exchanges as A2A tasks; what it records is what the relay records | [a2a.md](a2a.md) |
 | `phone_relay` | An optional extension of the HTTP binding, not of the messages: a member's phones reach its agent through the Obysphere, which offers it or answers its paths `404` | [sphere-api.md](sphere-api.md) section 9 |
