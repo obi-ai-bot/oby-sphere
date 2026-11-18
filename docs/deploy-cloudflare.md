@@ -6,9 +6,9 @@ Deployed 2026-10-20. It runs the Sphere server from [`server/`](../server/), unc
 |---|---|
 | URL | https://obysphere.deskree.com (`GET /v0.1/health` answers `{"ok":true,"protocol":"obi/0.1","seal":true}`) |
 | Cloudflare account | `Deskree` (`9784e77e77b9aaff2387596b31f85320`), the account that holds `deskree.com`. It is pinned as `account_id` in `env.deskree` of [`server/wrangler.jsonc`](../server/wrangler.jsonc), which holds every Deskree value; the top level is neutral ([run-your-own.md](run-your-own.md)). |
-| Worker | `obi-sphere`, version `950df0ce-111d-4596-9f7a-cd14baaf1dce` (2026-10-26), on the custom domain only (its workers.dev address is off), with the Durable Objects `ChannelRelay` (job channels), `Doorbell` (long polls) and `PhoneRelay` (paired phones) |
-| Code | `dev` at `5faa423` (#31: the join page says where to get Oby, after #29's sealed Obi-to-Obi words), with Deskree's values in `env.deskree` of `server/wrangler.jsonc` |
-| D1 | `obi-sphere`, id `ff9bde6f-e277-47c8-b6e6-309bf00f87c7`, region ENAM, migrations `0001` to `0006_sphere_edits.sql` applied |
+| Worker | `obi-sphere`, version `2e4083d7-abee-4e7f-ba0b-482d33d359f3` (2026-11-18), on the custom domain only (its workers.dev address is off), with the Durable Objects `ChannelRelay` (job channels), `Doorbell` (long polls) and `PhoneRelay` (paired phones) |
+| Code | `dev` at `586a694` (#96, the release merged into `main` by #98: the neutral join page and invite links, `GET /v0.1/features`, sign-in with any OpenID Connect provider, DPoP and the URL form of `aud`, the A2A binding), with Deskree's values in `env.deskree` of `server/wrangler.jsonc` |
+| D1 | `obi-sphere`, id `ff9bde6f-e277-47c8-b6e6-309bf00f87c7`, region ENAM, migrations `0001` to `0007_identity.sql` applied |
 | Secrets | `SPHERE_OPERATOR_TOKEN` (a Worker secret). A copy is in the deployer's macOS Keychain under service `obi-sphere-operator-token`, account `obysphere.deskree.com` (the server's host: Oby sends it to that host only). Nothing else holds it. |
 | Telemetry | Off, as `wrangler.jsonc` sets it: Cloudflare keeps no Workers logs or traces |
 
@@ -82,6 +82,8 @@ To rotate the operator token, run `wrangler secret put SPHERE_OPERATOR_TOKEN --e
 
 | Version | Code | Deployed | D1 after it |
 |---|---|---|---|
+| `2e4083d7-abee-4e7f-ba0b-482d33d359f3` | `586a694`, `dev` as released by #98 | 2026-11-18 | `0007` |
+| `1a8e16f4-6fd0-4656-86f4-39895df0da16` | not recorded; its join page and the missing `GET /v0.1/features` match `5faa423` | 2026-11-03 | `0006` |
 | `950df0ce-111d-4596-9f7a-cd14baaf1dce` | `5faa423`, the join page says where to get Oby (#31) | 2026-10-26 | `0006` |
 | `4eac49a0-39c9-4586-a1e7-d13a9df9b0f4` | `41d5a27`, sealed Obi-to-Obi words (#29) | 2026-10-26 | `0006` |
 | `0bb487e3-3311-4b4b-9785-bfc571dae708` | `829e1d4`, an Obysphere's admin edits (#27) | 2026-10-26 | `0006` |
@@ -91,7 +93,7 @@ To rotate the operator token, run `wrangler secret put SPHERE_OPERATOR_TOKEN --e
 | `7c7284b9-5707-4ac0-8f63-0bcd1c13946d` | `c156106`, sharing | 2026-10-22 | `0002` |
 | `4f2c3b94-0c1a-44ef-979c-8738e6530222` | before sharing | 2026-10-20 | `0001` |
 
-Once the Doorbell is deployed, none of these versions can be rolled back to ("Redeploying"). A Worker version runs only on the D1 schema it was deployed with, or on an additive change to it. `0004_signin.sql` only adds, so rolling the Worker alone back to `e0c87c86` is safe. `0003_open_invitations.sql` rebuilt the `invitations` table without `used_at`, which `7c7284b9`'s redeem reads and writes, so **rolling back to `7c7284b9` breaks redeem** unless the D1 is restored too, and a restore undoes every write since (members who joined, messages, the audit chain).
+Once the Doorbell is deployed, none of these versions can be rolled back to ("Redeploying"). A Worker version runs only on the D1 schema it was deployed with, or on an additive change to it. `0004_signin.sql` only adds, so rolling the Worker alone back to `e0c87c86` is safe. So does `0007_identity.sql`, so rolling the Worker alone back to `950df0ce` is safe too. `0003_open_invitations.sql` rebuilt the `invitations` table without `used_at`, which `7c7284b9`'s redeem reads and writes, so **rolling back to `7c7284b9` breaks redeem** unless the D1 is restored too, and a restore undoes every write since (members who joined, messages, the audit chain).
 
 Before each migration, take a Time Travel bookmark (`wrangler d1 time-travel info obi-sphere`). The ones taken so far:
 
