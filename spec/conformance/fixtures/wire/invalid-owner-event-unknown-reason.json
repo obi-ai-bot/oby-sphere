@@ -1,8 +1,9 @@
 {
   "case": "wire",
-  "name": "valid-owner-event-unknown-kind",
-  "description": "An event of a kind a client may not know yet: kind is open.",
-  "expect": "accept",
+  "name": "invalid-owner-event-unknown-reason",
+  "description": "An event whose reason isn't on the closed list.",
+  "expect": "reject",
+  "reason": "bad_request",
   "context": {
     "schema": "wire/owner-events.response"
   },
@@ -12,11 +13,10 @@
       {
         "id": 1,
         "owner": "owner-a",
-        "kind": "reset",
+        "reason": "lost_key",
         "at": "2026-11-18T12:00:00Z",
         "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
         "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
-        "account_linked": false,
         "revoked": [
           "obi-a"
         ]

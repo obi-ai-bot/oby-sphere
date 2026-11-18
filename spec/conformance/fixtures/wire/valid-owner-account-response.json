@@ -1,0 +1,14 @@
+{
+  "case": "wire",
+  "name": "valid-owner-account-response",
+  "description": "Whether an account is linked, never which.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/owner-account.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "owner": "owner-a",
+    "account_linked": true
+  }
+}

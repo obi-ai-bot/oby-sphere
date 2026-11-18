@@ -1,7 +1,7 @@
 {
   "case": "wire",
   "name": "valid-owner-events",
-  "description": "Owner events, one rebind that linked the account and revoked nothing.",
+  "description": "Owner events: a rebind that revoked nothing, and an admin's reset.",
   "expect": "accept",
   "context": {
     "schema": "wire/owner-events.response"
@@ -12,12 +12,22 @@
       {
         "id": 1,
         "owner": "owner-a",
-        "kind": "rebound",
+        "reason": "signed_in_again",
         "at": "2026-11-18T12:00:00Z",
         "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
         "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
-        "account_linked": true,
         "revoked": []
+      },
+      {
+        "id": 2,
+        "owner": "owner-a",
+        "reason": "admin_reset",
+        "at": "2026-11-18T12:00:00Z",
+        "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
+        "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
+        "revoked": [
+          "obi-a"
+        ]
       }
     ]
   }

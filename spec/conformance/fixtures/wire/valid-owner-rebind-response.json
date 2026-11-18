@@ -15,11 +15,10 @@
     "event": {
       "id": 1,
       "owner": "owner-a",
-      "kind": "rebound",
+      "reason": "signed_in_again",
       "at": "2026-11-18T12:00:00Z",
       "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
       "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
-      "account_linked": false,
       "revoked": [
         "obi-a"
       ]
