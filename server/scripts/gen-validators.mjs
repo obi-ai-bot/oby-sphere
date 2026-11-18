@@ -37,6 +37,7 @@ const EXPORTS = {
   redeemRequest: "wire/redeem.request.schema.json",
   ownerRebindRequest: "wire/owner-rebind.request.schema.json",
   ownerResetRequest: "wire/owner-reset.request.schema.json",
+  ownerAccountRequest: "wire/owner-account.request.schema.json",
   cardUpdateRequest: "wire/card-update.request.schema.json",
   policyPutRequest: "wire/policy-put.request.schema.json",
   ackRequest: "wire/ack.request.schema.json",
@@ -70,6 +71,7 @@ const EXPORTS = {
   ownerEventsResponse: "wire/owner-events.response.schema.json",
   ownersResponse: "wire/owners.response.schema.json",
   operatorLogResponse: "wire/operator-log.response.schema.json",
+  ownerAccountResponse: "wire/owner-account.response.schema.json",
   error: "wire/error.schema.json",
 };
 

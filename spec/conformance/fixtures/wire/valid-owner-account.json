@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-owner-account",
+  "description": "Linking: a sign-in started for the owner's bound key.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/owner-account.request"
+  },
+  "input": {
+    "signin": {
+      "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "code": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    }
+  }
+}

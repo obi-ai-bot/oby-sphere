@@ -1,0 +1,17 @@
+{
+  "case": "wire",
+  "name": "invalid-owner-account-key",
+  "description": "Linking with a new key: a link never changes the key.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/owner-account.request"
+  },
+  "input": {
+    "signin": {
+      "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "code": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    },
+    "owner_key": "c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg"
+  }
+}

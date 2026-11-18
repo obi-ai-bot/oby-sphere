@@ -29,14 +29,14 @@ pnpm run operator show acme
 
 ## The common cases
 
-**Someone lost every machine that held their owner key.** If the Obysphere's server signs people in and their account is linked, they get back in themselves with a sign-in ([spec/sphere-api.md](../spec/sphere-api.md) section 3.2). Otherwise:
+**Someone lost every machine that held their owner key.** If the Obysphere's server signs people in and they linked a sign-in account while they still had their key, they get back in themselves with that sign-in ([spec/sphere-api.md](../spec/sphere-api.md) section 3.2). Owners who never linked one can't, by design: anyone else's sign-in could otherwise claim them. For them:
 
 1. They install Oby on the new machine, which makes a new owner key, and send you its public key (base64url; it isn't secret).
 2. `operator show <sphere>` to check who they are and which agents they have.
 3. `operator reset-owner <sphere> <owner> --owner-key <their new key>`, read what it would do, then again with `--yes`.
 4. `operator invite <sphere> --owner <owner> --obi <a new agent id> --yes`, and send them the link. Agent ids are never reused, so pick a new one.
 
-Their teammates' Obys see the owner's key change and ask their owners to compare the new fingerprint before trusting it. An owner event of kind `reset`, by `operator`, tells them why.
+Their teammates' Obys see the owner's key change and ask their owners to compare the new fingerprint before trusting it. An owner event with `reason` `operator_reset` tells them why.
 
 **The only admin lost their key.** Reset them as above; their admin flag stays with their owner id. Or make another owner an admin first: `operator make-admin <sphere> <owner> --yes`.
 

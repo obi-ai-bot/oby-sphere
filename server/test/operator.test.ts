@@ -22,6 +22,8 @@ describe("the operator's acts (operator_recovery)", () => {
       { owner: "wellington", owner_key_id: (await w.ownerKey("wellington")).keyId, admin: true, account_linked: false, members: [{ obi: "obi-wellington", status: "active" }] },
     ]);
     expect(r.body.unbound).toEqual([]);
+    // The operator reads whether an owner linked an account, never which.
+    expect((await op(w, "GET", "/owners/ernesto")).body).toEqual({ sphere: "e2e", owner: "ernesto", account_linked: false });
     expect((await w.call("GET", "/v0.1/spheres/e2e/owners", { token: await w.ownerToken() })).status).toBe(200);
     expect((await w.call("GET", "/v0.1/spheres/e2e/owners", { token: await w.ownerToken("ernesto", "directory:read") })).status).toBe(403);
     expect((await w.call("GET", "/v0.1/spheres/e2e/owners", { token: "not-the-operator-token-0123456789-abcdef" })).status).toBe(401);
@@ -50,15 +52,14 @@ describe("the operator's acts (operator_recovery)", () => {
     expect((await w.call("GET", "/v0.1/spheres/e2e/operator-log", { token: await w.obiToken("obi-wellington") })).status).toBe(403);
   });
 
-  it("resets an owner to a key they gave out of band: their agents revoked, admin kept, an event says who", async () => {
+  it("resets an owner to a key they gave out of band: their agents revoked, admin kept, the event's reason says who", async () => {
     const w = await team();
     const key = await newKey();
     const r = await op(w, "POST", "/owners/wellington/reset", { owner_key: key.publicKey });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expectSchema("ownerRebindResponse", r.body);
     expect(r.body).toMatchObject({ owner: "wellington", owner_key_id: key.keyId, admin: true });
-    expect(r.body.event).toMatchObject({ kind: "reset", by: "operator", revoked: ["obi-wellington"] });
-    expect(r.body.event).not.toHaveProperty("account_linked");
+    expect(r.body.event).toMatchObject({ reason: "operator_reset", new_key_id: key.keyId, revoked: ["obi-wellington"] });
     w.owners.set("wellington", key);
     expect(await log(w)).toEqual(["reset_owner wellington"]);
     // The owner joins again with an invitation, under the new key.
@@ -66,7 +67,7 @@ describe("the operator's acts (operator_recovery)", () => {
     // An admin may reset too; the event says so.
     const k2 = await newKey();
     const byAdmin = await w.call("POST", "/v0.1/spheres/e2e/owners/ernesto/reset", { token: await w.ownerToken(), body: { owner_key: k2.publicKey } });
-    expect(byAdmin.body.event).toMatchObject({ kind: "reset", by: "admin", revoked: ["obi-ernesto"] });
+    expect(byAdmin.body.event).toMatchObject({ reason: "admin_reset", revoked: ["obi-ernesto"] });
     // An owner who isn't an admin may not, not even for themself.
     w.owners.set("ernesto", k2);
     expect((await w.call("POST", "/v0.1/spheres/e2e/owners/ernesto/reset", { token: await w.ownerToken("ernesto", "directory:read"), body: { owner_key: (await newKey()).publicKey } })).status).toBe(403);

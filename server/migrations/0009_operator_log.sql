@@ -9,6 +9,3 @@ CREATE TABLE operator_log (
 );
 CREATE INDEX operator_log_by_sphere ON operator_log (sphere, id);
 
--- Who reset an owner's key (an owner event of kind `reset`): `admin` or `operator`. Null for a
--- rebind, which the owner does with their own sign-in.
-ALTER TABLE owner_events ADD COLUMN by_whom TEXT;

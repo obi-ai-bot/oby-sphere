@@ -35,7 +35,13 @@ async function signIn(w: World, key: Key, sub: string, hd: string | null = "exam
 const rebind = (w: World, owner: string, body: Record<string, unknown>) => w.call("POST", `/v0.1/spheres/e2e/owners/${owner}/rebind`, { body });
 const ownerRow = (owner: string) => env.DB.prepare("SELECT owner_key, account, admin FROM owners WHERE sphere = 'e2e' AND owner = ?1").bind(owner).first<{ owner_key: string; account: string | null; admin: number }>();
 
-/** ernesto loses their key and gets back in as Google account `sub`: the answer, and the new key. */
+/** Links Google account `sub` to `owner` while they hold their key, with their own token. */
+async function link(w: World, owner: string, sub: string, hd: string | null = "example.com") {
+  const signin = await signIn(w, await w.ownerKey(owner), sub, hd);
+  return w.call("PUT", `/v0.1/spheres/e2e/owners/${owner}/account`, { token: await w.ownerToken(owner, "directory:read"), body: { signin } });
+}
+
+/** `owner` loses their key and gets back in as Google account `sub`: the answer, and the new key. */
 async function getBackIn(w: World, owner: string, sub: string, hd: string | null = "example.com", card = false) {
   const key = await newKey();
   const signin = await signIn(w, key, sub, hd);
@@ -45,22 +51,81 @@ async function getBackIn(w: World, owner: string, sub: string, hd: string | null
   return { r: await rebind(w, owner, body), key, obiKey };
 }
 
-describe("getting back in with a sign-in (owner_rebind)", () => {
-  it("is listed in /v0.1/features by a server that signs people in", async () => {
+describe("linking an account first (owner_account_link)", () => {
+  it("is listed with owner_rebind by a server that signs people in", async () => {
     const r = await new World().call("GET", "/v0.1/features");
-    expect(r.body.features).toContain("owner_rebind");
+    expect(r.body.features).toEqual(expect.arrayContaining(["owner_account_link", "owner_rebind"]));
   });
 
+  it("links an account with the owner's own token, says so, and does it again idempotently", async () => {
+    const w = await team();
+    const read = async () => w.call("GET", "/v0.1/spheres/e2e/owners/ernesto", { token: await w.ownerToken("ernesto", "directory:read") });
+    expect((await read()).body).toEqual({ sphere: "e2e", owner: "ernesto", account_linked: false });
+    const r = await link(w, "ernesto", "2001");
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expectSchema("ownerAccountResponse", r.body);
+    expect(r.body).toEqual({ sphere: "e2e", owner: "ernesto", account_linked: true });
+    expect((await ownerRow("ernesto"))!.account).toBe("google:2001");
+    expect((await read()).body.account_linked).toBe(true);
+    // The same account again: the same answer.
+    expect((await link(w, "ernesto", "2001")).status).toBe(200);
+    // Readable by the owner's agents and by an admin; not by another owner.
+    expect((await w.call("GET", "/v0.1/spheres/e2e/owners/ernesto", { token: await w.obiToken("obi-ernesto") })).status).toBe(200);
+    expect((await w.call("GET", "/v0.1/spheres/e2e/owners/ernesto", { token: await w.ownerToken() })).status).toBe(200);
+    expect((await w.call("GET", "/v0.1/spheres/e2e/owners/ernesto", { token: await w.obiToken("obi-wellington") })).status).toBe(403);
+    expect((await w.call("GET", "/v0.1/spheres/e2e/owners/nobody", { token: await w.ownerToken() })).status).toBe(404);
+  });
+
+  it("refuses an account linked to another owner, another account for a linked owner, and someone else's token", async () => {
+    const w = await team();
+    expect((await link(w, "wellington", "3001")).status).toBe(200);
+    const taken = await link(w, "ernesto", "3001");
+    expect(taken.status).toBe(409);
+    expect((await ownerRow("ernesto"))!.account).toBeNull();
+    expect((await link(w, "ernesto", "3002")).status).toBe(200);
+    expect((await link(w, "ernesto", "3003")).status).toBe(409);
+    expect((await ownerRow("ernesto"))!.account).toBe("google:3002");
+    // Not with an agent's token, nor another owner's.
+    const signin = await signIn(w, await w.ownerKey("ernesto"), "3004");
+    expect((await w.call("PUT", "/v0.1/spheres/e2e/owners/ernesto/account", { token: await w.obiToken("obi-ernesto"), body: { signin } })).status).toBe(403);
+    expect((await w.call("PUT", "/v0.1/spheres/e2e/owners/ernesto/account", { token: await w.ownerToken(), body: { signin } })).status).toBe(403);
+  });
+
+  it("refuses a sign-in started for another key, or used already", async () => {
+    const w = await team();
+    const other = await signIn(w, await newKey(), "4001");
+    expect((await w.call("PUT", "/v0.1/spheres/e2e/owners/ernesto/account", { token: await w.ownerToken("ernesto", "directory:read"), body: { signin: other } })).status).toBe(403);
+    const signin = await signIn(w, await w.ownerKey("ernesto"), "4002");
+    const put = async () => w.call("PUT", "/v0.1/spheres/e2e/owners/ernesto/account", { token: await w.ownerToken("ernesto", "directory:read"), body: { signin } });
+    expect((await put()).status).toBe(200);
+    expect((await put()).status).toBe(403);
+  });
+});
+
+describe("getting back in with a sign-in (owner_rebind)", () => {
   it("is not offered by a server with no sign-in: not listed, and its paths are 404", async () => {
     const plain = { ...env, GOOGLE_CLIENT_ID: "", SIGNIN_PROVIDERS: undefined };
     const features = await (await handle(new Request(`${BASE}/v0.1/features`), plain, { now: () => 0 })).json<{ features: string[] }>();
     expect(features.features).not.toContain("owner_rebind");
+    expect(features.features).not.toContain("owner_account_link");
     const r = await handle(new Request(`${BASE}/v0.1/spheres/e2e/owners/ernesto/rebind`, { method: "POST", body: "{}" }), plain, { now: () => 0 });
     expect(r.status).toBe(404);
   });
 
-  it("binds a new key for an owner with no linked account, from an allowed domain, and links the account", async () => {
+  it("refuses an owner with no linked account, even with a sign-in from an allowed domain (link first)", async () => {
     const w = await team();
+    const before = await ownerRow("ernesto");
+    const { r } = await getBackIn(w, "ernesto", "2001", "example.com");
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe("account_not_linked");
+    expect(await ownerRow("ernesto")).toEqual(before);
+    const entry = await w.call("GET", "/v0.1/spheres/e2e/members/obi-ernesto", { token: await w.obiToken("obi-wellington") });
+    expect(entry.body.status).toBe("active");
+  });
+
+  it("binds a new key for an owner who linked an account first, and revokes the old key's agents", async () => {
+    const w = await team();
+    expect((await link(w, "ernesto", "2001")).status).toBe(200);
     const oldKey = await w.ownerKey("ernesto");
     const oldObiToken = await w.obiToken("obi-ernesto");
     const oldOwnerToken = await w.ownerToken("ernesto", "directory:read");
@@ -68,7 +133,7 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expectSchema("ownerRebindResponse", r.body);
     expect(r.body).toMatchObject({ sphere: "e2e", owner: "ernesto", owner_key: key.publicKey, owner_key_id: key.keyId, admin: false });
-    expect(r.body.event).toMatchObject({ owner: "ernesto", kind: "rebound", old_key_id: oldKey.keyId, new_key_id: key.keyId, account_linked: true, revoked: ["obi-ernesto"] });
+    expect(r.body.event).toMatchObject({ owner: "ernesto", reason: "signed_in_again", old_key_id: oldKey.keyId, new_key_id: key.keyId, revoked: ["obi-ernesto"] });
     expect(r.body).not.toHaveProperty("member");
     expect(await ownerRow("ernesto")).toMatchObject({ owner_key: key.publicKey, account: "google:2001" });
 
@@ -77,12 +142,10 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
     const entry = await w.call("GET", "/v0.1/spheres/e2e/members/obi-ernesto", { token: reader });
     expect(entry.body.status).toBe("revoked");
     expect(entry.body.keys[0].valid_until_seq).not.toBeNull();
-    // Its entry keeps the owner key that signed its card.
     expect(entry.body).toMatchObject({ owner_key: oldKey.publicKey, owner_key_id: oldKey.keyId });
     expect((await w.call("GET", "/v0.1/spheres/e2e/members", { token: oldObiToken })).status).toBe(401);
     expect((await w.call("GET", "/v0.1/spheres/e2e/members", { token: oldOwnerToken })).status).toBe(401);
     expect((await w.exchangeObi("obi-ernesto")).body.error).toBe("invalid_grant");
-    // The old key opens nothing; the new one does.
     expect((await w.exchangeOwner("ernesto", "directory:read")).body.error).toBe("invalid_grant");
     w.owners.set("ernesto", key);
     expect((await w.exchangeOwner("ernesto", "directory:read")).status).toBe(200);
@@ -90,60 +153,34 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
 
   it("keeps an admin's admin flag", async () => {
     const w = await team();
+    expect((await link(w, "wellington", "3001")).status).toBe(200);
     const { r, key } = await getBackIn(w, "wellington", "3001");
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.admin).toBe(true);
     expect((await ownerRow("wellington"))!.admin).toBe(1);
     w.owners.set("wellington", key);
-    const admin = await w.ownerToken("wellington");
-    expect((await w.call("GET", "/v0.1/spheres/e2e/invitations", { token: admin })).status).toBe(200);
+    expect((await w.call("GET", "/v0.1/spheres/e2e/invitations", { token: await w.ownerToken("wellington") })).status).toBe(200);
   });
 
-  it("refuses another account for an owner whose account is linked: a stolen or someone else's sign-in", async () => {
+  it("refuses another account for a linked owner: a stolen or someone else's sign-in", async () => {
     const w = await team();
-    expect((await getBackIn(w, "ernesto", "2001")).r.status).toBe(200);
+    expect((await link(w, "ernesto", "2001")).status).toBe(200);
     const before = await ownerRow("ernesto");
     const other = await getBackIn(w, "ernesto", "6666");
     expect(other.r.status).toBe(403);
-    expect(other.r.body.error.message).toBe("the owner is bound to another account");
+    expect(other.r.body.error.message).toBe("the owner is linked to another account");
     expect(await ownerRow("ernesto")).toEqual(before);
-    // The linked account itself gets back in again.
     expect((await getBackIn(w, "ernesto", "2001")).r.status).toBe(200);
   });
 
-  it("refuses a sign-in from a domain the Sphere doesn't allow, or with no domain, for an owner with none linked", async () => {
+  it("refuses the same key, a sign-in for another key, a used sign-in, an unknown owner and no sign-in", async () => {
     const w = await team();
-    const before = await ownerRow("ernesto");
-    const wrong = await getBackIn(w, "ernesto", "4001", "elsewhere.test");
-    expect(wrong.r.status).toBe(403);
-    expect(wrong.r.body.error.message).toBe("a sign-in from elsewhere.test can't claim an owner here");
-    const personal = await getBackIn(w, "ernesto", "4002", null);
-    expect(personal.r.status).toBe(403);
-    expect(await ownerRow("ernesto")).toEqual(before);
-    const entry = await w.call("GET", "/v0.1/spheres/e2e/members/obi-ernesto", { token: await w.obiToken("obi-wellington") });
-    expect(entry.body.status).toBe("active");
-  });
-
-  it("allows a domain an invitation of this Sphere was made for", async () => {
-    const w = await team();
-    const inv = await w.call("POST", "/v0.1/spheres/e2e/invitations", { token: await w.ownerToken(), body: { expires_in: 3600, max_uses: 5, domain: "partner.test" } });
-    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
-    expect((await getBackIn(w, "ernesto", "5001", "partner.test")).r.status).toBe(200);
-  });
-
-  it("refuses an account linked to another owner, the same key, a sign-in for another key, a used sign-in, and an unknown owner", async () => {
-    const w = await team();
-    expect((await getBackIn(w, "wellington", "7001")).r.status).toBe(200);
-    // google:7001 is wellington's now.
-    expect((await getBackIn(w, "ernesto", "7001")).r.status).toBe(409);
-    // The key bound already.
+    expect((await link(w, "ernesto", "7001")).status).toBe(200);
     const same = await w.ownerKey("ernesto");
-    expect((await rebind(w, "ernesto", { owner_key: same.publicKey, signin: await signIn(w, same, "7002") })).status).toBe(409);
-    // A sign-in started for one key, sent with another.
+    expect((await rebind(w, "ernesto", { owner_key: same.publicKey, signin: await signIn(w, same, "7001") })).status).toBe(409);
     const a = await newKey(), b = await newKey();
-    const forA = await signIn(w, a, "7003");
+    const forA = await signIn(w, a, "7001");
     expect((await rebind(w, "ernesto", { owner_key: b.publicKey, signin: forA })).status).toBe(403);
-    // Used once, refused the second time.
     expect((await rebind(w, "ernesto", { owner_key: a.publicKey, signin: forA })).status).toBe(200);
     const c = await newKey();
     expect((await rebind(w, "ernesto", { owner_key: c.publicKey, signin: forA })).status).toBe(403);
@@ -153,13 +190,13 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
 
   it("joins a new agent in the same step when the request carries its card", async () => {
     const w = await team();
+    expect((await link(w, "ernesto", "8001")).status).toBe(200);
     const { r, key, obiKey } = await getBackIn(w, "ernesto", "8001", "example.com", true);
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.member).toMatchObject({ obi: "obi-ernesto-new", owner: "ernesto", owner_key: key.publicKey, status: "active" });
     w.owners.set("ernesto", key);
     w.obis.set("obi-ernesto-new", { owner: "ernesto", key: obiKey, accepts: ["review_request"] });
-    const token = await w.obiToken("obi-ernesto-new");
-    const list = await w.call("GET", "/v0.1/spheres/e2e/members", { token });
+    const list = await w.call("GET", "/v0.1/spheres/e2e/members", { token: await w.obiToken("obi-ernesto-new") });
     expect(list.status).toBe(200);
     const status = Object.fromEntries(list.body.members.map((m: { obi: string; status: string }) => [m.obi, m.status]));
     expect(status).toMatchObject({ "obi-ernesto": "revoked", "obi-ernesto-new": "active", "obi-wellington": "active" });
@@ -167,16 +204,19 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
 
   it("refuses a card for another owner and changes nothing", async () => {
     const w = await team();
+    expect((await link(w, "ernesto", "9001")).status).toBe(200);
     const key = await newKey();
     const card = await makeCard({ sphere: "e2e", obi: "obi-x", owner: "wellington", ownerKey: key, obiKey: await newKey(), issuedAt: w.clock.ts() });
+    const before = await ownerRow("ernesto");
     const r = await rebind(w, "ernesto", { owner_key: key.publicKey, signin: await signIn(w, key, "9001"), card });
     expect(r.status).toBe(400);
     expect(r.body.error.code).toBe("card_invalid");
-    expect((await ownerRow("ernesto"))!.account).toBeNull();
+    expect(await ownerRow("ernesto")).toEqual(before);
   });
 
   it("deletes a Sphere's owner events with it", async () => {
     const w = await team();
+    expect((await link(w, "ernesto", "1201")).status).toBe(200);
     expect((await getBackIn(w, "ernesto", "1201")).r.status).toBe(200);
     expect((await w.call("DELETE", "/v0.1/spheres/e2e", { token: await w.ownerToken() })).status).toBe(204);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM owner_events WHERE sphere = 'e2e'").first<{ n: number }>())!.n).toBe(0);
@@ -188,6 +228,7 @@ describe("getting back in with a sign-in (owner_rebind)", () => {
     const empty = await w.call("GET", "/v0.1/spheres/e2e/owner-events", { token: reader });
     expect(empty.status).toBe(200);
     expect(empty.body).toEqual({ sphere: "e2e", events: [] });
+    expect((await link(w, "ernesto", "1101")).status).toBe(200);
     const first = (await getBackIn(w, "ernesto", "1101")).r.body.event;
     const r = await w.call("GET", "/v0.1/spheres/e2e/owner-events", { token: reader });
     expectSchema("ownerEventsResponse", r.body);

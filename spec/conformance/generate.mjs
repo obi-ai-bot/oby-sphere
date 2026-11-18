@@ -821,17 +821,24 @@ export function buildFixtures() {
   wireCase("valid-owner-rebind-with-card", "A rebind that joins a new agent of the owner in the same step.", REBIND, { owner_key: OA.publicKey, signin, card: cardA }, "accept");
   wireCase("invalid-owner-rebind-no-signin", "A rebind without a sign-in: the sign-in is its only authentication.", REBIND, { owner_key: OB.publicKey }, "reject");
   wireCase("invalid-owner-rebind-secret", "A rebind with an invitation's secret instead of a sign-in.", REBIND, { owner_key: OB.publicKey, signin, secret: "A".repeat(43) }, "reject");
-  const event = { id: 1, owner: "owner-a", kind: "rebound", at: "2026-11-18T12:00:00Z", old_key_id: OA.keyId, new_key_id: OB.keyId, account_linked: false, revoked: ["obi-a"] };
+  const event = { id: 1, owner: "owner-a", reason: "signed_in_again", at: "2026-11-18T12:00:00Z", old_key_id: OA.keyId, new_key_id: OB.keyId, revoked: ["obi-a"] };
   wireCase("valid-owner-rebind-response", "The owner as now bound, still an admin, with the event.", REBOUND, { sphere: SPHERE, owner: "owner-a", owner_key: OB.publicKey, owner_key_id: OB.keyId, admin: true, event }, "accept");
-  wireCase("valid-owner-events", "Owner events, one rebind that linked the account and revoked nothing.", EVENTS, { sphere: SPHERE, events: [{ ...event, account_linked: true, revoked: [] }] }, "accept");
-  wireCase("valid-owner-event-unknown-kind", "An event of a kind a client may not know yet: kind is open.", EVENTS, { sphere: SPHERE, events: [{ ...event, kind: "reset" }] }, "accept");
+  wireCase("valid-owner-events", "Owner events: a rebind that revoked nothing, and an admin's reset.", EVENTS, { sphere: SPHERE, events: [{ ...event, revoked: [] }, { ...event, id: 2, reason: "admin_reset" }] }, "accept");
+  wireCase("invalid-owner-event-unknown-reason", "An event whose reason isn't on the closed list.", EVENTS, { sphere: SPHERE, events: [{ ...event, reason: "lost_key" }] }, "reject");
+  wireCase("invalid-owner-event-free-text", "An event carrying free text: the reason is a code, and nothing else explains it.", EVENTS, { sphere: SPHERE, events: [{ ...event, note: "lost my laptop" }] }, "reject");
+  // Linking an account first (sphere-api.md section 3.2).
+  wireCase("valid-features-owner-account-link", "An Obysphere where an owner links a sign-in account first.", "wire/features.response", { features: ["owner_account_link", "owner_rebind"] }, "accept");
+  wireCase("valid-owner-account", "Linking: a sign-in started for the owner's bound key.", "wire/owner-account.request", { signin }, "accept");
+  wireCase("invalid-owner-account-key", "Linking with a new key: a link never changes the key.", "wire/owner-account.request", { signin, owner_key: OB.publicKey }, "reject");
+  wireCase("valid-owner-account-response", "Whether an account is linked, never which.", "wire/owner-account.response", { sphere: SPHERE, owner: "owner-a", account_linked: true }, "accept");
+  wireCase("invalid-owner-account-response-account", "An answer naming the account.", "wire/owner-account.response", { sphere: SPHERE, owner: "owner-a", account_linked: true, account: "google:1234" }, "reject");
   wireCase("invalid-owner-event-account", "An event naming the account: events never carry an account, email or domain.", EVENTS, { sphere: SPHERE, events: [{ ...event, account: "google:1234" }] }, "reject");
   wireCase("invalid-owner-event-no-revoked", "An event without the list of agents it revoked.", EVENTS, { sphere: SPHERE, events: [{ ...event, revoked: undefined }] }, "reject");
   // The operator, and resetting an owner (sphere-api.md section 3.3).
   wireCase("valid-features-operator-recovery", "An Obysphere whose operator can fix it through the API, logged.", "wire/features.response", { features: ["card_runtime", "operator_recovery"] }, "accept");
   wireCase("valid-owner-reset", "A reset: the key the owner gave out of band.", "wire/owner-reset.request", { owner_key: OB.publicKey }, "accept");
   wireCase("invalid-owner-reset-signin", "A reset carrying a sign-in: a reset is an admin's or the operator's act, not the owner's.", "wire/owner-reset.request", { owner_key: OB.publicKey, signin }, "reject");
-  wireCase("valid-owner-event-reset", "An event of a reset, by the operator.", EVENTS, { sphere: SPHERE, events: [{ ...event, kind: "reset", by: "operator", account_linked: undefined }] }, "accept");
+  wireCase("valid-owner-event-reset", "An event of a reset, by the operator.", EVENTS, { sphere: SPHERE, events: [{ ...event, reason: "operator_reset" }] }, "accept");
   const OWNERS = "wire/owners.response", OPLOG = "wire/operator-log.response";
   wireCase("valid-owners", "The owners, one an admin, and an agent whose owner has no row.", OWNERS, { sphere: SPHERE, owners: [{ owner: "owner-a", owner_key_id: OA.keyId, admin: true, account_linked: false, members: [{ obi: "obi-a", status: "active" }] }], unbound: [{ owner: "owner-b", obi: "obi-b", status: "revoked" }] }, "accept");
   wireCase("invalid-owners-account", "The owners naming an account: only whether one is linked.", OWNERS, { sphere: SPHERE, owners: [{ owner: "owner-a", owner_key_id: OA.keyId, admin: true, account_linked: true, account: "google:1234", members: [] }], unbound: [] }, "reject");

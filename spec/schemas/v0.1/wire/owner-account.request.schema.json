@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-account.request.schema.json",
+  "title": "PUT /v0.1/spheres/{sphere}/owners/{owner}/account request",
+  "description": "Link a sign-in account to the owner while they hold their key (feature owner_account_link, sphere-api.md section 3.2): a sign-in started for the owner's bound key, sent with the owner's own token.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["signin"],
+  "properties": {
+    "signin": { "$ref": "../common.schema.json#/$defs/signin" }
+  }
+}

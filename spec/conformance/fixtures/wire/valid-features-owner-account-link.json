@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-owner-account-link",
+  "description": "An Obysphere where an owner links a sign-in account first.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "owner_account_link",
+      "owner_rebind"
+    ]
+  }
+}

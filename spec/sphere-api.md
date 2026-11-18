@@ -34,6 +34,7 @@ Read [protocol.md](protocol.md) (messages) and [identity.md](identity.md) (keys,
 | `policy_denied` | 403 | No policy rule allows this request, or the receiver's card doesn't accept its type. |
 | `recipient_revoked` | 403 | The receiver was revoked. |
 | `not_sealed` | 400 | The sender's and the receiver's cards both have a seal key, and the message isn't sealed ([protocol.md](protocol.md) section 9.1). |
+| `account_not_linked` | 403 | A rebind for an owner who never linked a sign-in account (section 3.2, `owner_rebind`): only an admin or the operator can reset them. |
 | `invitation_invalid` | 403 | Unknown, expired, used up, or the wrong secret: always the same answer. |
 | `not_found` | 404 | No such Obysphere, member or invitation. |
 | `unknown_recipient` | 404 | `to` isn't a member. |
@@ -68,6 +69,8 @@ Read [protocol.md](protocol.md) (messages) and [identity.md](identity.md) (keys,
 | `DELETE /v0.1/spheres/{sphere}/invitations/{invitation_id}` | owner token | `admin` | | `204` |
 | `POST /v0.1/spheres/{sphere}/invitations/{invitation_id}/preview` | none (secret) | | [invitation-preview.request](schemas/v0.1/wire/invitation-preview.request.schema.json) | `200` [invitation-preview.response](schemas/v0.1/wire/invitation-preview.response.schema.json) |
 | `POST /v0.1/spheres/{sphere}/invitations/{invitation_id}/redeem` | none (secret) | | [redeem.request](schemas/v0.1/wire/redeem.request.schema.json) | `201` [member](schemas/v0.1/wire/member.schema.json) |
+| `PUT /v0.1/spheres/{sphere}/owners/{owner}/account` (`owner_account_link`) | owner token of `{owner}` | any | [owner-account.request](schemas/v0.1/wire/owner-account.request.schema.json) | `200` [owner-account.response](schemas/v0.1/wire/owner-account.response.schema.json) (section 3.2) |
+| `GET /v0.1/spheres/{sphere}/owners/{owner}` (`owner_account_link`) | bearer of `{owner}`, an admin, or the operator | any | | `200` owner-account.response (section 3.2) |
 | `POST /v0.1/spheres/{sphere}/owners/{owner}/rebind` (`owner_rebind`) | none (a sign-in in the body) | | [owner-rebind.request](schemas/v0.1/wire/owner-rebind.request.schema.json) | `200` [owner-rebind.response](schemas/v0.1/wire/owner-rebind.response.schema.json) (section 3.2) |
 | `GET /v0.1/spheres/{sphere}/owner-events?after=&limit=` (`owner_rebind`) | bearer | `directory:read` | | `200` [owner-events.response](schemas/v0.1/wire/owner-events.response.schema.json) (section 3.2) |
 | `GET /v0.1/spheres/{sphere}/owners` (`operator_recovery`) | operator, or owner token | `admin` | | `200` [owners.response](schemas/v0.1/wire/owners.response.schema.json) (section 3.3) |
@@ -100,7 +103,8 @@ A path for an Obysphere that doesn't exist is `404 not_found`; a token for anoth
 | `a2a` | The A2A binding: each member's card `url` is an A2A 1.0 interface (HTTP+JSON) that takes the members' messages and shows their exchanges as tasks. Its other A2A paths answer A2A's errors (a2a.md section 3). | [a2a.md](a2a.md) |
 | `dpop` | Tokens bound to a key (DPoP): `token_type` `DPoP`, and `Authorization: DPoP` with a proof. | [identity.md](identity.md) section 4.6 |
 | `operator_recovery` | The operator token reaches an Obysphere's owners, its admin flags, revoke and invitations, and an owner's key can be reset by an admin or the operator; every operator call is logged for the admins. | section 3.3 |
-| `owner_rebind` | An owner who lost their key gets back in with a sign-in: `POST …/owners/{owner}/rebind` binds a new owner key and revokes the old key's agents; `GET …/owner-events` says so to every member. | section 3.2 |
+| `owner_account_link` | An owner links a sign-in account to their owner id while they hold their key (`PUT …/owners/{owner}/account`), and reads whether one is linked (`GET …/owners/{owner}`). | section 3.2 |
+| `owner_rebind` | An owner who lost their key, and linked an account first, gets back in with its sign-in: `POST …/owners/{owner}/rebind` binds a new owner key and revokes the old key's agents; `GET …/owner-events` says why to every member. | section 3.2 |
 | `phone_relay` | A member's phones reach its agent through the Obysphere. | section 9 |
 | `signin_providers` | `GET /v0.1/signin` lists the sign-in providers, `POST /v0.1/signin/{provider}` takes any of them, and `return_to`. | section 3.1 |
 | `sphere_url_aud` | An assertion's `aud` may be the Obysphere's own URL, binding it to this server. | [identity.md](identity.md) section 4.1 |
@@ -199,9 +203,19 @@ What a sign-in doesn't prove: anything about the email beyond what the domain sa
 
 ### 3.2 Getting back in with a sign-in
 
-An owner who lost their owner key (every machine that held it) binds a new one to their owner id with a sign-in (section 3.1), and the agents of the old key are revoked. It is an optional extension, `owner_rebind`, which an Obysphere server offers only when it has a sign-in provider; one that doesn't answers its paths `404 not_found`. It is not a rotation: nothing signed by the old key vouches for the new one, so every member's agent sees the owner's key change and, as section 3 of [identity.md](identity.md) says, trusts the new key only once its own owner has compared its fingerprint. The owner events below tell it why.
+An owner who lost their owner key (every machine that held it) binds a new one to their owner id with a sign-in (section 3.1), and the agents of the old key are revoked. It works only for an owner who linked a sign-in account to their owner id beforehand, while they still held the key: **link first**. Two optional extensions: `owner_account_link`, linking an account and reading whether one is linked, and `owner_rebind`, getting back in. An Obysphere server offers them only when it has a sign-in provider; one that doesn't answers their paths `404 not_found`.
 
-**The call.** The client makes the new owner key, starts a sign-in for it (`POST /v0.1/signin/{provider}` with that `owner_key`), and when the code comes back sends `POST /v0.1/spheres/{sphere}/owners/{owner}/rebind` with no `Authorization`:
+**Linking an account.** While they hold their key, the owner starts a sign-in for their bound owner key (`POST /v0.1/signin/{provider}` with that `owner_key`) and, when the code comes back, sends `PUT /v0.1/spheres/{sphere}/owners/{owner}/account` with their own token (section 3: an owner token whose subject is `{owner}`, any scope; never an agent's token):
+
+```json
+{"signin": {"state": "…", "code": "…"}}
+```
+
+The Obysphere checks, in this order: the body matches [owner-account.request](schemas/v0.1/wire/owner-account.request.schema.json) (`400 bad_request`); the token is `{owner}`'s own (`403 forbidden`); the sign-in is finished, unexpired and unused, its code matches, and it was started for `{owner}`'s bound key (section 3.1, "Use"; `403 forbidden`); the owner isn't linked to another account (`409 conflict`); the account isn't linked to another owner here (`409 conflict`). It then links the account and uses the sign-in up, and answers `200` [owner-account.response](schemas/v0.1/wire/owner-account.response.schema.json): `{"sphere", "owner", "account_linked": true}`. Linking the account linked already answers the same, and changes nothing but the sign-in. Redeeming an invitation with a sign-in (section 4) links the account too (section 3.1, "One owner per account").
+
+**Whether an account is linked.** `GET /v0.1/spheres/{sphere}/owners/{owner}` answers `200` owner-account.response, `account_linked` true or false, to the owner's own token or one of their agents', to an admin, and to the operator (section 3.3, where offered); `403 forbidden` to anyone else, `404 not_found` for an owner not bound here. It never names the account, an email or a domain.
+
+**Getting back in.** The client makes the new owner key, starts a sign-in for it, and when the code comes back sends `POST /v0.1/spheres/{sphere}/owners/{owner}/rebind` with no `Authorization`:
 
 ```json
 {"owner_key": "<the new owner key>", "signin": {"state": "…", "code": "…"}, "card": { … }}
@@ -213,27 +227,37 @@ The Obysphere checks, in this order:
 
 1. The body matches [owner-rebind.request](schemas/v0.1/wire/owner-rebind.request.schema.json) (`400 bad_request`).
 2. `{owner}` is bound in this Obysphere (`404 not_found`).
-3. The sign-in is finished, unexpired and unused, its code matches, and it was started for `owner_key` (section 3.1, "Use"; `403 forbidden`).
-4. The account. The owner is linked to an account (section 3.1, "One owner per account"): it is the sign-in's (`403 forbidden` for another). The owner has none: the sign-in's account has a domain the Obysphere allows, one of its server's creating domains (section 3.1) or the `domain` of an invitation this Obysphere holds (`403 forbidden` otherwise, a sign-in with no domain included), and the account isn't linked to another owner here (`409 conflict`). The account is then linked to the owner.
-5. `owner_key` isn't the key bound now (`409 conflict`).
-6. With `card`: redeem's checks 3 and 4 for the card (it verifies, names this Obysphere and `{owner}`, and its `owner_key` is the body's: `card_invalid`), and 6 to 8 (`409 conflict`, `409 feature_not_taken`), section 4.
+3. The owner has a linked account: otherwise `403 account_not_linked`, whatever the sign-in. An owner who never linked one gets back in only through an admin or the operator (section 3.3).
+4. The sign-in is finished, unexpired and unused, its code matches, and it was started for `owner_key` (section 3.1, "Use"; `403 forbidden`).
+5. The sign-in's account is the one linked to the owner (`403 forbidden`).
+6. `owner_key` isn't the key bound now (`409 conflict`).
+7. With `card`: redeem's checks 3 and 4 for the card (it verifies, names this Obysphere and `{owner}`, and its `owner_key` is the body's: `card_invalid`), and 6 to 8 (`409 conflict`, `409 feature_not_taken`), section 4.
 
 Then, in one step:
 
-- the owner's bound key becomes `owner_key`; its admin flag stays as it was;
+- the owner's bound key becomes `owner_key`; their linked account and their admin flag stay as they were;
 - each of the owner's active agents is revoked as `DELETE …/members/{obi}` revokes it (section 4): its key closed at the chain's head, its status `revoked`, its queued deliveries dropped, its runner status and phone relays gone;
-- every access token the owner holds, its own and its agents', stops working;
+- every access token the owner holds, their own and their agents', stops working;
 - the sign-in is used up;
-- an owner event is recorded (below);
+- an owner event is recorded (below), `reason` `signed_in_again`;
 - with `card`, the new agent joins, its key valid from the chain's head seq + 1.
 
 It answers `200` [owner-rebind.response](schemas/v0.1/wire/owner-rebind.response.schema.json): `sphere`, `owner`, the new `owner_key` and `owner_key_id`, `admin`, the `event`, and `member`, the new agent, when there was a card. A call that fails changes nothing and uses no sign-in. From then on the owner signs cards, delegations and own assertions with the new key, and the old key's assertions, and so the old agents' delegations, are refused (`invalid_grant`) like any other key's ([identity.md](identity.md) section 4.3).
 
-**The directory.** A member's entry names the owner key that signed its card: for an agent revoked by a rebind, the key it was revoked under, not the owner's new one, so its card still verifies against its entry. The chain is untouched: entries keep verifying with the agent keys that signed them.
+**The directory.** A member's entry names the owner key that signed its card: for an agent revoked when its owner's key changed, the key it was revoked under, not the owner's new one, so its card still verifies against its entry. The chain is untouched: entries keep verifying with the agent keys that signed them.
 
-**Owner events.** `GET /v0.1/spheres/{sphere}/owner-events?after=&limit=` (any token with `directory:read`) answers [owner-events.response](schemas/v0.1/wire/owner-events.response.schema.json): the events with an `id` above `after` (default 0), oldest first, at most `limit` (1 to 100, default 50). Each [owner event](schemas/v0.1/wire/owner-event.schema.json) has the `owner`, its `kind`, `at`, `old_key_id`, `new_key_id` and the agents it `revoked`; a rebind's kind is `rebound`, with `account_linked` true when it linked the sign-in's account. `kind` is open: a client ignores an event whose kind it doesn't know. An event names no account, email or domain.
+**Owner events.** Whenever an owner's bound key changes, an owner event says why, so every member's agent can explain the change to its owner and match it to the cards that changed. `GET /v0.1/spheres/{sphere}/owner-events?after=&limit=` (any token with `directory:read`) answers [owner-events.response](schemas/v0.1/wire/owner-events.response.schema.json): the events with an `id` above `after` (default 0), oldest first, at most `limit` (1 to 100, default 50). Each [owner event](schemas/v0.1/wire/owner-event.schema.json) has the `owner`, `at`, `old_key_id`, `new_key_id` (the key id, `ed25519:…`, of the key the owner's new cards are signed with, and so their fingerprint), the agents it `revoked`, and a `reason`, one of a closed list:
 
-**What it trusts.** A rebind trusts the provider's account as much as the owner's key: whoever holds the account linked to an owner can take that owner over, admin flag and all, in every Obysphere where it is linked. For an owner with no linked account, whoever holds an account in a domain the Obysphere allows can take it over, since nothing else tells that owner from another person of the same domain; an operator who doesn't want that links accounts first or offers no sign-in. What limits both: the old key's agents learn at once (their tokens stop and their exchanges are refused); every member sees the event; and no member's agent trusts the new key until its own owner has compared fingerprints.
+| `reason` | What happened |
+|---|---|
+| `signed_in_again` | The owner got back in with their linked account's sign-in (this section). |
+| `admin_reset` | An admin bound a key the owner gave them (section 3.3). |
+| `operator_reset` | The Obysphere server's operator did (section 3.3). |
+| `rotated` | Reserved for an owner-key rotation signed by the old key (not in `obi/0.1`); never sent today. |
+
+An event names no account, email or domain, and carries no free text.
+
+**What it trusts.** A rebind trusts the provider's account as much as the owner's key: whoever holds the account linked to an owner can take that owner over, admin flag and all, in every Obysphere where it is linked. An owner with no linked account can't be taken over by a sign-in at all. What limits it: only an account the owner linked themself, while holding their key, works; the old key's agents learn at once (their tokens stop and their exchanges are refused); every member sees the event; and no member's agent trusts the new key until its own owner has compared fingerprints.
 
 ### 3.3 The operator, and resetting an owner
 
@@ -248,7 +272,7 @@ An Obysphere server's operator holds the operator token (section 3), which other
 
 **The owners.** `GET /v0.1/spheres/{sphere}/owners` answers [owners.response](schemas/v0.1/wire/owners.response.schema.json): each bound owner with their `owner_key_id`, `admin`, `account_linked` (whether an account is linked, never which), and their agents with their status; and `unbound`, the agents whose owner has no row, which only a hand edit of the database leaves.
 
-**Resetting an owner.** `POST /v0.1/spheres/{sphere}/owners/{owner}/reset` with `{"owner_key": "<a new owner key>"}`, the key the owner made on a new machine and gave the admin or the operator out of band (a public key is no secret). It binds that key as a rebind does (section 3.2: the owner's active agents revoked, every token the owner holds stopped, the admin flag kept), with no sign-in and no account change, and records an owner event of kind `reset` with `by`, `admin` or `operator`. `404 not_found` for an owner not bound here, `409 conflict` for the key bound already. It answers `200` with the same body as a rebind, without `member`: the owner then joins an agent with an invitation, as any bound owner does. It trusts the admin, or the operator, as much as a rebind trusts the sign-in: every member's agent sees the owner's key change, and trusts the new key only once its own owner has compared fingerprints ([identity.md](identity.md) section 3).
+**Resetting an owner.** `POST /v0.1/spheres/{sphere}/owners/{owner}/reset` with `{"owner_key": "<a new owner key>"}`, the key the owner made on a new machine and gave the admin or the operator out of band (a public key is no secret). It binds that key as a rebind does (section 3.2: the owner's active agents revoked, every token the owner holds stopped, the linked account and the admin flag kept), with no sign-in, and records an owner event whose `reason` is `admin_reset` or `operator_reset` (section 3.2). `404 not_found` for an owner not bound here, `409 conflict` for the key bound already. It answers `200` with the same body as a rebind, without `member`: the owner then joins an agent with an invitation, as any bound owner does. It trusts the admin, or the operator, as much as a rebind trusts the sign-in: every member's agent sees the owner's key change, and trusts the new key only once its own owner has compared fingerprints ([identity.md](identity.md) section 3).
 
 **The log.** `GET /v0.1/spheres/{sphere}/operator-log?after=&limit=` answers [operator-log.response](schemas/v0.1/wire/operator-log.response.schema.json): the operator's calls on this Obysphere with an `id` above `after` (default 0), oldest first, at most `limit` (1 to 100, default 50). Each entry has `at`, an `action` (`show`, `revoke`, `invite`, `make_admin`, `remove_admin`, `reset_owner`, and later ones: `action` is open) and its `target` (an owner, an agent or an invitation id). It never holds a token or an invitation's secret. Whoever holds the database can still change it: the log makes the supported calls visible, not the database's own edits.
 
