@@ -1,0 +1,54 @@
+{
+  "suite": "obi/0.1",
+  "report_version": 1,
+  "label": "reference careful receiver (test fixture)",
+  "generated_at": "2026-10-28T14:12:46Z",
+  "runs": [
+    {
+      "mode": "impl",
+      "at": "2026-10-28T14:12:16Z"
+    },
+    {
+      "mode": "receiver",
+      "at": "2026-10-28T14:12:46Z"
+    }
+  ],
+  "classes": {
+    "participant": {
+      "message": {
+        "ran": 357,
+        "passed": 357
+      },
+      "behaviour": {
+        "ran": 8,
+        "passed": 8
+      },
+      "status": "pass"
+    },
+    "executor": {
+      "message": {
+        "ran": 51,
+        "passed": 51
+      },
+      "behaviour": null,
+      "status": "incomplete"
+    },
+    "holder": {
+      "message": {
+        "ran": 27,
+        "passed": 27
+      },
+      "behaviour": null,
+      "status": "pass"
+    },
+    "approver": {
+      "message": {
+        "ran": 41,
+        "passed": 41
+      },
+      "behaviour": null,
+      "status": "pass"
+    }
+  },
+  "commit": null
+}

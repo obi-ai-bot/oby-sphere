@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/run_return.schema.json",
+  "title": "run_return body (sealed)",
+  "description": "A run_request's job stopped before it finished and comes back to its owner with what it did (its commits travel on the job channel). Ends the exchange. It says nothing of how long it ran, nor what the receiver's owner did. Sealed: derived from actions/run_return.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "enum": [
+        "host_unavailable",
+        "time_limit",
+        "share_used"
+      ],
+      "description": "host_unavailable whatever made the receiver's Mac stop it (its owner back, stopped, sharing off, a shutdown, a share taken back): never which, nor when (protocol.md section 5.12)."
+    },
+    "commits": {
+      "$ref": "../common.schema.json#/$defs/bundle"
+    },
+    "head_sha": {
+      "$ref": "../common.schema.json#/$defs/sha"
+    },
+    "cost_cents": {
+      "$ref": "../common.schema.json#/$defs/cents",
+      "description": "On a share of the receiver's owner's API account (protocol.md section 15): what the job's model calls cost at list price."
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-follow-up-of-other-members",
+  "description": "obi-b follows up an exchange between obi-a and another member.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      },
+      "ed25519:Sni8TGvxzFKVpXwK_P3t4Vnm6cn_g6K6KfKZ2qd9YYU": {
+        "obi": "mallory",
+        "public_key": "RX8-irCtsWuRqyd1II8LKF5FMnJYEeUmyJwVOLpMjnY",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "88a2948d-2278-80a3-8063-ef353d2b98b6",
+          "type": "question",
+          "from": "mallory",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "88a2948d-2278-80a3-8063-ef353d2b98b6",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:Sni8TGvxzFKVpXwK_P3t4Vnm6cn_g6K6KfKZ2qd9YYU",
+          "body": {
+            "text": "Is the fixture app's API stable?"
+          },
+          "signature": "H9pJ85_l0QKoupMkXcvGUmFqw3EbDaHrJ7DeTN7So2Oq_z10Br4KAO1FgUUe3PNSluSjlxWmKK7DoD9C8ZEZCw"
+        },
+        "hash": "60e8e4702a320af44777fa46a5cb61b0135df182402e29043cf52ef951021f20"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "60e8e4702a320af44777fa46a5cb61b0135df182402e29043cf52ef951021f20",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "9c0d6335-5c8e-8dd5-8b9b-6458037b1a8c",
+          "type": "question",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "9c0d6335-5c8e-8dd5-8b9b-6458037b1a8c",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "text": "Is it?",
+            "follows": "88a2948d-2278-80a3-8063-ef353d2b98b6"
+          },
+          "signature": "GWpUFGTIQksNwhhYNGCTtRXLMMGuAFa1LRSGiNXdrShDvAh5nPiaKb3VR7S8pD9if2zeUVnemTbS-r3Sp2V3BA"
+        },
+        "hash": "bab68d4fc9b52f497a1bd1225e9d613abd503674afd1af1da4d563b344ebfc02"
+      }
+    ]
+  }
+}

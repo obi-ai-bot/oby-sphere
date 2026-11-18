@@ -1,0 +1,70 @@
+{
+ "case": "keychain-found-time",
+ "seat": "open-2",
+ "model": "sonnet",
+ "earlier": 2,
+ "started": "2026-10-27T23:39:01.816Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "core/crates/obid/src/jobs.rs",
+   "line": 11291,
+   "end_line": 11310,
+   "severity": "minor",
+   "title": "keychain_has's cached hit ignores keychain_on(), unlike cursor_keychain_has",
+   "detail": "cursor_keychain_has() checks cursor_keychain_on() before consulting its FOUND cache, so turning the Cursor Keychain copy off makes it return false immediately. keychain_has()'s fresh() closure, by contrast, only looks at the SEEN vec and never calls keychain_on(); keychain_on() is only reached inside the uncached branch (via keychain()). So if a config_dir's item was seen recently (within LOOK_EVERY) and the Keychain copy is then turned off (use_keychain(false, ..), e.g. on a config reload that sets claudeKeychain: false), keychain_has — and therefore has_login/signed_in for that Claude account — keeps reporting the login present for up to LOOK_EVERY (2s) even though the copy is now off, instead of flipping to false right away like the Cursor path does."
+  },
+  {
+   "file": "core/crates/obid/src/jobs.rs",
+   "line": 11292,
+   "end_line": 11310,
+   "severity": "minor",
+   "title": "keychain_has's SEEN cache entries are never evicted for config_dirs that stop being queried",
+   "detail": "The static SEEN Vec only drops a config_dir's entry when keychain_has is called again for that same dir (the retain() call happens on the next lookup). If an account with a distinct configDir is removed, or a configDir is queried only once and then never again, its (PathBuf, Instant) entry is kept in the process-global Vec for the lifetime of the obid process, even though it immediately stops being 'fresh'. Over a long-running obid that adds/removes many Claude accounts with distinct configDirs over time, this is an unbounded, never-reclaimed growth (a slow memory leak), rather than a cache that naturally expires entries."
+  },
+  {
+   "file": "core/crates/obid/tests/accounts_api.rs",
+   "line": 237,
+   "end_line": 248,
+   "severity": "minor",
+   "title": "Existing test/comment documents behavior this change silently reverses, with no new coverage added",
+   "detail": "This pre-existing test's comment says Cursor Keychain item presence is checked 'each time' a status is asked (only the token's value is throttled, to once a minute, via cursor_keychain_live). The diff now also caches the presence check itself (cursor_keychain_has) for LOOK_EVERY (2s) once an item is found, so three /v1/status calls made back-to-back here will perform the underlying 'security find-generic-password' existence probe only once instead of three times. The test doesn't assert on existence-probe counts (only on '-w' value-read counts), so it still passes, but the comment is now inaccurate and the diff ships its headline behavior change (status no longer asking security on every call) without any test asserting the new throttling actually happens for either keychain_has or cursor_keychain_has."
+  }
+ ],
+ "cost_usd": 0.4173489,
+ "turns": 22,
+ "duration_ms": 133350,
+ "usage": {
+  "input_tokens": 708,
+  "cache_creation_input_tokens": 26631,
+  "cache_read_input_tokens": 258043,
+  "output_tokens": 11815,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 26631,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 2100,
+    "cache_read_input_tokens": 26802,
+    "cache_creation_input_tokens": 3519,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 3519
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

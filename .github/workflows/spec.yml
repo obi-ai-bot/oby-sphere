@@ -1,16 +1,24 @@
 # The protocol spec's self-check (spec/conformance/README.md): schemas, fixtures, reference verdicts.
+#
+# A draft pull request runs the workflow but skips its jobs, unless it has the `full-ci` label
+# (that takes effect on the next push after labelling); marking it ready for review runs
+# everything on the same head.
 name: Spec
 
 on:
   pull_request:
-    branches: [dev]
+    # Listing types replaces the default (opened, synchronize, reopened), so those stay explicit;
+    # ready_for_review runs a draft that turned ready on the same head. No `labeled`: a run started
+    # by another label would skip and post a success over a failed check on that head.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [dev]
 
-# A newer push to the same pull request (or to dev) cancels the run it supersedes.
+# A newer push to the same pull request cancels the run it supersedes; pushes to dev each run to
+# the end.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -18,13 +26,16 @@ permissions:
 jobs:
   check:
     name: Spec self-check
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # pnpm's version comes from spec/package.json (packageManager).
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           package_json_file: spec/package.json
 

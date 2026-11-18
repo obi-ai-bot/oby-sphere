@@ -8,7 +8,7 @@ import { handle } from "../src/app";
 import { b64url, hex, randomBytes, sha256Hex } from "../src/protocol/crypto";
 import { utf8 } from "../src/protocol/json";
 import { MAC_FRAMES_PER_MINUTE, MAX_ENVELOPE_BYTES, PHONE_FRAMES_PER_MINUTE, type PhoneRelay } from "../src/relay";
-import { BASE, World, expectSchema, newKey, side, signJwt, team, until } from "./helpers";
+import { BASE, World, expectSchema, makeCall, newKey, side, signJwt, team, until } from "./helpers";
 
 /** A phone as the Mac pairs it: its relay token, and the hash the Sphere keeps. */
 async function phone() {
@@ -122,6 +122,28 @@ describe("phone relay", () => {
     expect((await w.call("PUT", path(relay), { token: mac })).body).toEqual({ relay, devices: [b.hash] });
     // Told once.
     expect(m.texts.length).toBe(3);
+  });
+
+  it("is an optional extension: /v0.1/features lists it, and with PHONE_RELAY=off every relay path answers 404", async () => {
+    const { w, mac, relay, a } = await paired();
+    expect((await w.call("GET", "/v0.1/features")).body.features).toContain("phone_relay");
+    for (const value of ["off", " OFF ", "false", "no"]) {
+      const offEnv = { ...env, PHONE_RELAY: value };
+      const off = makeCall(w.clock, offEnv);
+      const listed = await off("GET", "/v0.1/features");
+      expect(listed.body.features).not.toContain("phone_relay");
+      expectSchema("featuresResponse", listed.body);
+      // The relay the Mac made while it was on, a new one, and a phone's socket: all 404, before any token or upgrade is looked at.
+      for (const [method, p] of [["PUT", path(relay)], ["PUT", path(newRelay())], ["DELETE", path(relay)], ["PUT", path(relay, a.hash)], ["DELETE", path(relay, a.hash)], ["GET", path(relay)]] as const) {
+        const r = await off(method, p, { token: mac });
+        expect(r.status, `${method} ${p}`).toBe(404);
+        expect(r.body.error.code).toBe("not_found");
+      }
+      const socket = await handle(new Request(BASE + path(relay), { headers: { Authorization: `Bearer ${a.token}`, Upgrade: "websocket" } }), offEnv, { now: w.clock.now });
+      expect(socket.status).toBe(404);
+    }
+    // Back on, the relay and its phones are as they were.
+    for (const value of ["on", ""]) expect((await makeCall(w.clock, { ...env, PHONE_RELAY: value })("PUT", path(relay), { token: mac })).body.devices).toContain(a.hash);
   });
 
   it("lets only a member's Mac own a relay, by default", async () => {

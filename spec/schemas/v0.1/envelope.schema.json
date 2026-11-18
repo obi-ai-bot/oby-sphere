@@ -107,7 +107,8 @@
               "run_return",
               "run_cancel",
               "share_status",
-              "share_revoke"
+              "share_revoke",
+              "cancel"
             ]
           }
         }
@@ -399,6 +400,44 @@
         "properties": {
           "body": {
             "$ref": "actions/share_revoke.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "cancel"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/cancel.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "introduction"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/introduction.schema.json"
           }
         }
       }

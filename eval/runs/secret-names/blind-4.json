@@ -1,0 +1,61 @@
+{
+ "case": "secret-names",
+ "seat": "blind-4",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:51:04.541Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "changes_requested",
+ "findings": [
+  {
+   "file": "Engine/Publish.swift",
+   "line": 308,
+   "end_line": 313,
+   "severity": "blocker",
+   "title": "Substring word-list check lets real weak passwords/passphrases bypass the \"password or secret\" rule",
+   "detail": "`onlyNames` decides a quoted value is \"just a name, not a secret\" if it is camelCase or dash/underscore/dot-joined words (no digits) AND `lower.contains($0)` is true for one of [\"secret\",\"token\",\"password\",\"passwd\",\"key\",\"client\",\"vault\",\"entry\",\"access\",\"name\",\"id\"]. `contains` is a raw substring test over the whole lowercased value, not a check that one of the camelCase/kebab *words* equals one of those terms. Because several of these terms (especially \"id\", \"key\", \"name\", and even \"secret\" itself) are common substrings of ordinary English words, a real, plausible weak password or passphrase that merely embeds one of these words is misclassified as a mere \"name\" and the finding is dropped. Concrete repro: `Publish.matches(\"password = \\\"mySecretPassphrase\\\"\")` returns `[]` (no finding) because \"mySecretPassphrase\" is camelCase, has no digits, and `lower.contains(\"secret\")` is true — even though this is an actual (weak) password value, not a key/vault-entry name. Similarly, any dash/underscore-joined passphrase containing words like \"secretary\", \"keyboard\", \"identity\", \"liquid\", \"monkey\", \"username\" etc. (all of which contain one of the listed substrings) would also silently stop being flagged. This directly contradicts the change's stated guarantee that \"weak passwords, passphrases and real keys still count\", and removes the main built-in safeguard for generic human-chosen passwords (which gitleaks' entropy-based generic rules often miss), allowing such secrets to be pushed in a pull request without warning."
+  },
+  {
+   "file": "RunnerTests/SafeTests.swift",
+   "line": 81,
+   "severity": "minor",
+   "title": "Test assertion doesn't exercise the new onlyNames logic",
+   "detail": "`Publish.matches(\"case \" + Fake.assign(\"api\" + \"Key\", \"api_\" + \"key\")).isEmpty` uses the value \"api_key\", which is only 7 characters. The \"password or secret\" rule's regex requires the quoted value to be at least 12 characters (`[^\"'\\s]{12,}`), so this line never matches the rule at all, regardless of the `onlyNames`/`breaks` fix. The assertion would pass identically on the pre-change code (`text.contains(rule.pattern)`), so it gives no real coverage of the camelCase/kebab-case \"name, not a secret\" behavior it claims to test for this key/value shape."
+  }
+ ],
+ "cost_usd": 0.5939652,
+ "turns": 9,
+ "duration_ms": 238950,
+ "usage": {
+  "input_tokens": 326,
+  "cache_creation_input_tokens": 41861,
+  "cache_read_input_tokens": 96844,
+  "output_tokens": 20805,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 41861,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 2974,
+    "cache_read_input_tokens": 44117,
+    "cache_creation_input_tokens": 1434,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1434
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

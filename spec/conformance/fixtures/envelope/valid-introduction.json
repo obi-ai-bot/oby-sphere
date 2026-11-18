@@ -1,0 +1,45 @@
+{
+  "case": "envelope",
+  "name": "valid-introduction",
+  "description": "One member introduces the receiver to a third, about a repository, with a line of why.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "0d8f1d2b-87e7-8019-8d85-455eff378a34",
+    "type": "introduction",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "0d8f1d2b-87e7-8019-8d85-455eff378a34",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "member": "obi-c",
+      "about": [
+        {
+          "kind": "repo",
+          "repo": "obi-conf/fixture-app"
+        }
+      ],
+      "note": "You both work on the fixture app's tests."
+    },
+    "signature": "qQikfFkVF34vHqIJe0N1W3n_lES3-bqRpfTFAdTwBGKDpQvX6VkWOBbu2NlV0azppYwgHHv1pBx8Q_AFKdEpDA"
+  }
+}

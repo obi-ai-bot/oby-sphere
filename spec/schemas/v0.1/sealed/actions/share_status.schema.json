@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/share_status.schema.json",
+  "title": "share_status body (sealed)",
+  "description": "How much of a share its receiver's owner has used this period, from the key holder's Obi: after each job on it, when it changes or resets, and at most hourly. Only in a share_offer's exchange. Sealed: derived from actions/share_status.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "grant",
+    "used_cents",
+    "limit_cents",
+    "resets"
+  ],
+  "properties": {
+    "grant": {
+      "$ref": "../common.schema.json#/$defs/grant_id"
+    },
+    "used_cents": {
+      "$ref": "../common.schema.json#/$defs/cents"
+    },
+    "limit_cents": {
+      "$ref": "../common.schema.json#/$defs/cents"
+    },
+    "resets": {
+      "$ref": "../common.schema.json#/$defs/timestamp"
+    }
+  }
+}

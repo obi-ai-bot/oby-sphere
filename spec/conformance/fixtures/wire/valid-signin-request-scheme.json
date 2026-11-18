@@ -1,0 +1,13 @@
+{
+  "case": "wire",
+  "name": "valid-signin-request-scheme",
+  "description": "The code going back to a scheme of the client's own (one the server knows).",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/signin.request"
+  },
+  "input": {
+    "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w",
+    "return_to": "com.example.client:/signin"
+  }
+}

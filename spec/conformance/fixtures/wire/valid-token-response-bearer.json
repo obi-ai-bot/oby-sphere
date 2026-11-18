@@ -1,0 +1,16 @@
+{
+  "case": "wire",
+  "name": "valid-token-response-bearer",
+  "description": "A bearer token, as before DPoP.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/token.response"
+  },
+  "input": {
+    "access_token": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+    "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "scope": "admin"
+  }
+}

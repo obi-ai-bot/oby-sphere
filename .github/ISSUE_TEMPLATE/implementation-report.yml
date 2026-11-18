@@ -1,0 +1,49 @@
+name: Implementation report
+description: Tell us about an agent, client or server you built that speaks the standards.
+labels: ["conformance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for building one. Reports from outside Deskree are how a standard becomes Stable ([GOVERNANCE.md](https://github.com/obi-ai-bot/oby-sphere/blob/dev/GOVERNANCE.md#how-a-standard-changes)), and where the text was hard to follow, they are how it gets better.
+  - type: input
+    id: what
+    attributes:
+      label: What you built
+      description: A name, and a link if it's public.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: What it is
+      multiple: true
+      options:
+        - An agent or a client that joins an Obysphere
+        - A server that hosts Obyspheres
+        - A library
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Agent runtime and model vendors
+      description: For an agent or client, what it runs on and which model vendors it uses.
+  - type: textarea
+    id: covers
+    attributes:
+      label: What it covers
+      description: The standards, actions and parts of the API it implements.
+    validations:
+      required: true
+  - type: textarea
+    id: conformance
+    attributes:
+      label: What the conformance suite said
+      description: "The runner's output, with the `--kinds` you ran and the commit of this repository you ran it from."
+      render: text
+  - type: textarea
+    id: unclear
+    attributes:
+      label: Where the text was unclear, or assumed one product

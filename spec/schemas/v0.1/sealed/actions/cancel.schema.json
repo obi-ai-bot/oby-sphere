@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/cancel.schema.json",
+  "title": "cancel body (sealed)",
+  "description": "The request's own sender calls off its review_request, question, handoff or introduction (spec/protocol.md section 5.17). Ends the exchange. Comes with the feature cancel. Sealed: derived from actions/cancel.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

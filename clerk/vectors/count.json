@@ -1,0 +1,7083 @@
+{
+ "description": "Known-answer vectors for the clerk's count. `count` vectors give an input and either the exact output or the error code; `verify` vectors give an input, a recorded verdict and whether the verdict matches the count. Outputs compare as JSON values: member order doesn't matter, array order does. README.md defines the input, the output and every rule.",
+ "version": 1,
+ "count": [
+  {
+   "name": "majority: 2 approve, 1 reject",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: 1 approve, 2 reject",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "reject"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 1,
+     "reject": 2,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: 2 to 2 is a tie",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 4,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     },
+     {
+      "seat": "s4",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "tie",
+    "seats": 4,
+    "present": 4,
+    "tally": {
+     "approve": 2,
+     "reject": 2,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: abstentions count for quorum, not for the majority",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s3",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 1,
+     "reject": 0,
+     "abstain": 2
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: absent seats are neither present nor counted",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "reject"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 5,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: below quorum",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 5,
+    "present": 2,
+    "tally": {
+     "approve": 2,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: every present seat abstains",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_votes",
+    "seats": 3,
+    "present": 2,
+    "tally": {
+     "approve": 0,
+     "reject": 0,
+     "abstain": 2
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: no ballots at all",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": []
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 3,
+    "present": 0,
+    "tally": {
+     "approve": 0,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "majority: ballots in any order",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s3",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s1",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 2/3: exactly two thirds approves",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 2/3: three of five rejects",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 5,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     },
+     {
+      "seat": "s4",
+      "vote": "reject"
+     },
+     {
+      "seat": "s5",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 5,
+    "present": 5,
+    "tally": {
+     "approve": 3,
+     "reject": 2,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 2/3: abstention left out of the fraction",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 4,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     },
+     {
+      "seat": "s4",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 4,
+    "present": 4,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 1
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 2/3: an even split rejects",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 2,
+    "present": 2,
+    "tally": {
+     "approve": 1,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 3/4: three of four approves",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 3,
+     "den": 4
+    },
+    "quorum": 4,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     },
+     {
+      "seat": "s4",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 4,
+    "present": 4,
+    "tally": {
+     "approve": 3,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority 3/4: two of three rejects",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 3,
+     "den": 4
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority with large terms is exact",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 9007199254740990,
+     "den": 9007199254740991
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "supermajority: every present seat abstains",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_votes",
+    "seats": 3,
+    "present": 1,
+    "tally": {
+     "approve": 0,
+     "reject": 0,
+     "abstain": 1
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: approvals and an abstention approve",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 0,
+     "abstain": 1
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: one rejection rejects",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: every seat approves",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: a lone rejection rejects",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 1,
+    "tally": {
+     "approve": 0,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: one approval among abstentions approves",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 1,
+     "reject": 0,
+     "abstain": 2
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: a rejection among abstentions rejects",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s2",
+      "vote": "reject"
+     },
+     {
+      "seat": "s3",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 0,
+     "reject": 1,
+     "abstain": 2
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: every present seat abstains",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_votes",
+    "seats": 3,
+    "present": 2,
+    "tally": {
+     "approve": 0,
+     "reject": 0,
+     "abstain": 2
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: absent seats don't stop it",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 5,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: present exactly at quorum counts",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 4,
+    "present": 2,
+    "tally": {
+     "approve": 2,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: one short of quorum is no quorum, even when all approve",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 4,
+    "present": 2,
+    "tally": {
+     "approve": 2,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: one short of quorum is no quorum, even with a rejection",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "reject"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 4,
+    "present": 2,
+    "tally": {
+     "approve": 1,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity: quorum of every seat, all approve",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 4,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     },
+     {
+      "seat": "s4",
+      "vote": "approve"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 4,
+    "present": 4,
+    "tally": {
+     "approve": 4,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "unanimity with veto: a standing blocker rejects a unanimous approval",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "stands"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   }
+  },
+  {
+   "name": "unanimity with veto: a refuted blocker leaves it unanimous",
+   "input": {
+    "rule": {
+     "kind": "unanimity"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto: an unchallenged blocking finding with evidence rejects",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   }
+  },
+  {
+   "name": "veto: a blocking finding that stood its challenge rejects",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "stands"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   }
+  },
+  {
+   "name": "veto: a refuted finding doesn't block",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto: a blocking finding without evidence doesn't block",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": false,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto: a non-blocking finding with evidence doesn't block",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": false,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto: blockers listed in the findings' order",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f2",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     },
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     },
+     {
+      "id": "f3",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "stands"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f2",
+     "f3"
+    ]
+   }
+  },
+  {
+   "name": "veto off: findings are ignored",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": false,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto absent means off",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   }
+  },
+  {
+   "name": "veto: a blocker rejects even when every seat abstains",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s3",
+      "vote": "abstain"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 0,
+     "reject": 0,
+     "abstain": 3
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   }
+  },
+  {
+   "name": "veto: below quorum is no quorum, blockers still listed",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 3,
+    "present": 1,
+    "tally": {
+     "approve": 1,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   }
+  },
+  {
+   "name": "veto with supermajority",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2,
+     "den": 3
+    },
+    "quorum": 3,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f9",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "stands"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f9"
+    ]
+   }
+  },
+  {
+   "name": "borda: the Tennessee capital",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 51,
+    "options": [
+     "memphis",
+     "nashville",
+     "chattanooga",
+     "knoxville"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5",
+     "s6",
+     "s7",
+     "s8",
+     "s9",
+     "s10",
+     "s11",
+     "s12",
+     "s13",
+     "s14",
+     "s15",
+     "s16",
+     "s17",
+     "s18",
+     "s19",
+     "s20",
+     "s21",
+     "s22",
+     "s23",
+     "s24",
+     "s25",
+     "s26",
+     "s27",
+     "s28",
+     "s29",
+     "s30",
+     "s31",
+     "s32",
+     "s33",
+     "s34",
+     "s35",
+     "s36",
+     "s37",
+     "s38",
+     "s39",
+     "s40",
+     "s41",
+     "s42",
+     "s43",
+     "s44",
+     "s45",
+     "s46",
+     "s47",
+     "s48",
+     "s49",
+     "s50",
+     "s51",
+     "s52",
+     "s53",
+     "s54",
+     "s55",
+     "s56",
+     "s57",
+     "s58",
+     "s59",
+     "s60",
+     "s61",
+     "s62",
+     "s63",
+     "s64",
+     "s65",
+     "s66",
+     "s67",
+     "s68",
+     "s69",
+     "s70",
+     "s71",
+     "s72",
+     "s73",
+     "s74",
+     "s75",
+     "s76",
+     "s77",
+     "s78",
+     "s79",
+     "s80",
+     "s81",
+     "s82",
+     "s83",
+     "s84",
+     "s85",
+     "s86",
+     "s87",
+     "s88",
+     "s89",
+     "s90",
+     "s91",
+     "s92",
+     "s93",
+     "s94",
+     "s95",
+     "s96",
+     "s97",
+     "s98",
+     "s99",
+     "s100"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s6",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s7",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s8",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s9",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s10",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s11",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s12",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s13",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s14",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s15",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s16",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s17",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s18",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s19",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s20",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s21",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s22",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s23",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s24",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s25",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s26",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s27",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s28",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s29",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s30",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s31",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s32",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s33",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s34",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s35",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s36",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s37",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s38",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s39",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s40",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s41",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s42",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s43",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s44",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s45",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s46",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s47",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s48",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s49",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s50",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s51",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s52",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s53",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s54",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s55",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s56",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s57",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s58",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s59",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s60",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s61",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s62",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s63",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s64",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s65",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s66",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s67",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s68",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s69",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s70",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s71",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s72",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s73",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s74",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s75",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s76",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s77",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s78",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s79",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s80",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s81",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s82",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s83",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s84",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s85",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s86",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s87",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s88",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s89",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s90",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s91",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s92",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s93",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s94",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s95",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s96",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s97",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s98",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s99",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s100",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 100,
+    "present": 100,
+    "tally": {
+     "ranked": 100,
+     "abstain": 0
+    },
+    "winners": [
+     "nashville"
+    ],
+    "winner": "nashville",
+    "tie_broken": false,
+    "scores": [
+     126,
+     194,
+     173,
+     107
+    ]
+   }
+  },
+  {
+   "name": "schulze: the Tennessee capital",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 51,
+    "options": [
+     "memphis",
+     "nashville",
+     "chattanooga",
+     "knoxville"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5",
+     "s6",
+     "s7",
+     "s8",
+     "s9",
+     "s10",
+     "s11",
+     "s12",
+     "s13",
+     "s14",
+     "s15",
+     "s16",
+     "s17",
+     "s18",
+     "s19",
+     "s20",
+     "s21",
+     "s22",
+     "s23",
+     "s24",
+     "s25",
+     "s26",
+     "s27",
+     "s28",
+     "s29",
+     "s30",
+     "s31",
+     "s32",
+     "s33",
+     "s34",
+     "s35",
+     "s36",
+     "s37",
+     "s38",
+     "s39",
+     "s40",
+     "s41",
+     "s42",
+     "s43",
+     "s44",
+     "s45",
+     "s46",
+     "s47",
+     "s48",
+     "s49",
+     "s50",
+     "s51",
+     "s52",
+     "s53",
+     "s54",
+     "s55",
+     "s56",
+     "s57",
+     "s58",
+     "s59",
+     "s60",
+     "s61",
+     "s62",
+     "s63",
+     "s64",
+     "s65",
+     "s66",
+     "s67",
+     "s68",
+     "s69",
+     "s70",
+     "s71",
+     "s72",
+     "s73",
+     "s74",
+     "s75",
+     "s76",
+     "s77",
+     "s78",
+     "s79",
+     "s80",
+     "s81",
+     "s82",
+     "s83",
+     "s84",
+     "s85",
+     "s86",
+     "s87",
+     "s88",
+     "s89",
+     "s90",
+     "s91",
+     "s92",
+     "s93",
+     "s94",
+     "s95",
+     "s96",
+     "s97",
+     "s98",
+     "s99",
+     "s100"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s6",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s7",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s8",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s9",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s10",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s11",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s12",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s13",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s14",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s15",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s16",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s17",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s18",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s19",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s20",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s21",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s22",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s23",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s24",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s25",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s26",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s27",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s28",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s29",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s30",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s31",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s32",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s33",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s34",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s35",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s36",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s37",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s38",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s39",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s40",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s41",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s42",
+      "ranking": [
+       "memphis",
+       "nashville",
+       "chattanooga",
+       "knoxville"
+      ]
+     },
+     {
+      "seat": "s43",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s44",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s45",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s46",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s47",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s48",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s49",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s50",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s51",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s52",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s53",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s54",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s55",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s56",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s57",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s58",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s59",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s60",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s61",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s62",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s63",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s64",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s65",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s66",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s67",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s68",
+      "ranking": [
+       "nashville",
+       "chattanooga",
+       "knoxville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s69",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s70",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s71",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s72",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s73",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s74",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s75",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s76",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s77",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s78",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s79",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s80",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s81",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s82",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s83",
+      "ranking": [
+       "chattanooga",
+       "knoxville",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s84",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s85",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s86",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s87",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s88",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s89",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s90",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s91",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s92",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s93",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s94",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s95",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s96",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s97",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s98",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s99",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     },
+     {
+      "seat": "s100",
+      "ranking": [
+       "knoxville",
+       "chattanooga",
+       "nashville",
+       "memphis"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 100,
+    "present": 100,
+    "tally": {
+     "ranked": 100,
+     "abstain": 0
+    },
+    "winners": [
+     "nashville"
+    ],
+    "winner": "nashville",
+    "tie_broken": false,
+    "pairwise": [
+     [
+      0,
+      42,
+      42,
+      42
+     ],
+     [
+      58,
+      0,
+      68,
+      68
+     ],
+     [
+      58,
+      32,
+      0,
+      83
+     ],
+     [
+      58,
+      32,
+      17,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      0,
+      0,
+      0
+     ],
+     [
+      58,
+      0,
+      68,
+      68
+     ],
+     [
+      58,
+      0,
+      0,
+      83
+     ],
+     [
+      58,
+      0,
+      0,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "schulze: the 45-voter example",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 23,
+    "options": [
+     "a",
+     "b",
+     "c",
+     "d",
+     "e"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5",
+     "s6",
+     "s7",
+     "s8",
+     "s9",
+     "s10",
+     "s11",
+     "s12",
+     "s13",
+     "s14",
+     "s15",
+     "s16",
+     "s17",
+     "s18",
+     "s19",
+     "s20",
+     "s21",
+     "s22",
+     "s23",
+     "s24",
+     "s25",
+     "s26",
+     "s27",
+     "s28",
+     "s29",
+     "s30",
+     "s31",
+     "s32",
+     "s33",
+     "s34",
+     "s35",
+     "s36",
+     "s37",
+     "s38",
+     "s39",
+     "s40",
+     "s41",
+     "s42",
+     "s43",
+     "s44",
+     "s45"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "c",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "a",
+       "c",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "a",
+       "c",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "a",
+       "c",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "a",
+       "c",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s6",
+      "ranking": [
+       "a",
+       "d",
+       "e",
+       "c",
+       "b"
+      ]
+     },
+     {
+      "seat": "s7",
+      "ranking": [
+       "a",
+       "d",
+       "e",
+       "c",
+       "b"
+      ]
+     },
+     {
+      "seat": "s8",
+      "ranking": [
+       "a",
+       "d",
+       "e",
+       "c",
+       "b"
+      ]
+     },
+     {
+      "seat": "s9",
+      "ranking": [
+       "a",
+       "d",
+       "e",
+       "c",
+       "b"
+      ]
+     },
+     {
+      "seat": "s10",
+      "ranking": [
+       "a",
+       "d",
+       "e",
+       "c",
+       "b"
+      ]
+     },
+     {
+      "seat": "s11",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s12",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s13",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s14",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s15",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s16",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s17",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s18",
+      "ranking": [
+       "b",
+       "e",
+       "d",
+       "a",
+       "c"
+      ]
+     },
+     {
+      "seat": "s19",
+      "ranking": [
+       "c",
+       "a",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s20",
+      "ranking": [
+       "c",
+       "a",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s21",
+      "ranking": [
+       "c",
+       "a",
+       "b",
+       "e",
+       "d"
+      ]
+     },
+     {
+      "seat": "s22",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s23",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s24",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s25",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s26",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s27",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s28",
+      "ranking": [
+       "c",
+       "a",
+       "e",
+       "b",
+       "d"
+      ]
+     },
+     {
+      "seat": "s29",
+      "ranking": [
+       "c",
+       "b",
+       "a",
+       "d",
+       "e"
+      ]
+     },
+     {
+      "seat": "s30",
+      "ranking": [
+       "c",
+       "b",
+       "a",
+       "d",
+       "e"
+      ]
+     },
+     {
+      "seat": "s31",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s32",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s33",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s34",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s35",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s36",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s37",
+      "ranking": [
+       "d",
+       "c",
+       "e",
+       "b",
+       "a"
+      ]
+     },
+     {
+      "seat": "s38",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s39",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s40",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s41",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s42",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s43",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s44",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     },
+     {
+      "seat": "s45",
+      "ranking": [
+       "e",
+       "b",
+       "a",
+       "d",
+       "c"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 45,
+    "present": 45,
+    "tally": {
+     "ranked": 45,
+     "abstain": 0
+    },
+    "winners": [
+     "e"
+    ],
+    "winner": "e",
+    "tie_broken": false,
+    "pairwise": [
+     [
+      0,
+      20,
+      26,
+      30,
+      22
+     ],
+     [
+      25,
+      0,
+      16,
+      33,
+      18
+     ],
+     [
+      19,
+      29,
+      0,
+      17,
+      24
+     ],
+     [
+      15,
+      12,
+      28,
+      0,
+      14
+     ],
+     [
+      23,
+      27,
+      21,
+      31,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      28,
+      28,
+      30,
+      24
+     ],
+     [
+      25,
+      0,
+      28,
+      33,
+      24
+     ],
+     [
+      25,
+      29,
+      0,
+      29,
+      24
+     ],
+     [
+      25,
+      28,
+      28,
+      0,
+      24
+     ],
+     [
+      25,
+      28,
+      28,
+      31,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "borda: picks b where the Condorcet winner is a",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 5,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 5,
+    "present": 5,
+    "tally": {
+     "ranked": 5,
+     "abstain": 0
+    },
+    "winners": [
+     "b"
+    ],
+    "winner": "b",
+    "tie_broken": false,
+    "scores": [
+     6,
+     7,
+     2
+    ]
+   }
+  },
+  {
+   "name": "schulze: picks the Condorcet winner a",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 5,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 5,
+    "present": 5,
+    "tally": {
+     "ranked": 5,
+     "abstain": 0
+    },
+    "winners": [
+     "a"
+    ],
+    "winner": "a",
+    "tie_broken": false,
+    "pairwise": [
+     [
+      0,
+      3,
+      3
+     ],
+     [
+      2,
+      0,
+      5
+     ],
+     [
+      2,
+      0,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      3,
+      3
+     ],
+     [
+      0,
+      0,
+      5
+     ],
+     [
+      0,
+      0,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "schulze: a Condorcet cycle is a tie",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 3,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "c",
+       "a",
+       "b"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "tie",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "ranked": 3,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pairwise": [
+     [
+      0,
+      2,
+      1
+     ],
+     [
+      1,
+      0,
+      2
+     ],
+     [
+      2,
+      1,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      2,
+      2
+     ],
+     [
+      2,
+      0,
+      2
+     ],
+     [
+      2,
+      2,
+      0
+     ]
+    ],
+    "tie_broken": false
+   }
+  },
+  {
+   "name": "schulze: tie-break none is the default",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 3,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "c",
+       "a",
+       "b"
+      ]
+     }
+    ],
+    "tie_break": {
+     "kind": "none"
+    }
+   },
+   "output": {
+    "outcome": "tie",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "ranked": 3,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pairwise": [
+     [
+      0,
+      2,
+      1
+     ],
+     [
+      1,
+      0,
+      2
+     ],
+     [
+      2,
+      1,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      2,
+      2
+     ],
+     [
+      2,
+      0,
+      2
+     ],
+     [
+      2,
+      2,
+      0
+     ]
+    ],
+    "tie_broken": false
+   }
+  },
+  {
+   "name": "schulze: the seeded tie-break picks the lowest hash (c)",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 3,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "c",
+       "a",
+       "b"
+      ]
+     }
+    ],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    }
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "ranked": 3,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b",
+     "c"
+    ],
+    "pairwise": [
+     [
+      0,
+      2,
+      1
+     ],
+     [
+      1,
+      0,
+      2
+     ],
+     [
+      2,
+      1,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      2,
+      2
+     ],
+     [
+      2,
+      0,
+      2
+     ],
+     [
+      2,
+      2,
+      0
+     ]
+    ],
+    "winner": "c",
+    "tie_broken": true
+   }
+  },
+  {
+   "name": "borda: equal scores are a tie",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 2,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "a"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "tie",
+    "seats": 2,
+    "present": 2,
+    "tally": {
+     "ranked": 2,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b"
+    ],
+    "tie_broken": false,
+    "scores": [
+     1,
+     1
+    ]
+   }
+  },
+  {
+   "name": "borda: the seeded tie-break picks a over b",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 2,
+    "options": [
+     "b",
+     "a"
+    ],
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "a"
+      ]
+     }
+    ],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    }
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 2,
+    "present": 2,
+    "tally": {
+     "ranked": 2,
+     "abstain": 0
+    },
+    "winners": [
+     "b",
+     "a"
+    ],
+    "winner": "a",
+    "tie_broken": true,
+    "scores": [
+     1,
+     1
+    ]
+   }
+  },
+  {
+   "name": "borda: a single winner never uses the tie-break",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 5,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     }
+    ],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    }
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 5,
+    "present": 5,
+    "tally": {
+     "ranked": 5,
+     "abstain": 0
+    },
+    "winners": [
+     "b"
+    ],
+    "winner": "b",
+    "tie_broken": false,
+    "scores": [
+     6,
+     7,
+     2
+    ]
+   }
+  },
+  {
+   "name": "borda: abstentions count for quorum only",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 3,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "elected",
+    "seats": 4,
+    "present": 3,
+    "tally": {
+     "ranked": 2,
+     "abstain": 1
+    },
+    "winners": [
+     "a"
+    ],
+    "winner": "a",
+    "tie_broken": false,
+    "scores": [
+     4,
+     2,
+     0
+    ]
+   }
+  },
+  {
+   "name": "schulze: below quorum",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 3,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 3,
+    "present": 1,
+    "tally": {
+     "ranked": 1,
+     "abstain": 0
+    },
+    "winners": [
+     "a"
+    ],
+    "tie_broken": false,
+    "pairwise": [
+     [
+      0,
+      1
+     ],
+     [
+      0,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      1
+     ],
+     [
+      0,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "borda: every present seat abstains",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     }
+    ],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    }
+   },
+   "output": {
+    "outcome": "no_votes",
+    "seats": 2,
+    "present": 1,
+    "tally": {
+     "ranked": 0,
+     "abstain": 1
+    },
+    "winners": [
+     "a",
+     "b"
+    ],
+    "tie_broken": false,
+    "scores": [
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "median: odd count",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 3
+     },
+     {
+      "seat": "s2",
+      "value": 9
+     },
+     {
+      "seat": "s3",
+      "value": 5
+     }
+    ]
+   },
+   "output": {
+    "outcome": "value",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "values": 3,
+     "abstain": 0
+    },
+    "value": 5
+   }
+  },
+  {
+   "name": "median: even count takes the lower middle",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 4,
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 4
+     },
+     {
+      "seat": "s2",
+      "value": 1
+     },
+     {
+      "seat": "s3",
+      "value": 10
+     },
+     {
+      "seat": "s4",
+      "value": 7
+     }
+    ]
+   },
+   "output": {
+    "outcome": "value",
+    "seats": 4,
+    "present": 4,
+    "tally": {
+     "values": 4,
+     "abstain": 0
+    },
+    "value": 4
+   }
+  },
+  {
+   "name": "median: abstentions left out",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 8
+     },
+     {
+      "seat": "s2",
+      "vote": "abstain"
+     },
+     {
+      "seat": "s3",
+      "value": 2
+     }
+    ]
+   },
+   "output": {
+    "outcome": "value",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "values": 2,
+     "abstain": 1
+    },
+    "value": 2
+   }
+  },
+  {
+   "name": "median: the largest integer",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 9007199254740991
+     }
+    ]
+   },
+   "output": {
+    "outcome": "value",
+    "seats": 1,
+    "present": 1,
+    "tally": {
+     "values": 1,
+     "abstain": 0
+    },
+    "value": 9007199254740991
+   }
+  },
+  {
+   "name": "median: below quorum",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 2,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 4
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_quorum",
+    "seats": 3,
+    "present": 1,
+    "tally": {
+     "values": 1,
+     "abstain": 0
+    }
+   }
+  },
+  {
+   "name": "median: every present seat abstains",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "abstain"
+     }
+    ]
+   },
+   "output": {
+    "outcome": "no_votes",
+    "seats": 2,
+    "present": 1,
+    "tally": {
+     "values": 0,
+     "abstain": 1
+    }
+   }
+  },
+  {
+   "name": "missing rule",
+   "input": {
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "missing ballots",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "unknown member",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "motion": "m"
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "quorum is a string",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": "1",
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "quorum is negative",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": -1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "veto is not a boolean",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "veto": 1
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "seat id is empty",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "ballot has two choices",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve",
+      "value": 1
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "ballot has no choice",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "ballot has an unknown member",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve",
+      "reason": "x"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "value above 2^53 - 1",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 9007199254740992
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "finding without evidence flag",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "error": "bad_input"
+  },
+  {
+   "name": "unknown rule",
+   "input": {
+    "rule": {
+     "kind": "plurality"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "rule with an unknown member",
+   "input": {
+    "rule": {
+     "kind": "majority",
+     "num": 1
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "supermajority without den",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 2
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "supermajority above one",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 3,
+     "den": 2
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "supermajority with zero",
+   "input": {
+    "rule": {
+     "kind": "supermajority",
+     "num": 0,
+     "den": 3
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "options on a yes/no rule",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "options": [
+     "a",
+     "b"
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "seeded tie-break on a yes/no rule",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    }
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "veto on a ranked rule",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "veto": true,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": []
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "seed in upper case",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E"
+    }
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "seed too short",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [],
+    "tie_break": {
+     "kind": "seeded",
+     "seed": "5e"
+    }
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "ranked rule without options",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1"
+    ],
+    "ballots": []
+   },
+   "error": "bad_options"
+  },
+  {
+   "name": "one option",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": []
+   },
+   "error": "bad_options"
+  },
+  {
+   "name": "repeated option",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b",
+     "a"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": []
+   },
+   "error": "bad_options"
+  },
+  {
+   "name": "no seats",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [],
+    "ballots": []
+   },
+   "error": "bad_seats"
+  },
+  {
+   "name": "repeated seat",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_seats"
+  },
+  {
+   "name": "quorum zero",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 0,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_quorum"
+  },
+  {
+   "name": "quorum above the seats",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 3,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_quorum"
+  },
+  {
+   "name": "repeated finding id",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "none"
+     },
+     {
+      "id": "f1",
+      "blocking": false,
+      "evidence": true,
+      "challenge": "none"
+     }
+    ]
+   },
+   "error": "bad_finding"
+  },
+  {
+   "name": "unknown challenge outcome",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "maybe"
+     }
+    ]
+   },
+   "error": "bad_finding"
+  },
+  {
+   "name": "ballot from a seat not drawn",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s9",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "unknown_seat"
+  },
+  {
+   "name": "two ballots from one seat",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s1",
+      "vote": "reject"
+     }
+    ]
+   },
+   "error": "duplicate_ballot"
+  },
+  {
+   "name": "a ranking on a yes/no rule",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     }
+    ]
+   },
+   "error": "wrong_ballot"
+  },
+  {
+   "name": "a value on a yes/no rule",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "value": 3
+     }
+    ]
+   },
+   "error": "wrong_ballot"
+  },
+  {
+   "name": "an unknown vote",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "yes"
+     }
+    ]
+   },
+   "error": "wrong_ballot"
+  },
+  {
+   "name": "approve on a ranked rule",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "wrong_ballot"
+  },
+  {
+   "name": "a ranking on median",
+   "input": {
+    "rule": {
+     "kind": "median"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a"
+      ]
+     }
+    ]
+   },
+   "error": "wrong_ballot"
+  },
+  {
+   "name": "ranking misses an option",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     }
+    ]
+   },
+   "error": "bad_ranking"
+  },
+  {
+   "name": "ranking repeats an option",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "b"
+      ]
+     }
+    ]
+   },
+   "error": "bad_ranking"
+  },
+  {
+   "name": "ranking names an unknown option",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 1,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "d"
+      ]
+     }
+    ]
+   },
+   "error": "bad_ranking"
+  },
+  {
+   "name": "bad rule wins over bad quorum",
+   "input": {
+    "rule": {
+     "kind": "plurality"
+    },
+    "quorum": 0,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_rule"
+  },
+  {
+   "name": "bad seats wins over bad quorum",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 5,
+    "seats": [
+     "s1",
+     "s1"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_seats"
+  },
+  {
+   "name": "ballots checked in order",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 1,
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s9",
+      "vote": "approve"
+     },
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "unknown_seat"
+  },
+  {
+   "name": "bad input wins over everything",
+   "input": {
+    "rule": {
+     "kind": "plurality"
+    },
+    "quorum": "x",
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ]
+   },
+   "error": "bad_input"
+  }
+ ],
+ "verify": [
+  {
+   "name": "a verdict that matches its ballots",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   },
+   "valid": true
+  },
+  {
+   "name": "an outcome the ballots don't give",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": []
+   },
+   "valid": false
+  },
+  {
+   "name": "a tally that doesn't match the ballots",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 3,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   },
+   "valid": false
+  },
+  {
+   "name": "a blocker that was refuted",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "reject",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": [
+     "f1"
+    ]
+   },
+   "valid": false
+  },
+  {
+   "name": "a verdict missing a member",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "a verdict with an extra member",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "reject"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 3,
+    "tally": {
+     "approve": 2,
+     "reject": 1,
+     "abstain": 0
+    },
+    "blocked_by": [],
+    "note": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "a verdict for invalid ballots",
+   "input": {
+    "rule": {
+     "kind": "majority"
+    },
+    "quorum": 2,
+    "veto": true,
+    "seats": [
+     "s1",
+     "s2",
+     "s3"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "vote": "approve"
+     },
+     {
+      "seat": "s2",
+      "vote": "approve"
+     },
+     {
+      "seat": "s3",
+      "vote": "approve"
+     },
+     {
+      "seat": "s1",
+      "vote": "approve"
+     }
+    ],
+    "findings": [
+     {
+      "id": "f1",
+      "blocking": true,
+      "evidence": true,
+      "challenge": "refuted"
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "approve",
+    "seats": 3,
+    "present": 4,
+    "tally": {
+     "approve": 4,
+     "reject": 0,
+     "abstain": 0
+    },
+    "blocked_by": []
+   },
+   "valid": false
+  },
+  {
+   "name": "a ranked verdict that names the Borda winner under Schulze",
+   "input": {
+    "rule": {
+     "kind": "schulze"
+    },
+    "quorum": 5,
+    "options": [
+     "a",
+     "b",
+     "c"
+    ],
+    "seats": [
+     "s1",
+     "s2",
+     "s3",
+     "s4",
+     "s5"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s3",
+      "ranking": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "seat": "s4",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     },
+     {
+      "seat": "s5",
+      "ranking": [
+       "b",
+       "c",
+       "a"
+      ]
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "elected",
+    "seats": 5,
+    "present": 5,
+    "tally": {
+     "ranked": 5,
+     "abstain": 0
+    },
+    "winners": [
+     "b"
+    ],
+    "winner": "b",
+    "tie_broken": false,
+    "pairwise": [
+     [
+      0,
+      3,
+      3
+     ],
+     [
+      2,
+      0,
+      5
+     ],
+     [
+      2,
+      0,
+      0
+     ]
+    ],
+    "strengths": [
+     [
+      0,
+      3,
+      3
+     ],
+     [
+      0,
+      0,
+      5
+     ],
+     [
+      0,
+      0,
+      0
+     ]
+    ]
+   },
+   "valid": false
+  },
+  {
+   "name": "a ranked verdict that matches",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 2,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "a"
+      ]
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "tie",
+    "seats": 2,
+    "present": 2,
+    "tally": {
+     "ranked": 2,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b"
+    ],
+    "tie_broken": false,
+    "scores": [
+     1,
+     1
+    ]
+   },
+   "valid": true
+  },
+  {
+   "name": "a tie broken without a seed",
+   "input": {
+    "rule": {
+     "kind": "borda"
+    },
+    "quorum": 2,
+    "options": [
+     "a",
+     "b"
+    ],
+    "seats": [
+     "s1",
+     "s2"
+    ],
+    "ballots": [
+     {
+      "seat": "s1",
+      "ranking": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "seat": "s2",
+      "ranking": [
+       "b",
+       "a"
+      ]
+     }
+    ]
+   },
+   "verdict": {
+    "outcome": "elected",
+    "seats": 2,
+    "present": 2,
+    "tally": {
+     "ranked": 2,
+     "abstain": 0
+    },
+    "winners": [
+     "a",
+     "b"
+    ],
+    "winner": "a",
+    "tie_broken": true,
+    "scores": [
+     1,
+     1
+    ]
+   },
+   "valid": false
+  }
+ ]
+}

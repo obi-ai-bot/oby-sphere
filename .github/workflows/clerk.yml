@@ -1,0 +1,40 @@
+# The clerk's two implementations against the shared known-answer vectors (clerk/README.md).
+name: Clerk
+
+on:
+  pull_request:
+    branches: [dev]
+    paths: [clerk/**, spec/conformance/jcs-vectors.json, Makefile, .github/workflows/clerk.yml]
+  push:
+    branches: [dev]
+    paths: [clerk/**, spec/conformance/jcs-vectors.json, Makefile, .github/workflows/clerk.yml]
+
+# A newer push to the same pull request (or to dev) cancels the run it supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Clerk vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm's version comes from clerk/ts/package.json (packageManager).
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: clerk/ts/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: clerk/ts/pnpm-lock.yaml
+
+      - name: Rust and TypeScript against the vectors
+        run: make clerk-check

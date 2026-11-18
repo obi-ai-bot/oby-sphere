@@ -1,0 +1,58 @@
+{
+  "case": "envelope",
+  "name": "valid-follow-up-sealed",
+  "description": "A question that follows up an earlier one, its words sealed for obi-a: follows stays in the clear, for the Obysphere to check.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "50a6aadf-b875-8c1a-8713-3000bafab0fc",
+    "type": "question",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "50a6aadf-b875-8c1a-8713-3000bafab0fc",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "text": "Y0OcyA4vyr8sa8SU7qGvfzWhqhvQG9U4iv4iL95xSCKdgGM46ve51Zno5jusBcL2Pd5tmbvvvw",
+      "about": [
+        {
+          "kind": "repo",
+          "repo": "obi-conf/fixture-app"
+        }
+      ],
+      "choices": [
+        "XVLSGfxepbbpEV0LicU3amIDdg",
+        "7Qeowz914nl9qsuX4TKm0MQT"
+      ],
+      "follows": "119744ac-3bbe-839b-8b6d-578259398016"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+      "enc": "xH3eQdfn-0pJW1ndWMg71zUO92HutAjKEV7qPHvzpSI"
+    },
+    "signature": "ojs46c3s1ZsnsrCqVC3w21HjKUReNAenWIz24dB3cG4s-LtZpbZTeQuZZE3lGC4MaK0sSBe9hqIIwtrVgcu-BA"
+  }
+}

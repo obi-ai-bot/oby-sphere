@@ -1,0 +1,108 @@
+{
+  "case": "audit",
+  "name": "valid-chain-handoff-cancelled",
+  "description": "A handoff its sender calls off after the accept, before its result.",
+  "expect": "accept",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "type": "handoff",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "goal": "Write tests for average()",
+            "repo": "obi-conf/fixture-app",
+            "base_branch": "main",
+            "issue": 7,
+            "acceptance": [
+              {
+                "kind": "tests_pass"
+              }
+            ]
+          },
+          "signature": "E3hKe-9f0SUBT2HBYAlF8NtRkPNQiLn3xQ2JHCHM5zDGzSbyxCQU-KfDVQRoTsdNjCvgpTbLhzvWrlJhLzEsCg"
+        },
+        "hash": "cb2e8ca86111c8964dbe1c1d40179806e8270398a36b2c56e4c6213936adfb60"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "cb2e8ca86111c8964dbe1c1d40179806e8270398a36b2c56e4c6213936adfb60",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "99908e02-4b62-8022-808d-f34a9c670996",
+          "type": "accept",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "in_reply_to": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {},
+          "signature": "94Ykel1NnaHcbIDsWpv5WDv7zGUtyb163utNq-KohU3z7uFx-01h6pL46pVV7FvoZZTBIPvHVhEG4kApBJR7CQ"
+        },
+        "hash": "80d317c39f0d310abfa06be2be07c17a0b2d73c959921a9a27efd9d4568f9957"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "80d317c39f0d310abfa06be2be07c17a0b2d73c959921a9a27efd9d4568f9957",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "97e97d31-f485-8638-83cc-2545a4d85f15",
+          "type": "cancel",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "in_reply_to": "94a3f483-fa98-80c4-88f6-68c4f45e53f7",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "ODLwxrysDcpfo4gF_LXEzAjJECcQ7G4fCxmROSP9BtWJ064yRUqEuq6ygpyEoIMUCb8tVB3Um0gk9VxUB9EtDA"
+        },
+        "hash": "53b2d24dcddb14cdbea7e352a3dc6fda91f5e9e0af7bc66d07dcf236221b7fee"
+      }
+    ]
+  }
+}

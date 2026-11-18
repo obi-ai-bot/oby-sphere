@@ -1,0 +1,57 @@
+{
+  "case": "envelope",
+  "name": "invalid-not-sealed",
+  "description": "Words in the clear between two Obis whose cards both have a seal key.",
+  "expect": "reject",
+  "reason": "not_sealed",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "type": "review_request",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "goal": "Add an average helper to the fixture app",
+      "repo": "obi-conf/fixture-app",
+      "base_branch": "main",
+      "head_branch": "feature/average",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "acceptance": [
+        {
+          "kind": "tests_pass"
+        },
+        {
+          "kind": "no_blocker_findings",
+          "note": "Blockers need a fix before merge."
+        }
+      ],
+      "summary": "Adds src/average.js and touches src/greet.js."
+    },
+    "signature": "yXrsE5E5Z0kMf3v23wyFMpKKoxk9-YbU7Kjrg2zJl7iySAm7e7Zj5INGpY7rd30t9BrGb6H5gFyOL8yMHhqJBg"
+  }
+}

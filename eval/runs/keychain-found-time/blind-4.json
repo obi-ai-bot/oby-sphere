@@ -1,0 +1,53 @@
+{
+ "case": "keychain-found-time",
+ "seat": "blind-4",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T23:24:08.781Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "core/crates/obid/tests/accounts_api.rs",
+   "line": 237,
+   "severity": "nit",
+   "title": "Stale comment no longer matches cached presence check",
+   "detail": "The comment says obid asks `security` for \"whether the item exists, each time\", but after this change `cursor_keychain_has` now caches a positive existence result for `LOOK_EVERY` (2s), so with the three `GET /v1/status` calls issued back-to-back in this test, the presence check (`-s cursor-access-token`/`cursor-api-key` without `-w`) is very likely only asked once too, not every time. The test's `read()` helper only counts `-w` (value) reads so it doesn't fail, but the comment is now inaccurate documentation of the behaviour this diff introduces."
+  }
+ ],
+ "cost_usd": 0.5412195000000001,
+ "turns": 29,
+ "duration_ms": 135193,
+ "usage": {
+  "input_tokens": 1066,
+  "cache_creation_input_tokens": 38759,
+  "cache_read_input_tokens": 452595,
+  "output_tokens": 11266,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 38759,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 493,
+    "cache_read_input_tokens": 35759,
+    "cache_creation_input_tokens": 3000,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 3000
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

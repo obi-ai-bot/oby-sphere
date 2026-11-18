@@ -2,6 +2,8 @@
 
 The owner's ask of 2026-10-25: anyone hosts their team's Obysphere with the easiest setup in the world, on the platform they already use: Cloudflare (the button Deskree uses, kept and polished), Railway, Coolify, Docker on any VPS, and Vercel if it can work. This is the plan. Its first two steps are built in the same pull request: the container (`server/node/`, `server/Dockerfile`) and your own server (`deploy/docker/`, [self-host-docker.md](self-host-docker.md)). The rest is still a plan.
 
+**Since then** ([#69](https://github.com/obi-ai-bot/oby-sphere/pull/69), [#84](https://github.com/obi-ai-bot/oby-sphere/pull/84)): the server and its pages serve any client, not Oby alone. Hosting starts with a token you make (or one a client makes for you), and the container's claim page shows the `curl` that claims it. The join and claim pages offer an Open link only for clients that publish a conformance report, and none does yet. The phone relay is an optional extension (`PHONE_RELAY`), listed at `GET /v0.1/features`. Sign-in takes any OpenID Connect provider (`SIGNIN_PROVIDERS`), and the Node build needs `SPHERE_URL` for sign-in, DPoP and assertions that name the server.
+
 **In short:** keep the Worker and its Deploy to Cloudflare button as the main path. Add **one Docker image** of the same server (Node, SQLite on one volume, a thin layer standing in for D1 and the Durable Objects), which serves Railway, Coolify, a plain VPS, Fly.io and Render. Skip Vercel for now.
 
 ## What the Sphere needs (from the code, `dev` at 3554f8c)
@@ -10,11 +12,11 @@ The owner's ask of 2026-10-25: anyone hosts their team's Obysphere with the easi
 |---|---|---|---|
 | The HTTP API | `server/src/app.ts`, `routes/`, `protocol/` | A `fetch(request, env)` handler | Runs as it is on Node |
 | The database | `server/src/db.ts` and 13 other files; `server/migrations/` (5) | 104 queries through D1's API: `prepare`, `bind`, `first`, `all`, `run`, and `batch` as one transaction | A D1-shaped adapter over SQLite keeps every call and migration as it is |
-| The Doorbell | `server/src/doorbell.ts` | A Durable Object per Obi holding hibernating WebSockets that wake its long poll | In-process: one wake-up per Obi. If it can't be reached, polls already fall back to reading the database every 250 ms |
-| The phone relay | `server/src/relay.ts` | A Durable Object per Mac: tagged WebSockets, ping/pong auto-response, alarms, its own storage | In-process registry, one WebSocket server, `setTimeout` for alarms, storage in memory |
-| The job channel | `server/src/channel.ts` | A Durable Object per run_request exchange | Only compute sharing uses it, which Oby is cutting (obi-ai-bot/oby, docs/trim.md): left out of the container |
-| Settings | `server/src/env.ts`, `wrangler.jsonc` | `SPHERE_OPERATOR_TOKEN` (secret), `GOOGLE_CLIENT_ID`, `CREATOR_WORKSPACES`, `SPHERE_CREATE_LIMIT` | Environment variables |
-| An address | Invite links, Oby pins the host | `*.workers.dev`, or a custom domain on the account | HTTPS from the platform, or Caddy on a VPS |
+| The Doorbell | `server/src/doorbell.ts` | A Durable Object per agent holding hibernating WebSockets that wake its long poll | In-process: one wake-up per agent. If it can't be reached, polls already fall back to reading the database every 250 ms |
+| The phone relay | `server/src/relay.ts` | A Durable Object per relay (a member's machine and its phones): tagged WebSockets, ping/pong auto-response, alarms, its own storage | In-process registry, one WebSocket server, `setTimeout` for alarms, storage in memory |
+| The job channel | `server/src/channel.ts` | A Durable Object per run_request exchange | Only compute sharing uses it (spec §6.3), which Oby, its one user so far, is cutting (obi-ai-bot/oby, docs/trim.md): left out of the container |
+| Settings | `server/src/env.ts`, `wrangler.jsonc` | `SPHERE_OPERATOR_TOKEN` (secret), `GOOGLE_CLIENT_ID`, `SIGNIN_PROVIDERS`, `SIGNIN_RETURN_SCHEMES`, `CREATOR_WORKSPACES`, `SPHERE_CREATE_LIMIT`, `PHONE_RELAY` | Environment variables, and `SPHERE_URL`, the server's own address, never read from a request (optional on the Worker, needed off it) |
+| An address | Invite links, a client confirms the host | `*.workers.dev`, or a custom domain on the account | HTTPS from the platform, or Caddy on a VPS |
 
 No crons. About 3,100 lines of TypeScript in `server/src`.
 
@@ -63,21 +65,23 @@ Sources for all of this are at the end.
 
 ## The steps, counted
 
-Every path starts in Oby, which already makes the operator token and copies it to the clipboard (Settings › Obysphere › Host your own). Oby gains a choice of where (Cloudflare, Railway, Coolify, your own server), opens that platform's page, and ends by joining the new Sphere. "Paste" is the token, or the server's address.
+Every path starts with an operator token: one you make (`openssl rand`), or one a client makes for you (Oby: Settings › Obysphere › Host your own). A client may add a choice of where (Cloudflare, Railway, Coolify, your own server), open that platform's page, and end by joining the new Sphere. "Paste" is the token, or the server's address.
 
-| Target | From nothing to "Oby joined" | Pastes |
+| Target | From nothing to "your client joined" | Pastes |
 |---|---|---|
-| Cloudflare today | Deploy…, sign in to Cloudflare and GitHub, paste the token, Deploy, find the address in the dashboard, paste it into Oby, Use it | 2 |
-| **Cloudflare, polished** | Deploy…, sign in, paste the token, Deploy, **Visit** (the button at the end of Cloudflare's deploy), **Open in Oby** on the Sphere's first page (it hands Oby its own address) | 1 |
-| Railway | Deploy…, sign in, Deploy, open the claim link in the deploy's log, Open in Oby | 0 |
-| Coolify | New resource, Docker Compose, the repository's URL, set a domain, Deploy, open the claim link in its log, Open in Oby | 0 |
-| Your own server | Point a domain at it, run the two download lines, put the domain in `.env`, `docker compose up -d`, open the claim link it prints, Open in Oby | 0 |
+| Cloudflare today | Deploy…, sign in to Cloudflare and GitHub, paste the token, Deploy, find the address in the dashboard, paste it into your client | 2 |
+| **Cloudflare, polished** | Deploy…, sign in, paste the token, Deploy, **Visit** (the button at the end of Cloudflare's deploy), a listed client's **Open** on the Sphere's first page (it hands the client its own address); a client that isn't listed takes the address pasted | 1 (2) |
+| Railway | Deploy…, sign in, Deploy, open the claim link in the deploy's log, claim it with a listed client's Open, or with the page's `curl` and then the token and the address into your client | 0 (2) |
+| Coolify | New resource, Docker Compose, the repository's URL, set a domain, Deploy, open the claim link in its log, claim it | 0 (2) |
+| Your own server | Point a domain at it, run the two download lines, put the domain in `.env`, `docker compose up -d`, open the claim link it prints, claim it | 0 (2) |
+
+The counts in brackets are for a client that isn't listed in `server/src/clients.ts`. Listing needs a published conformance report, and no client has one yet (step 6).
 
 Two things make this the easiest:
 
-- **The Sphere's first page hands Oby its address.** An unclaimed Sphere's root page shows **Open in Oby**, which opens `oby://` with the server's own origin. Oby already holds the token it made, so nobody copies an address again. Clicked first by someone else, it gives away nothing: the token never leaves the person's Mac until Oby checks the server.
-- **On containers the token paste goes too (decided).** Started with no `SPHERE_OPERATOR_TOKEN`, the container writes a one-time claim link to its own log (as PocketBase does), never on a page. The link carries a claim code, never the operator token: Oby makes the token, the server keeps only its hash, and the code works once. A restart before anyone claims prints a new code, and until it's claimed the Sphere refuses everything else. Setting `SPHERE_OPERATOR_TOKEN` still works and skips the claim. On Cloudflare the button keeps asking for the token: a Worker's logs are harder to reach than the field.
-  - The claim link's **Open in Oby** needs Oby to handle `oby://claim/<host>#<code>`: make the token, `POST /v0.1/claim` with it and the code, keep it in the Keychain as Host your own does. That's in the Oby repository and not built yet. Until it is, the guide's other path works with today's Oby: the token Oby copies goes in `.env`, and the address is pasted into Host your own.
+- **The Sphere's first page hands a client its address.** A Sphere's first page offers each listed client's Open link (its own scheme, with the server's own origin); on a container's claim page, the `curl` is there for everyone else. A client that made the token holds it already, so nobody copies an address again. Clicked first by someone else, it gives away nothing: the token never leaves the person's machine until their client checks the server.
+- **On containers the token paste goes too (decided).** Started with no `SPHERE_OPERATOR_TOKEN`, the container writes a one-time claim link to its own log (as PocketBase does), never on a page. The link carries a claim code, never the operator token: whoever claims it makes the token (the page's `curl`, or a listed client), the server keeps only its hash, and the code works once. A restart before anyone claims prints a new code, and until it's claimed the Sphere answers only health, its features and the claim. Setting `SPHERE_OPERATOR_TOKEN` still works and skips the claim. On Cloudflare the button keeps asking for the token: a Worker's logs are harder to reach than the field.
+  - The claim page's Open links appear for clients listed in `server/src/clients.ts` that open claim links (`claims: true`), each through its own `<scheme>://claim/<host>#<code>`. Anyone else claims with the `curl` the page shows, or sets `SPHERE_OPERATOR_TOKEN` (`.env` on a VPS, the platform's variable on Railway or Coolify).
 
 ## The rules hold on every target
 
@@ -90,17 +94,17 @@ Two things make this the easiest:
 ## Updates
 
 - **The container:** versioned images, migrations applied at start (the same files, in order), and the guides' one line: pull, then up.
-- **Oby tells you:** `GET /v0.1/health` adds the server's version, and Oby shows one line in Settings › Obysphere when your Sphere is behind.
+- **A client tells you:** the server says its version at an endpoint of its own, an addition the spec gains first and the server lists at `GET /v0.1/features`. Not in `GET /v0.1/health`, which stays as it is for clients that check it strictly, and not in the features answer, which never gains members. A client shows one line when your Sphere is behind.
 - **Cloudflare:** the user's copy redeploys on push, but nothing brings our changes to it. The polish ships a small optional GitHub Action in `server/` that opens a pull request in the user's repository when a newer server is released.
 
 ## Order
 
 1. **The platform layer and the image** (done in this pull request): the scenario, the load test and `pnpm run test:node` pass against the container, and it uses 54 MB against the spike's 410 MB.
 2. **Your own server** (done in this pull request): `compose.yaml` with Caddy (its Caddyfile inline, so there are two files to download), `.env.example`, and [self-host-docker.md](self-host-docker.md). Tested end to end in Docker: the scenario over HTTPS through Caddy, and the phone relay's WebSockets through it.
-3. **Railway:** the template, built from this repository, and its button in `docs/run-your-own.md`.
-4. **Coolify:** the compose file with Coolify's magic variables, and the guide (the catalog when contributions reopen).
-5. **Cloudflare polish:** the Sphere's first page with Open in Oby, the version in health, the update Action.
-6. **Oby:** where to host in Host your own, the `oby://claim/<host>#<code>` hand-off (the claim link needs it), the "your Sphere is behind" line.
+3. **Railway:** the template, built from this repository, with `SPHERE_URL` set from Railway's domain variable, and its button in `docs/run-your-own.md`.
+4. **Coolify:** the compose file with Coolify's magic variables (`SPHERE_URL` from its domain), and the guide (the catalog when contributions reopen).
+5. **Cloudflare polish:** the Sphere's first page with the listed clients' Open links, the server's version at an endpoint of its own, the update Action.
+6. **Clients:** a client publishes its conformance report and is listed in `server/src/clients.ts`, which puts its Open links on the join and claim pages. Oby already opens `oby://join` and `oby://claim` links; it needs its report. Then, in any client: where to host, and the "your Sphere is behind" line.
 7. **Later:** Render's button, a Fly page, Vercel if asked again, and the self-hosted workerd once Cloudflare ships it.
 
 ## Decided (the owner, 2026-10-25)

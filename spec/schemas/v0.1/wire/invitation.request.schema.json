@@ -27,8 +27,16 @@
       "maximum": 1000
     },
     "domain": {
-      "description": "An open invitation only: each redeem carries a sign-in from this Workspace.",
+      "description": "An open invitation only: each redeem carries a sign-in from an account of this domain.",
       "$ref": "../common.schema.json#/$defs/domain"
+    },
+    "label": {
+      "description": "For the admins' own list (`GET …/invitations`): a few words, never an email address. The Sphere keeps no address (section 3.1).",
+      "$ref": "../common.schema.json#/$defs/line_text",
+      "x-obi-text": "data",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^@]*$"
     }
   },
   "dependentRequired": {

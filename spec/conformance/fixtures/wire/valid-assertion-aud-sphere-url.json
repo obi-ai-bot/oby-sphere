@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "valid-assertion-aud-sphere-url",
+  "description": "An owner assertion for the Obysphere's own URL: bound to that server.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "https://sphere.example.com/v0.1/spheres/conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "3bd143d2-ed3b-8632-8896-12d30c3fe338",
+    "scope": "admin"
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-cancelled-twice",
+  "description": "A review called off twice.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "type": "review_request",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "goal": "Add an average helper to the fixture app",
+            "repo": "obi-conf/fixture-app",
+            "base_branch": "main",
+            "head_branch": "feature/average",
+            "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+            "acceptance": [
+              {
+                "kind": "tests_pass"
+              },
+              {
+                "kind": "no_blocker_findings",
+                "note": "Blockers need a fix before merge."
+              }
+            ],
+            "summary": "Adds src/average.js and touches src/greet.js."
+          },
+          "signature": "yXrsE5E5Z0kMf3v23wyFMpKKoxk9-YbU7Kjrg2zJl7iySAm7e7Zj5INGpY7rd30t9BrGb6H5gFyOL8yMHhqJBg"
+        },
+        "hash": "946cf7e73a39a38ea55edba86785e03164454ffbb04c3835c31e34c7c41edf0d"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "946cf7e73a39a38ea55edba86785e03164454ffbb04c3835c31e34c7c41edf0d",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "173e3c67-e566-83c3-84c5-ef4960d6a1bf",
+          "type": "cancel",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "bBaIG9CkgKjHqwMfKxEuqHWHyKdQsx_IgH86XWVJLwEl6c10t1DOZstgN25fc59aTbwvGdM2-S2I-cEsLZoVDw"
+        },
+        "hash": "38ab86020c6d05379f7b2fa100aba3f6794b4863a135ad1edfde11c0abe6738b"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "38ab86020c6d05379f7b2fa100aba3f6794b4863a135ad1edfde11c0abe6738b",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "ca958e5f-b3c1-8b33-88ce-fa8a6c9a689a",
+          "type": "cancel",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "PgPpzjvd1pAY7iU_9q4701OkeJIt3_JZHgPHoMjBCfffvoO1T4C_3dHgBbdKtVq_e2hGGacRUV2r5zHiR8CGDQ"
+        },
+        "hash": "1156f65ce844785becbc1f5c49d81a795050c0030340842284c2dae74176514e"
+      }
+    ]
+  }
+}

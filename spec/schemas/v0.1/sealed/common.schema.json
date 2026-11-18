@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/common.schema.json",
+  "title": "Obi-to-Obi protocol v0.1: shared definitions (sealed)",
+  "description": "Identifiers, text types and structures shared by the envelope, the actions, the agent card and the Sphere wire binding. Identifier types are closed patterns. Human-written text uses `line_text` or `block_text` and is always annotated at the point of use with `x-obi-text: data` (spec/protocol.md, 'Text is data'). Sealed: derived from common.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "$defs": {
+    "protocol": {
+      "description": "The protocol version this document is written against.",
+      "const": "obi/0.1"
+    },
+    "uuid": {
+      "description": "A UUID in lower-case canonical form.",
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "description": "RFC 3339 date-time in UTC with a `Z` suffix and whole seconds, nothing else: `2026-10-14T12:00:00Z`.",
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 20,
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "slug": {
+      "description": "Lower-case letters, digits and inner hyphens, 1 to 63 characters.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+    },
+    "obi_id": {
+      "description": "An Obi's id, unique within its Sphere and never reused. Chosen by the admin for a named invitation, or by the Obi's own card for an open one.",
+      "$ref": "#/$defs/slug"
+    },
+    "owner_id": {
+      "description": "The id of the person an Obi acts for, unique within the Sphere.",
+      "$ref": "#/$defs/slug"
+    },
+    "sphere_id": {
+      "description": "A Sphere's id, unique on its server.",
+      "$ref": "#/$defs/slug"
+    },
+    "rule_id": {
+      "description": "The id of a remembered decision or a policy rule. Opaque to everyone but the party that made it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "public_key": {
+      "description": "An Ed25519 public key: the 32 raw bytes, base64url without padding.",
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "domain": {
+      "description": "A domain name, lower case, like `example.com`: an account's domain as its sign-in provider says it (a Google Workspace's `hd` claim, for one; spec/sphere-api.md section 3.1).",
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+    },
+    "signin": {
+      "description": "A sign-in the Sphere finished with its identity provider (spec/sphere-api.md section 3.1): its `state`, and the one-time `code` the provider's callback gave the browser.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "code"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "key_id": {
+      "description": "`ed25519:` followed by base64url (no padding) of SHA-256 over the 32 raw public key bytes.",
+      "type": "string",
+      "minLength": 51,
+      "maxLength": 51,
+      "pattern": "^ed25519:[A-Za-z0-9_-]{43}$"
+    },
+    "signature": {
+      "description": "An Ed25519 signature: 64 bytes, base64url without padding.",
+      "type": "string",
+      "minLength": 86,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "seal_key_id": {
+      "description": "`x25519:` followed by base64url (no padding) of SHA-256 over the 32 raw bytes of an Obi's seal key (spec/identity.md section 2).",
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 50,
+      "pattern": "^x25519:[A-Za-z0-9_-]{43}$"
+    },
+    "x25519_public_key": {
+      "description": "An X25519 public key: the 32 raw bytes, base64url without padding.",
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "seal": {
+      "description": "How an envelope's words are sealed for its recipient (spec/protocol.md section 9.1): the suite, the recipient's seal key, and the sender's new X25519 key for this envelope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suite",
+        "key_id",
+        "enc"
+      ],
+      "properties": {
+        "suite": {
+          "const": "x25519-hkdf-sha256-chacha20poly1305"
+        },
+        "key_id": {
+          "$ref": "#/$defs/seal_key_id"
+        },
+        "enc": {
+          "$ref": "#/$defs/x25519_public_key"
+        }
+      }
+    },
+    "sealed_text": {
+      "description": "One text value sealed for the envelope's recipient: its ChaCha20-Poly1305 ciphertext and tag, base64url without padding (spec/protocol.md section 9.1). Only the sealed schemas (sealed/) use it, and each use sets its minLength and maxLength from the plain field's.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "hash": {
+      "description": "A SHA-256 digest in lower-case hex.",
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repo": {
+      "description": "A repository as `owner/name`, GitHub's rules for both parts.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 140,
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]{0,38})/[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$"
+    },
+    "branch": {
+      "description": "A branch name: a safe subset of git's ref names. Never a value to pass to a shell unquoted.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}$",
+      "not": {
+        "pattern": "\\.\\.|//|/$|\\.$|\\.lock$|/\\."
+      }
+    },
+    "sha": {
+      "description": "A full git commit id, SHA-1 (40) or SHA-256 (64) hex, lower case.",
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 64,
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "path": {
+      "description": "A file path relative to the repository root, `/` separated, with no `..` segment.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[A-Za-z0-9_.@+-][A-Za-z0-9_.@+/ -]{0,499}$",
+      "not": {
+        "pattern": "(^|/)\\.\\.(/|$)|//|/$"
+      }
+    },
+    "pr_number": {
+      "description": "A pull request number.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "issue_number": {
+      "description": "An issue number.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "job_id": {
+      "description": "A job's id, as the Obi that runs it names it. Opaque to everyone else.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "ref": {
+      "description": "A typed reference to what a question is about or what an answer draws on: a repository, a pull request, an issue, or a job of the answering Obi. Never a URL, a path or a command (spec/protocol.md, 'References').",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repo"
+          ],
+          "properties": {
+            "kind": {
+              "const": "repo"
+            },
+            "repo": {
+              "$ref": "#/$defs/repo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repo",
+            "pr"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pr"
+            },
+            "repo": {
+              "$ref": "#/$defs/repo"
+            },
+            "pr": {
+              "$ref": "#/$defs/pr_number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repo",
+            "issue"
+          ],
+          "properties": {
+            "kind": {
+              "const": "issue"
+            },
+            "repo": {
+              "$ref": "#/$defs/repo"
+            },
+            "issue": {
+              "$ref": "#/$defs/issue_number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repo",
+            "job"
+          ],
+          "properties": {
+            "kind": {
+              "const": "job"
+            },
+            "repo": {
+              "$ref": "#/$defs/repo"
+            },
+            "job": {
+              "$ref": "#/$defs/job_id"
+            }
+          }
+        }
+      ]
+    },
+    "refs": {
+      "description": "1 to 10 distinct references.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "line_number": {
+      "description": "A 1-based line number.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000000
+    },
+    "line_text": {
+      "description": "One line of human-written text: no control characters (not even a newline) and no bidirectional override or isolate characters. Every use is annotated `x-obi-text: data` and sets its own maxLength.",
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u001F\\u007F\\u202A-\\u202E\\u2066-\\u2069]*$"
+    },
+    "block_text": {
+      "description": "Several lines of human-written text: newline (LF) and tab allowed, no other control character (no CR) and no bidirectional override or isolate characters. Every use is annotated `x-obi-text: data` and sets its own maxLength.",
+      "type": "string",
+      "pattern": "^[^\\u0000-\\u0008\\u000B-\\u001F\\u007F\\u202A-\\u202E\\u2066-\\u2069]*$"
+    },
+    "action_type": {
+      "description": "Every action type. There is no free-text message type.",
+      "enum": [
+        "review_request",
+        "question",
+        "handoff",
+        "run_request",
+        "status",
+        "accept",
+        "decline",
+        "result",
+        "answer",
+        "run_progress",
+        "run_return",
+        "run_cancel",
+        "share_offer",
+        "share_status",
+        "share_revoke",
+        "cancel",
+        "introduction"
+      ]
+    },
+    "request_type": {
+      "description": "The action types that start an exchange.",
+      "enum": [
+        "review_request",
+        "question",
+        "handoff",
+        "run_request",
+        "share_offer",
+        "introduction"
+      ]
+    },
+    "agent": {
+      "description": "The coding agent a run_request runs: its own CLI, with the member's own account.",
+      "enum": [
+        "claude",
+        "codex"
+      ]
+    },
+    "feature_id": {
+      "description": "The name of an addition to obi/0.1 (spec/README.md, 'Versions'; spec/identity.md section 2.3): a lower-case letter, then up to 63 lower-case letters, digits and _. An id a reader doesn't know means nothing to it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "class_id": {
+      "description": "A conformance class a member claims (spec/identity.md section 2.3), as the conformance suite defines them (spec/conformance/README.md, 'The classes a case belongs to'): a lower-case letter, then up to 63 lower-case letters, digits and _. An id a reader doesn't know is one from a later suite.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "topic_id": {
+      "description": "What a member can help with, as an id: a lower-case letter or digit, then up to 63 lower-case letters, digits and - (spec/identity.md section 2.3). An identifier, not words: it can be matched, never followed.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "follows": {
+      "description": "The id of an earlier request between the same two members, in either direction, that this request follows up (spec/protocol.md section 5.19). Comes with the feature follow_up.",
+      "$ref": "#/$defs/uuid"
+    },
+    "runtime_id": {
+      "description": "The id of an agent runtime: the program that acts as a member's agent (spec/identity.md section 2.3, which lists the known ones). Any id that matches is valid.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "vendor_id": {
+      "description": "The id of a model vendor (spec/identity.md section 2.3, which lists the known ones). Any id that matches is valid.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "model_id": {
+      "description": "A model name as the agent's CLI takes it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+    },
+    "box_size": {
+      "description": "The size of a guest job's VM: small is 4 cores, 8 GB and 30 GB of disk; large is 6 cores, 12 GB and 60 GB.",
+      "enum": [
+        "small",
+        "large"
+      ]
+    },
+    "bundle": {
+      "description": "A git bundle that travels on the exchange's job channel (protocol.md section 13), named by its SHA-256 and size.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483648
+        }
+      }
+    },
+    "grant_id": {
+      "description": "A share of an API account its key holder gives (protocol.md 5.14): `g-` and 12 lower-case hex. Opaque to everyone but the key holder's Obi.",
+      "type": "string",
+      "minLength": 14,
+      "maxLength": 14,
+      "pattern": "^g-[0-9a-f]{12}$"
+    },
+    "cents": {
+      "description": "An amount of US dollars in whole cents.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000000
+    },
+    "severity": {
+      "description": "How much a finding matters, highest first: blocker > major > minor > nit.",
+      "enum": [
+        "blocker",
+        "major",
+        "minor",
+        "nit"
+      ]
+    },
+    "condition_kind": {
+      "description": "The kinds of acceptance condition. All but `custom` are machine-checkable.",
+      "enum": [
+        "tests_pass",
+        "no_blocker_findings",
+        "no_findings_at_or_above",
+        "custom"
+      ]
+    },
+    "acceptance_condition": {
+      "description": "One acceptance condition: a typed kind, and data text only as a note (or, for `custom`, as the condition a person judges).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "tests_pass"
+            },
+            "note": {
+              "$ref": "#/$defs/sealed_text",
+              "x-obi-text": "sealed",
+              "minLength": 23,
+              "maxLength": 1088
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "no_blocker_findings"
+            },
+            "note": {
+              "$ref": "#/$defs/sealed_text",
+              "x-obi-text": "sealed",
+              "minLength": 23,
+              "maxLength": 1088
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "severity"
+          ],
+          "properties": {
+            "kind": {
+              "const": "no_findings_at_or_above"
+            },
+            "severity": {
+              "$ref": "#/$defs/severity"
+            },
+            "note": {
+              "$ref": "#/$defs/sealed_text",
+              "x-obi-text": "sealed",
+              "minLength": 23,
+              "maxLength": 1088
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "text"
+          ],
+          "properties": {
+            "kind": {
+              "const": "custom"
+            },
+            "text": {
+              "$ref": "#/$defs/sealed_text",
+              "x-obi-text": "sealed",
+              "minLength": 23,
+              "maxLength": 2688
+            }
+          }
+        }
+      ]
+    },
+    "acceptance": {
+      "description": "The conditions that say the goal is reached, in order. Results refer to them by index.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/acceptance_condition"
+      }
+    },
+    "acceptance_result": {
+      "description": "Whether one acceptance condition of the request was met. `index` is its position in the request's `acceptance`; `kind` (and `severity`) repeat it so the result can be checked on its own.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "kind",
+        "met"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "kind": {
+          "$ref": "#/$defs/condition_kind"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "met": {
+          "type": "boolean"
+        }
+      },
+      "if": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "const": "no_findings_at_or_above"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "severity"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "severity"
+          ]
+        }
+      }
+    },
+    "acceptance_results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/acceptance_result"
+      }
+    },
+    "finding": {
+      "description": "One review finding. `id` is stable: the same finding on the same `head_sha` keeps its id (spec/protocol.md, 'Findings').",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "file",
+        "line",
+        "title",
+        "detail"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "file": {
+          "$ref": "#/$defs/path"
+        },
+        "line": {
+          "$ref": "#/$defs/line_number"
+        },
+        "end_line": {
+          "$ref": "#/$defs/line_number"
+        },
+        "title": {
+          "$ref": "#/$defs/sealed_text",
+          "x-obi-text": "sealed",
+          "minLength": 23,
+          "maxLength": 1088
+        },
+        "detail": {
+          "$ref": "#/$defs/sealed_text",
+          "x-obi-text": "sealed",
+          "minLength": 23,
+          "maxLength": 21355
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/share_offer.schema.json",
+  "title": "share_offer body (sealed)",
+  "description": "A key holder's Obi gives the receiver's owner a share of a company-paid API account (protocol.md 5.14): jobs on it run on the key holder's Mac, and the key never leaves it. Starts an exchange that lasts as long as the share. Sealed: derived from actions/share_offer.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "grant",
+    "agent",
+    "account",
+    "share",
+    "limit_cents",
+    "period",
+    "resets"
+  ],
+  "properties": {
+    "grant": {
+      "$ref": "../common.schema.json#/$defs/grant_id"
+    },
+    "agent": {
+      "$ref": "../common.schema.json#/$defs/agent"
+    },
+    "account": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 555,
+      "description": "The account's name as its key holder calls it."
+    },
+    "share": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 100,
+      "description": "The share of the account's monthly budget, in percent."
+    },
+    "limit_cents": {
+      "$ref": "../common.schema.json#/$defs/cents",
+      "description": "That share in money this period: the most the receiver's owner's jobs may cost on it."
+    },
+    "period": {
+      "const": "month"
+    },
+    "resets": {
+      "$ref": "../common.schema.json#/$defs/timestamp",
+      "description": "When the period starts again."
+    }
+  }
+}

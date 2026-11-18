@@ -1,7 +1,7 @@
 // POST /v0.1/oauth/token: OAuth 2.0 Token Exchange (RFC 8693), the subject an owner and the
 // actor, when there is one, an Obi acting for them (spec/identity.md section 4.3).
 
-import { SCOPES, canonicalScope, isScope, tokenHash } from "./auth.ts";
+import { SCOPES, canonicalScope, isScope, ownOrigin, ownUrl, tokenHash } from "./auth.ts";
 import { constraintFailure, getMember, getOwner, getSphere, unforeseen } from "./db.ts";
 import type { Deps, Env } from "./env.ts";
 import { MAX_BODY_BYTES, json, readBody } from "./http.ts";
@@ -9,6 +9,7 @@ import { randomToken } from "./protocol/crypto.ts";
 import { CLOCK_SKEW_SECONDS, MAX_LIFETIME_SECONDS } from "./protocol/envelope.ts";
 import { parseJwt, verifyJws, type CompactJws } from "./protocol/jws.ts";
 import { matches } from "./protocol/schemas.ts";
+import { TOKEN_PROOF_BEHIND, checkProof, type Proof } from "./dpop.ts";
 
 const GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange";
 const JWT_TYPE = "urn:ietf:params:oauth:token-type:jwt";
@@ -18,7 +19,7 @@ const OWN_ASSERTION_MAX_SECONDS = 300;
 const ACTOR_ASSERTION_MAX_SECONDS = 300;
 const ACCESS_TOKEN_MAX_SECONDS = 3600;
 
-type OAuthErrorCode = "invalid_request" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type";
+type OAuthErrorCode = "invalid_request" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" | "invalid_dpop_proof";
 
 class OAuthError extends Error {
   readonly error: OAuthErrorCode;
@@ -46,6 +47,23 @@ function parseScopes(text: string, what: string): Set<string> {
   const scopes = new Set(text.split(" "));
   for (const s of scopes) if (!isScope(s)) throw new OAuthError("invalid_scope", `${what} names a scope this Sphere doesn't know`);
   return scopes;
+}
+
+/**
+ * The Obysphere an assertion's `aud` names: `obi-sphere:<id>`, or `<origin>/v0.1/spheres/<id>` for
+ * this server's own origin only (null for another's). The claims schema has checked its form.
+ */
+export function audSphere(aud: string, origin: string | null): string | null {
+  if (aud.startsWith("obi-sphere:")) return aud.slice("obi-sphere:".length);
+  const m = /^(https?:\/\/[^/]+)\/v0\.1\/spheres\/([a-z0-9-]+)$/.exec(aud);
+  if (!m) return null;
+  let named: string;
+  try {
+    named = new URL(m[1]!).origin;
+  } catch {
+    return null;
+  }
+  return origin !== null && named === origin ? m[2]! : null;
 }
 
 export async function tokenEndpoint(request: Request, env: Env, deps: Deps): Promise<Response> {
@@ -103,9 +121,14 @@ async function exchange(request: Request, env: Env, deps: Deps): Promise<Respons
     actor = parseJwt(actorToken);
     if (!actor || !matches("actorClaims", actor.claims)) throw new OAuthError("invalid_request", "actor_token is not a well-formed Obi assertion");
     ac = actor.claims as unknown as Claims;
-    if (ac.aud !== sc.aud) throw new OAuthError("invalid_request", "the two assertions are for different Spheres");
   }
-  const sphereId = sc.aud.slice("obi-sphere:".length);
+  // `aud` names the Obysphere: `obi-sphere:<id>`, or its own URL, which binds the assertion to this
+  // server (identity.md 4.1). Both assertions name the same one.
+  // This server's own origin, as configured; null when it doesn't know it, and then only `obi-sphere:<id>` names it.
+  const origin = ownOrigin(env, request);
+  const sphereId = audSphere(sc.aud, origin);
+  if (sphereId === null) throw new OAuthError("invalid_request", "subject_token's aud names an Obysphere on another server");
+  if (ac && audSphere(ac.aud, origin) !== sphereId) throw new OAuthError("invalid_request", "the two assertions are for different Spheres");
   const sphere = await getSphere(env.DB, sphereId);
   if (!sphere) throw new OAuthError("invalid_request", "aud names no Sphere on this server");
 
@@ -151,9 +174,23 @@ async function exchange(request: Request, env: Env, deps: Deps): Promise<Respons
   // 6. Scopes.
   const granted = parseScopes(sc.scope!, "the owner assertion");
   const wanted = requested === undefined ? granted : parseScopes(requested, "scope");
-  const mayHold = (s: string) => (actorObi !== null ? s !== "admin" : s === "directory:read" || s === "audit:read" || (s === "admin" && sc.iss === sphere.admin_owner));
+  const mayHold = (s: string) => (actorObi !== null ? s !== "admin" : s === "directory:read" || s === "audit:read" || (s === "admin" && owner.admin === 1));
   const scope = canonicalScope(SCOPES.filter((s) => wanted.has(s) && granted.has(s) && mayHold(s)));
   if (!scope) throw new OAuthError("invalid_scope", "no scope asked for can be granted");
+
+  // 7. With a DPoP proof, a token bound to its key (identity.md 4.6); each proof gets one token.
+  let proof: Proof | null = null;
+  const dpop = request.headers.get("DPoP");
+  if (dpop !== null) {
+    // A server that doesn't take DPoP (it doesn't know its own address) ignores the header, as
+    // RFC 9449 section 5 lets it: the token it issues is a bearer one, and token_type says so.
+    const url = ownUrl(env, request);
+    if (url !== null) {
+      const checked = await checkProof(dpop, "POST", url, now, { behind: TOKEN_PROOF_BEHIND });
+      if (typeof checked === "string") throw new OAuthError("invalid_dpop_proof", checked);
+      proof = checked;
+    }
+  }
 
   const accessToken = randomToken(32);
   const expiresIn = Math.min(ACCESS_TOKEN_MAX_SECONDS, sc.exp - now);
@@ -161,14 +198,18 @@ async function exchange(request: Request, env: Env, deps: Deps): Promise<Respons
     await env.DB.batch([
       env.DB.prepare("DELETE FROM used_jtis WHERE exp_s < ?1").bind(now),
       env.DB.prepare("DELETE FROM tokens WHERE expires_at_s < ?1").bind(now - 86400),
+      env.DB.prepare("DELETE FROM dpop_proofs WHERE exp_s < ?1").bind(now),
       env.DB.prepare("INSERT INTO used_jtis (sphere, iss, jti, exp_s) VALUES (?1, ?2, ?3, ?4)").bind(sphere.id, issuer, single.jti, single.exp),
-      env.DB.prepare("INSERT INTO tokens (sha256, sphere, subject, actor, scope, expires_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6)").bind(
-        await tokenHash(accessToken), sphere.id, sc.iss, actorObi, scope, now + expiresIn,
+      ...(proof ? [env.DB.prepare("INSERT INTO dpop_proofs (jkt, jti, exp_s) VALUES (?1, ?2, ?3)").bind(proof.jkt, proof.jti, proof.iat + TOKEN_PROOF_BEHIND)] : []),
+      env.DB.prepare("INSERT INTO tokens (sha256, sphere, subject, actor, scope, expires_at_s, jkt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)").bind(
+        await tokenHash(accessToken), sphere.id, sc.iss, actorObi, scope, now + expiresIn, proof?.jkt ?? null,
       ),
     ]);
   } catch (e) {
-    if (constraintFailure(e)?.startsWith("UNIQUE constraint failed: used_jtis.")) throw new OAuthError("invalid_grant", "this assertion was used before");
+    const failed = constraintFailure(e);
+    if (failed?.startsWith("UNIQUE constraint failed: used_jtis.")) throw new OAuthError("invalid_grant", "this assertion was used before");
+    if (failed?.startsWith("UNIQUE constraint failed: dpop_proofs.")) throw new OAuthError("invalid_dpop_proof", "this DPoP proof was used before");
     unforeseen(e, "issuing a token");
   }
-  return json(200, { access_token: accessToken, issued_token_type: ISSUED_TYPE, token_type: "Bearer", expires_in: expiresIn, scope });
+  return json(200, { access_token: accessToken, issued_token_type: ISSUED_TYPE, token_type: proof ? "DPoP" : "Bearer", expires_in: expiresIn, scope });
 }

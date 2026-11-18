@@ -25,12 +25,14 @@ const SCHEMA_BASE = "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/sche
 // documents it checks on its own (cards, chains, assertion headers), and what it answers.
 const EXPORTS = {
   envelope: "envelope.schema.json",
+  sealedEnvelope: "sealed/envelope.schema.json",
   runnerStatus: "runner-status.schema.json",
   agentCard: "agent-card.schema.json",
   auditEntry: "audit-entry.schema.json",
   createSphereRequest: "wire/create-sphere.request.schema.json",
   signinRequest: "wire/signin.request.schema.json",
   invitationRequest: "wire/invitation.request.schema.json",
+  sphereUpdateRequest: "wire/sphere-update.request.schema.json",
   invitationPreviewRequest: "wire/invitation-preview.request.schema.json",
   redeemRequest: "wire/redeem.request.schema.json",
   cardUpdateRequest: "wire/card-update.request.schema.json",
@@ -41,10 +43,13 @@ const EXPORTS = {
   actorClaims: "wire/actor.claims.schema.json",
   // What the server answers: the tests check every answer against its schema.
   healthResponse: "wire/health.response.schema.json",
+  featuresResponse: "wire/features.response.schema.json",
   sphere: "wire/sphere.schema.json",
   tokenResponse: "wire/token.response.schema.json",
   invitationResponse: "wire/invitation.response.schema.json",
+  invitationsResponse: "wire/invitations.response.schema.json",
   signinResponse: "wire/signin.response.schema.json",
+  signinProvidersResponse: "wire/signin-providers.response.schema.json",
   invitationPreviewResponse: "wire/invitation-preview.response.schema.json",
   member: "wire/member.schema.json",
   membersResponse: "wire/members.response.schema.json",
@@ -53,6 +58,11 @@ const EXPORTS = {
   deliveriesResponse: "wire/deliveries.response.schema.json",
   ackResponse: "wire/ack.response.schema.json",
   auditResponse: "wire/audit.response.schema.json",
+  // The A2A binding (spec/a2a.md): what it reads, and what it answers.
+  a2aSendRequest: "wire/a2a-send.request.schema.json",
+  a2aSendResponse: "wire/a2a-send.response.schema.json",
+  a2aTask: "wire/a2a-task.schema.json",
+  a2aError: "wire/a2a-error.schema.json",
   relay: "wire/relay.schema.json",
   error: "wire/error.schema.json",
 };
@@ -73,7 +83,7 @@ function build() {
     validateFormats: false,
     code: { source: true, esm: true, lines: true },
   });
-  ajv.addKeyword({ keyword: "x-obi-text", metaSchema: { enum: ["data"] } });
+  ajv.addKeyword({ keyword: "x-obi-text", metaSchema: { enum: ["data", "sealed"] } });
   for (const path of schemaFiles(SCHEMA_DIR)) {
     const schema = JSON.parse(readFileSync(path, "utf8"));
     if (schema.$id !== SCHEMA_BASE + relative(SCHEMA_DIR, path)) throw new Error(`${path}: $id does not match its path`);

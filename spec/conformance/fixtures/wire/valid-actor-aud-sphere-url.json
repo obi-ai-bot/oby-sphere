@@ -1,0 +1,17 @@
+{
+  "case": "wire",
+  "name": "valid-actor-aud-sphere-url",
+  "description": "An actor assertion for the Obysphere's own URL.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/actor.claims"
+  },
+  "input": {
+    "iss": "obi-a",
+    "sub": "obi-a",
+    "aud": "https://sphere.example.com/v0.1/spheres/conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "f32e02c2-0289-8802-8b3c-11e642429af5"
+  }
+}

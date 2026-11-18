@@ -1,0 +1,38 @@
+{
+  "suite": "obi/0.1",
+  "report_version": 1,
+  "label": "obysphere-connector",
+  "generated_at": "2026-10-28T17:50:04Z",
+  "runs": [
+    {
+      "mode": "receiver",
+      "at": "2026-10-28T17:50:04Z"
+    }
+  ],
+  "classes": {
+    "participant": {
+      "message": null,
+      "behaviour": {
+        "ran": 6,
+        "passed": 6
+      },
+      "status": "incomplete"
+    },
+    "executor": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    },
+    "holder": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    },
+    "approver": {
+      "message": null,
+      "behaviour": null,
+      "status": "not_run"
+    }
+  },
+  "commit": null
+}

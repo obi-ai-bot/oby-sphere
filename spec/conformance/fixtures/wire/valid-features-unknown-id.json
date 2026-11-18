@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-unknown-id",
+  "description": "A feature the client doesn't know: it ignores it.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime",
+      "some_later_feature"
+    ]
+  }
+}

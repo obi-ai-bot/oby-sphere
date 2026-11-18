@@ -1,0 +1,18 @@
+{
+  "case": "wire",
+  "name": "valid-assertion-aud-sphere-id",
+  "description": "An owner assertion for `obi-sphere:<sphere>`.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "obi-sphere:conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "4ce1c18b-6867-8b48-85ab-b28d0c59eb19",
+    "scope": "admin"
+  }
+}

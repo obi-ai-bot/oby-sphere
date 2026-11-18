@@ -2,8 +2,9 @@
 
 import { describe, expect, it } from "vitest";
 import { policyAllows } from "../src/routes/policy";
+import { policyFeatures } from "../src/protocol/card";
 import type { PolicyRule } from "../src/db";
-import { BRIEF, TEAM_REVIEWS, World, expectSchema, team } from "./helpers";
+import { BRIEF, TEAM_REVIEWS, World, expectSchema, makeCard, team } from "./helpers";
 
 describe("GET and PUT /policy", () => {
   it("replaces the policy whole, version by version, rules in the order given", async () => {
@@ -115,5 +116,74 @@ describe("policy at send", () => {
     const r = await w.send(await w.envelope("obi-ernesto", "obi-wellington", "question", { text: "Which?" }), token);
     expect(r.status).toBe(403);
     expect(r.body.error.code).toBe("policy_denied");
+  });
+});
+
+describe("a rule may require a conformance class (the policy_classes feature, sphere-api.md section 5)", () => {
+  const base: PolicyRule = { id: "r", from_owner: "*", to_owner: "*", actions: ["run_request"], repos: ["*"] };
+
+  it("matches only when the member claims every class the rule names (from and to sides)", () => {
+    const ok = (rule: PolicyRule, from: string[], to: string[]) => policyAllows([rule], "a", "b", "run_request", "x/y", from, to);
+    // No class requirement: unchanged behaviour.
+    expect(ok(base, [], [])).not.toBeNull();
+    // to_classes: only a member that claims every listed class matches; none claimed denies.
+    expect(ok({ ...base, to_classes: ["executor"] }, [], ["executor"])).not.toBeNull();
+    expect(ok({ ...base, to_classes: ["executor"] }, [], [])).toBeNull();
+    expect(ok({ ...base, to_classes: ["executor"] }, [], ["participant"])).toBeNull();
+    expect(ok({ ...base, to_classes: ["executor", "holder"] }, [], ["executor"])).toBeNull();
+    expect(ok({ ...base, to_classes: ["executor", "holder"] }, [], ["holder", "executor"])).not.toBeNull();
+    // from_classes constrains the sender the same way.
+    expect(ok({ ...base, from_classes: ["holder"] }, ["holder"], [])).not.toBeNull();
+    expect(ok({ ...base, from_classes: ["holder"] }, [], [])).toBeNull();
+    // Both sides at once.
+    const bothSides: PolicyRule = { ...base, from_classes: ["holder"], to_classes: ["executor"] };
+    expect(ok(bothSides, ["holder"], ["executor"])).not.toBeNull();
+    expect(ok(bothSides, ["holder"], [])).toBeNull();
+    expect(ok(bothSides, [], ["executor"])).toBeNull();
+  });
+
+  it("policyFeatures maps a rule with class fields to policy_classes, so putPolicy's gate covers it", () => {
+    expect(policyFeatures([{ actions: ["review_request"] }])).toEqual([]);
+    expect(policyFeatures([{ actions: ["review_request"], to_classes: ["executor"] }])).toEqual(["policy_classes"]);
+    expect(policyFeatures([{ actions: ["review_request"], from_classes: ["holder"] }])).toEqual(["policy_classes"]);
+    expect(policyFeatures([{ actions: ["introduction"] }, { actions: ["review_request"], to_classes: ["executor"] }]).sort()).toEqual(["introduction", "policy_classes"]);
+  });
+
+  it("holds a class rule until every active member's card lists policy_classes (feature_not_taken); then it goes in", async () => {
+    const w = await team();
+    const adopt = async (obi: string, owner: string, cardSeq: number, params?: Record<string, unknown>, version?: string) => {
+      const card = await makeCard({ sphere: "e2e", obi, owner, ownerKey: await w.ownerKey(owner), obiKey: w.obis.get(obi)!.key, cardSeq, issuedAt: w.clock.ts(), ...(version ? { version } : {}), ...(params ? { params } : {}) });
+      return w.call("PUT", `/v0.1/spheres/e2e/members/${obi}/card`, { token: await w.obiToken(obi), body: { card } });
+    };
+    const classRule = { id: "exec", from_owner: "*", to_owner: "*", actions: ["review_request"], repos: ["*"], to_classes: ["executor"] };
+    // Neither member's card lists policy_classes, so a member from before couldn't read the rule.
+    const refused = await w.putPolicy([classRule], 1);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe("feature_not_taken");
+    expect(refused.body.error.message).toContain("policy_classes");
+    // Both take card_runtime, then list policy_classes and card_classes; obi-wellington claims executor.
+    expect((await adopt("obi-ernesto", "ernesto", 2, undefined, "0.3.0+card-runtime")).status).toBe(200);
+    expect((await adopt("obi-wellington", "wellington", 2, undefined, "0.3.0+card-runtime")).status).toBe(200);
+    expect((await adopt("obi-ernesto", "ernesto", 3, { features: ["card_classes", "card_runtime", "policy_classes"] })).status).toBe(200);
+    expect((await adopt("obi-wellington", "wellington", 3, { features: ["card_classes", "card_runtime", "policy_classes"], classes: ["executor"] })).status).toBe(200);
+    // Now the rule is taken and round-trips.
+    const put = await w.putPolicy([classRule], 1);
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    expectSchema("policy", put.body);
+    expect(put.body.rules[0]).toEqual(classRule);
+    // It matches obi-wellington (claims executor) but not obi-ernesto (claims none).
+    expect((await w.send(await w.envelope("obi-ernesto", "obi-wellington", "review_request", BRIEF), await w.obiToken("obi-ernesto"))).status).toBe(202);
+    const denied = await w.send(await w.envelope("obi-wellington", "obi-ernesto", "review_request", BRIEF), await w.obiToken("obi-wellington"));
+    expect(denied.status).toBe(403);
+    expect(denied.body.error.code).toBe("policy_denied");
+  });
+
+  it("rejects a class id outside the schema pattern (400 bad_request)", async () => {
+    const w = await team();
+    for (const bad of [["Executor"], [""], ["a b"], Array.from({ length: 17 }, (_, i) => `c${i}`)]) {
+      const r = await w.putPolicy([{ ...base, id: "r", to_classes: bad }], 1);
+      expect(r.status, JSON.stringify(bad)).toBe(400);
+      expect(r.body.error.code).toBe("bad_request");
+    }
   });
 });

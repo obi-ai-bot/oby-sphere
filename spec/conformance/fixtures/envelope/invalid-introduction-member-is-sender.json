@@ -1,0 +1,39 @@
+{
+  "case": "envelope",
+  "name": "invalid-introduction-member-is-sender",
+  "description": "An introduction of its own sender.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "205abecb-ee00-8613-88a8-909d498d3f37",
+    "type": "introduction",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "205abecb-ee00-8613-88a8-909d498d3f37",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "member": "obi-b"
+    },
+    "signature": "exxo3ytZuhUcFKsaz9qzju8l3f8GWz0OchoWO0HcJ1NtAxOTuTQLOqgxmVdsq-vIcMSyu9hrRIiTIYD5TBRSCQ"
+  }
+}

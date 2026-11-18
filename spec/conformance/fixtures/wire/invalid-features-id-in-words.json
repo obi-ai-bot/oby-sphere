@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "invalid-features-id-in-words",
+  "description": "A feature named in words.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "Card runtime"
+    ]
+  }
+}

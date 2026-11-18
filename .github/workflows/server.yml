@@ -1,18 +1,26 @@
 # The Sphere server (server/): types, its tests inside workerd, the conformance suite against its
 # checker, the scenario's Sphere-side steps and concurrent sends against a local Sphere
-# (`pnpm run local`), and its copies of obi's e2e fixtures against obi's (when it may read obi).
+# (`pnpm run local`), and its copies of oby's e2e fixtures against oby's dev.
+#
+# A draft pull request runs the workflow but skips its jobs, unless it has the `full-ci` label
+# (that takes effect on the next push after labelling); marking it ready for review runs
+# everything on the same head.
 name: Server
 
 on:
   pull_request:
-    branches: [dev]
+    # Listing types replaces the default (opened, synchronize, reopened), so those stay explicit;
+    # ready_for_review runs a draft that turned ready on the same head. No `labeled`: a run started
+    # by another label would skip and post a success over a failed check on that head.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [dev]
 
-# A newer push to the same pull request (or to dev) cancels the run it supersedes.
+# A newer push to the same pull request cancels the run it supersedes; pushes to dev each run to
+# the end.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -20,6 +28,7 @@ permissions:
 jobs:
   server:
     name: Server (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'full-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -28,11 +37,15 @@ jobs:
     timeout-minutes: 15
     env:
       WRANGLER_SEND_METRICS: "false"
+      # oby's checkout, for check:fixtures and the scenario (server/e2e/fixtures.mjs).
+      OBI_DIR: ${{ github.workspace }}/oby-fixtures
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # pnpm's version comes from server/package.json (packageManager), the same as spec/'s.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           package_json_file: server/package.json
 
@@ -49,46 +62,29 @@ jobs:
           (cd spec && pnpm install --frozen-lockfile)
           (cd server && pnpm install --frozen-lockfile)
 
-      # server/e2e/fixtures/ are copies of obi's e2e fixtures (server/e2e/fixtures.mjs). obi is
-      # private: reading it needs the secret OBI_READ_TOKEN (a fine-grained token with Contents:
-      # read on obi-ai-bot/obi only), which a person creates; until they do, this is blocked on
-      # them. Without it the comparison doesn't run and the run says so: a warning annotation and
-      # a line in the job summary. With it, check:fixtures and the scenario both compare the
-      # copies with obi's dev and fail on any difference.
-      - name: Is there a token for reading obi?
-        id: obi
-        env:
-          OBI_READ_TOKEN: ${{ secrets.OBI_READ_TOKEN }}
-        run: |
-          if [ -n "$OBI_READ_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "Fixture drift check: runs (server/e2e/fixtures/ against obi's dev, with OBI_READ_TOKEN)." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning title=Fixture drift check skipped::The secret OBI_READ_TOKEN is not set, so server/e2e/fixtures/ are not compared with obi's e2e fixtures here. Blocked on a person: add a fine-grained token with Contents: read on obi-ai-bot/obi only, as this repository's Actions secret OBI_READ_TOKEN."
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo ":warning: **Fixture drift check skipped** ($RUNNER_OS): the secret \`OBI_READ_TOKEN\` is not set, so \`server/e2e/fixtures/\` were not compared with obi's e2e fixtures. Blocked on a person: add a fine-grained token with Contents: read on obi-ai-bot/obi only as this repository's Actions secret \`OBI_READ_TOKEN\`." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Check out obi's e2e fixtures
-        if: steps.obi.outputs.present == 'true'
+      # server/e2e/fixtures/ are copies of oby's e2e fixtures (server/e2e/fixtures.mjs). oby is
+      # public, so its dev is read without a token. check:fixtures and the scenario both compare the
+      # copies with it and fail on any difference.
+      - name: Check out oby's e2e fixtures
         uses: actions/checkout@v7
         with:
-          repository: obi-ai-bot/obi
+          repository: obi-ai-bot/oby
           ref: dev
-          path: obi-fixtures
-          token: ${{ secrets.OBI_READ_TOKEN }}
+          path: oby-fixtures
+          persist-credentials: false
           sparse-checkout: e2e/fixtures/messages
 
-      - name: Fixtures match obi's
-        if: steps.obi.outputs.present == 'true'
+      - name: Fixtures match oby's
         working-directory: server
-        run: |
-          echo "OBI_DIR=$GITHUB_WORKSPACE/obi-fixtures" >> "$GITHUB_ENV"
-          OBI_DIR="$GITHUB_WORKSPACE/obi-fixtures" pnpm run check:fixtures
+        run: pnpm run check:fixtures
 
       - name: Validators match the spec's schemas
         working-directory: server
         run: pnpm run check:validators
+
+      - name: The protocol code is the client library's (src/protocol/lib matches client/src)
+        working-directory: server
+        run: pnpm run check:client
 
       - name: Types
         working-directory: server
@@ -113,6 +109,10 @@ jobs:
       - name: Scenario steps 1, 3, 5 and 7 against a local Sphere
         working-directory: server
         run: pnpm run scenario
+
+      - name: Receiver track and conformance report/badge tests (careful passes, reckless fails)
+        working-directory: spec
+        run: node --test conformance/report.test.mjs conformance/receiver/*.test.mjs
 
       - name: 200 concurrent sends against a local Sphere, all recorded, one chain
         working-directory: server

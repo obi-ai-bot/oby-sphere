@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/accept.schema.json",
+  "title": "accept body (sealed)",
+  "description": "The receiving Obi takes on a review_request, question or handoff. Sealed: derived from actions/accept.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "by_rule": {
+      "$ref": "../common.schema.json#/$defs/rule_id",
+      "description": "The remembered decision that allowed this, when the owner was not asked."
+    }
+  }
+}

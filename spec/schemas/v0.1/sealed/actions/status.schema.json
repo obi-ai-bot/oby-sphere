@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/status.schema.json",
+  "title": "status body (sealed)",
+  "description": "Progress on an earlier request, without finishing it. Sealed: derived from actions/status.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state"
+  ],
+  "properties": {
+    "state": {
+      "enum": [
+        "queued",
+        "working",
+        "waiting_on_owner",
+        "blocked"
+      ]
+    },
+    "note": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 1088
+    }
+  }
+}

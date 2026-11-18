@@ -1,0 +1,60 @@
+{
+ "case": "die-with-parent",
+ "seat": "blind-4",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:56:38.304Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "RunnerTests/RunnerTests.swift",
+   "line": 626,
+   "severity": "minor",
+   "title": "Test doesn't wait for the sandboxed process to actually exit",
+   "detail": "agentsOutliveTheThreadThatStartedThem() calls process.terminate() but never awaits process.waitUntilExit() (or polls process.isRunning) before the test returns. terminate() only requests SIGTERM asynchronously; the bwrap/sleep process can keep running for some time after the test completes, which can leave a stray sandboxed process (with --unshare-pid) alive in CI past this test, unlike the sibling test homeShowsOnlyTheToolsInsideBubblewrap which does call waitUntilExit()."
+  },
+  {
+   "file": "Engine/Jobs.swift",
+   "line": 630,
+   "severity": "minor",
+   "title": "Agent cleanup now depends entirely on external systemd config, unverified in code",
+   "detail": "Dropping --die-with-parent removes the only in-process guarantee that a sandboxed agent dies with its parent. The comment states systemd's default KillMode=control-group now does this job, and Runner/oby-runner.service relies on that implicit default (no explicit KillMode= line), but nothing in the codebase enforces or checks it. If the runner is ever run outside that specific systemd unit (local dev, a different service manager, a manually started process), a crashed runner can leave bwrap sandboxes - with read access to the whole host filesystem and devices - running indefinitely with no code path left to reap them."
+  }
+ ],
+ "cost_usd": 0.3158805,
+ "turns": 17,
+ "duration_ms": 109038,
+ "usage": {
+  "input_tokens": 723,
+  "cache_creation_input_tokens": 19990,
+  "cache_read_input_tokens": 174465,
+  "output_tokens": 9382,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 19990,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 585,
+    "cache_read_input_tokens": 21426,
+    "cache_creation_input_tokens": 2254,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 2254
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

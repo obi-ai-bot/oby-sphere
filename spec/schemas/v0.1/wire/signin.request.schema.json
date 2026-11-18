@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/signin.request.schema.json",
-  "title": "POST /v0.1/signin/google request",
-  "description": "Start signing in with Google, for the owner key the sign-in will be bound to (spec/sphere-api.md section 3.1).",
+  "title": "POST /v0.1/signin/{provider} request",
+  "description": "Start signing in with one of the Obysphere server's providers, for the owner key the sign-in will be bound to (spec/sphere-api.md section 3.1).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,6 +11,13 @@
   "properties": {
     "owner_key": {
       "$ref": "../common.schema.json#/$defs/public_key"
+    },
+    "return_to": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300,
+      "pattern": "^[a-z][a-z0-9+.-]*:[\\x21\\x22\\x24-\\x3e\\x40-\\x7e]*$",
+      "description": "Where the browser goes back with the sign-in's code: an http URL on this machine (127.0.0.1, localhost or [::1]), or a URL in a scheme the server knows (Oby's, a listed client's, or one its operator names); characters from ! to ~, with no ? or #. Left out: obi-sphere://signin."
     }
   }
 }

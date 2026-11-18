@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/review_request.schema.json",
+  "title": "review_request body (sealed)",
+  "description": "Ask another Obi's owner to review a change. The review counts only for head_sha. Sealed: derived from actions/review_request.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "goal",
+    "repo",
+    "base_branch",
+    "head_branch",
+    "head_sha",
+    "acceptance"
+  ],
+  "properties": {
+    "goal": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 1088,
+      "description": "What the change is for, one line."
+    },
+    "repo": {
+      "$ref": "../common.schema.json#/$defs/repo"
+    },
+    "pr": {
+      "$ref": "../common.schema.json#/$defs/pr_number",
+      "description": "The pull request, when there is one. A change can be a branch only."
+    },
+    "base_branch": {
+      "$ref": "../common.schema.json#/$defs/branch",
+      "description": "The branch the change goes into."
+    },
+    "head_branch": {
+      "$ref": "../common.schema.json#/$defs/branch",
+      "description": "The branch that holds the change."
+    },
+    "head_sha": {
+      "$ref": "../common.schema.json#/$defs/sha",
+      "description": "The commit to review. A review of another commit does not count."
+    },
+    "acceptance": {
+      "$ref": "../common.schema.json#/$defs/acceptance"
+    },
+    "summary": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 10688,
+      "description": "A few lines on what changed."
+    },
+    "approve_on_host": {
+      "const": true,
+      "description": "Asks the receiver to post an approving review of head_sha on pull request pr on the code host, as its owner, when its review approves. The receiver does so only when its own owner confirmed this exchange at this commit on their own device, or next to a code owner's approval under a standing permission its owner gave (protocol.md section 11, \"Approving on the code host\"), never because of this field. Needs pr."
+    },
+    "follows": {
+      "$ref": "../common.schema.json#/$defs/follows"
+    }
+  },
+  "if": {
+    "required": [
+      "approve_on_host"
+    ]
+  },
+  "then": {
+    "required": [
+      "pr"
+    ]
+  }
+}

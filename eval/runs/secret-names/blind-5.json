@@ -1,0 +1,54 @@
+{
+ "case": "secret-names",
+ "seat": "blind-5",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:53:59.310Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "changes_requested",
+ "findings": [
+  {
+   "file": "Engine/Publish.swift",
+   "line": 308,
+   "end_line": 313,
+   "severity": "blocker",
+   "title": "\"Name for a secret\" exemption is a substring check, letting real passphrases bypass the scanner",
+   "detail": "onlyNames() decides a quoted value is \"just a name\" if it whole-matches a camelCase/dash-joined word pattern and lower.contains(any of [\"secret\",\"token\",\"password\",\"passwd\",\"key\",\"client\",\"vault\",\"entry\",\"access\",\"name\",\"id\"]). This is a bare substring test over the whole value, not a check that the value actually equals/names the assigned key, and several of the trigger words (\"id\", \"name\", \"key\", \"access\") are extremely common English substrings. As a result a genuine secret value that happens to be a readable, digit-free phrase slips through undetected, directly contradicting the change's own promise that \"passphrases ... still count\". Concrete example: `password = \"temporary-access-code\"` matches the \"password or secret\" rule's regex (value is 22 chars, no quotes/spaces), onlyNames() whole-matches the dash-word regex and lower.contains(\"access\") is true, so breaks() returns false and Publish.matches() reports no finding at all — a real secret is now silently allowed to be pushed. The same happens for any value containing \"id\" (e.g. \"valid-user-identity\"), \"name\" (\"renamed-access-granted\"), \"key\", \"client\", \"vault\" or \"entry\" as a substring, regardless of whether the value actually names the field it's assigned to."
+  }
+ ],
+ "cost_usd": 0.3777069,
+ "turns": 7,
+ "duration_ms": 189123,
+ "usage": {
+  "input_tokens": 229,
+  "cache_creation_input_tokens": 20560,
+  "cache_read_input_tokens": 28423,
+  "output_tokens": 16296,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 20560,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 47,
+    "output_tokens": 15845,
+    "cache_read_input_tokens": 7116,
+    "cache_creation_input_tokens": 17134,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 17134
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "case": "keychain-found-time",
+ "seat": "blind-3",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:59:30.638Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "core/crates/obid/tests/accounts_api.rs",
+   "line": 237,
+   "end_line": 248,
+   "severity": "minor",
+   "title": "Stale test comment/assertions don't cover the new existence-check caching",
+   "detail": "This test's comment says \"whether the item exists, each time\" and only asserts the count of `-w` (value) reads, never the count of plain existence checks (`find-generic-password -s ... ` without `-w`). The diff makes `cursor_keychain_has`/`keychain_has` cache a found item for `LOOK_EVERY` (2s), so the three/four back-to-back `GET /v1/status` calls this test makes will in practice hit `security` for existence only once, not \"each time\" as the comment claims. No assertion was added (or updated) to verify the new throttling actually happens, so this PR's core perf claim ships without regression coverage, and the existing comment is now inaccurate."
+  },
+  {
+   "file": "core/crates/obid/src/jobs.rs",
+   "line": 11292,
+   "end_line": 11309,
+   "severity": "nit",
+   "title": "SEEN cache entries for a config_dir are never pruned until that same dir is queried again",
+   "detail": "`keychain_has`'s static `SEEN` vector only removes/refreshes the entry for the `config_dir` currently being looked up (`seen.retain(|(dir, _)| dir.as_deref() != config_dir)`); entries for other config_dirs that have expired (elapsed >= LOOK_EVERY) are left in the vector indefinitely until that specific dir is queried again. In a long-running obid process with many short-lived or removed accounts this vector only grows, never shrinks on its own. Low impact today since the key space is bounded by configured accounts, but it is an unbounded-by-construction cache."
+  }
+ ],
+ "cost_usd": 0.7814999999999999,
+ "turns": 32,
+ "duration_ms": 237776,
+ "usage": {
+  "input_tokens": 1317,
+  "cache_creation_input_tokens": 44330,
+  "cache_read_input_tokens": 725400,
+  "output_tokens": 19550,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 44330,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 53,
+    "output_tokens": 6586,
+    "cache_read_input_tokens": 46901,
+    "cache_creation_input_tokens": 1119,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 1119
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

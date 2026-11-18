@@ -1,0 +1,12 @@
+{
+  "case": "wire",
+  "name": "valid-signin-request",
+  "description": "Start a sign-in for an owner key, the code going back to obi-sphere://signin.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/signin.request"
+  },
+  "input": {
+    "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-a2a",
+  "description": "An Obysphere that offers the A2A binding at its members' card URLs.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "a2a",
+      "card_runtime"
+    ]
+  }
+}

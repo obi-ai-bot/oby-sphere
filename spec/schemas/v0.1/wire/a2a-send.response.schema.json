@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/a2a-send.response.schema.json",
+  "title": "POST {member url}/message:send answer (a2a)",
+  "description": "A2A 1.0's SendMessageResponse: the exchange the envelope belongs to, as a task, with the send's receipt in its metadata (spec/a2a.md section 4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task"
+  ],
+  "properties": {
+    "task": {
+      "allOf": [
+        { "$ref": "a2a-task.schema.json" },
+        { "required": ["metadata"] }
+      ]
+    }
+  }
+}

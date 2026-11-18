@@ -1,0 +1,45 @@
+{
+  "case": "wire",
+  "name": "invalid-policy-put-seventeen-classes",
+  "description": "One class more than a rule may list.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/policy-put.request"
+  },
+  "input": {
+    "expected_version": 0,
+    "rules": [
+      {
+        "id": "team-reviews",
+        "from_owner": "*",
+        "to_owner": "*",
+        "actions": [
+          "review_request"
+        ],
+        "repos": [
+          "*"
+        ],
+        "to_classes": [
+          "class_00",
+          "class_01",
+          "class_02",
+          "class_03",
+          "class_04",
+          "class_05",
+          "class_06",
+          "class_07",
+          "class_08",
+          "class_09",
+          "class_10",
+          "class_11",
+          "class_12",
+          "class_13",
+          "class_14",
+          "class_15",
+          "class_16"
+        ]
+      }
+    ]
+  }
+}

@@ -15,6 +15,10 @@
     },
     "protocol": {
       "$ref": "../common.schema.json#/$defs/protocol"
+    },
+    "seal": {
+      "const": true,
+      "description": "This Sphere takes sealed messages and cards with a seal key (spec/protocol.md section 9.1). A Sphere that predates sealing leaves it out, and refuses both."
     }
   }
 }

@@ -1,0 +1,16 @@
+{
+  "case": "wire",
+  "name": "invalid-features-id-repeated",
+  "description": "card_runtime twice.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime",
+      "card_runtime"
+    ]
+  }
+}

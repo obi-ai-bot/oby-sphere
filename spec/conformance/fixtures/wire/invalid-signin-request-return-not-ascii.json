@@ -1,0 +1,14 @@
+{
+  "case": "wire",
+  "name": "invalid-signin-request-return-not-ascii",
+  "description": "A return_to with a character outside ! to ~.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/signin.request"
+  },
+  "input": {
+    "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w",
+    "return_to": "com.example.client:/café"
+  }
+}

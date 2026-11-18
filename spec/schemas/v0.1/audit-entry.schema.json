@@ -29,7 +29,10 @@
       "$ref": "common.schema.json#/$defs/timestamp"
     },
     "envelope": {
-      "$ref": "envelope.schema.json"
+      "description": "An envelope as its sender signed it: one with `seal` is checked against the sealed envelope schema (spec/protocol.md section 9.1).",
+      "if": { "required": ["seal"] },
+      "then": { "$ref": "sealed/envelope.schema.json" },
+      "else": { "$ref": "envelope.schema.json" }
     },
     "hash": {
       "$ref": "common.schema.json#/$defs/hash"

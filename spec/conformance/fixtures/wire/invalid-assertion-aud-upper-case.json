@@ -1,0 +1,19 @@
+{
+  "case": "wire",
+  "name": "invalid-assertion-aud-upper-case",
+  "description": "An `aud` URL whose host isn't written lower case, as an origin is.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/delegation.claims"
+  },
+  "input": {
+    "iss": "owner-a",
+    "sub": "owner-a",
+    "aud": "https://Sphere.Example.com/v0.1/spheres/conf-sphere",
+    "iat": 1792000000,
+    "exp": 1792000300,
+    "jti": "8c26168d-a706-887d-8709-bd7719f3c166",
+    "scope": "admin"
+  }
+}

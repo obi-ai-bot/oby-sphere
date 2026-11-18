@@ -5,10 +5,10 @@
   "type": "module",
   "description": "The Obi-to-Obi protocol v0.1: JSON Schemas, the conformance fixtures and their runner.",
   "license": "Apache-2.0",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.18" },
   "packageManager": "pnpm@11.23.0",
   "scripts": {
-    "check": "node conformance/run.mjs",
+    "check": "node conformance/run.mjs && node conformance/invite-links.mjs",
     "generate": "node conformance/generate.mjs",
     "conformance": "node conformance/run.mjs --impl"
   },

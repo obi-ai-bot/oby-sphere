@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/invitations.response.schema.json",
+  "title": "GET /v0.1/spheres/{sphere}/invitations response",
+  "description": "Admin only: the invitations that can still be used (not withdrawn, unexpired, uses left), the newest first. Never a secret: the Sphere keeps only its hash (spec/sphere-api.md section 4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sphere",
+    "invitations"
+  ],
+  "properties": {
+    "sphere": {
+      "$ref": "../common.schema.json#/$defs/sphere_id"
+    },
+    "invitations": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "invitation_id",
+          "max_uses",
+          "uses",
+          "expires_at"
+        ],
+        "properties": {
+          "invitation_id": {
+            "$ref": "../common.schema.json#/$defs/uuid"
+          },
+          "owner": {
+            "$ref": "../common.schema.json#/$defs/owner_id"
+          },
+          "obi": {
+            "$ref": "../common.schema.json#/$defs/obi_id"
+          },
+          "label": {
+            "$ref": "../common.schema.json#/$defs/line_text",
+            "x-obi-text": "data",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "max_uses": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "uses": {
+            "description": "How many Obis joined with it so far, under `max_uses`.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999
+          },
+          "domain": {
+            "$ref": "../common.schema.json#/$defs/domain"
+          },
+          "created_at": {
+            "description": "When it was made; left out for one made before the Sphere kept that.",
+            "$ref": "../common.schema.json#/$defs/timestamp"
+          },
+          "expires_at": {
+            "$ref": "../common.schema.json#/$defs/timestamp"
+          }
+        }
+      }
+    }
+  }
+}

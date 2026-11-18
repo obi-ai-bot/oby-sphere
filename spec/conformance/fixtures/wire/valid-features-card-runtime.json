@@ -1,0 +1,14 @@
+{
+  "case": "wire",
+  "name": "valid-features-card-runtime",
+  "description": "An Obysphere that takes the card's runtime and vendors.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime"
+    ]
+  }
+}

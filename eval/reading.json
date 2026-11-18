@@ -1,0 +1,22 @@
+{
+ "description": "The author's reading of each seat with a finding that the location rule counts as a catch (score.mjs): whether any of its located findings describes, in its words, the bug the later fix confirmed. `yes`: one does. `partly`: one has the right cause, but another way it fails than the fix's. `no`: each is another issue on the same lines. Graded per seat, not per finding: a seat graded `yes` may also hold located findings about other issues. A seat not listed has no finding at the bug's lines. This is a person's reading of quoted model output, kept apart from the mechanical rule so anyone can check it against runs/ and disagree.",
+ "cases": {
+  "secret-names": {
+   "blind-1": "yes", "blind-2": "yes", "blind-3": "yes", "blind-4": "yes", "blind-5": "yes", "open-2": "yes", "open-3": "yes"
+  },
+  "die-with-parent": {
+   "blind-4": "partly", "blind-5": "partly", "open-2": "partly", "open-3": "partly"
+  },
+  "keychain-found-time": {
+   "blind-1": "no", "blind-2": "no", "blind-3": "no", "blind-5": "no", "open-2": "no", "open-3": "no"
+  },
+  "blocking-none": {
+   "blind-2": "no", "open-3": "no"
+  }
+ },
+ "why": {
+  "die-with-parent": "The fix: stopping an agent signalled only the outer bwrap, so the sandbox and the agent kept running after Stop, under systemd. The four findings accept that systemd covers the deployed runner and say that without --die-with-parent nothing cleans up the bwrap tree when the runner crashes outside systemd: they name the lost cleanup, not the Stop path.",
+  "keychain-found-time": "The fix: the found-time was taken after the slow `security` call answered, not when it was asked. Every finding at those lines is about entries never being evicted from the cache, or the cached hit ignoring keychain_on(): other issues.",
+  "blocking-none": "The fix: a Blocking heading that says \"none\" still had what follows read as blocking findings. The two findings near those lines are about prose or unrecognised headings ending a section: another parsing gap."
+ }
+}

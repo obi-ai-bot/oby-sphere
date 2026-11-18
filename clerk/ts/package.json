@@ -1,0 +1,24 @@
+{
+  "name": "obi-clerk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A deterministic vote count and draw by lot: majority, supermajority, unanimity, evidenced veto, Schulze, Borda and median, with known-answer vectors.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@11.23.0",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@noble/curves": "2.0.1"
+  }
+}

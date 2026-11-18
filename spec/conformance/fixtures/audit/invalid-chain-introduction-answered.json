@@ -1,0 +1,90 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-introduction-answered",
+  "description": "An introduction \"answered\" with words: an answer answers only a question.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "type": "introduction",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "member": "obi-c",
+            "about": [
+              {
+                "kind": "repo",
+                "repo": "obi-conf/fixture-app"
+              }
+            ],
+            "note": "You both work on the fixture app's tests."
+          },
+          "signature": "MjZkMhvdV5pTMeFu5ixQJv6S3MHdwpig1v2CkvdBJpqhIbSEZoOlw2ViKuUARMwn3NhlQLl93TAtd2osWHHuBQ"
+        },
+        "hash": "184910af56b3ccaeec75a73a8ee08a7984c133984ca66c3e48b1c30f3fa8e95b"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "184910af56b3ccaeec75a73a8ee08a7984c133984ca66c3e48b1c30f3fa8e95b",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "5615c3ca-e651-8f90-8fc3-41b090f07b26",
+          "type": "answer",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "in_reply_to": "2eda6cb6-d2e1-8656-832b-e54f3eb22674",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "by": "owner",
+            "text": "No: keep full precision.",
+            "choice": 1
+          },
+          "signature": "ay9L78VIh4VrI0f7GdXE9I00rW79K8GUSK8ON693wZkECOH8BcN2X9ce-Jdp5j2KndOniFkkS7V-tG0SGWqpAg"
+        },
+        "hash": "919a27db3f3f48f50bc032d3e18e30faab2c8388023fde7bc41710a4ff7c0959"
+      }
+    ]
+  }
+}

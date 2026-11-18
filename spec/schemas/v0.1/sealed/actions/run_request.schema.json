@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/run_request.schema.json",
+  "title": "run_request body (sealed)",
+  "description": "Ask another Obi to run one of this Obi's owner's jobs on its Mac, in a VM of its own, with this owner's own agent account (protocol.md 5.10). The code and the job's words travel on the job channel, never in the request: the audit chain keeps only what the job is. The model's calls go back to this Obi through it. Sealed: derived from actions/run_request.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "title",
+    "agent",
+    "repo",
+    "base_branch",
+    "base_sha",
+    "branch",
+    "bundle",
+    "size",
+    "max_minutes"
+  ],
+  "properties": {
+    "title": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 1088
+    },
+    "agent": {
+      "$ref": "../common.schema.json#/$defs/agent"
+    },
+    "model": {
+      "$ref": "../common.schema.json#/$defs/model_id"
+    },
+    "repo": {
+      "$ref": "../common.schema.json#/$defs/repo"
+    },
+    "base_branch": {
+      "$ref": "../common.schema.json#/$defs/branch"
+    },
+    "base_sha": {
+      "$ref": "../common.schema.json#/$defs/sha"
+    },
+    "branch": {
+      "$ref": "../common.schema.json#/$defs/branch"
+    },
+    "bundle": {
+      "$ref": "../common.schema.json#/$defs/bundle"
+    },
+    "size": {
+      "$ref": "../common.schema.json#/$defs/box_size"
+    },
+    "max_minutes": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 480
+    },
+    "account": {
+      "description": "Run it on a share the receiver's owner gave this owner (protocol.md 5.14) instead of this owner's own account: the receiver adds its own key, and the model's calls stay on its Mac.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grant"
+      ],
+      "properties": {
+        "grant": {
+          "$ref": "../common.schema.json#/$defs/grant_id"
+        }
+      }
+    }
+  }
+}

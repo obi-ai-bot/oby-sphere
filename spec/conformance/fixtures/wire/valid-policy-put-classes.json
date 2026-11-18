@@ -1,0 +1,31 @@
+{
+  "case": "wire",
+  "name": "valid-policy-put-classes",
+  "description": "A rule that requires a class of the sending and the receiving side.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/policy-put.request"
+  },
+  "input": {
+    "expected_version": 1,
+    "rules": [
+      {
+        "id": "team-reviews",
+        "from_owner": "*",
+        "to_owner": "*",
+        "actions": [
+          "run_request"
+        ],
+        "repos": [
+          "*"
+        ],
+        "from_classes": [
+          "holder"
+        ],
+        "to_classes": [
+          "executor"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "description": "Where each action's words are, as JSON Pointers into its body (`*`: every item of an array): what a sender seals and a receiver opens (spec/protocol.md section 9.1). Derived from the plain schemas' x-obi-text annotations by spec/conformance/generate.mjs.",
+  "paths": {
+    "review_request": [
+      "/acceptance/*/note",
+      "/acceptance/*/text",
+      "/goal",
+      "/summary"
+    ],
+    "question": [
+      "/choices/*",
+      "/text"
+    ],
+    "handoff": [
+      "/acceptance/*/note",
+      "/acceptance/*/text",
+      "/goal",
+      "/summary"
+    ],
+    "run_request": [
+      "/title"
+    ],
+    "share_offer": [
+      "/account"
+    ],
+    "introduction": [
+      "/note"
+    ],
+    "status": [
+      "/note"
+    ],
+    "accept": [],
+    "decline": [
+      "/note"
+    ],
+    "result": [
+      "/findings/*/detail",
+      "/findings/*/title",
+      "/summary"
+    ],
+    "answer": [
+      "/text"
+    ],
+    "run_progress": [],
+    "run_return": [],
+    "run_cancel": [],
+    "share_status": [],
+    "share_revoke": [],
+    "cancel": []
+  }
+}

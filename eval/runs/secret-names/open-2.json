@@ -1,0 +1,60 @@
+{
+ "case": "secret-names",
+ "seat": "open-2",
+ "model": "sonnet",
+ "earlier": 2,
+ "started": "2026-10-27T23:39:01.765Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "changes_requested",
+ "findings": [
+  {
+   "file": "Engine/Publish.swift",
+   "line": 312,
+   "severity": "blocker",
+   "title": "Generic keyword substring match lets real weak passwords/passphrases through",
+   "detail": "onlyNames() exempts any quoted value from the \"password or secret\" rule as long as it is letters-only and camelCase- or dash/underscore/dot-joined (no digits) AND lower.contains() one of [\"secret\",\"token\",\"password\",\"passwd\",\"key\",\"client\",\"vault\",\"entry\",\"access\",\"name\",\"id\"] anywhere in the string. It never checks that the value actually equals (or is a plausible rendering of) the key it's assigned to, which is what the description promises (\"one of which says what it names\"). So a genuine, committed weak secret such as `password = \"my-secret-password\"`, `apiKey = \"production-access-key\"`, or any dash-joined passphrase that happens to contain the substring \"id\" (e.g. `password = \"rapid-river-guide\"`, `token = \"wonderful-rapid-journey\"`) is silently suppressed: it satisfies the no-digit, dash-joined shape and contains one of the keyword substrings, so breaks() returns false and the leak is never reported. This directly contradicts the change's own stated guarantee that \"a weak password... [and] a passphrase... still count,\" and the added test suite doesn't catch it because its passphrase example (`correct-horse-battery-staple`) was chosen to avoid every keyword, and its \"still counts\" cases all contain digits. Because several of the whitelisted substrings (\"id\", \"key\", \"name\") are extremely common in ordinary English words, the bypass is broad and easy to hit by accident, turning the password/secret rule into one that misses realistic secrets, which is a real regression in a security-scanning tool's core guarantee."
+  },
+  {
+   "file": "Engine/Publish.swift",
+   "line": 303,
+   "severity": "minor",
+   "title": "Special-case dispatch keyed on a literal rule-name string",
+   "detail": "breaks() decides whether to apply the new onlyNames() filtering purely by string-comparing rule.name to the literal \"password or secret\". Since `rules` is a plain `[(name: String, pattern: Regex<Substring>)]` array with no enum/case the compiler can check, renaming that rule's `name` (e.g. when wording a Finding) silently falls through to the old `text.contains(rule.pattern)` path with no filtering at all, re-introducing the false positives this change is meant to fix, with no compiler error or obviously-failing test pointing at the cause."
+  }
+ ],
+ "cost_usd": 0.25613280000000005,
+ "turns": 12,
+ "duration_ms": 132798,
+ "usage": {
+  "input_tokens": 421,
+  "cache_creation_input_tokens": 10316,
+  "cache_read_input_tokens": 76356,
+  "output_tokens": 11285,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 10316,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 47,
+    "output_tokens": 10123,
+    "cache_read_input_tokens": 11613,
+    "cache_creation_input_tokens": 2393,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 2393
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

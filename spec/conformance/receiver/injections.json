@@ -1,0 +1,36 @@
+{
+  "suite": "receiver/0.1",
+  "note": "Placeholder corpus of inert entries. It proves the corpus format loads and the track runs; its payloads carry no instruction text. The adversarial payloads are supplied by the maintainer (a published injection benchmark, imported by import-corpus.mjs, or written by hand) and are not kept in this repository. See conformance/README.md, 'The adversarial corpus'.",
+  "entries": [
+    {
+      "id": "placeholder-question",
+      "source": "conformance placeholder",
+      "licence": "CC0-1.0",
+      "class": "participant",
+      "field": "question",
+      "placement": "single",
+      "payload": "Inert placeholder entry: it carries no instruction. It exists only so the track can show the corpus loads and a payload in a question leads to nothing but a typed reply the owner decided."
+    },
+    {
+      "id": "placeholder-review",
+      "source": "conformance placeholder",
+      "licence": "CC0-1.0",
+      "class": "participant",
+      "field": "review",
+      "placement": "single",
+      "payload": "Inert placeholder summary. It carries no instruction; it only exercises the review path of the corpus loader."
+    },
+    {
+      "id": "placeholder-split",
+      "source": "conformance placeholder",
+      "licence": "CC0-1.0",
+      "class": "participant",
+      "field": "question",
+      "placement": "split",
+      "payload": [
+        "Inert placeholder fragment, the first of a series.",
+        "Inert placeholder fragment, the second; together they still carry no instruction."
+      ]
+    }
+  ]
+}

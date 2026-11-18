@@ -19,29 +19,32 @@
     "conformance": "node scripts/conformance.mjs",
     "scenario": "node e2e/scenario.mjs",
     "load": "node e2e/load.mjs",
+    "a2a": "node e2e/a2a.mjs",
     "check:fixtures": "node scripts/check-fixtures.mjs",
     "gen:validators": "node scripts/gen-validators.mjs",
     "check:validators": "node scripts/gen-validators.mjs --check",
+    "sync:client": "node scripts/sync-client.mjs",
+    "check:client": "node scripts/sync-client.mjs --check",
     "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.0",
-    "@cloudflare/workers-types": "^5.20261006.1",
+    "@cloudflare/vitest-plugin": "^1.4.11",
+    "@cloudflare/workers-types": "^5.20261101.1",
     "ajv": "8.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.0",
-    "wrangler": "^4.149.0"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.156.0"
   },
   "cloudflare": {
     "bindings": {
       "SPHERE_OPERATOR_TOKEN": {
-        "description": "Paste the token Oby copied: in Oby, Settings › Obysphere › Host your own › Deploy… makes it, and keeps it for creating Obyspheres once you paste your Worker's address back ([how](https://github.com/obi-ai-bot/obi-sphere/blob/main/docs/run-your-own.md))."
+        "description": "Paste your operator token, the one secret that creates Obyspheres on your server: 32 random bytes you made (`openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`), or the token your client made for you ([how](https://github.com/obi-ai-bot/obi-sphere/blob/main/docs/run-your-own.md))."
       },
       "GOOGLE_CLIENT_ID": {
-        "description": "Optional: leave it empty. To add Google sign-in later, so your team can create Obyspheres without the token, set it in your repository's `wrangler.jsonc` ([how](https://github.com/obi-ai-bot/obi-sphere/blob/main/docs/run-your-own.md#optional-let-your-team-create-obyspheres))."
+        "description": "Optional: leave it empty. To add sign-in later, with Google or any OpenID Connect provider (`SIGNIN_PROVIDERS`), so your team can create Obyspheres without the token, set it in your repository's `wrangler.jsonc` ([how](https://github.com/obi-ai-bot/obi-sphere/blob/main/docs/run-your-own.md#optional-let-your-team-create-obyspheres))."
       },
       "CREATOR_WORKSPACES": {
-        "description": "Optional: leave it empty. With Google sign-in, the Google Workspace domains whose people may create Obyspheres, comma-separated, like `acme.com`; set it in your repository's `wrangler.jsonc` with `GOOGLE_CLIENT_ID`."
+        "description": "Optional: leave it empty. With sign-in, the domains whose people may create Obyspheres, comma-separated, like `acme.com`; set it in your repository's `wrangler.jsonc` with the provider."
       }
     }
   },

@@ -1,0 +1,78 @@
+{
+  "case": "card",
+  "name": "invalid-card-runtime-without-features",
+  "description": "runtime on a card with no features list.",
+  "expect": "reject",
+  "reason": "card_invalid",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "bound_owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w"
+  },
+  "input": {
+    "protocolVersion": "0.3.0",
+    "name": "owner-a's Obi",
+    "description": "A personal delegate for an engineer.",
+    "url": "https://sphere.example.invalid/v0.1/spheres/conf-sphere/members/obi-a",
+    "preferredTransport": "HTTP+JSON",
+    "version": "0.1.0",
+    "capabilities": {
+      "streaming": false,
+      "pushNotifications": false,
+      "extensions": [
+        {
+          "uri": "urn:obi-sphere:ext:obi:0.1",
+          "required": true,
+          "params": {
+            "protocol": "obi/0.1",
+            "sphere": "conf-sphere",
+            "obi_id": "obi-a",
+            "owner": "owner-a",
+            "owner_key": "RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w",
+            "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+            "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+            "accepts": [
+              "review_request",
+              "question"
+            ],
+            "card_seq": 1,
+            "issued_at": "2026-10-14T11:59:00Z",
+            "runtime": {
+              "id": "claude",
+              "version": "2.1.0"
+            }
+          }
+        }
+      ]
+    },
+    "defaultInputModes": [
+      "application/json"
+    ],
+    "defaultOutputModes": [
+      "application/json"
+    ],
+    "skills": [
+      {
+        "id": "review_request",
+        "name": "Review a change",
+        "description": "Reviews a change for its owner and answers with typed findings.",
+        "tags": [
+          "obi-action"
+        ]
+      },
+      {
+        "id": "question",
+        "name": "Answer a question",
+        "description": "Answers what its owner knows or decided.",
+        "tags": [
+          "obi-action"
+        ]
+      }
+    ],
+    "signatures": [
+      {
+        "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImVkMjU1MTk6QU5WX3N1bXA1ckpXdWV2X1lJNjZUTjFKS0UwdV9wTU5jUlFtaHB4UjdfQSIsInR5cCI6IkpPU0UifQ",
+        "signature": "cnvlsab2AmK75ZxZB4KehK5t5jzcs9kxEAFGIyrQyKwuEVTtOohG8sg8N086oHCHOj1Z534KzQe35AaxXG3zDw"
+      }
+    ]
+  }
+}

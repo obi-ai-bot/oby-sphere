@@ -1,0 +1,53 @@
+{
+ "case": "die-with-parent",
+ "seat": "blind-5",
+ "model": "sonnet",
+ "earlier": null,
+ "started": "2026-10-27T21:57:12.320Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "approved",
+ "findings": [
+  {
+   "file": "Engine/Jobs.swift",
+   "line": 630,
+   "severity": "minor",
+   "title": "No safety net left for ungraceful runner death outside systemd",
+   "detail": "Removing --die-with-parent entirely (rather than, say, keeping it but pinning the spawning thread) means a sandboxed agent process no longer has any kernel-level guarantee of being killed if the runner process itself dies unexpectedly (crash, manual kill -9 during development, non-systemd deployment, etc.). The comment and description correctly note that systemd's KillMode=control-group covers the production path, but anyone running oby-runner outside that unit (local dev, a container without systemd, CI) now has no mechanism at all to stop orphaned bwrap/agent processes — previously overzealous, now absent. Worth calling out explicitly as an accepted trade-off beyond the in-code comment, since orphaned agents still hold worktree/account binds mounted via --bind until something reaps them."
+  }
+ ],
+ "cost_usd": 0.38090949999999996,
+ "turns": 15,
+ "duration_ms": 137547,
+ "usage": {
+  "input_tokens": 574,
+  "cache_creation_input_tokens": 25441,
+  "cache_read_input_tokens": 165715,
+  "output_tokens": 11742,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 25441,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 477,
+    "cache_read_input_tokens": 28153,
+    "cache_creation_input_tokens": 978,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 978
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}

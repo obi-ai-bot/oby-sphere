@@ -1,0 +1,167 @@
+{
+  "case": "audit",
+  "name": "valid-chain-sealed",
+  "description": "A review whose words are sealed: the chain checks with no seal key, and holds none of its words.",
+  "expect": "accept",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "type": "review_request",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "goal": "JfH9UzfAMi_SdSDJzZZ0__cNYe1h9d55-sAfA_bFd7071Li2rSrvZl7kCyRoAw6ZkyGZcwBxBGY",
+            "repo": "obi-conf/fixture-app",
+            "base_branch": "main",
+            "head_branch": "feature/average",
+            "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+            "acceptance": [
+              {
+                "kind": "tests_pass"
+              },
+              {
+                "kind": "no_blocker_findings",
+                "note": "0G4zzlvvYOQ_VGYa7aAPQs8rfAJQi9hqBCnIX-i7W49guqC9yc107rQ3Idtw4lwlGA"
+              }
+            ],
+            "summary": "wEuzuqDvQVRr_CJKUy0EqGDHxPEETPCpMb0nkrtgZdgT1MsHFVUik7tvnojwI71w-wF1K0zHv5pzWG8n_w"
+          },
+          "seal": {
+            "suite": "x25519-hkdf-sha256-chacha20poly1305",
+            "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+            "enc": "H9unj7g9AComhfLbwc_tpgplMDNJyGkTwiH1xIgVli4"
+          },
+          "signature": "H_nIki52zktwdYEy7fjnmp8DHCHflcV7HY5ZWJue7WO74lkRONcvo7enoZHpOouq1psW2mDWlh3dtHG6GidsDA"
+        },
+        "hash": "90d750c9987a43d0439a150ac2c117b9c1cbbbe89980a5cf9965fc82e5affeef"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "90d750c9987a43d0439a150ac2c117b9c1cbbbe89980a5cf9965fc82e5affeef",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "91b1f9b5-3664-8752-8b48-09842a8b9c9d",
+          "type": "accept",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "by_rule": "d-reviews-from-owner-b"
+          },
+          "seal": {
+            "suite": "x25519-hkdf-sha256-chacha20poly1305",
+            "key_id": "x25519:rUn8AJ0WHJnPY4ir1HVoaBdbRArQakvsnI91wZuAS8g",
+            "enc": "87GX6kMzMNRuM5AI9W9Ycnpi-xnkEiOuAV_RP1vNljs"
+          },
+          "signature": "HXWIz9rfuIbq4UgZmLKPnRSepJGVoQ_hdIgZZQAT7FBJjip9VjobPaj8qkMEUR0mkH5yHwr3W9wiL6shpVTeCA"
+        },
+        "hash": "361533885c63a3fbba1aa59dcc673f5060cbfb2f3fd668ec8efe566a57c653c0"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "361533885c63a3fbba1aa59dcc673f5060cbfb2f3fd668ec8efe566a57c653c0",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "000be4c6-5793-8762-8309-d63ddf94854d",
+          "type": "result",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "for": "review_request",
+            "outcome": "approved",
+            "repo": "obi-conf/fixture-app",
+            "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+            "findings": [
+              {
+                "id": "f-8424ac27bbfa2630",
+                "severity": "major",
+                "file": "src/average.js",
+                "line": 4,
+                "title": "u7AlMOjISB1njhxKPUyc8GefPat0a35bv5TNi0CO_Z1hkR4FeyWFJK63GSenL6PgnLm2k15xLE8rHl4",
+                "detail": "GBCewwRXP9kXEQTaH_cFycYQ8RLMLBPYr4M7a4GIKE0niQJ0Ks_q8jhzcElZ6KfRxJxy8dankH5dD5RH66yB7aqd6US86x5OJZR0fmtLlmoJtaq9M7kUELmRDWftiMzlnQXXkTJKoIYXrK81fD_XdvvMSW-c5Cbv4F-Rgb8_pcDAFvRBfDvD1Q"
+              },
+              {
+                "id": "f-e82e5a31927dc589",
+                "severity": "minor",
+                "file": "src/greet.js",
+                "line": 2,
+                "title": "CJVYSfiwIK2Lxbluk7PqpLv9vF0afvk2P2PE-GJVJ9j-9lEW9cGReMI",
+                "detail": "kbGfz1MZ2JwFSqAn1WSHvAeSbVczYvZx3BgbBX8JWaxZvp6R5RlLYkHELo-gfcWZckd1epyxzXkJkZjBkrEOZ2ooIs6ENm3cRmUSY_SME97eI-Cz94yIQuixPD7NuAK7yNgxuXrj4EYn4ZZpWhpzxOfcTVSkXA"
+              }
+            ],
+            "acceptance": [
+              {
+                "index": 0,
+                "kind": "tests_pass",
+                "met": true
+              },
+              {
+                "index": 1,
+                "kind": "no_blocker_findings",
+                "met": true
+              }
+            ],
+            "summary": "k9I-8z729xEIUqxIyg5UDYgvgiqKWcKXundmErI4gRtK0YOHTYn7C1w"
+          },
+          "seal": {
+            "suite": "x25519-hkdf-sha256-chacha20poly1305",
+            "key_id": "x25519:rUn8AJ0WHJnPY4ir1HVoaBdbRArQakvsnI91wZuAS8g",
+            "enc": "4BsgdGfvpi-Y4ni2-f1pnUdhpTQwKQgeWEgDdU02oGI"
+          },
+          "signature": "KiFncy8CGU6zaEEgubaqe3ZzYAXsce9e1-mapBB_9Uo3VDENen7qhLeM9SR5SzIjgE_12ujB6F4eiVtTvB0nDA"
+        },
+        "hash": "573f3bd49741d139a8181bcfc543ad91d2f49d99b912dd0fd8010483953d2a62"
+      }
+    ]
+  }
+}

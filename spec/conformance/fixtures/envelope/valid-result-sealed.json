@@ -1,0 +1,82 @@
+{
+  "case": "envelope",
+  "name": "valid-result-sealed",
+  "description": "A review's result sealed for obi-b: its summary and each finding's title and detail.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-b",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:rUn8AJ0WHJnPY4ir1HVoaBdbRArQakvsnI91wZuAS8g": "a4cP0-xQ91b2xjAasY6B29fIUU73yB4mhK3Qo7lDRTw"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "000be4c6-5793-8762-8309-d63ddf94854d",
+    "type": "result",
+    "from": "obi-a",
+    "to": "obi-b",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+    "body": {
+      "for": "review_request",
+      "outcome": "approved",
+      "repo": "obi-conf/fixture-app",
+      "head_sha": "4f1c0e2a9b7d3c5e6f8a1b2c3d4e5f60718293a4",
+      "findings": [
+        {
+          "id": "f-8424ac27bbfa2630",
+          "severity": "major",
+          "file": "src/average.js",
+          "line": 4,
+          "title": "u7AlMOjISB1njhxKPUyc8GefPat0a35bv5TNi0CO_Z1hkR4FeyWFJK63GSenL6PgnLm2k15xLE8rHl4",
+          "detail": "GBCewwRXP9kXEQTaH_cFycYQ8RLMLBPYr4M7a4GIKE0niQJ0Ks_q8jhzcElZ6KfRxJxy8dankH5dD5RH66yB7aqd6US86x5OJZR0fmtLlmoJtaq9M7kUELmRDWftiMzlnQXXkTJKoIYXrK81fD_XdvvMSW-c5Cbv4F-Rgb8_pcDAFvRBfDvD1Q"
+        },
+        {
+          "id": "f-e82e5a31927dc589",
+          "severity": "minor",
+          "file": "src/greet.js",
+          "line": 2,
+          "title": "CJVYSfiwIK2Lxbluk7PqpLv9vF0afvk2P2PE-GJVJ9j-9lEW9cGReMI",
+          "detail": "kbGfz1MZ2JwFSqAn1WSHvAeSbVczYvZx3BgbBX8JWaxZvp6R5RlLYkHELo-gfcWZckd1epyxzXkJkZjBkrEOZ2ooIs6ENm3cRmUSY_SME97eI-Cz94yIQuixPD7NuAK7yNgxuXrj4EYn4ZZpWhpzxOfcTVSkXA"
+        }
+      ],
+      "acceptance": [
+        {
+          "index": 0,
+          "kind": "tests_pass",
+          "met": true
+        },
+        {
+          "index": 1,
+          "kind": "no_blocker_findings",
+          "met": true
+        }
+      ],
+      "summary": "k9I-8z729xEIUqxIyg5UDYgvgiqKWcKXundmErI4gRtK0YOHTYn7C1w"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:rUn8AJ0WHJnPY4ir1HVoaBdbRArQakvsnI91wZuAS8g",
+      "enc": "4BsgdGfvpi-Y4ni2-f1pnUdhpTQwKQgeWEgDdU02oGI"
+    },
+    "signature": "KiFncy8CGU6zaEEgubaqe3ZzYAXsce9e1-mapBB_9Uo3VDENen7qhLeM9SR5SzIjgE_12ujB6F4eiVtTvB0nDA"
+  }
+}

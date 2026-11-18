@@ -1,0 +1,60 @@
+{
+ "case": "secret-names",
+ "seat": "open-3",
+ "model": "sonnet",
+ "earlier": 4,
+ "started": "2026-10-27T23:41:15.581Z",
+ "exit": 0,
+ "subtype": "success",
+ "is_error": false,
+ "outcome": "changes_requested",
+ "findings": [
+  {
+   "file": "Engine/Publish.swift",
+   "line": 312,
+   "severity": "blocker",
+   "title": "Keyword-substring whitelist suppresses real weak passwords/passphrases",
+   "detail": "onlyNames() exempts a quoted \"password or secret\" value from the rule whenever it is letters-only, no digits, and either camelCase or joined by -/_/. AND lower.contains() finds any of [\"secret\",\"token\",\"password\",\"passwd\",\"key\",\"client\",\"vault\",\"entry\",\"access\",\"name\",\"id\"] anywhere in the string — a plain substring test, not tied to the key it's assigned to and not requiring the value to actually equal/represent that key's name. Tracing it: `apiKey = \"production-access-key\"` is a dash-joined, digit-free, lowercase value containing \"access\" and \"key\", so onlyNames returns true and breaks() suppresses it, even though this is a realistic, low-entropy secret someone could commit. Likewise a passphrase like `token = \"wonderful-rapid-journey\"` is suppressed because \"rapid\" contains the substring \"id\". This directly contradicts the change's own stated guarantee (\"a weak password... and a passphrase... still count\") and is a real regression in the scanner's core job of catching committed secrets. The added tests don't catch it because the chosen passphrase example (correct-horse-battery-staple) and the \"still counts\" cases were picked to avoid every keyword / include digits."
+  },
+  {
+   "file": "Engine/Publish.swift",
+   "line": 303,
+   "severity": "minor",
+   "title": "Special-case dispatch keyed on a literal rule-name string",
+   "detail": "breaks() decides whether to apply onlyNames() filtering purely by comparing rule.name to the string literal \"password or secret\". `rules` is a plain `[(name: String, pattern: Regex<Substring>)]` array with nothing the compiler can check, so if that rule's name is ever edited (e.g. rewording the Finding text), breaks() silently falls back to the old `text.contains(rule.pattern)` path with no name-filtering at all, reintroducing the false positives this change fixes, with no compiler error and no test that would point at the cause."
+  }
+ ],
+ "cost_usd": 0.27471340000000005,
+ "turns": 12,
+ "duration_ms": 99152,
+ "usage": {
+  "input_tokens": 419,
+  "cache_creation_input_tokens": 18788,
+  "cache_read_input_tokens": 91238,
+  "output_tokens": 8838,
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 18788,
+   "ephemeral_5m_input_tokens": 0
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 50,
+    "output_tokens": 835,
+    "cache_read_input_tokens": 15659,
+    "cache_creation_input_tokens": 6819,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 0,
+     "ephemeral_1h_input_tokens": 6819
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard"
+ }
+}
