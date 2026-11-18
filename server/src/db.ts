@@ -9,6 +9,7 @@
 import { INTERNAL_MESSAGE, apiError, rateLimited } from "./http.ts";
 import { cardParams, type AgentCard } from "./protocol/card.ts";
 import { keyIdOf, uuid } from "./protocol/crypto.ts";
+import { timestamp } from "./protocol/envelope.ts";
 
 export interface SphereRow {
   id: string;
@@ -220,3 +221,8 @@ export async function withRetries<T>(attempt: () => Promise<T | null>, budgetMs 
   }
   throw rateLimited(CONTENTION_MESSAGE, 1);
 }
+
+/** A statement that records one operator act (sphere-api.md section 3.3), in the act's own batch. */
+export const operatorLogStatement = (db: D1Database, sphere: string, nowS: number, action: string, target: string | null): D1PreparedStatement =>
+  db.prepare("INSERT INTO operator_log (sphere, at, action, target) VALUES (?1, ?2, ?3, ?4)").bind(sphere, timestamp(nowS), action, target);
+

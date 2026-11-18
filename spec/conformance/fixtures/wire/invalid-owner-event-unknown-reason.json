@@ -1,0 +1,26 @@
+{
+  "case": "wire",
+  "name": "invalid-owner-event-unknown-reason",
+  "description": "An event whose reason isn't on the closed list.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/owner-events.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "events": [
+      {
+        "id": 1,
+        "owner": "owner-a",
+        "reason": "lost_key",
+        "at": "2026-11-18T12:00:00Z",
+        "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
+        "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
+        "revoked": [
+          "obi-a"
+        ]
+      }
+    ]
+  }
+}

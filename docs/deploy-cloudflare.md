@@ -78,6 +78,10 @@ The first deploy with the Doorbell adds a Durable Object class (`v2-doorbells` i
 
 To rotate the operator token, run `wrangler secret put SPHERE_OPERATOR_TOKEN --env deskree` and update the Keychain item (account `obysphere.deskree.com`) to match. Until 2026-10-23 the script kept it under account `deskree`; Oby no longer looks there, so move that item to the host's account once.
 
+## Fixing an Obysphere
+
+When no admin can fix an Obysphere (a lost key, the only admin gone), the operator uses [operator.md](operator.md): the server's own calls with the operator token, each logged for the admins, never `wrangler d1 execute`.
+
 ## Rolling back
 
 | Version | Code | Deployed | D1 after it |

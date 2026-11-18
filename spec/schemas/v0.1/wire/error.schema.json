@@ -42,7 +42,8 @@
             "card_invalid",
             "payload_too_large",
             "rate_limited",
-            "internal"
+            "internal",
+            "account_not_linked"
           ]
         },
         "message": {

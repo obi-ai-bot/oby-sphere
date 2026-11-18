@@ -1,0 +1,17 @@
+{
+  "case": "wire",
+  "name": "invalid-owner-reset-signin",
+  "description": "A reset carrying a sign-in: a reset is an admin's or the operator's act, not the owner's.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/owner-reset.request"
+  },
+  "input": {
+    "owner_key": "c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg",
+    "signin": {
+      "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "code": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    }
+  }
+}

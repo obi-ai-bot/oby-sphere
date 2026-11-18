@@ -35,6 +35,9 @@ const EXPORTS = {
   sphereUpdateRequest: "wire/sphere-update.request.schema.json",
   invitationPreviewRequest: "wire/invitation-preview.request.schema.json",
   redeemRequest: "wire/redeem.request.schema.json",
+  ownerRebindRequest: "wire/owner-rebind.request.schema.json",
+  ownerResetRequest: "wire/owner-reset.request.schema.json",
+  ownerAccountRequest: "wire/owner-account.request.schema.json",
   cardUpdateRequest: "wire/card-update.request.schema.json",
   policyPutRequest: "wire/policy-put.request.schema.json",
   ackRequest: "wire/ack.request.schema.json",
@@ -64,6 +67,11 @@ const EXPORTS = {
   a2aTask: "wire/a2a-task.schema.json",
   a2aError: "wire/a2a-error.schema.json",
   relay: "wire/relay.schema.json",
+  ownerRebindResponse: "wire/owner-rebind.response.schema.json",
+  ownerEventsResponse: "wire/owner-events.response.schema.json",
+  ownersResponse: "wire/owners.response.schema.json",
+  operatorLogResponse: "wire/operator-log.response.schema.json",
+  ownerAccountResponse: "wire/owner-account.response.schema.json",
   error: "wire/error.schema.json",
 };
 

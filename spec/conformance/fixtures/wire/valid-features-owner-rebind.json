@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-owner-rebind",
+  "description": "An Obysphere that lets an owner get back in with a sign-in.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime",
+      "owner_rebind"
+    ]
+  }
+}

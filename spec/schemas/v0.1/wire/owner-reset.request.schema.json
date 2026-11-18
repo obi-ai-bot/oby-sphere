@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-reset.request.schema.json",
+  "title": "POST /v0.1/spheres/{sphere}/owners/{owner}/reset request",
+  "description": "An admin or the operator binds a new owner key the owner gave them out of band (feature operator_recovery, sphere-api.md section 3.3), revoking the old key's agents. The owner then joins an agent with an invitation, as any bound owner does.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["owner_key"],
+  "properties": {
+    "owner_key": { "$ref": "../common.schema.json#/$defs/public_key" }
+  }
+}

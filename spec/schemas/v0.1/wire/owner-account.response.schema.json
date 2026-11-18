@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-account.response.schema.json",
+  "title": "PUT and GET /v0.1/spheres/{sphere}/owners/{owner}[/account] response",
+  "description": "Whether a sign-in account is linked to the owner. Never which account, an email or a domain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sphere", "owner", "account_linked"],
+  "properties": {
+    "sphere": { "$ref": "../common.schema.json#/$defs/sphere_id" },
+    "owner": { "$ref": "../common.schema.json#/$defs/owner_id" },
+    "account_linked": { "type": "boolean" }
+  }
+}

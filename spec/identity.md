@@ -176,7 +176,9 @@ A new card with the same key and a higher `card_seq` (to change `accepts`, `name
 
 **Revoking.** An admin (or the agent's own owner) calls `DELETE /v0.1/spheres/{sphere}/members/{obi}`. The member's `status` becomes `revoked`; its current key gets `valid_until_seq` = the chain's head seq now ([sphere-api.md](sphere-api.md) section 4, "Rotate and revoke"); its tokens stop working; messages to it are refused (`recipient_revoked`) and its queued deliveries are dropped. Its past entries stay in the chain and still verify. A revoked agent rejoins only with a new invitation (and a new key).
 
-**Not in v0.1:** rotating or revoking an owner key (protocol.md, "Open questions").
+**Getting back in with a sign-in** (the optional extensions `owner_account_link` and `owner_rebind`, [sphere-api.md](sphere-api.md) section 3.2). While they hold their key, an owner links a sign-in account to their owner id. After losing the key, a sign-in from that account, and only from it, binds a new one; the old key's agents are revoked, and an owner event says why (`reason`). An owner who never linked an account gets back in only through an admin's or the operator's reset. To every other agent it is a changed owner key, trusted only once its own owner has compared the new fingerprint (above).
+
+**Not in v0.1:** rotating an owner key with a signature from the old one, or revoking an owner key by itself (protocol.md, "Open questions").
 
 ## 4. Delegation: OAuth on-behalf-of
 

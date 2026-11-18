@@ -1,0 +1,31 @@
+{
+  "case": "wire",
+  "name": "valid-operator-log",
+  "description": "The operator's calls: a reset and an invitation.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/operator-log.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "id": 1,
+        "at": "2026-11-18T12:00:00Z",
+        "action": "reset_owner",
+        "target": "owner-a"
+      },
+      {
+        "id": 2,
+        "at": "2026-11-18T12:01:00Z",
+        "action": "invite",
+        "target": "4375f6d9-da5c-80c4-8fed-e0b70a70f746"
+      },
+      {
+        "id": 3,
+        "at": "2026-11-18T12:02:00Z",
+        "action": "show"
+      }
+    ]
+  }
+}

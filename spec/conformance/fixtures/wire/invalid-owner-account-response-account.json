@@ -1,0 +1,16 @@
+{
+  "case": "wire",
+  "name": "invalid-owner-account-response-account",
+  "description": "An answer naming the account.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/owner-account.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "owner": "owner-a",
+    "account_linked": true,
+    "account": "google:1234"
+  }
+}

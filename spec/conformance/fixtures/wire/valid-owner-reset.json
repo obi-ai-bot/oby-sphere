@@ -1,0 +1,12 @@
+{
+  "case": "wire",
+  "name": "valid-owner-reset",
+  "description": "A reset: the key the owner gave out of band.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/owner-reset.request"
+  },
+  "input": {
+    "owner_key": "c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg"
+  }
+}

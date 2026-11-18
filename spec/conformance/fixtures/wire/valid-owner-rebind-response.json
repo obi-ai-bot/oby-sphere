@@ -1,0 +1,27 @@
+{
+  "case": "wire",
+  "name": "valid-owner-rebind-response",
+  "description": "The owner as now bound, still an admin, with the event.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/owner-rebind.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "owner": "owner-a",
+    "owner_key": "c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg",
+    "owner_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
+    "admin": true,
+    "event": {
+      "id": 1,
+      "owner": "owner-a",
+      "reason": "signed_in_again",
+      "at": "2026-11-18T12:00:00Z",
+      "old_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
+      "new_key_id": "ed25519:yqyqkY0z0ALIdzaFu1W6d3J_exEbciEnWCNiVRy9jIg",
+      "revoked": [
+        "obi-a"
+      ]
+    }
+  }
+}

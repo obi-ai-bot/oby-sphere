@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-events.response.schema.json",
+  "title": "GET /v0.1/spheres/{sphere}/owner-events response",
+  "description": "Owner events after the given id, oldest first, at most limit of them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sphere",
+    "events"
+  ],
+  "properties": {
+    "sphere": {
+      "$ref": "../common.schema.json#/$defs/sphere_id"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "owner-event.schema.json"
+      }
+    }
+  }
+}

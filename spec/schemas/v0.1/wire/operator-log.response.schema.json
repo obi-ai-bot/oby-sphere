@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/operator-log.response.schema.json",
+  "title": "GET /v0.1/spheres/{sphere}/operator-log response",
+  "description": "What the operator did in the Obysphere, oldest first: each call made with the operator token. action is open: a client shows one it doesn't know as it is. Never a secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sphere", "entries"],
+  "properties": {
+    "sphere": { "$ref": "../common.schema.json#/$defs/sphere_id" },
+    "entries": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "at", "action"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+          "at": { "$ref": "../common.schema.json#/$defs/timestamp" },
+          "action": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "target": { "description": "What it acted on: an owner id, an agent id or an invitation id.", "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
+        }
+      }
+    }
+  }
+}
