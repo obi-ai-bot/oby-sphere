@@ -7,8 +7,8 @@
 // the policy) is checked and made as if alone.
 
 import { INTERNAL_MESSAGE, apiError, rateLimited } from "./http.ts";
-import type { AgentCard } from "./protocol/card.ts";
-import { uuid } from "./protocol/crypto.ts";
+import { cardParams, type AgentCard } from "./protocol/card.ts";
+import { keyIdOf, uuid } from "./protocol/crypto.ts";
 
 export interface SphereRow {
   id: string;
@@ -110,7 +110,20 @@ export async function getKeys(db: D1Database, sphere: string, obi: string): Prom
 }
 
 /** The member as the API answers it (member.schema.json): `revoked_at` only once revoked. */
-export function memberJson(member: MemberRow, owner: OwnerRow, keys: KeyRow[]): Record<string, unknown> {
+/**
+ * The owner key a member's entry names: the one that signed its card. That is the owner's bound key,
+ * unless the owner's row is gone or names another key; then the card's own, so the entry still
+ * verifies and the directory still reads (sphere-api.md section 4).
+ */
+export async function entryOwnerKey(member: MemberRow, owner: OwnerRow | null | undefined): Promise<EntryOwnerKey> {
+  const signedBy = cardParams(JSON.parse(member.card) as AgentCard).owner_key;
+  if (owner && owner.owner_key === signedBy) return { owner_key: owner.owner_key, owner_key_id: owner.owner_key_id };
+  return { owner_key: signedBy, owner_key_id: await keyIdOf(signedBy) };
+}
+
+export type EntryOwnerKey = Pick<OwnerRow, "owner_key" | "owner_key_id">;
+
+export function memberJson(member: MemberRow, owner: EntryOwnerKey, keys: KeyRow[]): Record<string, unknown> {
   return {
     obi: member.obi,
     owner: member.owner,
@@ -127,9 +140,7 @@ export function memberJson(member: MemberRow, owner: OwnerRow, keys: KeyRow[]): 
 export async function loadMemberJson(db: D1Database, sphere: string, obi: string): Promise<Record<string, unknown>> {
   const member = await getMember(db, sphere, obi);
   if (!member) throw apiError("not_found", `no member ${obi}`);
-  const owner = await getOwner(db, sphere, member.owner);
-  if (!owner) throw apiError("internal", "the member's owner has no bound key");
-  return memberJson(member, owner, await getKeys(db, sphere, obi));
+  return memberJson(member, await entryOwnerKey(member, await getOwner(db, sphere, member.owner)), await getKeys(db, sphere, obi));
 }
 
 /** D1's message when a guarded write lost its turn: the write guard's named CHECK (migrations/). */
