@@ -2,7 +2,7 @@
 
 import { bearer, requireActor, requireOwnerToken, requireScope } from "../auth.ts";
 import {
-  getKeys, getMember, getOwner, guardedWrite, loadMemberJson, memberJson, requireSphere, withRetries, type KeyRow, type MemberRow,
+  entryOwnerKey, getKeys, getMember, getOwner, guardedWrite, loadMemberJson, memberJson, requireSphere, withRetries, type KeyRow, type MemberRow,
   type OwnerRow,
 } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
@@ -243,11 +243,12 @@ export async function listMembers(request: Request, env: Env, deps: Deps, sphere
   const keysBy = new Map<string, KeyRow[]>();
   for (const k of keys!.results as unknown as KeyRow[]) keysBy.set(k.obi, [...(keysBy.get(k.obi) ?? []), k]);
   const runners = await visibleRunners(env.DB, sphere.id, caller, nowS(deps));
-  const list = (members!.results as unknown as MemberRow[]).map((m) => {
-    const member = memberJson(m, ownerBy.get(m.owner)!, keysBy.get(m.obi) ?? []);
+  // A member whose owner row is gone still lists, under the key that signed its card.
+  const list = await Promise.all((members!.results as unknown as MemberRow[]).map(async (m) => {
+    const member = memberJson(m, await entryOwnerKey(m, ownerBy.get(m.owner)), keysBy.get(m.obi) ?? []);
     const runner = runners.get(m.obi);
     return runner ? { ...member, runner } : member;
-  });
+  }));
   return json(200, { sphere: sphere.id, members: list });
 }
 
@@ -276,7 +277,8 @@ export async function updateCard(request: Request, env: Env, deps: Deps, sphereI
   return withRetries(async () => {
     const sphere = await requireSphere(env.DB, sphere0.id);
     const member = (await getMember(env.DB, sphere.id, obi))!;
-    const owner = (await getOwner(env.DB, sphere.id, member.owner))!;
+    const owner = await getOwner(env.DB, sphere.id, member.owner);
+    if (!owner) throw apiError("conflict", `${member.owner} has no bound owner key in this Sphere`);
     const verdict = await verifyCard(card, { now: nowS(deps), bound_owner_key: owner.owner_key });
     if (!verdict.ok) throw apiError("card_invalid", verdict.message);
     const p = cardParams(card);

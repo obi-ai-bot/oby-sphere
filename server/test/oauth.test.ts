@@ -181,6 +181,35 @@ describe("Obi tokens (on behalf of the owner)", () => {
     expect((await w.exchangeObi("obi-ernesto")).body.error).toBe("invalid_grant");
   });
 
+  it("says obi_error not_member, beside invalid_grant, for an Obi that was removed or never joined", async () => {
+    const w = await team();
+    // Revoked by the admin: the same error and description as before, and the reason a client acts on.
+    expect((await w.call("DELETE", "/v0.1/spheres/e2e/members/obi-ernesto", { token: await w.ownerToken() })).status).toBe(200);
+    const removed = await w.exchangeObi("obi-ernesto");
+    expect(removed.status).toBe(400);
+    expect(removed.body).toEqual({ error: "invalid_grant", error_description: "the actor is not an active member owned by the subject", obi_error: "not_member" });
+    // Never joined: ernesto's own key delegates to an Obi this Sphere doesn't know.
+    const ownerKey = await w.ownerKey("ernesto");
+    const ghostKey = await newKey();
+    const delegation = await signJwt({ iss: "ernesto", sub: "ernesto", aud: "obi-sphere:e2e", iat: w.clock.s, exp: w.clock.s + 600, jti: crypto.randomUUID(), scope: "reply", may_act: { sub: "obi-ghost" } }, ownerKey);
+    const ghost = await w.exchangeObi("obi-ghost", { delegation, actor: await w.actorAssertion("obi-ghost", ghostKey) });
+    expect(ghost.body).toMatchObject({ error: "invalid_grant", obi_error: "not_member" });
+  });
+
+  it("leaves obi_error out of every other refusal", async () => {
+    const w = await team();
+    // An active Obi of another owner than the delegation's: the delegation's fault, not a lost membership.
+    const key = await w.ownerKey("wellington");
+    const foreign = await signJwt({ iss: "wellington", sub: "wellington", aud: "obi-sphere:e2e", iat: w.clock.s, exp: w.clock.s + 600, jti: crypto.randomUUID(), scope: "reply", may_act: { sub: "obi-ernesto" } }, key);
+    const other = await w.exchangeObi("obi-ernesto", { delegation: foreign });
+    expect(other.body.error).toBe("invalid_grant");
+    expect(other.body).not.toHaveProperty("obi_error");
+    // A member signing with a key that isn't its current one.
+    const wrongKey = await w.exchangeObi("obi-ernesto", { actor: await w.actorAssertion("obi-ernesto", await newKey()) });
+    expect(wrongKey.body.error).toBe("invalid_grant");
+    expect(wrongKey.body).not.toHaveProperty("obi_error");
+  });
+
   it("tokens expire", async () => {
     const w = await team();
     const token = await w.obiToken("obi-ernesto");

@@ -21,16 +21,28 @@ const ACCESS_TOKEN_MAX_SECONDS = 3600;
 
 type OAuthErrorCode = "invalid_request" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" | "invalid_dpop_proof";
 
+/**
+ * A reason a client acts on, beside the OAuth error (identity.md section 4.3): `not_member`, the
+ * actor is no active member of this Obysphere (never joined, or revoked).
+ */
+type ObiErrorCode = "not_member";
+
 class OAuthError extends Error {
   readonly error: OAuthErrorCode;
-  constructor(error: OAuthErrorCode, description: string) {
+  readonly obiError: ObiErrorCode | undefined;
+  constructor(error: OAuthErrorCode, description: string, obiError?: ObiErrorCode) {
     super(description);
     this.error = error;
+    this.obiError = obiError;
   }
 }
 
 const oauthError = (e: OAuthError): Response =>
-  json(400, { error: e.error, error_description: e.message.replace(/[^\x20-\x21\x23-\x5b\x5d-\x7e]/g, " ").slice(0, 300) });
+  json(400, {
+    error: e.error,
+    error_description: e.message.replace(/[^\x20-\x21\x23-\x5b\x5d-\x7e]/g, " ").slice(0, 300),
+    ...(e.obiError ? { obi_error: e.obiError } : {}),
+  });
 
 interface Claims {
   iss: string;
@@ -155,7 +167,10 @@ async function exchange(request: Request, env: Env, deps: Deps): Promise<Respons
     if (!sc.may_act) throw new OAuthError("invalid_grant", "the owner assertion lets no Obi act for the owner");
     if (ac.iss !== ac.sub || sc.may_act.sub !== ac.sub) throw new OAuthError("invalid_grant", "the actor is not the Obi the owner lets act");
     const member = await getMember(env.DB, sphere.id, ac.sub);
-    if (!member || member.status !== "active" || member.owner !== sc.iss) throw new OAuthError("invalid_grant", "the actor is not an active member owned by the subject");
+    // No member (never joined, or revoked) says so as `not_member`; a member
+    // of another owner keeps the plain error: the delegation names an Obi that isn't its owner's.
+    if (!member || (member.status !== "active" && member.owner === sc.iss)) throw new OAuthError("invalid_grant", "the actor is not an active member owned by the subject", "not_member");
+    if (member.status !== "active" || member.owner !== sc.iss) throw new OAuthError("invalid_grant", "the actor is not an active member owned by the subject");
     const key = await env.DB.prepare("SELECT public_key FROM member_keys WHERE sphere = ?1 AND obi = ?2 AND key_id = ?3 AND valid_until_seq IS NULL")
       .bind(sphere.id, ac.sub, actor.header.kid)
       .first<{ public_key: string }>();
