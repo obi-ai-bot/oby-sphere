@@ -2,7 +2,7 @@
 // an owner who lost their key binds a new one, and the old key's agents are revoked; and the owner
 // events every member reads.
 
-import { bearer, requireScope } from "../auth.ts";
+import { bearer, requireOwnerToken, requireScope } from "../auth.ts";
 import { getOwner, guardedWrite, memberJson, requireSphere, withRetries, type KeyRow, type MemberRow } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
 import { apiError, json, readJson } from "../http.ts";
@@ -11,7 +11,7 @@ import { keyIdOf } from "../protocol/crypto.ts";
 import { timestamp } from "../protocol/envelope.ts";
 import { canonicalize } from "../protocol/json.ts";
 import { schemaErrors } from "../protocol/schemas.ts";
-import { checkSignIn, creatorWorkspaces, signsIn } from "../signin.ts";
+import { checkSignIn, signsIn } from "../signin.ts";
 import { intParam } from "./messages.ts";
 import { keyTaken, obiTaken, requirePublishable } from "./members.ts";
 
@@ -20,22 +20,20 @@ const nowS = (deps: Deps) => Math.floor(deps.now() / 1000);
 interface EventRow {
   id: number;
   owner: string;
-  kind: string;
+  reason: string;
   at: string;
   old_key_id: string;
   new_key_id: string;
-  account_linked: number | null;
   revoked: string;
 }
 
 const eventJson = (e: EventRow): Record<string, unknown> => ({
   id: e.id,
   owner: e.owner,
-  kind: e.kind,
+  reason: e.reason,
   at: e.at,
   old_key_id: e.old_key_id,
   new_key_id: e.new_key_id,
-  ...(e.account_linked === null ? {} : { account_linked: e.account_linked === 1 }),
   revoked: JSON.parse(e.revoked) as string[],
 });
 
@@ -62,24 +60,14 @@ export async function rebind(request: Request, env: Env, deps: Deps, sphereId: s
     // 2. The owner.
     const owner = await getOwner(env.DB, sphere.id, ownerId);
     if (!owner) throw apiError("not_found", `no owner ${ownerId} in this Sphere`);
-    // 3. The sign-in, started for the new key.
+    // 3. Link first: only an owner who linked an account while holding their key gets back in this way.
+    if (!owner.account) throw apiError("account_not_linked", "this owner never added a sign-in: ask an admin to reset them");
+    // 4. The sign-in, started for the new key, from the linked account.
     const signin = await checkSignIn(env.DB, req.signin, req.owner_key, now);
-    // 4. The account: the owner's own, or, with none linked, one from a domain this Sphere allows.
-    let linking = false;
-    if (owner.account) {
-      if (owner.account !== signin.account) throw apiError("forbidden", "the owner is bound to another account");
-    } else {
-      const domain = signin.workspace?.toLowerCase() ?? null;
-      const allowed = domain !== null && (creatorWorkspaces(env).includes(domain) ||
-        (await env.DB.prepare("SELECT 1 AS allowed FROM invitations WHERE sphere = ?1 AND lower(domain) = ?2").bind(sphere.id, domain).first()) !== null);
-      if (!allowed) throw apiError("forbidden", domain === null ? "a sign-in with no domain can't claim an owner here" : `a sign-in from ${domain} can't claim an owner here`);
-      const other = await env.DB.prepare("SELECT owner FROM owners WHERE sphere = ?1 AND account = ?2").bind(sphere.id, signin.account).first<{ owner: string }>();
-      if (other && other.owner !== ownerId) throw apiError("conflict", "this account is linked to another owner");
-      linking = true;
-    }
-    // 5. A new key.
+    if (owner.account !== signin.account) throw apiError("forbidden", "the owner is linked to another account");
+    // 6. A new key.
     if (req.owner_key === owner.owner_key) throw apiError("conflict", "the owner is bound to this key already");
-    // 6. The new agent, as redeem checks it (section 4, checks 3, 4 and 6 to 8).
+    // 7. The new agent, as redeem checks it (section 4, checks 3, 4 and 6 to 8).
     let joining: { member: MemberRow; key: KeyRow } | null = null;
     if (req.card) {
       const verdict = await verifyCard(req.card, { now });
@@ -116,13 +104,12 @@ export async function rebind(request: Request, env: Env, deps: Deps, sphereId: s
       db.prepare("UPDATE members SET status = 'revoked', revoked_at = ?3 WHERE sphere = ?1 AND owner = ?2 AND status = 'active'").bind(sphere.id, ownerId, at),
       // Every token the owner holds: their own, and their agents' (the subject is the owner).
       db.prepare("UPDATE tokens SET revoked = 1 WHERE sphere = ?1 AND subject = ?2").bind(sphere.id, ownerId),
-      // The new key, the account if none was linked, the admin flag as it was.
+      // The new key; the linked account and the admin flag as they were.
       db.prepare("UPDATE owners SET owner_key = ?3, owner_key_id = ?4 WHERE sphere = ?1 AND owner = ?2").bind(sphere.id, ownerId, req.owner_key, newKeyId),
-      ...(linking ? [db.prepare("UPDATE owners SET account = ?3 WHERE sphere = ?1 AND owner = ?2 AND account IS NULL").bind(sphere.id, ownerId, signin.account)] : []),
       // The sign-in, once: a second use fails the table's check and the whole batch.
       db.prepare("UPDATE sign_ins SET used = used + 1 WHERE state = ?1").bind(signin.state),
-      db.prepare("INSERT INTO owner_events (sphere, owner, kind, at, old_key_id, new_key_id, account_linked, revoked) VALUES (?1, ?2, 'rebound', ?3, ?4, ?5, ?6, ?7)")
-        .bind(sphere.id, ownerId, at, owner.owner_key_id, newKeyId, linking ? 1 : 0, JSON.stringify(revoked)),
+      db.prepare("INSERT INTO owner_events (sphere, owner, reason, at, old_key_id, new_key_id, revoked) VALUES (?1, ?2, 'signed_in_again', ?3, ?4, ?5, ?6)")
+        .bind(sphere.id, ownerId, at, owner.owner_key_id, newKeyId, JSON.stringify(revoked)),
       ...(joining
         ? [
             db.prepare("INSERT INTO members (sphere, obi, owner, status, joined_at, card, card_seq) VALUES (?1, ?2, ?3, 'active', ?4, ?5, ?6)").bind(
@@ -163,3 +150,52 @@ export async function ownerEvents(request: Request, env: Env, deps: Deps, sphere
   return json(200, { sphere: sphere.id, events: rows.results.map(eventJson) });
 }
 
+// ---------------------------------------------------------------------------------------------
+// PUT /v0.1/spheres/{sphere}/owners/{owner}/account: link first (feature owner_account_link)
+
+const accountAnswer = (sphere: string, owner: string, linked: boolean) => json(200, { sphere, owner, account_linked: linked });
+
+export async function linkAccount(request: Request, env: Env, deps: Deps, sphereId: string, ownerId: string): Promise<Response> {
+  requireRebind(env);
+  const sphere = await requireSphere(env.DB, sphereId);
+  const caller = await bearer(request, env, sphere, nowS(deps));
+  // The owner's own token, minted with their key: never an agent's, never someone else's.
+  requireOwnerToken(caller);
+  if (caller.subject !== ownerId) throw apiError("forbidden", `only ${ownerId}'s own token may link their account`);
+  const body = await readJson(request);
+  const errors = schemaErrors("ownerAccountRequest", body);
+  if (errors.length) throw apiError("bad_request", "the body doesn't match owner-account.request", errors);
+  const given = (body as unknown as { signin: { state: string; code: string } }).signin;
+  const owner = await getOwner(env.DB, sphere.id, ownerId);
+  if (!owner) throw apiError("not_found", `no owner ${ownerId} in this Sphere`);
+  // A sign-in started for the key the owner holds now.
+  const signin = await checkSignIn(env.DB, given, owner.owner_key, nowS(deps));
+  if (owner.account && owner.account !== signin.account) throw apiError("conflict", "the owner is linked to another account");
+  const other = await env.DB.prepare("SELECT owner FROM owners WHERE sphere = ?1 AND account = ?2").bind(sphere.id, signin.account).first<{ owner: string }>();
+  if (other && other.owner !== ownerId) throw apiError("conflict", "this account is linked to another owner");
+  try {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE owners SET account = ?3 WHERE sphere = ?1 AND owner = ?2 AND (account IS NULL OR account = ?3)").bind(sphere.id, ownerId, signin.account),
+      // The sign-in, once: a second use fails the table's check and the whole batch.
+      env.DB.prepare("UPDATE sign_ins SET used = used + 1 WHERE state = ?1").bind(signin.state),
+    ]);
+  } catch (e) {
+    const failed = String((e as Error)?.message ?? e);
+    if (failed.includes("UNIQUE")) throw apiError("conflict", "this account is linked to another owner");
+    if (failed.includes("CHECK")) throw apiError("forbidden", "the sign-in is unknown, unfinished, used, expired, or for another owner key");
+    throw e;
+  }
+  return accountAnswer(sphere.id, ownerId, true);
+}
+
+// GET /v0.1/spheres/{sphere}/owners/{owner}: whether an account is linked, never which.
+
+export async function ownerAccount(request: Request, env: Env, deps: Deps, sphereId: string, ownerId: string): Promise<Response> {
+  requireRebind(env);
+  const sphere = await requireSphere(env.DB, sphereId);
+  const caller = await bearer(request, env, sphere, nowS(deps));
+  if (caller.subject !== ownerId && !caller.scopes.has("admin")) throw apiError("forbidden", `only ${ownerId}, their agents or an admin may read this`);
+  const owner = await getOwner(env.DB, sphere.id, ownerId);
+  if (!owner) throw apiError("not_found", `no owner ${ownerId} in this Sphere`);
+  return accountAnswer(sphere.id, ownerId, !!owner.account);
+}
