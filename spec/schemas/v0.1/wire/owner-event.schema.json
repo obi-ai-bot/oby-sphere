@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-event.schema.json",
   "title": "Owner event",
-  "description": "Something that happened to an owner of an Obysphere (sphere-api.md section 3.2): readable by every member, so an agent can say why an owner's key changed. kind is open: a client ignores an event whose kind it doesn't know.",
+  "description": "Why an owner's bound key changed in an Obysphere (sphere-api.md section 3.2): readable by every member, so an agent can explain the change and match it to the owner's new cards by new_key_id. No free text.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "id",
     "owner",
-    "kind",
+    "reason",
     "at",
     "old_key_id",
     "new_key_id",
@@ -24,12 +24,14 @@
     "owner": {
       "$ref": "../common.schema.json#/$defs/owner_id"
     },
-    "kind": {
-      "description": "rebound: the owner bound a new key with a sign-in. Open: later additions add kinds.",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 32,
-      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    "reason": {
+      "description": "signed_in_again: the owner got back in with their linked account's sign-in. admin_reset, operator_reset: an admin or the operator bound a key the owner gave them (section 3.3). rotated: reserved for a rotation signed by the old key, never sent in obi/0.1.",
+      "enum": [
+        "signed_in_again",
+        "admin_reset",
+        "operator_reset",
+        "rotated"
+      ]
     },
     "at": {
       "$ref": "../common.schema.json#/$defs/timestamp"
@@ -38,11 +40,8 @@
       "$ref": "../common.schema.json#/$defs/key_id"
     },
     "new_key_id": {
-      "$ref": "../common.schema.json#/$defs/key_id"
-    },
-    "account_linked": {
-      "description": "rebound: true when this sign-in's account was linked to the owner by this event (the owner had none).",
-      "type": "boolean"
+      "$ref": "../common.schema.json#/$defs/key_id",
+      "description": "The key id of the owner's new key: the fingerprint their new cards carry."
     },
     "revoked": {
       "description": "The owner's agents this event revoked.",
