@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-rebind.response.schema.json",
+  "title": "POST /v0.1/spheres/{sphere}/owners/{owner}/rebind response",
+  "description": "The owner as now bound, the agents revoked, the event recorded, and the new agent when the request carried a card.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sphere",
+    "owner",
+    "owner_key",
+    "owner_key_id",
+    "admin",
+    "event"
+  ],
+  "properties": {
+    "sphere": {
+      "$ref": "../common.schema.json#/$defs/sphere_id"
+    },
+    "owner": {
+      "$ref": "../common.schema.json#/$defs/owner_id"
+    },
+    "owner_key": {
+      "$ref": "../common.schema.json#/$defs/public_key"
+    },
+    "owner_key_id": {
+      "$ref": "../common.schema.json#/$defs/key_id"
+    },
+    "admin": {
+      "description": "Whether the owner is an admin of the Obysphere: unchanged by the rebind.",
+      "type": "boolean"
+    },
+    "event": {
+      "$ref": "owner-event.schema.json"
+    },
+    "member": {
+      "description": "The new agent, when the request carried a card.",
+      "$ref": "member.schema.json"
+    }
+  }
+}

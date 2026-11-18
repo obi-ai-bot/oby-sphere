@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owner-rebind.request.schema.json",
+  "title": "POST /v0.1/spheres/{sphere}/owners/{owner}/rebind request",
+  "description": "Get back into an Obysphere with a sign-in (feature owner_rebind, sphere-api.md section 3.2): bind a new owner key to the owner, revoking the old key's agents. The sign-in, started for owner_key, is the authentication. A card, signed by the new key, adds a new agent of the owner in the same step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "owner_key",
+    "signin"
+  ],
+  "properties": {
+    "owner_key": {
+      "description": "The new owner key, the one the sign-in was started for.",
+      "$ref": "../common.schema.json#/$defs/public_key"
+    },
+    "signin": {
+      "$ref": "../common.schema.json#/$defs/signin"
+    },
+    "card": {
+      "description": "Optional: a new agent's card for this owner, signed by owner_key, joined as by redeem (section 4, checks 3, 4 and 6 to 8).",
+      "$ref": "../agent-card.schema.json"
+    }
+  }
+}

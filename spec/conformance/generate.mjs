@@ -813,6 +813,20 @@ export function buildFixtures() {
   wireCase("valid-features-phone-relay", "An Obysphere that takes card_runtime and offers the phone relay.", "wire/features.response", { features: ["card_runtime", "phone_relay"] }, "accept");
   // An Obysphere that offers the A2A binding lists it (a2a.md).
   wireCase("valid-features-a2a", "An Obysphere that offers the A2A binding at its members' card URLs.", "wire/features.response", { features: ["a2a", "card_runtime"] }, "accept");
+  // Getting back in with a sign-in (sphere-api.md section 3.2): a new owner key, the old key's agents revoked.
+  wireCase("valid-features-owner-rebind", "An Obysphere that lets an owner get back in with a sign-in.", "wire/features.response", { features: ["card_runtime", "owner_rebind"] }, "accept");
+  const REBIND = "wire/owner-rebind.request", REBOUND = "wire/owner-rebind.response", EVENTS = "wire/owner-events.response";
+  const signin = { state: "S".repeat(43), code: "C".repeat(43) };
+  wireCase("valid-owner-rebind", "A rebind: the new owner key and the sign-in started for it.", REBIND, { owner_key: OB.publicKey, signin }, "accept");
+  wireCase("valid-owner-rebind-with-card", "A rebind that joins a new agent of the owner in the same step.", REBIND, { owner_key: OA.publicKey, signin, card: cardA }, "accept");
+  wireCase("invalid-owner-rebind-no-signin", "A rebind without a sign-in: the sign-in is its only authentication.", REBIND, { owner_key: OB.publicKey }, "reject");
+  wireCase("invalid-owner-rebind-secret", "A rebind with an invitation's secret instead of a sign-in.", REBIND, { owner_key: OB.publicKey, signin, secret: "A".repeat(43) }, "reject");
+  const event = { id: 1, owner: "owner-a", kind: "rebound", at: "2026-11-18T12:00:00Z", old_key_id: OA.keyId, new_key_id: OB.keyId, account_linked: false, revoked: ["obi-a"] };
+  wireCase("valid-owner-rebind-response", "The owner as now bound, still an admin, with the event.", REBOUND, { sphere: SPHERE, owner: "owner-a", owner_key: OB.publicKey, owner_key_id: OB.keyId, admin: true, event }, "accept");
+  wireCase("valid-owner-events", "Owner events, one rebind that linked the account and revoked nothing.", EVENTS, { sphere: SPHERE, events: [{ ...event, account_linked: true, revoked: [] }] }, "accept");
+  wireCase("valid-owner-event-unknown-kind", "An event of a kind a client may not know yet: kind is open.", EVENTS, { sphere: SPHERE, events: [{ ...event, kind: "reset" }] }, "accept");
+  wireCase("invalid-owner-event-account", "An event naming the account: events never carry an account, email or domain.", EVENTS, { sphere: SPHERE, events: [{ ...event, account: "google:1234" }] }, "reject");
+  wireCase("invalid-owner-event-no-revoked", "An event without the list of agents it revoked.", EVENTS, { sphere: SPHERE, events: [{ ...event, revoked: undefined }] }, "reject");
   // Assertions, as the token endpoint reads their claims (identity.md section 4.1): `aud` names the
   // Obysphere, or is its own URL, which only that server takes.
   const DELEGATION = "wire/delegation.claims", ACTOR = "wire/actor.claims";

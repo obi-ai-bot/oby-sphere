@@ -1,0 +1,13 @@
+{
+  "case": "wire",
+  "name": "invalid-owner-rebind-no-signin",
+  "description": "A rebind without a sign-in: the sign-in is its only authentication.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/owner-rebind.request"
+  },
+  "input": {
+    "owner_key": "c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg"
+  }
+}
