@@ -10,6 +10,7 @@ import { deleteDevice, deleteRelay, openRelay, putDevice, putRelay } from "./rou
 import { deleteRunner, putRunner } from "./routes/runner.ts";
 import { getMemberRoute, invite, listInvitations, listMembers, previewInvitation, redeem, revoke, updateCard, withdrawInvitation } from "./routes/members.ts";
 import { ack, deliveries, send } from "./routes/messages.ts";
+import { ownerEvents, rebind } from "./routes/owners.ts";
 import { getPolicy, putPolicy } from "./routes/policy.ts";
 import { createSphere, deleteAdmin, deleteImage, deleteSphere, features, getImage, getSphereRoute, health, joinPage, putAdmin, putImage, updateSphere } from "./routes/spheres.ts";
 import { finishSignIn, listSignIns, startSignIn } from "./signin.ts";
@@ -42,6 +43,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations/${SEGMENT}$`), withdrawInvitation],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations/${SEGMENT}/preview$`), previewInvitation],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/invitations/${SEGMENT}/redeem$`), redeem],
+  ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/owners/${SEGMENT}/rebind$`), rebind],
+  ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/owner-events$`), ownerEvents],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members$`), listMembers],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}$`), getMemberRoute],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/card$`), updateCard],

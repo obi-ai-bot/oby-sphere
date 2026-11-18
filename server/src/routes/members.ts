@@ -18,14 +18,14 @@ import { visibleRunners } from "./runner.ts";
 const nowS = (deps: Deps) => Math.floor(deps.now() / 1000);
 
 /** Whether `obi` is or was a member, or another member uses `keyId`. */
-const obiTaken = async (db: D1Database, sphere: string, obi: string) => (await getMember(db, sphere, obi)) !== null;
-const keyTaken = async (db: D1Database, sphere: string, keyId: string) =>
+export const obiTaken = async (db: D1Database, sphere: string, obi: string) => (await getMember(db, sphere, obi)) !== null;
+export const keyTaken = async (db: D1Database, sphere: string, keyId: string) =>
   (await db.prepare("SELECT 1 AS taken FROM member_keys WHERE sphere = ?1 AND key_id = ?2").bind(sphere, keyId).first()) !== null;
 
 /** 409 feature_not_taken for a card that publishes an addition another active member doesn't take
  *  yet (identity.md section 2.3, "Publishing a card with an addition"). What the card it replaces
  *  (`current`) carries already isn't held back, so a member can always rotate its key. */
-async function requirePublishable(db: D1Database, sphere: string, obi: string, card: AgentCard, current?: AgentCard): Promise<void> {
+export async function requirePublishable(db: D1Database, sphere: string, obi: string, card: AgentCard, current?: AgentCard): Promise<void> {
   const carried = new Set(current ? featuresUsed(cardParams(current)) : []);
   if (featuresUsed(cardParams(card)).every((f) => carried.has(f))) return;
   const rows = await db.prepare("SELECT obi, card FROM members WHERE sphere = ?1 AND status = 'active' AND obi != ?2").bind(sphere, obi).all<{ obi: string; card: string }>();

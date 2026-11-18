@@ -11,7 +11,7 @@ import { FEATURES } from "../protocol/features.ts";
 import { ZERO_HASH } from "../protocol/chain.ts";
 import { schemaErrors } from "../protocol/schemas.ts";
 import { CLIENTS, type Client } from "../clients.ts";
-import { checkSignIn, creatorWorkspaces, useSignIn, type SignIn } from "../signin.ts";
+import { checkSignIn, creatorWorkspaces, signsIn, useSignIn, type SignIn } from "../signin.ts";
 import { phoneRelay } from "./relays.ts";
 
 export const health = (): Response => json(200, { ok: true, protocol: PROTOCOL, seal: true });
@@ -25,7 +25,7 @@ export function features(request: Request, env: Env): Response {
   // DPoP and the URL form of aud need this server to know its own address (SPHERE_URL on the Node build).
   const known = ownOrigin(env, request) !== null;
   // The A2A binding (spec/a2a.md) is an extension too, like the phone relay: paths, not messages.
-  return json(200, { features: [...FEATURES, "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : [])].sort() });
+  return json(200, { features: [...FEATURES, "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : []), ...(signsIn(env) ? ["owner_rebind"] : [])].sort() });
 }
 
 /** Where a client's author reads the invite link's format (spec/sphere-api.md section 2.1). */
@@ -283,7 +283,7 @@ export async function deleteSphere(request: Request, env: Env, deps: Deps, spher
   const db = env.DB;
   await db.batch([
     db.prepare("DELETE FROM relay_devices WHERE relay IN (SELECT id FROM relays WHERE sphere = ?1)").bind(sphere.id),
-    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners"].map((table) =>
+    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners", "owner_events"].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE sphere = ?1`).bind(sphere.id),
     ),
     db.prepare("DELETE FROM spheres WHERE id = ?1").bind(sphere.id),

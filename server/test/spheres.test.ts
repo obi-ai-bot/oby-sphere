@@ -23,7 +23,7 @@ describe("health", () => {
   it("lists the additions it takes and the extensions it offers at /v0.1/features, never in health (spec/README.md, Versions)", async () => {
     const r = await makeCall(new Clock())("GET", "/v0.1/features");
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ features: [...FEATURES, "a2a", "dpop", "phone_relay", "signin_providers", "sphere_url_aud"].sort() });
+    expect(r.body).toEqual({ features: [...FEATURES, "a2a", "dpop", "owner_rebind", "phone_relay", "signin_providers", "sphere_url_aud"].sort() });
     expectSchema("featuresResponse", r.body);
   });
 
