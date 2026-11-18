@@ -1,8 +1,8 @@
 // Invitations, pairing and the directory (spec/sphere-api.md section 4; spec/identity.md section 3).
 
-import { bearer, requireActor, requireOwnerToken, requireScope } from "../auth.ts";
+import { adminOrOperator, bearer, isOperator, requireActor, requireOwnerToken, requireScope } from "../auth.ts";
 import {
-  entryOwnerKey, getKeys, getMember, getOwner, guardedWrite, loadMemberJson, memberJson, requireSphere, withRetries, type KeyRow, type MemberRow,
+  entryOwnerKey, getKeys, operatorLogStatement, getMember, getOwner, guardedWrite, loadMemberJson, memberJson, requireSphere, withRetries, type KeyRow, type MemberRow,
   type OwnerRow,
 } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
@@ -38,9 +38,8 @@ export async function requirePublishable(db: D1Database, sphere: string, obi: st
 
 export async function invite(request: Request, env: Env, deps: Deps, sphereId: string): Promise<Response> {
   const sphere = await requireSphere(env.DB, sphereId);
-  const caller = await bearer(request, env, sphere, nowS(deps));
-  requireScope(caller, "admin");
-  requireOwnerToken(caller);
+  // An admin's own token, or the operator's (section 3.3, logged).
+  const who = await adminOrOperator(request, env, sphere, nowS(deps));
   const body = await readJson(request);
   const errors = schemaErrors("invitationRequest", body);
   if (errors.length) throw apiError("bad_request", "the body doesn't match invitation.request", errors);
@@ -53,11 +52,13 @@ export async function invite(request: Request, env: Env, deps: Deps, sphereId: s
   const secret = randomToken(32);
   const expiresAt = nowS(deps) + req.expires_in;
   const maxUses = req.max_uses ?? 1;
-  await env.DB.prepare(
-    "INSERT INTO invitations (id, sphere, owner, obi, secret_sha256, expires_at_s, max_uses, domain, label, created_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-  )
-    .bind(id, sphere.id, req.owner ?? null, req.obi ?? null, await sha256Hex(utf8(secret)), expiresAt, maxUses, req.domain ?? null, req.label ?? null, nowS(deps))
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO invitations (id, sphere, owner, obi, secret_sha256, expires_at_s, max_uses, domain, label, created_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    ).bind(id, sphere.id, req.owner ?? null, req.obi ?? null, await sha256Hex(utf8(secret)), expiresAt, maxUses, req.domain ?? null, req.label ?? null, nowS(deps)),
+    // The log names the invitation, never its secret.
+    ...(who.operator ? [operatorLogStatement(env.DB, sphere.id, nowS(deps), "invite", id)] : []),
+  ]);
   const named = req.owner !== undefined ? { owner: req.owner, obi: req.obi } : {};
   const domain = req.domain !== undefined ? { domain: req.domain } : {};
   const label = req.label !== undefined ? { label: req.label } : {};
@@ -315,18 +316,27 @@ export async function updateCard(request: Request, env: Env, deps: Deps, sphereI
 
 export async function revoke(request: Request, env: Env, deps: Deps, sphereId: string, obi: string): Promise<Response> {
   const sphere0 = await requireSphere(env.DB, sphereId);
-  const caller = await bearer(request, env, sphere0, nowS(deps));
-  requireOwnerToken(caller);
-  const member0 = await getMember(env.DB, sphere0.id, obi);
-  if (!member0) throw apiError("not_found", `no member ${obi}`);
-  if (!caller.scopes.has("admin") && caller.subject !== member0.owner) throw apiError("forbidden", "only the admin or the Obi's own owner may revoke it");
+  // The operator (section 3.3, logged), an admin, or the Obi's own owner.
+  const operator = await isOperator(request, env);
+  const member0 = operator ? await getMember(env.DB, sphere0.id, obi) : null;
+  if (!operator) {
+    const caller = await bearer(request, env, sphere0, nowS(deps));
+    requireOwnerToken(caller);
+    const m = await getMember(env.DB, sphere0.id, obi);
+    if (!m) throw apiError("not_found", `no member ${obi}`);
+    if (!caller.scopes.has("admin") && caller.subject !== m.owner) throw apiError("forbidden", "only the admin or the Obi's own owner may revoke it");
+  } else if (!member0) throw apiError("not_found", `no member ${obi}`);
 
   return withRetries(async () => {
     const sphere = await requireSphere(env.DB, sphere0.id);
     const member = (await getMember(env.DB, sphere.id, obi))!;
-    if (member.status === "revoked") return json(200, await loadMemberJson(env.DB, sphere.id, obi));
+    if (member.status === "revoked") {
+      if (operator) await operatorLogStatement(env.DB, sphere.id, nowS(deps), "revoke", obi).run();
+      return json(200, await loadMemberJson(env.DB, sphere.id, obi));
+    }
     const revokedAt = timestamp(nowS(deps));
     const written = await guardedWrite(env.DB, sphere.id, sphere.rev, [
+      ...(operator ? [operatorLogStatement(env.DB, sphere.id, nowS(deps), "revoke", obi)] : []),
       env.DB.prepare("UPDATE member_keys SET valid_until_seq = ?1 WHERE sphere = ?2 AND obi = ?3 AND valid_until_seq IS NULL").bind(sphere.head_seq, sphere.id, obi),
       env.DB.prepare("UPDATE members SET status = 'revoked', revoked_at = ?1 WHERE sphere = ?2 AND obi = ?3").bind(revokedAt, sphere.id, obi),
       env.DB.prepare("UPDATE deliveries SET state = 'dropped' WHERE sphere = ?1 AND to_obi = ?2 AND state = 'queued'").bind(sphere.id, obi),

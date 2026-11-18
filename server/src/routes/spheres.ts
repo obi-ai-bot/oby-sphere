@@ -1,8 +1,8 @@
 // Spheres (spec/sphere-api.md section 3) and health: creating one, reading it, and what its admins
 // change afterwards (its name and picture, who else administers it, and deleting it).
 
-import { bearer, ownOrigin, requireOperator, requireOwnerToken, requireScope, type Caller } from "../auth.ts";
-import { constraintFailure, getOwner, getSphere, requireSphere, unforeseen, type SphereRow } from "../db.ts";
+import { adminOrOperator, bearer, operatorConfigured, ownOrigin, requireOperator, requireOwnerToken, requireScope, type Caller } from "../auth.ts";
+import { constraintFailure, getOwner, getSphere, operatorLogStatement, requireSphere, unforeseen, type SphereRow } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
 import { apiError, json, readBody, readJson } from "../http.ts";
 import { b64url, fromB64url, keyIdOf, sha256Hex } from "../protocol/crypto.ts";
@@ -25,7 +25,7 @@ export function features(request: Request, env: Env): Response {
   // DPoP and the URL form of aud need this server to know its own address (SPHERE_URL on the Node build).
   const known = ownOrigin(env, request) !== null;
   // The A2A binding (spec/a2a.md) is an extension too, like the phone relay: paths, not messages.
-  return json(200, { features: [...FEATURES, "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : []), ...(signsIn(env) ? ["owner_rebind"] : [])].sort() });
+  return json(200, { features: [...FEATURES, "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : []), ...(signsIn(env) ? ["owner_rebind"] : []), ...(operatorConfigured(env) ? ["operator_recovery"] : [])].sort() });
 }
 
 /** Where a client's author reads the invite link's format (spec/sphere-api.md section 2.1). */
@@ -249,20 +249,29 @@ export async function getImage(request: Request, env: Env, deps: Deps, sphereId:
 // ---------------------------------------------------------------------------------------------
 // Who administers it: `PUT …/admins/{owner}` and `DELETE …/admins/{owner}`, at least one always.
 
+// An admin's own token, or the operator's (section 3.3, logged).
 export async function putAdmin(request: Request, env: Env, deps: Deps, sphereId: string, owner: string): Promise<Response> {
-  const { sphere } = await admin(request, env, deps, sphereId);
+  const sphere = await requireSphere(env.DB, sphereId);
+  const who = await adminOrOperator(request, env, sphere, nowS(deps));
   if (!(await getOwner(env.DB, sphere.id, owner))) throw apiError("conflict", `${owner} hasn't joined this Sphere: only someone who has can administer it`);
-  await env.DB.prepare("UPDATE owners SET admin = 1 WHERE sphere = ?1 AND owner = ?2").bind(sphere.id, owner).run();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE owners SET admin = 1 WHERE sphere = ?1 AND owner = ?2").bind(sphere.id, owner),
+    ...(who.operator ? [operatorLogStatement(env.DB, sphere.id, nowS(deps), "make_admin", owner)] : []),
+  ]);
   return answer(env, sphere.id);
 }
 
 export async function deleteAdmin(request: Request, env: Env, deps: Deps, sphereId: string, owner: string): Promise<Response> {
-  const { sphere } = await admin(request, env, deps, sphereId);
+  const sphere = await requireSphere(env.DB, sphereId);
+  const who = await adminOrOperator(request, env, sphere, nowS(deps));
   // One statement, so two admins taking each other's away at once can't leave none.
-  const done = await env.DB.prepare(
-    "UPDATE owners SET admin = 0 WHERE sphere = ?1 AND owner = ?2 AND admin = 1 AND (SELECT COUNT(*) FROM owners WHERE sphere = ?1 AND admin = 1) > 1",
-  ).bind(sphere.id, owner).run();
-  if (done.meta.changes === 0) {
+  const [done] = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE owners SET admin = 0 WHERE sphere = ?1 AND owner = ?2 AND admin = 1 AND (SELECT COUNT(*) FROM owners WHERE sphere = ?1 AND admin = 1) > 1",
+    ).bind(sphere.id, owner),
+    ...(who.operator ? [operatorLogStatement(env.DB, sphere.id, nowS(deps), "remove_admin", owner)] : []),
+  ]);
+  if (done!.meta.changes === 0) {
     const row = await getOwner(env.DB, sphere.id, owner);
     if (row?.admin === 1) throw apiError("conflict", "a Sphere keeps at least one admin: make someone else one first");
     return answer(env, sphere.id);
@@ -283,7 +292,7 @@ export async function deleteSphere(request: Request, env: Env, deps: Deps, spher
   const db = env.DB;
   await db.batch([
     db.prepare("DELETE FROM relay_devices WHERE relay IN (SELECT id FROM relays WHERE sphere = ?1)").bind(sphere.id),
-    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners", "owner_events"].map((table) =>
+    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners", "owner_events", "operator_log"].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE sphere = ?1`).bind(sphere.id),
     ),
     db.prepare("DELETE FROM spheres WHERE id = ?1").bind(sphere.id),

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/owners.response.schema.json",
+  "title": "GET /v0.1/spheres/{sphere}/owners response",
+  "description": "Every owner bound in the Obysphere, for an admin or the operator: the bound key's id, the admin flag, whether an account is linked (never which), and their agents. unbound lists agents whose owner has no row, which only a hand edit of the database leaves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sphere", "owners", "unbound"],
+  "properties": {
+    "sphere": { "$ref": "../common.schema.json#/$defs/sphere_id" },
+    "owners": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "owner_key_id", "admin", "account_linked", "members"],
+        "properties": {
+          "owner": { "$ref": "../common.schema.json#/$defs/owner_id" },
+          "owner_key_id": { "$ref": "../common.schema.json#/$defs/key_id" },
+          "admin": { "type": "boolean" },
+          "account_linked": { "type": "boolean" },
+          "members": {
+            "type": "array",
+            "maxItems": 10000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["obi", "status"],
+              "properties": {
+                "obi": { "$ref": "../common.schema.json#/$defs/obi_id" },
+                "status": { "enum": ["active", "revoked"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "unbound": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owner", "obi", "status"],
+        "properties": {
+          "owner": { "$ref": "../common.schema.json#/$defs/owner_id" },
+          "obi": { "$ref": "../common.schema.json#/$defs/obi_id" },
+          "status": { "enum": ["active", "revoked"] }
+        }
+      }
+    }
+  }
+}

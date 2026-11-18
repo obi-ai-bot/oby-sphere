@@ -827,6 +827,16 @@ export function buildFixtures() {
   wireCase("valid-owner-event-unknown-kind", "An event of a kind a client may not know yet: kind is open.", EVENTS, { sphere: SPHERE, events: [{ ...event, kind: "reset" }] }, "accept");
   wireCase("invalid-owner-event-account", "An event naming the account: events never carry an account, email or domain.", EVENTS, { sphere: SPHERE, events: [{ ...event, account: "google:1234" }] }, "reject");
   wireCase("invalid-owner-event-no-revoked", "An event without the list of agents it revoked.", EVENTS, { sphere: SPHERE, events: [{ ...event, revoked: undefined }] }, "reject");
+  // The operator, and resetting an owner (sphere-api.md section 3.3).
+  wireCase("valid-features-operator-recovery", "An Obysphere whose operator can fix it through the API, logged.", "wire/features.response", { features: ["card_runtime", "operator_recovery"] }, "accept");
+  wireCase("valid-owner-reset", "A reset: the key the owner gave out of band.", "wire/owner-reset.request", { owner_key: OB.publicKey }, "accept");
+  wireCase("invalid-owner-reset-signin", "A reset carrying a sign-in: a reset is an admin's or the operator's act, not the owner's.", "wire/owner-reset.request", { owner_key: OB.publicKey, signin }, "reject");
+  wireCase("valid-owner-event-reset", "An event of a reset, by the operator.", EVENTS, { sphere: SPHERE, events: [{ ...event, kind: "reset", by: "operator", account_linked: undefined }] }, "accept");
+  const OWNERS = "wire/owners.response", OPLOG = "wire/operator-log.response";
+  wireCase("valid-owners", "The owners, one an admin, and an agent whose owner has no row.", OWNERS, { sphere: SPHERE, owners: [{ owner: "owner-a", owner_key_id: OA.keyId, admin: true, account_linked: false, members: [{ obi: "obi-a", status: "active" }] }], unbound: [{ owner: "owner-b", obi: "obi-b", status: "revoked" }] }, "accept");
+  wireCase("invalid-owners-account", "The owners naming an account: only whether one is linked.", OWNERS, { sphere: SPHERE, owners: [{ owner: "owner-a", owner_key_id: OA.keyId, admin: true, account_linked: true, account: "google:1234", members: [] }], unbound: [] }, "reject");
+  wireCase("valid-operator-log", "The operator's calls: a reset and an invitation.", OPLOG, { sphere: SPHERE, entries: [{ id: 1, at: "2026-11-18T12:00:00Z", action: "reset_owner", target: "owner-a" }, { id: 2, at: "2026-11-18T12:01:00Z", action: "invite", target: uuidFor("wire-oplog-invite") }, { id: 3, at: "2026-11-18T12:02:00Z", action: "show" }] }, "accept");
+  wireCase("invalid-operator-log-secret", "A log entry carrying an invitation's secret: the log never holds one.", OPLOG, { sphere: SPHERE, entries: [{ id: 1, at: "2026-11-18T12:00:00Z", action: "invite", target: uuidFor("wire-oplog-invite"), secret: "A".repeat(43) }] }, "reject");
   // Assertions, as the token endpoint reads their claims (identity.md section 4.1): `aud` names the
   // Obysphere, or is its own URL, which only that server takes.
   const DELEGATION = "wire/delegation.claims", ACTOR = "wire/actor.claims";

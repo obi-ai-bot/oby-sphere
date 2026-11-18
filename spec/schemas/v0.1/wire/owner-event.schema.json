@@ -25,7 +25,7 @@
       "$ref": "../common.schema.json#/$defs/owner_id"
     },
     "kind": {
-      "description": "rebound: the owner bound a new key with a sign-in. Open: later additions add kinds.",
+      "description": "rebound: the owner bound a new key with a sign-in (section 3.2). reset: an admin or the operator bound one the owner gave them (section 3.3). Open: later additions add kinds.",
       "type": "string",
       "minLength": 1,
       "maxLength": 32,
@@ -33,6 +33,13 @@
     },
     "at": {
       "$ref": "../common.schema.json#/$defs/timestamp"
+    },
+    "by": {
+      "description": "reset: who reset the owner's key, admin or operator. Absent on a rebind, which the owner does with their own sign-in. Open, like kind.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
     },
     "old_key_id": {
       "$ref": "../common.schema.json#/$defs/key_id"

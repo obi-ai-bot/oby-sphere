@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "valid-features-operator-recovery",
+  "description": "An Obysphere whose operator can fix it through the API, logged.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/features.response"
+  },
+  "input": {
+    "features": [
+      "card_runtime",
+      "operator_recovery"
+    ]
+  }
+}

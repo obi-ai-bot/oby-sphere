@@ -1,0 +1,33 @@
+{
+  "case": "wire",
+  "name": "valid-owners",
+  "description": "The owners, one an admin, and an agent whose owner has no row.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/owners.response"
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "owners": [
+      {
+        "owner": "owner-a",
+        "owner_key_id": "ed25519:ANV_sump5rJWuev_YI66TN1JKE0u_pMNcRQmhpxR7_A",
+        "admin": true,
+        "account_linked": false,
+        "members": [
+          {
+            "obi": "obi-a",
+            "status": "active"
+          }
+        ]
+      }
+    ],
+    "unbound": [
+      {
+        "owner": "owner-b",
+        "obi": "obi-b",
+        "status": "revoked"
+      }
+    ]
+  }
+}

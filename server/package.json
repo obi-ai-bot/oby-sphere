@@ -25,7 +25,8 @@
     "check:validators": "node scripts/gen-validators.mjs --check",
     "sync:client": "node scripts/sync-client.mjs",
     "check:client": "node scripts/sync-client.mjs --check",
-    "deploy": "node scripts/deploy.mjs"
+    "deploy": "node scripts/deploy.mjs",
+    "operator": "node scripts/operator.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.11",

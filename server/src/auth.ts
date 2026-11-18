@@ -157,3 +157,29 @@ export async function requireOperator(request: Request, env: Env): Promise<void>
   const given = m ? m[1]! : "";
   if (!constantTimeEqual(utf8(await sha256Hex(utf8(given))), utf8(want))) throw new ApiError("unauthorized", "the operator token is missing or wrong", [], undefined, { "WWW-Authenticate": "Bearer" });
 }
+
+/** Whether this server has an operator token at all (feature operator_recovery). */
+export const operatorConfigured = (env: Env): boolean =>
+  (typeof env.SPHERE_OPERATOR_TOKEN === "string" && env.SPHERE_OPERATOR_TOKEN.length >= 32) || !!env.SPHERE_OPERATOR_TOKEN_SHA256;
+
+/** Whether `request` carries the operator token, as requireOperator checks it; false when none is configured. */
+export async function isOperator(request: Request, env: Env): Promise<boolean> {
+  try {
+    await requireOperator(request, env);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The caller of an act an admin or the operator may do (sphere-api.md section 3.3): the operator
+ * token, or an admin owner's own token. `caller` is null for the operator.
+ */
+export async function adminOrOperator(request: Request, env: Env, sphere: SphereRow, nowS: number): Promise<{ operator: boolean; caller: Caller | null }> {
+  if (await isOperator(request, env)) return { operator: true, caller: null };
+  const caller = await bearer(request, env, sphere, nowS);
+  requireScope(caller, "admin");
+  requireOwnerToken(caller);
+  return { operator: false, caller };
+}
