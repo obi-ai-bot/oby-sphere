@@ -1,6 +1,7 @@
 // Invitations, pairing, the directory, rotation and revocation (spec/sphere-api.md section 4,
 // spec/identity.md section 3).
 
+import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { verifyCard } from "../src/protocol/card";
 import { World, expectSchema, makeCard, newKey, team } from "./helpers";
@@ -335,6 +336,26 @@ describe("the directory", () => {
     expect(one.status).toBe(200);
     expect(one.body).toEqual(r.body.members[1]);
     expect((await w.call("GET", "/v0.1/spheres/e2e/members/nobody", { token })).status).toBe(404);
+  });
+
+  it("still reads when a member's owner row is gone, naming the key that signed its card", async () => {
+    // As a hand edit of the database left it: an owner's row deleted while their member rows remain.
+    const w = await team();
+    const ernestoKey = await w.ownerKey("ernesto");
+    const ernestoToken = await w.obiToken("obi-ernesto");
+    const token = await w.obiToken("obi-wellington");
+    await env.DB.prepare("DELETE FROM owners WHERE sphere = 'e2e' AND owner = 'ernesto'").run();
+    const r = await w.call("GET", "/v0.1/spheres/e2e/members", { token });
+    expect(r.status).toBe(200);
+    expectSchema("membersResponse", r.body);
+    const ernesto = r.body.members.find((m: { obi: string }) => m.obi === "obi-ernesto");
+    expect(ernesto).toMatchObject({ owner: "ernesto", owner_key: ernestoKey.publicKey, owner_key_id: ernestoKey.keyId, status: "active" });
+    const one = await w.call("GET", "/v0.1/spheres/e2e/members/obi-ernesto", { token });
+    expect(one.status).toBe(200);
+    expect(one.body).toEqual(ernesto);
+    // A new card for it can't be checked against a bound key: refused, not a crash.
+    const card = await w.call("PUT", "/v0.1/spheres/e2e/members/obi-ernesto/card", { token: ernestoToken, body: { card: ernesto.card } });
+    expect(card.status).toBe(409);
   });
 
   it("needs directory:read", async () => {
