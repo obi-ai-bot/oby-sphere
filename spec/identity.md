@@ -246,6 +246,8 @@ The Obysphere checks, in this order, and answers `400` with an OAuth error when 
 
 The error: `unsupported_grant_type` for a `grant_type` other than token exchange; `invalid_request` for a body over 131,072 bytes (the size limit of every request body, sphere-api.md section 1, answered here as an OAuth error rather than `413`), a body that isn't `application/x-www-form-urlencoded`, a missing, repeated or unknown parameter, a token type other than the JWT one, `actor_token` without `actor_token_type` (or the reverse), or check 1; `invalid_grant` for checks 2 to 5; `invalid_scope` for check 6 or an unknown scope; `invalid_dpop_proof` (RFC 9449 section 5) for check 7.
 
+When check 4 fails because the actor is no member of the Obysphere (it never joined, or it was revoked, sphere-api.md section 4) while `may_act` names it under its own owner, the `invalid_grant` answer also carries `"obi_error": "not_member"`, a response parameter RFC 6749 section 5.2 lets an error add, so a client tells a membership that ended from a grant it can retry: it stops asking for tokens there and tells its person. Its `error_description` is unchanged. Every other refusal leaves `obi_error` out, an active member of another owner than `iss` among them. A client ignores an `obi_error` it doesn't know, and an Obysphere from before it never sends one.
+
 It answers `200` with [token.response.schema.json](schemas/v0.1/wire/token.response.schema.json), `scope` the granted scopes in the canonical order (section 4.2):
 
 ```json
