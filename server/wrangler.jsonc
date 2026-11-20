@@ -43,6 +43,10 @@
   ],
   // No database_id: `wrangler deploy` makes the database the first time (scripts/deploy.mjs).
   "d1_databases": [{ "binding": "DB", "database_name": "obi-sphere", "migrations_dir": "migrations" }],
+  // Artifacts' blobs, ciphertext only (spec/sphere-api.md section 10). Without this binding the
+  // Sphere takes no artifact. An environment below lists it again to take them: Deskree's doesn't
+  // yet, so deploying it changes nothing until its owner adds the binding and makes the bucket.
+  "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "obi-sphere-artifacts" }],
   "env": {
     // Deskree's own instance, at obysphere.deskree.com in Deskree's Cloudflare account
     // (docs/deploy-cloudflare.md). Copy this block, rename it and put your own values in to run yours.

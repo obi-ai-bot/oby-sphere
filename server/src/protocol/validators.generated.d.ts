@@ -35,6 +35,7 @@ export declare const delegationClaims: Validator;
 export declare const actorClaims: Validator;
 export declare const healthResponse: Validator;
 export declare const featuresResponse: Validator;
+export declare const blobResponse: Validator;
 export declare const sphere: Validator;
 export declare const tokenResponse: Validator;
 export declare const invitationResponse: Validator;

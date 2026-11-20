@@ -7,7 +7,7 @@ import type { Deps, Env } from "../env.ts";
 import { apiError, json, readBody, readJson } from "../http.ts";
 import { b64url, fromB64url, keyIdOf, sha256Hex } from "../protocol/crypto.ts";
 import { PROTOCOL, timestamp } from "../protocol/envelope.ts";
-import { FEATURES } from "../protocol/features.ts";
+import { takenFeatures } from "../protocol/features.ts";
 import { ZERO_HASH } from "../protocol/chain.ts";
 import { schemaErrors } from "../protocol/schemas.ts";
 import { CLIENTS, type Client } from "../clients.ts";
@@ -25,7 +25,7 @@ export function features(request: Request, env: Env): Response {
   // DPoP and the URL form of aud need this server to know its own address (SPHERE_URL on the Node build).
   const known = ownOrigin(env, request) !== null;
   // The A2A binding (spec/a2a.md) is an extension too, like the phone relay: paths, not messages.
-  return json(200, { features: [...FEATURES, "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : []), ...(signsIn(env) ? ["owner_account_link", "owner_rebind"] : []), ...(operatorConfigured(env) ? ["operator_recovery"] : [])].sort() });
+  return json(200, { features: [...takenFeatures(env), "a2a", "signin_providers", ...(known ? ["dpop", "sphere_url_aud"] : []), ...(phoneRelay(env) ? ["phone_relay"] : []), ...(signsIn(env) ? ["owner_account_link", "owner_rebind"] : []), ...(operatorConfigured(env) ? ["operator_recovery"] : [])].sort() });
 }
 
 /** Where a client's author reads the invite link's format (spec/sphere-api.md section 2.1). */
@@ -292,12 +292,21 @@ export async function deleteSphere(request: Request, env: Env, deps: Deps, spher
   const db = env.DB;
   await db.batch([
     db.prepare("DELETE FROM relay_devices WHERE relay IN (SELECT id FROM relays WHERE sphere = ?1)").bind(sphere.id),
-    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners", "owner_events", "operator_log"].map((table) =>
+    ...["relays", "runner_status", "deliveries", "audit", "used_jtis", "tokens", "invitations", "member_keys", "members", "owners", "owner_events", "operator_log", "blob_recipients", "artifact_blobs", "blobs"].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE sphere = ?1`).bind(sphere.id),
     ),
     db.prepare("DELETE FROM spheres WHERE id = ?1").bind(sphere.id),
     db.prepare("INSERT INTO deleted_spheres (id, deleted_at) VALUES (?1, ?2)").bind(sphere.id, timestamp(deps.now() / 1000)),
   ]);
+  // Its blobs' ciphertext goes with it (sphere-api.md section 10).
+  if (env.ARTIFACTS) {
+    for (let cursor: string | undefined, more = true; more; ) {
+      const page = await env.ARTIFACTS.list({ prefix: `blobs/${sphere.id}/`, ...(cursor ? { cursor } : {}) });
+      if (page.objects.length) await env.ARTIFACTS.delete(page.objects.map((o) => o.key));
+      more = page.truncated;
+      cursor = page.truncated ? page.cursor : undefined;
+    }
+  }
   // Their sockets close now (a relay's own check would close them within a minute anyway).
   await Promise.all(relays.map(async (r) => {
     try {

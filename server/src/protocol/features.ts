@@ -5,6 +5,10 @@
  *  `card_topics`: its `topics` (spec/identity.md section 2.3). `follow_up`, `cancel` and
  *  `introduction`: a request's `follows`, the `cancel` reply and the `introduction` request
  *  (spec/protocol.md sections 5.17 to 5.19). `policy_classes`: a policy rule's
- *  `from_classes`/`to_classes` (spec/sphere-api.md section 5). `artifacts`: the artifact actions
- *  and the `artifact` reference (spec/protocol.md sections 5.20 to 5.24). */
-export const FEATURES: readonly string[] = ["artifacts", "cancel", "card_classes", "card_runtime", "card_topics", "follow_up", "introduction", "policy_classes"];
+ *  `from_classes`/`to_classes` (spec/sphere-api.md section 5). */
+export const FEATURES: readonly string[] = ["cancel", "card_classes", "card_runtime", "card_topics", "follow_up", "introduction", "policy_classes"];
+
+/** What this Sphere takes, `env` deciding the rest: `artifacts` (the artifact actions and the
+ *  `artifact` reference, spec/protocol.md sections 5.20 to 5.24) only with a bucket for their
+ *  blobs (spec/sphere-api.md section 10). */
+export const takenFeatures = (env: { ARTIFACTS?: unknown }): readonly string[] => (env.ARTIFACTS ? [...FEATURES, "artifacts"].sort() : FEATURES);

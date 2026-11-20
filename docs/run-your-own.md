@@ -98,11 +98,12 @@ In [`server/wrangler.jsonc`](../server/wrangler.jsonc), add your environment und
     { "tag": "v2-doorbells", "new_sqlite_classes": ["Doorbell"] },
     { "tag": "v3-relays", "new_sqlite_classes": ["PhoneRelay"] }
   ],
-  "d1_databases": [{ "binding": "DB", "database_name": "obi-sphere", "migrations_dir": "migrations" }]
+  "d1_databases": [{ "binding": "DB", "database_name": "obi-sphere", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "obi-sphere-artifacts" }]
 }
 ```
 
-Only `routes` (your address) and `vars` are yours to change; leave `routes` out to use the workers.dev address. With more than one Cloudflare account, add `"account_id": "<yours>"`. Then:
+Only `routes` (your address) and `vars` are yours to change; leave `r2_buckets` out and your server takes no artifacts (spec/sphere-api.md section 10), or keep it and make the bucket first (`npx wrangler r2 bucket create obi-sphere-artifacts`); leave `routes` out to use the workers.dev address. With more than one Cloudflare account, add `"account_id": "<yours>"`. Then:
 
 ```sh
 npx wrangler login

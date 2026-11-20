@@ -83,7 +83,7 @@ export async function putPolicy(request: Request, env: Env, deps: Deps, sphereId
     const uses = policyFeatures(req.rules).filter((f) => !carried.has(f));
     if (uses.length > 0) {
       const active = await env.DB.prepare("SELECT obi, card FROM members WHERE sphere = ?1 AND status = 'active'").bind(sphere.id).all<{ obi: string; card: string }>();
-      const problem = notTakenProblem(uses, active.results.map((m) => ({ obi: m.obi, card: JSON.parse(m.card) as AgentCard })));
+      const problem = notTakenProblem(uses, active.results.map((m) => ({ obi: m.obi, card: JSON.parse(m.card) as AgentCard })), env);
       if (problem) throw apiError("feature_not_taken", problem);
     }
     const version = sphere.policy_version + 1;

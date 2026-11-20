@@ -47,6 +47,7 @@ const EXPORTS = {
   // What the server answers: the tests check every answer against its schema.
   healthResponse: "wire/health.response.schema.json",
   featuresResponse: "wire/features.response.schema.json",
+  blobResponse: "wire/blob.response.schema.json",
   sphere: "wire/sphere.schema.json",
   tokenResponse: "wire/token.response.schema.json",
   invitationResponse: "wire/invitation.response.schema.json",

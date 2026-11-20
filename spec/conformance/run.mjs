@@ -367,6 +367,7 @@ function checkCoverage(cases) {
   // Artifacts (protocol.md sections 4, rule 11, and 5.20 to 5.24; the feature artifacts).
   for (const n of ["valid-artifact-offer-in-parts", "valid-answer-names-an-artifact", "valid-artifact-offer-sealed", "invalid-artifact-offer-with-key", "invalid-artifact-offer-with-a-file", "invalid-oversize-artifact-ask", "invalid-oversize-answer-text", "invalid-artifact-blob-over-64-mib", "invalid-artifact-parts-dont-add-up", "invalid-artifact-ref-with-a-repo", "invalid-artifact-ref-a-url", "invalid-artifact-version-with-access"]) need.push(`envelope/${n}`);
   for (const n of ["valid-chain-artifact-commented-updated-revoked", "valid-chain-artifact-edited-then-deleted", "invalid-chain-artifact-comment-on-view-only", "invalid-chain-artifact-version-without-edit", "invalid-chain-artifact-update-takes-edit-away", "invalid-chain-artifact-update-by-receiver", "invalid-chain-artifact-update-after-revoke", "invalid-chain-artifact-receipt-before-revoke", "invalid-chain-artifact-receipt-twice", "invalid-chain-artifact-update-of-a-pinned-share", "invalid-chain-artifact-accepted"]) need.push(`audit/${n}`);
+  for (const n of ["valid-blob-response", "invalid-blob-response-over-64-mib", "invalid-blob-response-expires-in-milliseconds", "invalid-blob-response-with-a-key"]) need.push(`wire/${n}`);
   for (const n of ["valid-card-accepts-artifacts", "invalid-card-accepts-artifacts-without-the-feature", "invalid-card-accepts-artifacts-without-a-seal-key"]) need.push(`card/${n}`);
   let ok = 0;
   for (const n of need) {

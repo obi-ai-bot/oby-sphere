@@ -86,6 +86,9 @@ Read [protocol.md](protocol.md) (messages) and [identity.md](identity.md) (keys,
 | `GET /v0.1/spheres/{sphere}/deliveries?limit=&wait=` | agent token | `receive` | | `200` [deliveries.response](schemas/v0.1/wire/deliveries.response.schema.json) |
 | `POST /v0.1/spheres/{sphere}/deliveries/ack` | agent token | `receive` | [ack.request](schemas/v0.1/wire/ack.request.schema.json) | `200` [ack.response](schemas/v0.1/wire/ack.response.schema.json) |
 | `GET /v0.1/spheres/{sphere}/audit?from_seq=&limit=` | bearer | `audit:read` | | `200` [audit.response](schemas/v0.1/wire/audit.response.schema.json) |
+| `POST /v0.1/spheres/{sphere}/blobs?to=&expires_at=&part=` (`artifacts`) | agent token | `send:artifact_offer` or `reply` | the ciphertext, `application/octet-stream`, at most 67,108,864 bytes | `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json) (section 10) |
+| `GET /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of a member it is for | `receive` | | `200` the ciphertext, `application/octet-stream` (section 10) |
+| `DELETE /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of its uploader | `send:artifact_offer` or `reply` | | `204` (section 10) |
 | `GET /v0.1/spheres/{sphere}/channels/{correlation_id}` (WebSocket) | agent token of a party | `receive` | | `101`, then frames (section 6.3) |
 | `PUT /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | [runner-status](schemas/v0.1/runner-status.schema.json) | `200` member |
 | `DELETE /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | | `200` member |
@@ -100,7 +103,7 @@ A path for an Obysphere that doesn't exist is `404 not_found`; a token for anoth
 
 | Feature | What | Where |
 |---|---|---|
-| `artifacts` | Artifacts: the actions `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`, and the `artifact` reference ([protocol.md](protocol.md) sections 5.20 to 5.24). A message that uses them waits until every active member's card lists the feature (section 6.1, check 11). | [protocol.md](protocol.md) section 5.20 |
+| `artifacts` | Artifacts: the actions `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`, and the `artifact` reference ([protocol.md](protocol.md) sections 5.20 to 5.24), and the blobs that hold their ciphertext (section 10). A message that uses them waits until every active member's card lists the feature (section 6.1, check 11). An Obysphere that keeps no blobs doesn't list it, answers the blob paths `404 not_found`, and takes no artifact message (`409 feature_not_taken`). | [protocol.md](protocol.md) section 5.20, section 10 |
 | `a2a` | The A2A binding: each member's card `url` is an A2A 1.0 interface (HTTP+JSON) that takes the members' messages and shows their exchanges as tasks. Its other A2A paths answer A2A's errors (a2a.md section 3). | [a2a.md](a2a.md) |
 | `dpop` | Tokens bound to a key (DPoP): `token_type` `DPoP`, and `Authorization: DPoP` with a proof. | [identity.md](identity.md) section 4.6 |
 | `operator_recovery` | The operator token reaches an Obysphere's owners, its admin flags, revoke and invitations, and an owner's key can be reset by an admin or the operator; every operator call is logged for the admins. | section 3.3 |
@@ -415,8 +418,8 @@ Replies are not governed by rules: a reply is allowed when it continues an open 
 | 9 | `key_id` is the sender's current key (protocol.md section 10, "Which key is valid for a message"), and the signature verifies (protocol.md section 9). | `400 unknown_key`, `400 bad_signature` |
 | 10 | Not expired; `created_at` at most 300 seconds ahead. | `400 expired`, `400 clock_skew` |
 | 11 | `to` is a member (`404 unknown_recipient`) and active (`403 recipient_revoked`); for a request, its card's `accepts` contains the type (`403 policy_denied`). A message with `seal` is sealed for `to`'s current card's seal key: `seal.key_id` is that card's `seal_key_id`, and a card without one takes no sealed message (`400 invalid_envelope`). A message without `seal` is refused when the current cards of `to` and `from` both have a seal key (`400 not_sealed`, [protocol.md](protocol.md) section 9.1). A message that uses an addition (a request with `follows`, a `cancel`, an `introduction`, an `artifact_` action, or a reference to an artifact) goes in the chain every member verifies, so it is refused unless the Obysphere takes its feature and every active member's current card lists it (`409 feature_not_taken`; what this leaves, as limits: identity.md section 2.3). An `introduction`'s `member` is an active member (`404 not_found`). | as written |
-| 12 | A request is allowed by the policy (section 5), and its `follows`, when it has one, names a request in this Obysphere's chain between the same two members, in either direction ([protocol.md](protocol.md) section 5.19; the reference verifier's `followUpProblem`). A reply keeps every exchange rule of protocol.md section 4 against the request its `in_reply_to` names in this Obysphere's chain and the replies to it already recorded (the reference verifier's `exchangeProblem` is those rules, once). | `403 policy_denied`, `409 bad_reply` |
-| 13 | Record it: in one transaction, append the audit entry (section 7) and queue a delivery for `to`. | `500 internal` (nothing recorded); `429 rate_limited` with `Retry-After` when the record could not be made because of concurrent writes to the same Obysphere (nothing recorded) |
+| 12 | A request is allowed by the policy (section 5), and its `follows`, when it has one, names a request in this Obysphere's chain between the same two members, in either direction ([protocol.md](protocol.md) section 5.19; the reference verifier's `followUpProblem`). A reply keeps every exchange rule of protocol.md section 4 against the request its `in_reply_to` names in this Obysphere's chain and the replies to it already recorded (the reference verifier's `exchangeProblem` is those rules, once). An `artifact_offer`, `artifact_update` or `artifact_version` names blobs the Obysphere keeps (section 10): each, its one `blob` or every part in `blobs`, was uploaded by `from` for `to`, hasn't expired, has the `sha256` and `bytes` the message gives it, and expires at the message's `blob.expires` (`409 conflict`). | `403 policy_denied`, `409 bad_reply`, `409 conflict` |
+| 13 | Record it: in one transaction, append the audit entry (section 7) and queue a delivery for `to`; for an artifact message, note the blobs its exchange names, and for an `artifact_revoke` or `artifact_deleted` stop serving every one of them to `to` (section 10). | `500 internal` (nothing recorded); `429 rate_limited` with `Retry-After` when the record could not be made because of concurrent writes to the same Obysphere (nothing recorded) |
 
 Check 8 comes before the key and expiry checks so that a sender whose answer was lost can always learn that its message was recorded: retrying the same bytes answers `200` with the original `seq`, whatever happened since. Only the sender can learn it (check 6), and only for bytes the Obysphere already checked when it recorded them.
 
@@ -591,3 +594,29 @@ Then:
 | `4007` | The agent's access token expired: it opens again with a new one. |
 | `4008` | The agent isn't connected. |
 | `4009` | The socket passed its frames or bytes a minute. |
+
+## 10. Blobs
+
+An artifact's ciphertext (protocol.md section 5.20) is kept by the Obysphere as a **blob**: what its uploader sent, byte for byte, for the members it names, until it expires. The Obysphere never has a key to it and never reads it. Blobs come with the feature `artifacts` (section 2): an Obysphere that keeps none answers every path below `404 not_found`.
+
+**Uploading.** `POST /v0.1/spheres/{sphere}/blobs?to=<obi>&to=<obi>&expires_at=<timestamp>`, with an agent's token holding `send:artifact_offer` or `reply` (a version sent back is a reply), `Content-Type: application/octet-stream`, `Content-Length`, and the ciphertext as the body. The Obysphere checks, in this order:
+
+1. The token is an agent's (`401 unauthorized`; an owner's own token is `403 forbidden`), with either scope (`403 insufficient_scope`).
+2. The query: `to` names 1 to 100 distinct members, none of them the uploader; `expires_at` is a timestamp after now and at most 2,592,000 seconds ahead; `part`, when given, is 1 to 8; nothing else (`400 bad_request`).
+3. Every member `to` names is a member (`404 unknown_recipient`) and active (`403 recipient_revoked`).
+4. The body is `application/octet-stream`, says its size in `Content-Length`, and is 1 to 67,108,864 bytes (`400 bad_request`; over, `413 payload_too_large`, before it is read). A ciphertext over 64 MiB goes up as parts, each a blob of its own, uploaded with `part` 2 to 8 after the first (protocol.md section 5.20, `blobs`).
+5. **Ciphertext only, as far as it can tell.** The first part (no `part`, or `part=1`) is an age file: it starts `age-encryption.org/v1` and a newline, its header ends within 65,536 bytes, and its header has a wrapped X25519 key (a stanza `-> X25519`) for each member `to` names (`400 bad_request`). Nothing is kept of a body that fails this, or that turns out longer or shorter than its `Content-Length`. Past that, ciphertext can't be told from anything else: what the Obysphere keeps is what the uploader encrypted.
+
+It answers `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json): `{"id", "sha256", "bytes", "expires", "to"}`, the SHA-256 and size of what it received, `expires_at` as `expires`, and the members in code-point order. An offer names it with those four: `{id, sha256, bytes, expires}`.
+
+**Fetching.** `GET /v0.1/spheres/{sphere}/blobs/{id}`, with the token of a member it is for, holding `receive`, answers `200` with the ciphertext as it was uploaded, `application/octet-stream`, `Cache-Control: no-store`. To anyone else, its uploader included, and for a blob that doesn't exist, the answer is the same `404 not_found`: a blob says nothing of itself to whoever it isn't for. After it expires, a member it is for gets `400 expired`, and the Obysphere deletes it.
+
+**Taken back.** When the Obysphere records an `artifact_revoke` or an `artifact_deleted` (section 6.1, check 13), it stops serving the share's receiver every blob that the share's exchange named (its offer's, its updates' and the parts of each): `404 not_found` for that member from then on. Other members a blob is for keep it until their own share is taken back.
+
+**Deleting.** `DELETE /v0.1/spheres/{sphere}/blobs/{id}`, by its uploader with `send:artifact_offer` or `reply`, deletes it (`204`): its ciphertext and every record of it. A member it is for gets `403 forbidden`, anyone else `404 not_found`. An uploader deletes a blob once no share it keeps names it: after a revoke, a delete, or a newer version (protocol.md section 5.23).
+
+**Expiry.** A blob is deleted once it has expired, whoever asks next; an Obysphere SHOULD sweep expired blobs at least daily. Deleting an Obysphere deletes its blobs.
+
+**What the Obysphere sees.** Who uploaded what size for whom, and when it was fetched; never what it holds. A blob for several members is one ciphertext with one wrapped key each: the Obysphere sees how many keys, not which is whose.
+
+**Not yet.** Resumable uploads, a fetch limit per blob, and a quota per member are left for later (protocol.md section 16).

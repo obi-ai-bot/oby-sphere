@@ -5,6 +5,7 @@ import { ApiError, INTERNAL_MESSAGE, apiError, errorResponse } from "./http.ts";
 import { tokenEndpoint } from "./oauth.ts";
 import { getTask, noPushNotifications, notSupported, sendMessage } from "./routes/a2a.ts";
 import { audit } from "./routes/audit.ts";
+import { deleteBlob, fetchBlob, uploadBlob } from "./routes/blobs.ts";
 import { openChannel } from "./routes/channels.ts";
 import { deleteDevice, deleteRelay, openRelay, putDevice, putRelay } from "./routes/relays.ts";
 import { deleteRunner, putRunner } from "./routes/runner.ts";
@@ -60,6 +61,9 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/deliveries$`), deliveries],
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/deliveries/ack$`), ack],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/audit$`), audit],
+  ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs$`), uploadBlob],
+  ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs/${SEGMENT}$`), fetchBlob],
+  ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs/${SEGMENT}$`), deleteBlob],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/channels/${SEGMENT}$`), openChannel],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), putRunner],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), deleteRunner],

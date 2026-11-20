@@ -3,7 +3,7 @@
 // limits, the members' rule, the scope `send:artifact_offer`, and a card that accepts them.
 
 import { describe, expect, it } from "vitest";
-import { World, makeCard, newKey, newSealKey, sealedText, type SealKey } from "./helpers";
+import { World, ageFile, makeCard, newKey, newSealKey, sealedText, uploadBlob, type SealKey } from "./helpers";
 
 const FEATURES = ["artifacts", "card_runtime"];
 const SCOPE = "send:question send:artifact_offer reply receive directory:read audit:read";
@@ -37,9 +37,17 @@ async function sharing(extra: string[] = []): Promise<World> {
   for (const name of ["ana", "ben", "cleo"]) expect((await redeem(w, name, `obi-${name}`, FEATURES)).status).toBe(201);
   const policy = await w.call("PUT", `/v0.1/spheres/${w.sphere}/policy`, { token: await w.ownerToken("ana"), body: { expected_version: 0, rules: [SHARING] } });
   expect(policy.status, JSON.stringify(policy.body)).toBe(200);
+  // The blobs the messages below name: ana's for ben and for cleo, and ben's for ana.
+  uploaded.clear();
+  for (const [from, to] of [["obi-ana", "obi-ben"], ["obi-ana", "obi-cleo"], ["obi-ben", "obi-ana"]] as const) {
+    const r = await uploadBlob(w, await token(w, from), [to], ageFile(1, 4000));
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    uploaded.set(`${from}>${to}`, r.body);
+  }
   for (const name of extra) expect((await redeem(w, name, `obi-${name}`, null)).status).toBe(201);
   return w;
 }
+const uploaded = new Map<string, { id: string; sha256: string; bytes: number; expires: string }>();
 
 const token = async (w: World, obi: string, scope = SCOPE) => {
   const r = await w.exchangeObi(obi, { delegation: await w.delegation(obi, scope) });
@@ -50,7 +58,11 @@ const token = async (w: World, obi: string, scope = SCOPE) => {
 const ARTIFACT = "8a6c1f4e-5d2b-4c7a-9e3f-1b2c3d4e5f60";
 /** What an offer says, its words sealed: the Obysphere sees only their size. */
 const artifact = (version: number, title = sealedText(30)) => ({ id: ARTIFACT, title, kind: "html", version, bytes: 48213, files: 4, sha256: "c".repeat(64) });
-const blob = (bytes = 51900) => ({ id: crypto.randomUUID(), sha256: "d".repeat(64), bytes, expires: "2026-10-21T12:00:00Z" });
+/** The blob `from` uploaded for `to` (sharing() uploads them), or one the Obysphere doesn't have. */
+const blob = (from = "obi-ana", to = "obi-ben") => {
+  const b = uploaded.get(`${from}>${to}`);
+  return b ? { id: b.id, sha256: b.sha256, bytes: b.bytes, expires: b.expires } : { id: crypto.randomUUID(), sha256: "d".repeat(64), bytes: 51900, expires: "2026-10-21T12:00:00Z" };
+};
 const offer = (access: string, extra: Record<string, unknown> = {}) => ({ artifact: artifact(3), blob: blob(), access, latest: true, ask: sealedText(60), ...extra });
 
 async function offerFrom(w: World, from: string, to: string, body: Record<string, unknown>, t: string) {
@@ -78,7 +90,7 @@ describe("artifacts (protocol.md sections 5.20 to 5.24)", () => {
     expect((await w.send(await fromSender(w, o, "artifact_update", { artifact: artifact(4), blob: blob(), latest: true }), ta)).status).toBe(202);
     expect((await w.send(await reply(w, o, "answer", comment(4)), tb)).status).toBe(202);
     // comment, not edit: no version back.
-    const version = await w.send(await reply(w, o, "artifact_version", { artifact: artifact(1), blob: blob() }), tb);
+    const version = await w.send(await reply(w, o, "artifact_version", { artifact: artifact(1), blob: blob("obi-ben", "obi-ana") }), tb);
     expect(version.status).toBe(409);
     expect(version.body.error.code).toBe("bad_reply");
     // A receipt before anyone took it back says nothing true.
@@ -95,9 +107,9 @@ describe("artifacts (protocol.md sections 5.20 to 5.24)", () => {
     const w = await sharing();
     const [ta, tb] = [await token(w, "obi-ana"), await token(w, "obi-ben")];
     const { env: edit } = await offerFrom(w, "obi-ana", "obi-ben", offer("edit"), ta);
-    expect((await w.send(await reply(w, edit, "artifact_version", { artifact: artifact(1), blob: blob() }), tb)).status).toBe(202);
+    expect((await w.send(await reply(w, edit, "artifact_version", { artifact: artifact(1), blob: blob("obi-ben", "obi-ana") }), tb)).status).toBe(202);
     // A version of another artifact is not this share's.
-    const other = await w.send(await reply(w, edit, "artifact_version", { artifact: { ...artifact(2), id: crypto.randomUUID() }, blob: blob() }), tb);
+    const other = await w.send(await reply(w, edit, "artifact_version", { artifact: { ...artifact(2), id: crypto.randomUUID() }, blob: blob("obi-ben", "obi-ana") }), tb);
     expect(other.body.error.code).toBe("bad_reply");
     const { ask: _ask, ...viewOnly } = offer("view");
     const { env: view } = await offerFrom(w, "obi-ana", "obi-ben", viewOnly, ta);
@@ -106,9 +118,9 @@ describe("artifacts (protocol.md sections 5.20 to 5.24)", () => {
     expect(r.body.error.code).toBe("bad_reply");
     // An update that gives edit lets a version come back; one that takes it away stops it.
     expect((await w.send(await fromSender(w, view, "artifact_update", { artifact: artifact(4), blob: blob(), latest: true, access: "edit" }), ta)).status).toBe(202);
-    expect((await w.send(await reply(w, view, "artifact_version", { artifact: artifact(1), blob: blob() }), tb)).status).toBe(202);
+    expect((await w.send(await reply(w, view, "artifact_version", { artifact: artifact(1), blob: blob("obi-ben", "obi-ana") }), tb)).status).toBe(202);
     expect((await w.send(await fromSender(w, view, "artifact_update", { artifact: artifact(5), blob: blob(), latest: true, access: "view" }), ta)).status).toBe(202);
-    expect((await w.send(await reply(w, view, "artifact_version", { artifact: artifact(2), blob: blob() }), tb)).body.error.code).toBe("bad_reply");
+    expect((await w.send(await reply(w, view, "artifact_version", { artifact: artifact(2), blob: blob("obi-ben", "obi-ana") }), tb)).body.error.code).toBe("bad_reply");
     // A pinned share takes no update; the receiver sends none; a decline ends it.
     const { env: pinned } = await offerFrom(w, "obi-ana", "obi-ben", offer("comment", { latest: false }), ta);
     expect((await w.send(await fromSender(w, pinned, "artifact_update", { artifact: artifact(4), blob: blob(), latest: true }), ta)).body.error.code).toBe("bad_reply");
@@ -175,7 +187,7 @@ describe("artifacts (protocol.md sections 5.20 to 5.24)", () => {
     expect(await send(offer("comment", { key: "AGE-SECRET-KEY-1NOTAREALKEY" }))).toBe("invalid_envelope");
     expect(await send(offer("comment", { files: { "index.html": "<p>hi</p>" } }))).toBe("invalid_envelope");
     expect(await send(offer("comment", { artifact: { ...artifact(3), path: "/Users/ana" } }))).toBe("invalid_envelope");
-    expect(await send(offer("comment", { blob: blob(67108865) }))).toBe("invalid_envelope");
+    expect(await send(offer("comment", { blob: { ...blob(), bytes: 67108865 } }))).toBe("invalid_envelope");
     // A comment is at most 2,000 characters too.
     const { env: o } = await offerFrom(w, "obi-ana", "obi-ben", offer("comment"), ta);
     expect((await w.send(await reply(w, o, "answer", { ...comment(), text: "A".repeat(10689) }), tb)).body.error.code).toBe("invalid_envelope");

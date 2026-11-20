@@ -901,6 +901,16 @@ export function buildFixtures() {
   const POLICY_PUT = "wire/policy-put.request", POLICY = "wire/policy";
   const rule = (extra) => ({ id: "team-reviews", from_owner: "*", to_owner: "*", actions: ["review_request"], repos: ["*"], ...extra });
   wireCase("valid-policy-put", "A policy with one plain allow rule.", POLICY_PUT, { expected_version: 0, rules: [rule()] }, "accept");
+  // A blob the Obysphere keeps (sphere-api.md section 10): what an offer names, ciphertext only.
+  const BLOB = "wire/blob.response";
+  const blobAnswer = { id: uuidFor("blob-design-3"), sha256: "d".repeat(64), bytes: 51900, expires: "2026-10-21T12:00:00Z", to: ["obi-a", "obi-c"] };
+  wireCase("valid-blob-response", "A blob kept for two members.", BLOB, blobAnswer, "accept");
+  wireCase("valid-blob-response-64-mib", "A blob as large as one blob may be: 67,108,864 bytes.", BLOB, { ...blobAnswer, bytes: 67108864 }, "accept");
+  wireCase("invalid-blob-response-over-64-mib", "A blob of 67,108,865 bytes: a larger ciphertext goes up in parts.", BLOB, { ...blobAnswer, bytes: 67108865 }, "reject");
+  wireCase("invalid-blob-response-expires-in-milliseconds", "An expiry in milliseconds: it is a timestamp.", BLOB, { ...blobAnswer, expires: 1792584000000 }, "reject");
+  wireCase("invalid-blob-response-for-nobody", "A blob for no member.", BLOB, { ...blobAnswer, to: [] }, "reject");
+  wireCase("invalid-blob-response-with-a-key", "A blob answer that carries a key: the Obysphere never has one.", BLOB, { ...blobAnswer, key: "AGE-SECRET-KEY-1NOTAREALKEY" }, "reject");
+  wireCase("invalid-blob-response-with-a-url", "A blob answer that hands out a URL to fetch it from elsewhere.", BLOB, { ...blobAnswer, url: "https://bucket.example/blob" }, "reject");
   wireCase("valid-policy-put-artifacts", "A rule that lets every member share artifacts with every other.", POLICY_PUT, { expected_version: 1, rules: [rule({ actions: ["artifact_offer"], repos: ["*"] })] }, "accept");
   wireCase("valid-policy-put-classes", "A rule that requires a class of the sending and the receiving side.", POLICY_PUT, { expected_version: 1, rules: [rule({ actions: ["run_request"], from_classes: ["holder"], to_classes: ["executor"] })] }, "accept");
   wireCase("invalid-policy-put-class-not-an-id", "A class id with a capital: class ids are lower case.", POLICY_PUT, { expected_version: 0, rules: [rule({ to_classes: ["Executor"] })] }, "reject");

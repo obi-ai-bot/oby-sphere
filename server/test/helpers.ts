@@ -116,6 +116,27 @@ export async function newSealKey(): Promise<SealKey> {
   return { keyId: (await sealKeyIdOrNull(publicKey))!, publicKey };
 }
 
+/**
+ * What an age file looks like to the Obysphere (age-encryption.org/v1): its version line, one
+ * X25519 stanza per recipient, the header's MAC, then `payload` bytes of ciphertext. Random
+ * bytes stand in for the wrapped keys and the ciphertext: the Obysphere never opens it.
+ */
+export function ageFile(recipients: number, payload: number): Uint8Array {
+  const b64 = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
+  const header = `age-encryption.org/v1\n${Array.from({ length: recipients }, () => `-> X25519 ${b64(32)}\n${b64(32)}\n`).join("")}--- ${b64(32)}\n`;
+  const head = new TextEncoder().encode(header);
+  const out = new Uint8Array(head.length + payload);
+  out.set(head);
+  out.set(crypto.getRandomValues(new Uint8Array(Math.min(payload, 65536))), head.length);
+  return out;
+}
+
+/** Uploads `bytes` as a blob for `to` (sphere-api.md section 10), expiring in `expiresIn` seconds unless `o` says otherwise. */
+export async function uploadBlob(w: World, token: string, to: string[], bytes: Uint8Array, o: { expiresIn?: number; query?: string; contentType?: string; length?: string } = {}): Promise<Answer> {
+  const q = [...to.map((t) => `to=${encodeURIComponent(t)}`), `expires_at=${w.clock.ts(o.expiresIn ?? 7 * 86400)}`].join("&") + (o.query ?? "");
+  return w.call("POST", `/v0.1/spheres/${w.sphere}/blobs?${q}`, { token, raw: bytes, headers: { "Content-Type": o.contentType ?? "application/octet-stream", "Content-Length": o.length ?? String(bytes.length) } });
+}
+
 /** What the Sphere sees of `bytes` bytes of words, sealed: base64url of their ciphertext and tag. */
 export const sealedText = (bytes: number): string => b64url(crypto.getRandomValues(new Uint8Array(bytes + 16)));
 

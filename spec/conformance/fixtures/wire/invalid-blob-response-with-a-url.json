@@ -1,0 +1,21 @@
+{
+  "case": "wire",
+  "name": "invalid-blob-response-with-a-url",
+  "description": "A blob answer that hands out a URL to fetch it from elsewhere.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/blob.response"
+  },
+  "input": {
+    "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 51900,
+    "expires": "2026-10-21T12:00:00Z",
+    "to": [
+      "obi-a",
+      "obi-c"
+    ],
+    "url": "https://bucket.example/blob"
+  }
+}

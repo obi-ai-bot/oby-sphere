@@ -1,0 +1,20 @@
+{
+  "case": "wire",
+  "name": "invalid-blob-response-over-64-mib",
+  "description": "A blob of 67,108,865 bytes: a larger ciphertext goes up in parts.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/blob.response"
+  },
+  "input": {
+    "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 67108865,
+    "expires": "2026-10-21T12:00:00Z",
+    "to": [
+      "obi-a",
+      "obi-c"
+    ]
+  }
+}

@@ -8,6 +8,12 @@ export interface Env {
   DOORBELLS: DurableObjectNamespace<import("./doorbell.ts").Doorbell>;
   /** One PhoneRelay per phone relay: a Mac and its paired phones (src/relay.ts). */
   RELAYS: DurableObjectNamespace<import("./relay.ts").PhoneRelay>;
+  /**
+   * Where artifacts' blobs are kept, ciphertext only (spec/sphere-api.md section 10): an R2 bucket.
+   * Unbound (the Node build, or an environment that doesn't list it), this Sphere takes no artifact:
+   * /v0.1/features doesn't list `artifacts`, and the blob paths answer 404.
+   */
+  ARTIFACTS?: R2Bucket;
   /** The operator token that creates Spheres: a Worker secret, at least 32 characters. Unset: every operator call is 403. */
   SPHERE_OPERATOR_TOKEN?: string;
   /** Only the operator token's SHA-256, lower-case hex: a self-hosted Sphere's, kept from its claim (node/main.ts). SPHERE_OPERATOR_TOKEN wins when both are set. */

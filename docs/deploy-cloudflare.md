@@ -72,6 +72,8 @@ pnpm run deploy -- --env deskree    # new migrations first, then the Worker
 
 Apply a migration immediately before the deploy that needs it, as the script does: between the two, the running Worker meets a table it doesn't know. Then check the routes, old and new (a call without a token answers `401` on every route that needs one).
 
+Artifacts (the feature `artifacts`, [spec/sphere-api.md](../spec/sphere-api.md) section 10) need an R2 bucket bound as `ARTIFACTS`. `env.deskree` doesn't list one yet, so deploying it changes nothing for artifacts: its `GET /v0.1/features` doesn't list them, and its blob paths answer `404`. To turn them on, make the bucket (`wrangler r2 bucket create obi-sphere-artifacts`), add `"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "obi-sphere-artifacts" }]` to `env.deskree`, and deploy.
+
 The phone relay is an optional extension ([spec/sphere-api.md](../spec/sphere-api.md), section 9), on unless `PHONE_RELAY` is `off`: `env.deskree` doesn't set it, so its members' phones keep their relay. `GET /v0.1/features` lists it; health is unchanged.
 
 The first deploy with the Doorbell adds a Durable Object class (`v2-doorbells` in `wrangler.jsonc`). Cloudflare then refuses `wrangler rollback` to any version before it ([Rollbacks, "Bindings"](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/#bindings)): from there on, undo by deploying the older code with the `Doorbell` class still exported. The first deploy with the phone relay does the same with `PhoneRelay` (`v3-relays`), and adds migration `0005_relays.sql`.
