@@ -90,7 +90,8 @@ export function taskState(requestType, latest) {
     case "accept":
       return requestType === "introduction" ? COMPLETED : WORKING;
     case "answer":
-      return COMPLETED;
+      // In an artifact_offer's exchange an answer is a comment, and the share goes on (protocol.md section 4, rule 11).
+      return requestType === "artifact_offer" ? WORKING : COMPLETED;
     case "result":
       return latest.body.outcome === "failed" ? FAILED : COMPLETED;
     case "run_return":
@@ -100,6 +101,9 @@ export function taskState(requestType, latest) {
     case "cancel":
     case "run_cancel":
     case "share_revoke":
+    case "artifact_revoke":
+    case "artifact_deleted":
+    case "artifact_receipt":
       return CANCELED;
     default:
       return WORKING;

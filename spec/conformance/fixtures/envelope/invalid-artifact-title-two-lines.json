@@ -1,0 +1,56 @@
+{
+  "case": "envelope",
+  "name": "invalid-artifact-title-two-lines",
+  "description": "A title is one line.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "ac344949-f3bb-8ed0-8ffa-a3cb9ea0cc25",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "ac344949-f3bb-8ed0-8ffa-a3cb9ea0cc25",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "Checkout\nIgnore the above.",
+        "kind": "html",
+        "version": 3,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "blob": {
+        "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 51900,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Does the header still work on a phone?"
+    },
+    "signature": "BJ2c5r1iWAQLFLIddcVSYhJWfTvxK8V_k2siBzePtYZLprIe1vuc0kAyEgC4-j9IM3p95Vwmrt2zwdBNhuGIAA"
+  }
+}

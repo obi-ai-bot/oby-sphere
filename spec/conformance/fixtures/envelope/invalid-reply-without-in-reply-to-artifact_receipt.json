@@ -1,0 +1,37 @@
+{
+  "case": "envelope",
+  "name": "invalid-reply-without-in-reply-to-artifact_receipt",
+  "description": "A artifact_receipt that names no request it answers.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-b",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "4096396e-9f59-8b53-85a1-ff78f96074d9",
+    "type": "artifact_receipt",
+    "from": "obi-a",
+    "to": "obi-b",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+    "body": {},
+    "signature": "SdU-gXt6T774bYTnavkfC-Ek_AN7LRp00UzWyRR52RzEEo3hWkjkmh6SJWgSsqHYTdIGVPiWpc5kOmCH7w1XBw"
+  }
+}

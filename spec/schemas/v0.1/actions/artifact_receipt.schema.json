@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/actions/artifact_receipt.schema.json",
+  "title": "artifact_receipt body",
+  "description": "The offer's receiver says, signed, that it deleted its copy of every version it kept from the exchange, and the files it set apart (spec/protocol.md section 5.24). Follows an artifact_revoke or an artifact_deleted, at most once, and ends the exchange. Comes with the feature artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

@@ -1,0 +1,25 @@
+{
+  "case": "wire",
+  "name": "valid-policy-put-artifacts",
+  "description": "A rule that lets every member share artifacts with every other.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/policy-put.request"
+  },
+  "input": {
+    "expected_version": 1,
+    "rules": [
+      {
+        "id": "team-reviews",
+        "from_owner": "*",
+        "to_owner": "*",
+        "actions": [
+          "artifact_offer"
+        ],
+        "repos": [
+          "*"
+        ]
+      }
+    ]
+  }
+}

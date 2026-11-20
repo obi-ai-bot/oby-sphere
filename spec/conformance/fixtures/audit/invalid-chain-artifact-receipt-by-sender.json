@@ -1,0 +1,118 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-artifact-receipt-by-sender",
+  "description": "The offer's sender sends the receipt: only its receiver can say its copy is gone.",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "type": "artifact_offer",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "artifact": {
+              "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+              "title": "Checkout page, second pass",
+              "kind": "html",
+              "version": 3,
+              "bytes": 48213,
+              "files": 4,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "blob": {
+              "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "bytes": 51900,
+              "expires": "2026-10-21T12:00:00Z"
+            },
+            "access": "comment",
+            "latest": true,
+            "ask": "Does the header still work on a phone?"
+          },
+          "signature": "qio-VwX9yaFjaGe4p11C6en2LiW9i1-ygZfw9Tl2pMSGdEGQ_-tUlURsX5ChzxAMA-goYXI8iCmNjrSrcfiECw"
+        },
+        "hash": "387e14c2fd31f4b8fd7d2fdffeb2dd11fff898dd1c9d89d87d961cded653a5eb"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "387e14c2fd31f4b8fd7d2fdffeb2dd11fff898dd1c9d89d87d961cded653a5eb",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "f6973b51-5496-8544-8b07-d8ae9ea0bd91",
+          "type": "artifact_revoke",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "NmzhextCDuFnuAzS_zPc8M8KZWYDKNmIgkKR_GixV-bwVdtwydq6wet2IWEqYbEg8rfLVXbQNy75avXQK5DdBQ"
+        },
+        "hash": "d22e3aa9456872b64d9a172aba064a692b64694e9d1d99fb80862d5cfe40d937"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "d22e3aa9456872b64d9a172aba064a692b64694e9d1d99fb80862d5cfe40d937",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "995e320b-240e-8fce-8b53-6321c8f7192a",
+          "type": "artifact_receipt",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "xB-goQwWFwzebkL58CKranzmGr1ZirtLmYzWo12vwafi2b2UQSIfcuXkjkKAn7hnZsTODZmEmvnjLc7tVIefCg"
+        },
+        "hash": "75d2aeb0a02a827301bc2233dd68ac981ae1a4c223fe2e9723163f8135fa1859"
+      }
+    ]
+  }
+}

@@ -12,7 +12,7 @@ The [house rules](README.md#the-house-rules) are the part of these principles th
 
 **The principle.** Agents exchange typed requests and replies whose fields are fixed in advance. There is no free-form message, so there is nowhere to put an order disguised as conversation.
 
-**What keeps it.** House rule 1: seventeen action types, every object closed, checked by the schemas and the conformance suite ([protocol.md §2 to §5](spec/protocol.md#2-json-rules)).
+**What keeps it.** House rule 1: twenty-three action types, every object closed, checked by the schemas and the conformance suite ([protocol.md §2 to §5](spec/protocol.md#2-json-rules)).
 
 **Today.** Holds for every message. The forms are mostly about code; forms for other kinds of work are planned ([#52](https://github.com/obi-ai-bot/oby-sphere/issues/52)), and following up, calling a request off and introducing are additions behind their features ([#53](https://github.com/obi-ai-bot/oby-sphere/issues/53)).
 

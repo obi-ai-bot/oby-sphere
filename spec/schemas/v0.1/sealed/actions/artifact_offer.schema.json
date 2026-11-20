@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/artifact_offer.schema.json",
+  "title": "artifact_offer body (sealed)",
+  "description": "Share an artifact with the receiver (spec/protocol.md section 5.20): what it is, the ciphertext the Obysphere holds for it, sealed to the receiver's key, and what the receiver may do with it. No key travels: the receiver's is wrapped inside the age file. Starts an exchange that lasts as long as the share. Comes with the feature artifacts. Sealed: derived from actions/artifact_offer.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact",
+    "blob",
+    "access",
+    "latest"
+  ],
+  "properties": {
+    "artifact": {
+      "$ref": "../common.schema.json#/$defs/artifact"
+    },
+    "blob": {
+      "$ref": "../common.schema.json#/$defs/blob"
+    },
+    "blobs": {
+      "$ref": "../common.schema.json#/$defs/blob_parts",
+      "description": "The blob's parts, in order, when the ciphertext is over 64 MiB: blob is then the whole, and its id the first part's."
+    },
+    "access": {
+      "$ref": "../common.schema.json#/$defs/artifact_access"
+    },
+    "latest": {
+      "type": "boolean",
+      "description": "true: each new version of the artifact reaches the receiver as an artifact_update. false: the receiver keeps this version."
+    },
+    "ask": {
+      "$ref": "../common.schema.json#/$defs/sealed_text",
+      "x-obi-text": "sealed",
+      "minLength": 23,
+      "maxLength": 10688,
+      "description": "What the sender asks of the receiver about it, in its owner's words."
+    }
+  }
+}

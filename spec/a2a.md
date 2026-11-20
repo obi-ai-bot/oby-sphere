@@ -114,13 +114,13 @@ A retry (check 10, sphere-api.md section 6.1's check 8) answers `200` too, with 
 | The exchange's latest entry | `status.state` |
 |---|---|
 | The request alone | `TASK_STATE_SUBMITTED` |
-| `status`, `accept` (but an introduction's), `run_progress`, `share_status`, and any reply a later addition brings until this table names it | `TASK_STATE_WORKING` |
-| `answer`; `result` with `outcome` `approved`, `changes_requested` or `done`; an introduction's `accept` | `TASK_STATE_COMPLETED` |
+| `status`, `accept` (but an introduction's), `run_progress`, `share_status`, `artifact_update`, `artifact_version`, an `answer` in an `artifact_offer`'s exchange (a comment: the share goes on), and any reply a later addition brings until this table names it | `TASK_STATE_WORKING` |
+| `answer` (but in an `artifact_offer`'s exchange); `result` with `outcome` `approved`, `changes_requested` or `done`; an introduction's `accept` | `TASK_STATE_COMPLETED` |
 | `result` with `outcome` `failed`; `run_return` | `TASK_STATE_FAILED` |
 | `decline` | `TASK_STATE_REJECTED` |
-| `cancel`, `run_cancel`, `share_revoke` | `TASK_STATE_CANCELED` |
+| `cancel`, `run_cancel`, `share_revoke`; `artifact_revoke`, `artifact_deleted` and the `artifact_receipt` that may follow them | `TASK_STATE_CANCELED` |
 
-The exchange rules ([protocol.md](protocol.md) section 4) end an exchange at its first terminal reply, so a terminal state never changes. The state reads the chain alone: a request whose `expires_at` has passed with no end is still `SUBMITTED` or `WORKING` there, and its sender treats it as declined (`expired`), as protocol.md section 4 says, from the request's own `expires_at`.
+The exchange rules ([protocol.md](protocol.md) section 4) end an exchange at its first terminal reply, so a terminal state never changes (an `artifact_offer`'s share taken back is `CANCELED`, and so is the one receipt that may follow). The state reads the chain alone: a request whose `expires_at` has passed with no end is still `SUBMITTED` or `WORKING` there, and its sender treats it as declined (`expired`), as protocol.md section 4 says, from the request's own `expires_at`.
 
 **What the reader does with it.** An envelope read here is a message like a delivery: its reader verifies it (protocol.md section 10) before it acts on it, judging the sender's key by the entry's `seq` from the message's metadata, and opens sealed words with its own seal key; it doesn't trust the Obysphere's task, state included, any more than it trusts the relay. It recognises a reply it has handled already, from here or from its deliveries, by the envelope's `id` (protocol.md section 11, step 2). Reading a task acknowledges nothing: a reply to the caller stays among its deliveries until it acknowledges it there or it expires ([sphere-api.md](sphere-api.md) section 6.2).
 

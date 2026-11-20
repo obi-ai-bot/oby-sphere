@@ -124,7 +124,7 @@
     "skills": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 6,
+      "maxItems": 7,
       "items": {
         "$ref": "#/$defs/skill"
       },
@@ -242,6 +242,33 @@
                   }
                 }
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "accepts"
+                ],
+                "properties": {
+                  "accepts": {
+                    "contains": {
+                      "const": "artifact_offer"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "features",
+                  "seal_public_key"
+                ],
+                "properties": {
+                  "features": {
+                    "contains": {
+                      "const": "artifacts"
+                    }
+                  }
+                }
+              }
             }
           ],
           "properties": {
@@ -280,7 +307,7 @@
             "accepts": {
               "type": "array",
               "minItems": 1,
-              "maxItems": 6,
+              "maxItems": 7,
               "uniqueItems": true,
               "items": {
                 "$ref": "common.schema.json#/$defs/request_type"

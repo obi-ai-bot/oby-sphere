@@ -1,0 +1,47 @@
+{
+  "case": "envelope",
+  "name": "valid-answer-names-an-artifact",
+  "description": "obi-a's owner comments on the shared page, naming the version they looked at.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-b",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "a6a134a0-6fd8-85ec-87f4-51e8272b7ab1",
+    "type": "answer",
+    "from": "obi-a",
+    "to": "obi-b",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+    "body": {
+      "by": "owner",
+      "text": "The header wraps at 320 pixels.",
+      "refs": [
+        {
+          "kind": "artifact",
+          "artifact": "095c261b-34b6-8c71-89df-bc7518cd4507",
+          "version": 3
+        }
+      ]
+    },
+    "signature": "ymmhU-doITCfhjfZzBELFuUIhYzJK-3gH9dyrwVd6m2MNfx6xI4mS9a46xnbkxQVPxYiSJMC5CuutHGHBm7kDQ"
+  }
+}

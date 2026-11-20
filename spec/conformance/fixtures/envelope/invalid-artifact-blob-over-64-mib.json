@@ -1,0 +1,56 @@
+{
+  "case": "envelope",
+  "name": "invalid-artifact-blob-over-64-mib",
+  "description": "One blob of 67,108,865 bytes: a ciphertext over 64 MiB comes in parts.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "46940312-bcdd-84fb-856e-77ad960bd5df",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "46940312-bcdd-84fb-856e-77ad960bd5df",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "Checkout page, second pass",
+        "kind": "html",
+        "version": 3,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "blob": {
+        "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 67108865,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Does the header still work on a phone?"
+    },
+    "signature": "ydr_NnrY1lHVMEjqxBjoexwUrm0TuglSveORzLzhVCL0yZRHJzfmX70acz2wMKo_COH2FZ83YCbZZUTVJLhrBA"
+  }
+}

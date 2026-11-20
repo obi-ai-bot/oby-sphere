@@ -1,0 +1,48 @@
+{
+  "case": "envelope",
+  "name": "valid-question-about-an-artifact",
+  "description": "A question about an artifact and a repository: its one repository is the repository's.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "4a56df98-444e-816a-85e7-6abb75d83b62",
+    "type": "question",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "4a56df98-444e-816a-85e7-6abb75d83b62",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "text": "Is this the page for #251?",
+      "about": [
+        {
+          "kind": "artifact",
+          "artifact": "095c261b-34b6-8c71-89df-bc7518cd4507"
+        },
+        {
+          "kind": "repo",
+          "repo": "obi-conf/fixture-app"
+        }
+      ]
+    },
+    "signature": "hzINxb5FdaX2FASCKnxod7ebtmZrNIKiCCFcU0pUp7y2zkgOP63mH84pjHbAZfyha0oJnrCAJq8oHVhT1X5bCQ"
+  }
+}

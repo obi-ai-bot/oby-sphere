@@ -12,15 +12,23 @@ export const ENVELOPE_SIGNING_PREFIX = "obi/0.1 envelope\n";
 export const MAX_ENVELOPE_BYTES = 65536;
 export const MAX_LIFETIME_SECONDS = 2592000;
 export const CLOCK_SKEW_SECONDS = 300;
-export const REQUEST_TYPES = ["review_request", "question", "handoff", "run_request", "share_offer", "introduction"] as const;
-export const REPLY_TYPES = ["status", "accept", "decline", "result", "answer", "run_progress", "run_return", "run_cancel", "share_status", "share_revoke", "cancel"] as const;
+export const REQUEST_TYPES = ["review_request", "question", "handoff", "run_request", "share_offer", "introduction", "artifact_offer"] as const;
+export const REPLY_TYPES = [
+  "status", "accept", "decline", "result", "answer", "run_progress", "run_return", "run_cancel", "share_status", "share_revoke", "cancel",
+  "artifact_update", "artifact_version", "artifact_revoke", "artifact_deleted", "artifact_receipt",
+] as const;
+/** The replies that end an exchange (rule 2). An artifact_offer's exchange ends its own way (rule 11, `artifactProblem`). */
 export const TERMINAL_TYPES = ["decline", "result", "answer", "run_return", "run_cancel", "share_revoke", "cancel"];
 /** The replies that belong only to a run_request's exchange (protocol.md section 4, rule 7). */
 export const RUN_REPLY_TYPES = ["run_progress", "run_return", "run_cancel"];
 /** What a share_offer's exchange takes, and nothing else (protocol.md section 4, rule 8). */
 export const SHARE_REPLY_TYPES = ["share_status", "share_revoke", "decline"];
+/** What an artifact_offer's exchange takes, and nothing else (protocol.md section 4, rule 11). */
+export const ARTIFACT_EXCHANGE_TYPES = ["artifact_update", "artifact_version", "artifact_revoke", "artifact_deleted", "artifact_receipt", "answer", "decline"];
+/** The replies that belong only to an artifact_offer's exchange (rule 11). */
+export const ARTIFACT_REPLY_TYPES = ["artifact_update", "artifact_version", "artifact_revoke", "artifact_deleted", "artifact_receipt"];
 /** The replies a request's own sender sends, to its receiver (protocol.md section 4, rule 1). */
-export const SENDER_REPLY_TYPES = ["run_cancel", "share_status", "share_revoke", "cancel"];
+export const SENDER_REPLY_TYPES = ["run_cancel", "share_status", "share_revoke", "cancel", "artifact_update", "artifact_revoke", "artifact_deleted"];
 /** The requests a cancel calls off (protocol.md section 4, rule 10). */
 export const CANCELLABLE_TYPES = ["review_request", "question", "handoff", "introduction"];
 export const SEVERITY_RANK: Record<string, number> = { nit: 1, minor: 2, major: 3, blocker: 4 };
@@ -109,11 +117,38 @@ export function refProblems(body: JsonObject): string[] {
   for (const list of ["about", "refs"]) {
     const seen = new Set<string>();
     for (const ref of (Array.isArray(body[list]) ? body[list] : []) as JsonObject[]) {
-      const key = canonicalize({ ...ref, repo: lower(ref.repo as string) });
+      // An artifact reference names no repository (protocol.md section 5.9).
+      const key = canonicalize(typeof ref.repo === "string" ? { ...ref, repo: lower(ref.repo) } : ref);
       if (seen.has(key)) problems.push(`${list}: the same reference twice`);
       seen.add(key);
     }
   }
+  return problems;
+}
+
+/** The largest one blob is (sphere-api.md section 10): a larger ciphertext comes in parts. */
+export const MAX_BLOB_BYTES = 67108864;
+
+interface BlobRef {
+  id: string;
+  sha256: string;
+  bytes: number;
+}
+
+/**
+ * An artifact's ciphertext as an offer, an update or a version names it (protocol.md section
+ * 5.20): one blob of at most 64 MiB, or `blobs`, its parts in order, which `blob` sums up: the
+ * first part's id, and every part's bytes together. No part twice.
+ */
+export function blobProblems(body: JsonObject): string[] {
+  const blob = body.blob as unknown as BlobRef | undefined;
+  if (!blob || typeof blob !== "object") return [];
+  const parts = body.blobs as unknown as BlobRef[] | undefined;
+  if (parts === undefined) return blob.bytes > MAX_BLOB_BYTES ? [`a blob over ${MAX_BLOB_BYTES} bytes comes in parts (blobs)`] : [];
+  const problems: string[] = [];
+  if (parts[0]?.id !== blob.id) problems.push("blob.id is the first part's");
+  if (parts.reduce((n, p) => n + p.bytes, 0) !== blob.bytes) problems.push("blob.bytes is every part's bytes together");
+  if (new Set(parts.map((p) => p.id)).size !== parts.length) problems.push("a part twice in blobs");
   return problems;
 }
 
@@ -134,6 +169,7 @@ export function semanticProblems(env: Envelope): string[] {
   if (env.body.follows !== undefined && env.body.follows === env.id) problems.push("a request doesn't follow itself up");
   if (env.type === "result") problems.push(...resultProblems(env.body));
   problems.push(...refProblems(env.body));
+  problems.push(...blobProblems(env.body));
   for (const f of (env.body.findings ?? []) as unknown as Finding[]) {
     if (f.end_line !== undefined && f.end_line < f.line) problems.push(`finding ${f.id}: end_line before line`);
   }
@@ -170,6 +206,11 @@ export interface ExchangeMessage {
   /** A decline's `reason`, and whether it names a remembered decision (`by_rule`): rule 9. */
   reason?: string | undefined;
   has_by_rule?: boolean | undefined;
+  /** What an artifact_offer, or an artifact_update that says, gives its receiver (rule 11). */
+  access?: string | undefined;
+  /** An artifact_offer's `latest`, and the artifact an offer, an update or a version names (rule 11). */
+  latest?: boolean | undefined;
+  artifact_id?: string | undefined;
 }
 
 /** The reasons a decline in a run_request's exchange may give (rule 9): the guest's own doing, or nothing about the host. */
@@ -192,6 +233,9 @@ export function exchangeProblem(reply: ExchangeMessage, request: ExchangeMessage
     return request.type === "share_offer" ? `a share_offer takes no ${reply.type}` : `a ${reply.type} belongs to a share_offer, not a ${request.type}`;
   // A cancel calls off a review_request, a question, a handoff or an introduction (rule 10).
   if (reply.type === "cancel" && !CANCELLABLE_TYPES.includes(request.type)) return `a cancel calls off a review_request, question, handoff or introduction, not a ${request.type}`;
+  // An artifact_offer's exchange takes its own replies, an answer and a decline, and its replies belong to it alone (rule 11).
+  if (request.type === "artifact_offer") return ARTIFACT_EXCHANGE_TYPES.includes(reply.type) ? artifactProblem(reply, request, earlier) : `an artifact_offer takes no ${reply.type}`;
+  if (ARTIFACT_REPLY_TYPES.includes(reply.type)) return `a ${reply.type} belongs to an artifact_offer, not a ${request.type}`;
   if (earlier.some((e) => TERMINAL_TYPES.includes(e.type))) return "the exchange already ended";
   const accepted = earlier.some((e) => e.type === "accept");
   // An introduction's accept ends its exchange: nothing follows it (rule 10).
@@ -218,13 +262,35 @@ export function exchangeProblem(reply: ExchangeMessage, request: ExchangeMessage
 }
 
 /**
+ * Rule 11, an artifact_offer's exchange: it lasts until its receiver declines, or its sender takes
+ * the share back (`artifact_revoke`, `artifact_deleted`), after which only one `artifact_receipt`
+ * from its receiver may follow. An answer comments and doesn't end it, and needs `comment` or
+ * `edit`; an `artifact_version` needs `edit`: what the offer gave, or the latest update that says.
+ * Updates come only to a share that follows the latest version, and an update or a version names
+ * the offer's artifact.
+ */
+function artifactProblem(reply: ExchangeMessage, request: ExchangeMessage, earlier: ExchangeMessage[]): string | null {
+  if (earlier.some((e) => e.type === "decline" || e.type === "artifact_receipt")) return "the exchange already ended";
+  const takenBack = earlier.some((e) => e.type === "artifact_revoke" || e.type === "artifact_deleted");
+  if (reply.type === "artifact_receipt") return takenBack ? null : "a receipt follows only an artifact_revoke or an artifact_deleted";
+  if (takenBack) return "the share was taken back: only its receiver's receipt may follow";
+  if ((reply.type === "artifact_update" || reply.type === "artifact_version") && reply.artifact_id !== request.artifact_id) return `an ${reply.type} names the offer's artifact`;
+  if (reply.type === "artifact_update" && request.latest !== true) return "an artifact_update goes only to a share that follows the latest version";
+  const access = earlier.reduce((a, e) => (e.type === "artifact_update" && e.access !== undefined ? e.access : a), request.access);
+  if (reply.type === "answer" && access !== "comment" && access !== "edit") return "an answer comments on an artifact, and this one is shared to view only";
+  if (reply.type === "artifact_version" && access !== "edit") return "an artifact_version needs a share that gives edit";
+  return null;
+}
+
+/**
  * A request's repository, as policy matches it (sphere-api.md section 5): the body's `repo`, or for
  * a question the one repository its `about` references name (protocol.md section 5.2). Undefined
  * when it has none: a question about nothing, or about more than one repository.
  */
 export function requestRepo(env: Envelope): string | undefined {
   if (env.type !== "question" && env.type !== "introduction") return typeof env.body.repo === "string" ? env.body.repo : undefined;
-  const repos = (Array.isArray(env.body.about) ? env.body.about : []).map((ref) => (ref as JsonObject).repo as string);
+  // An artifact reference names no repository (protocol.md section 5.9).
+  const repos = (Array.isArray(env.body.about) ? env.body.about : []).map((ref) => (ref as JsonObject).repo).filter((r): r is string => typeof r === "string");
   const lower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
   return repos.length > 0 && repos.every((r) => lower(r) === lower(repos[0]!)) ? repos[0] : undefined;
 }
@@ -249,4 +315,7 @@ export const exchangeMessage = (env: Envelope): ExchangeMessage => ({
   has_note: env.body.note !== undefined,
   reason: env.type === "decline" ? (env.body.reason as string) : undefined,
   has_by_rule: env.body.by_rule !== undefined,
+  access: typeof env.body.access === "string" ? env.body.access : undefined,
+  latest: typeof env.body.latest === "boolean" ? env.body.latest : undefined,
+  artifact_id: typeof (env.body.artifact as JsonObject | undefined)?.id === "string" ? ((env.body.artifact as JsonObject).id as string) : undefined,
 });

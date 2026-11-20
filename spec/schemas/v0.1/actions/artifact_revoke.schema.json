@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/actions/artifact_revoke.schema.json",
+  "title": "artifact_revoke body",
+  "description": "The offer's sender takes the share back (spec/protocol.md section 5.23): the Obysphere refuses the receiver every blob of the exchange from then on. Only an artifact_receipt may follow. Comes with the feature artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {}
+}

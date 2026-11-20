@@ -96,6 +96,7 @@ export const DEFAULT_SKILLS: Record<string, { name: string; description: string 
   handoff: { name: "Take on work", description: "Takes on a piece of work for its own owner and answers with a typed result." },
   run_request: { name: "Run a job", description: "Runs a job on its owner's machine." },
   share_offer: { name: "Use a shared account", description: "Uses an API account another owner shares." },
+  artifact_offer: { name: "Take a shared artifact", description: "Keeps what another owner shares with it, checked and set apart from its owner's own work." },
 };
 
 export interface NewCard {
@@ -179,16 +180,20 @@ export function featuresUsed(p: CardParams): string[] {
   if (p.classes !== undefined) used.push(CARD_CLASSES);
   if (p.topics !== undefined) used.push("card_topics");
   if (p.accepts.includes("introduction")) used.push("introduction");
+  if (p.accepts.includes("artifact_offer")) used.push("artifacts");
   return used;
 }
 
-/** The feature a message uses, when it uses one (protocol.md sections 5.17 to 5.19): readers of
- *  the chain from before can't verify it, so it goes only where every active member takes it. */
+/** The feature a message uses, when it uses one (protocol.md sections 5.17 to 5.20): readers of
+ *  the chain from before can't verify it, so it goes only where every active member takes it.
+ *  `artifacts`: an artifact action, or a reference to an artifact in `about` or `refs`. */
 export function messageFeatures(type: string, body: Record<string, unknown>): string[] {
   const used: string[] = [];
   if (type === "cancel") used.push("cancel");
   if (type === "introduction") used.push("introduction");
   if (body.follows !== undefined) used.push("follow_up");
+  const refs = [body.about, body.refs].flatMap((list) => (Array.isArray(list) ? list : []));
+  if (type.startsWith("artifact_") || refs.some((r) => (r as { kind?: unknown } | null)?.kind === "artifact")) used.push("artifacts");
   return used;
 }
 
@@ -225,10 +230,12 @@ export function notTakenProblem(features: string[], active: { obi: string; card:
 }
 
 /** The additions a policy's rules use, so every member can read the policy: `introduction`, when a
- *  rule names it; `policy_classes`, when a rule carries `from_classes` or `to_classes`. */
+ *  rule names it; `artifacts`, when a rule names `artifact_offer`; `policy_classes`, when a rule
+ *  carries `from_classes` or `to_classes`. */
 export function policyFeatures(rules: { actions: string[]; from_classes?: string[]; to_classes?: string[] }[]): string[] {
   const used = new Set<string>();
   if (rules.some((r) => r.actions.includes("introduction"))) used.add("introduction");
+  if (rules.some((r) => r.actions.includes("artifact_offer"))) used.add("artifacts");
   if (rules.some((r) => r.from_classes !== undefined || r.to_classes !== undefined)) used.add("policy_classes");
   return [...used];
 }

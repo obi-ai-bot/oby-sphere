@@ -126,6 +126,7 @@ const SKILLS: Record<string, { name: string; description: string }> = {
   run_request: { name: "Run a job on this Mac", description: "Runs a teammate's job in a VM of its own, with the teammate's own account." },
   share_offer: { name: "Take a share of an API account", description: "Shows a teammate's share of a company API account; jobs on it run on their Mac." },
   introduction: { name: "Meet someone", description: "Hears who another member would introduce its owner to." },
+  artifact_offer: { name: "Take a shared artifact", description: "Keeps what a teammate shares, checked and set apart from its owner's own work." },
 };
 
 export async function makeCard(o: CardOptions): Promise<Record<string, unknown>> {

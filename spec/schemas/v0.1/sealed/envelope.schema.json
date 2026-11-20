@@ -113,7 +113,12 @@
               "run_cancel",
               "share_status",
               "share_revoke",
-              "cancel"
+              "cancel",
+              "artifact_update",
+              "artifact_version",
+              "artifact_revoke",
+              "artifact_deleted",
+              "artifact_receipt"
             ]
           }
         }
@@ -443,6 +448,120 @@
         "properties": {
           "body": {
             "$ref": "actions/introduction.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_offer"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_offer.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_update"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_update.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_version"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_version.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_revoke"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_revoke.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_deleted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_deleted.schema.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "artifact_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "actions/artifact_receipt.schema.json"
           }
         }
       }

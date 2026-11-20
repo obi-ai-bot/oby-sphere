@@ -10,7 +10,7 @@ import { constantTimeEqual, sha256Hex } from "./protocol/crypto.ts";
 import { utf8 } from "./protocol/json.ts";
 
 /** Every scope, in the canonical order the Sphere writes them in (identity.md 4.2). */
-export const SCOPES = ["admin", "send:review_request", "send:question", "send:handoff", "send:run_request", "send:share_offer", "send:introduction", "reply", "receive", "directory:read", "audit:read"] as const;
+export const SCOPES = ["admin", "send:review_request", "send:question", "send:handoff", "send:run_request", "send:share_offer", "send:introduction", "send:artifact_offer", "reply", "receive", "directory:read", "audit:read"] as const;
 export type Scope = (typeof SCOPES)[number];
 export const isScope = (s: string): s is Scope => (SCOPES as readonly string[]).includes(s);
 

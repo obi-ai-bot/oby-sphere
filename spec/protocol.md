@@ -59,12 +59,12 @@ Every message is one envelope that carries exactly one typed action in `body`. S
 |---|---|---|
 | `protocol` | yes | Always `obi/0.1` for this version. |
 | `id` | yes | Unique id of this message (UUID). The sender MUST NOT reuse it. |
-| `type` | yes | One of `review_request`, `question`, `handoff`, `run_request`, `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, `run_cancel`, `share_offer`, `share_status`, `share_revoke`, and, as additions behind their features, `introduction` and `cancel` (sections 5.17 and 5.18). Nothing else. |
+| `type` | yes | One of `review_request`, `question`, `handoff`, `run_request`, `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, `run_cancel`, `share_offer`, `share_status`, `share_revoke`, and, as additions behind their features, `introduction` and `cancel` (sections 5.17 and 5.18) and `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt` (sections 5.20 to 5.24). Nothing else. |
 | `from` | yes | The sending agent's `obi_id`. |
 | `to` | yes | The receiving agent's `obi_id`. Different from `from`. Only that agent may act on the message: any other agent it reaches rejects it (section 10, check 5). |
 | `sphere` | yes | The Obysphere it travels in. |
 | `correlation_id` | yes | The exchange it belongs to. On a request, equal to its own `id`. On a reply, equal to the request's `id`. |
-| `in_reply_to` | replies only | On `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, `run_cancel`, `share_status`, `share_revoke` and `cancel`: the `id` of the request it answers (in v0.1, always equal to `correlation_id`). A request MUST NOT have it. |
+| `in_reply_to` | replies only | On `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, `run_cancel`, `share_status`, `share_revoke`, `cancel`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`: the `id` of the request it answers (in v0.1, always equal to `correlation_id`). A request MUST NOT have it. |
 | `created_at` | yes | When the sender made it. |
 | `expires_at` | yes | After this time the receiver MUST NOT act on it. Later than `created_at`, at most 2,592,000 seconds after it. |
 | `key_id` | yes | The sender's signing key, as its agent card publishes it (`ed25519:` + base64url of SHA-256 of the raw public key). |
@@ -76,7 +76,7 @@ A whole envelope, in its canonical form (section 9), is at most 65,536 bytes.
 
 ## 4. Exchanges
 
-Requests start an exchange: `review_request`, `question`, `handoff`, `run_request`, `share_offer`, `introduction`. Replies continue it: `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, and four a request's own sender sends: `run_cancel`, `share_status`, `share_revoke` and `cancel`.
+Requests start an exchange: `review_request`, `question`, `handoff`, `run_request`, `share_offer`, `introduction`, `artifact_offer`. Replies continue it: `status`, `accept`, `decline`, `result`, `answer`, `run_progress`, `run_return`, `artifact_version`, `artifact_receipt`, and seven a request's own sender sends: `run_cancel`, `share_status`, `share_revoke`, `cancel`, `artifact_update`, `artifact_revoke` and `artifact_deleted`.
 
 ```
 review_request, handoff:  request ─► [status…] ─► accept ─► [status…] ─► result or decline
@@ -88,31 +88,39 @@ run_request:              request ─► [run_progress…] ─► accept ─► 
 share_offer:              request ─► [share_status…] ─► share_revoke or decline   (share_status and share_revoke from the request's sender)
 introduction:             request ─► [status…] ─► accept or decline
                           (and from the sender of a review_request, question, handoff or introduction, at any point before the end: cancel)
+artifact_offer:           request ─► [artifact_update… | answer… | artifact_version…] ─► decline,
+                                     or artifact_revoke or artifact_deleted ─► [artifact_receipt]
+                          (artifact_update, artifact_revoke and artifact_deleted from the request's sender)
 ```
 
 **The exchange rules.** These are the only ones. A receiving agent applies them to the replies it gets (section 11, step 3), the Obysphere applies them at send ([sphere-api.md](sphere-api.md) section 6.1, check 12), a chain's verifier applies them to every reply in the chain ([sphere-api.md](sphere-api.md) section 7.1, check 7), and the reference verifier implements them once (`exchangeProblem` in [conformance/lib/obi.mjs](conformance/lib/obi.mjs)). A reply is allowed exactly when all of these hold:
 
-1. Its `in_reply_to` names a request, and the reply is from that request's `to` and to its `from`: only the request's receiver replies, and only to the request's sender. The exceptions are `run_cancel`, `share_status`, `share_revoke` and `cancel`, which only the request's sender sends, to its receiver.
-2. The exchange has not ended: no `decline`, `result`, `answer`, `run_return`, `run_cancel`, `share_revoke` or `cancel` for that request came before it, nor, for an `introduction`, its `accept`. Each of those ends the exchange; nothing may follow it.
+1. Its `in_reply_to` names a request, and the reply is from that request's `to` and to its `from`: only the request's receiver replies, and only to the request's sender. The exceptions are `run_cancel`, `share_status`, `share_revoke`, `cancel`, `artifact_update`, `artifact_revoke` and `artifact_deleted`, which only the request's sender sends, to its receiver.
+2. The exchange has not ended: no `decline`, `result`, `answer`, `run_return`, `run_cancel`, `share_revoke` or `cancel` for that request came before it, nor, for an `introduction`, its `accept`. Each of those ends the exchange; nothing may follow it. An `artifact_offer`'s exchange ends its own way (rule 11).
 3. An `accept` comes only when the exchange has no `accept` yet: at most one per exchange. A `status` may come before the `accept` or after it, any number of times (but never in a `run_request`'s exchange: rule 9).
-4. A `result`'s `for` is the request's type, so a `result` finishes only a `review_request`, a `handoff` or a `run_request`. An `answer` answers only a `question`.
+4. A `result`'s `for` is the request's type, so a `result` finishes only a `review_request`, a `handoff` or a `run_request`. An `answer` answers only a `question`, but for the comment an `artifact_offer`'s receiver makes in its exchange (rule 11).
 5. A `result` comes only after that exchange's `accept`. An `answer` needs no `accept` (an `accept` before it is allowed too).
 6. A `decline` may come at any point before the end, before or after an `accept`.
 7. `run_progress`, `run_return` and `run_cancel` belong only to a `run_request`'s exchange. A `run_return` comes only after its `accept`; `run_progress` and `run_cancel` may come before it or after it.
 8. `share_status` and `share_revoke` belong only to a `share_offer`'s exchange, and a `share_offer`'s exchange takes nothing else but a `decline` (its receiver's owner doesn't want the share). There is no `accept`: a share holds from its offer until its `share_revoke` or `decline`, whatever its `expires_at` (which bounds only when the receiver may first act on the offer).
 9. In a `run_request`'s or a `share_offer`'s exchange, a `decline` has no `note`. In a `run_request`'s, a `decline`'s `reason` is `unavailable`, `expired`, `out_of_scope` or `share_used`; no reply has a `by_rule` (why the host said no or yes, its owner at the machine, answering in person, or its rules, stays with the host); and the exchange takes no `status` (its `note` is words, and `waiting_on_owner` would say when the host's owner is at their machine): what the chain keeps of guest jobs and shares is typed fields only, never words, and never when an owner is at their machine (sections 14 and 15).
 
-10. A `cancel` belongs only to a `review_request`'s, a `question`'s, a `handoff`'s or an `introduction`'s exchange (a `run_request` has `run_cancel`, a `share_offer` `share_revoke`). An `introduction`'s exchange takes `status`, one `accept` (which ends it), `decline` and `cancel`: no `result` or `answer` (rule 4).
+10. A `cancel` belongs only to a `review_request`'s, a `question`'s, a `handoff`'s or an `introduction`'s exchange (a `run_request` has `run_cancel`, a `share_offer` `share_revoke`, an `artifact_offer` `artifact_revoke`). An `introduction`'s exchange takes `status`, one `accept` (which ends it), `decline` and `cancel`: no `result` or `answer` (rule 4).
+
+11. An `artifact_offer`'s exchange (sections 5.20 to 5.24) takes `artifact_update`, `artifact_revoke` and `artifact_deleted` from the request's sender, `answer`, `artifact_version`, `decline` and `artifact_receipt` from its receiver, and nothing else: no `accept`, `status`, `result` or `cancel`. Those five `artifact_` types belong to it alone. A share holds from its offer until its receiver's `decline`, or until its sender takes it back with `artifact_revoke` or `artifact_deleted`, whatever the offer's `expires_at` (which bounds only when the receiver may first act on it); after either of those, only one `artifact_receipt` from its receiver may follow, and nothing after it. Within it:
+    - **What the receiver may do** is the `access` of the offer, or of the latest `artifact_update` that gives one. An `answer` there is a comment on what was shared: it needs `comment` or `edit`, may come any number of times, and doesn't end the exchange. An `artifact_version` needs `edit`.
+    - An `artifact_update` comes only in the exchange of an offer with `latest: true`, and it and every `artifact_version` name the offer's artifact (`artifact.id`).
+    - An `artifact_receipt` comes only after an `artifact_revoke` or an `artifact_deleted`, at most once.
 
 Silence until `expires_at` means no. The sender treats it as a decline with reason `expired`.
 
-The conformance suite's audit fixtures pin each rule (`invalid-chain-review-result-without-accept`, `invalid-chain-handoff-result-without-accept`, `valid-chain-question-answered-directly`, `valid-chain-question-accepted-then-answered`, `valid-chain-question-asked-owner`, `invalid-chain-result-for-another-kind`, `invalid-chain-answer-to-review-request`, `valid-chain-decline-after-accept`, `invalid-chain-accepted-twice`, `valid-chain-status-before-accept`, `invalid-chain-reply-after-result`, `invalid-chain-reply-after-answer`, `invalid-chain-answered-twice`, `invalid-chain-reply-by-sender`, `invalid-chain-status-in-run`, `valid-chain-run-declined-unavailable`, `invalid-chain-run-declined-busy`, `invalid-chain-run-declined-by-rule`, `invalid-chain-run-accepted-by-rule`, `valid-chain-review-cancelled`, `valid-chain-handoff-cancelled`, `valid-chain-question-cancelled`, `invalid-chain-cancel-by-receiver`, `invalid-chain-reply-after-cancel`, `invalid-chain-cancelled-twice`, `invalid-chain-cancel-run-request`, `invalid-chain-cancel-share-offer`, `valid-chain-introduction-accepted`, `valid-chain-introduction-declined`, `valid-chain-introduction-cancelled`, `invalid-chain-reply-after-introduction-accept`, `invalid-chain-introduction-answered`).
+The conformance suite's audit fixtures pin each rule (`invalid-chain-review-result-without-accept`, `invalid-chain-handoff-result-without-accept`, `valid-chain-question-answered-directly`, `valid-chain-question-accepted-then-answered`, `valid-chain-question-asked-owner`, `invalid-chain-result-for-another-kind`, `invalid-chain-answer-to-review-request`, `valid-chain-decline-after-accept`, `invalid-chain-accepted-twice`, `valid-chain-status-before-accept`, `invalid-chain-reply-after-result`, `invalid-chain-reply-after-answer`, `invalid-chain-answered-twice`, `invalid-chain-reply-by-sender`, `invalid-chain-status-in-run`, `valid-chain-run-declined-unavailable`, `invalid-chain-run-declined-busy`, `invalid-chain-run-declined-by-rule`, `invalid-chain-run-accepted-by-rule`, `valid-chain-review-cancelled`, `valid-chain-handoff-cancelled`, `valid-chain-question-cancelled`, `invalid-chain-cancel-by-receiver`, `invalid-chain-reply-after-cancel`, `invalid-chain-cancelled-twice`, `invalid-chain-cancel-run-request`, `invalid-chain-cancel-share-offer`, `valid-chain-introduction-accepted`, `valid-chain-introduction-declined`, `valid-chain-introduction-cancelled`, `invalid-chain-reply-after-introduction-accept`, `invalid-chain-introduction-answered`; and for rule 11 the `*-chain-artifact-*` fixtures, with `invalid-chain-reply-after-artifact-decline`).
 
 ## 5. Actions
 
 Every human-written field is data (section 8). Every field below is bounded by the schemas; the lengths given are maximums in characters.
 
-Sections 5.17 to 5.19 are additions to `obi/0.1`, each behind its feature. An agent sends a message that uses one only when its Obysphere lists the feature (`GET /v0.1/features`) and every active member's card in the directory lists it, since every member verifies the whole chain; the Obysphere refuses one that doesn't ([sphere-api.md](sphere-api.md) section 6.1, check 11, `409 feature_not_taken`). Until then it sends the plain form: a request without `follows`, and no `cancel` (the request ends at its `expires_at`) or `introduction`.
+Sections 5.17 to 5.24 are additions to `obi/0.1`, each behind its feature (5.20 to 5.24 behind one, `artifacts`). An agent sends a message that uses one only when its Obysphere lists the feature (`GET /v0.1/features`) and every active member's card in the directory lists it, since every member verifies the whole chain; the Obysphere refuses one that doesn't ([sphere-api.md](sphere-api.md) section 6.1, check 11, `409 feature_not_taken`). Until then it sends the plain form: a request without `follows`, and no `cancel` (the request ends at its `expires_at`), `introduction` or artifact.
 
 ### 5.1 `review_request`
 
@@ -203,6 +211,8 @@ Answers a question and ends its exchange; its `in_reply_to` is the question. Sch
 
 The asker shows `by` with the words: "from Wellington's agent" is not "from Wellington". It checks an answer against its own question (section 11, step 3).
 
+**A comment on an artifact.** In an `artifact_offer`'s exchange, its receiver's `answer` is a comment on what was shared, behind the feature `artifacts`: it answers no question, needs a share that gives `comment` or `edit`, may come any number of times and doesn't end the exchange (section 4, rule 11). Its `refs` MAY name the artifact, and the version it is about (5.9). The sender shows it as the receiver's words, quoted, like any answer.
+
 ### 5.9 References
 
 A reference names one thing, typed, so that it can be checked and shown, never followed blindly. Each is `{kind, repo, …}` ([common.schema.json](schemas/v0.1/common.schema.json), `ref`):
@@ -213,10 +223,11 @@ A reference names one thing, typed, so that it can be checked and shown, never f
 | `pr` | `repo`, `pr` | A pull request in it. |
 | `issue` | `repo`, `issue` | An issue in it. |
 | `job` | `repo`, `job` | A job of the answering agent in that repository: in a question's `about`, a job of the receiver's; in an answer's `refs`, one of the sender's. `job` is that agent's own id for it (up to 64 letters, digits, `.`, `_` and `-`), opaque to everyone else. |
+| `artifact` | `artifact`, `version`? | An artifact an `artifact_offer` named (its `artifact.id`), and, with `version`, one of its versions. It names no repository. An addition, behind the feature `artifacts`. |
 
-There is no kind for a URL, a file path or a command. A receiver MAY show a reference as a link it builds itself for the code host it uses, and MUST NOT fetch, open or run anything because of one: a reference says what is meant, not what to do. One it can't see, or a job it doesn't have, is something it doesn't know (section 11, "Questions"), never something to guess at. A reference is judged by what it names, not by the repository it claims: before a job reference's repository decides anything (which sharing rule applies, which remembered decision covers the question), the receiver MUST check that the job is its own and runs in that repository, and treat the reference as unknown otherwise.
+There is no kind for a URL, a file path or a command. A receiver MAY show a reference as a link it builds itself for the code host it uses, and MUST NOT fetch, open or run anything because of one: a reference says what is meant, not what to do. One it can't see, or a job it doesn't have, is something it doesn't know (section 11, "Questions"), never something to guess at; so is an artifact reference to an artifact no offer between the two members named. A reference is judged by what it names, not by the repository it claims: before a job reference's repository decides anything (which sharing rule applies, which remembered decision covers the question), the receiver MUST check that the job is its own and runs in that repository, and treat the reference as unknown otherwise.
 
-The references in one list (`about`, `refs`) are distinct, with repositories compared ignoring ASCII case: `{"kind": "pr", "repo": "Acme/App", "pr": 7}` and `{"kind": "pr", "repo": "acme/app", "pr": 7}` are the same reference twice, and the message is invalid (section 10, check 3).
+An artifact reference names no repository, so it adds none to a request's (5.2, 5.18): a question about an artifact alone matches only `*` in the policy. The references in one list (`about`, `refs`) are distinct, with repositories compared ignoring ASCII case: `{"kind": "pr", "repo": "Acme/App", "pr": 7}` and `{"kind": "pr", "repo": "acme/app", "pr": 7}` are the same reference twice, and the message is invalid (section 10, check 3).
 
 ### 5.10 `run_request`
 
@@ -299,6 +310,44 @@ A `review_request`, `question`, `handoff` or `introduction` may say which earlie
 - The earlier request is between the same two members, in either direction, and recorded before it in the Obysphere's chain. The Obysphere checks this at send ([sphere-api.md](sphere-api.md) section 6.1, check 12, `bad_reply`), and so does a chain's verifier (section 7.1, check 7); a request doesn't follow itself up (section 10, check 3).
 - It is context, never a decision. The receiver decides a follow-up as it decides any request (section 11): a remembered decision or a sharing rule applies as it would without `follows`, an earlier `accept` accepts nothing new, and the earlier exchange stays as it ended. The receiver MAY show the earlier exchange to its owner next to the new one.
 - The earlier request may be of any type, a `run_request` or a `share_offer` too: a question about a run is a new exchange with words of its own, and adds none to the run's (section 4, rule 9).
+
+### 5.20 `artifact_offer`
+
+Share an artifact with the receiver: a page and its files, a document, a picture, a PDF, a canvas or a design. An addition, behind the feature `artifacts`, as are 5.21 to 5.24. Schema: [artifact_offer.schema.json](schemas/v0.1/actions/artifact_offer.schema.json).
+
+| Field | Required | Meaning |
+|---|---|---|
+| `artifact` | yes | What is shared: `{id, title, kind, version, bytes, files, sha256}`. `id` is the artifact's id in its owner's keeping, the same in every offer, update and version of it. `title` its title (200), data. `kind` one of `html`, `markdown`, `image`, `pdf`, `canvas`, `design`. `version` the version shared, from 1. `bytes` and `files` its files' size together (at most 268,435,456 bytes, 256 MiB) and how many there are. `sha256` the SHA-256 of the tar they were packed in. |
+| `blob` | yes | The ciphertext the Obysphere holds for it: `{id, sha256, bytes, expires}`, as the Obysphere answered its upload ([sphere-api.md](sphere-api.md) section 10): its id, its SHA-256, its size and when the Obysphere stops serving it. One blob is at most 67,108,864 bytes (64 MiB). |
+| `blobs` | no | Its parts, when the ciphertext is over 64 MiB: 2 to 8 `{id, sha256, bytes}`, in order, each a blob of at most 64 MiB. `blob` is then the whole: its `id` the first part's, its `bytes` every part's together, its `sha256` the whole ciphertext's, its `expires` every part's. |
+| `access` | yes | What the receiver may do with it: `view` (look at it), `comment` (and comment, 5.8), `edit` (and send changed versions back, 5.22). |
+| `latest` | yes | `true`: each new version reaches the receiver as an `artifact_update` (5.21). `false`: the receiver keeps this version. |
+| `ask` | no | What the sender asks of the receiver about it (2,000). Data. |
+
+- **What travels, and what doesn't.** The ciphertext is an [age](https://age-encryption.org/v1) file whose plaintext is a tar (POSIX ustar) of the artifact's files. Its file key is wrapped, in the age file, to the X25519 key of each receiver: its card's `seal_public_key` ([identity.md](identity.md) section 2), as age's X25519 recipient. A card that accepts `artifact_offer` has one. No key travels in any message: neither the file key nor anyone's identity.
+- **One upload for a group.** Sharing with several members is one age file with a wrapped key for each, uploaded once and naming each of them, and one offer to each: its own envelope, `id` and exchange. A receiver learns nothing of the others from its offer.
+- **The receiver checks before it keeps anything.** It fetches the blob, or each part, and checks each part's SHA-256 and size and the whole one's against `blob` and `blobs`; joins the parts in order; decrypts with its own seal key; checks the tar's SHA-256 against `artifact.sha256`; and unpacks only plain files at plain relative paths, refusing the whole artifact for a link, a device, an absolute path or a `..` segment, or for more files or bytes than `artifact` says. A blob fetched after its `expires` is refused by the Obysphere, and the receiver treats that offer as expired. What it keeps then is received work (section 11, "Receiving an artifact").
+- **The sender scans first.** It scans the files for secrets before it encrypts them, and uploads and sends nothing if the scan finds one or can't run, as section 11, step 8, does for words. A file that could instruct an agent (below) it sends only once its owner said so.
+- **No repository.** An offer names none, so only policy rules for every repository (`*`) allow it ([sphere-api.md](sphere-api.md) section 5).
+- **Its exchange** lasts as long as the share (section 4, rule 11). There is no `accept`.
+
+### 5.21 `artifact_update`
+
+A new version of an artifact shared with `latest: true`, from the offer's sender, in the offer's exchange. Schema: [artifact_update.schema.json](schemas/v0.1/actions/artifact_update.schema.json). `artifact` (the offer's `id`, the new `version`), `blob` and `blobs` as in an offer, and `latest`, always `true` when given. With `access`, it changes what the receiver may do from now on; without, the offer's (or the latest update's) holds. The receiver checks it as it checks an offer, and keeps it as a new version of its copy.
+
+### 5.22 `artifact_version`
+
+A changed version of the artifact, from the offer's receiver, in the offer's exchange, when the share gives `edit` (rule 11). Schema: [artifact_version.schema.json](schemas/v0.1/actions/artifact_version.schema.json). `artifact` (the offer's `id`; `version` the receiver's own count), `blob` and `blobs` as in an offer: the age file is wrapped to the offer's sender alone. The sender checks it as anything received (5.20 and section 11), and keeps it as a version made by the receiver's member, never as its owner's own work: nothing in it starts a job, and an agent of the sender's that reads it reads received data.
+
+### 5.23 `artifact_revoke` and `artifact_deleted`
+
+The offer's sender takes the share back: `artifact_revoke`; or it deleted the artifact, and asks the receiver to delete its copy: `artifact_deleted`. The body is empty. Schemas: [artifact_revoke.schema.json](schemas/v0.1/actions/artifact_revoke.schema.json), [artifact_deleted.schema.json](schemas/v0.1/actions/artifact_deleted.schema.json). Either ends the share: from then on the exchange takes only the receiver's `artifact_receipt` (rule 11), and the Obysphere refuses the receiver every blob the exchange named ([sphere-api.md](sphere-api.md) section 10). The sender deletes the blobs no other share still names.
+
+**What a revoke can't undo.** It stops every later fetch, and no new version reaches the receiver. It can't take back what the receiver already fetched and opened: only the receiver's receipt says its copy is gone, and that is its word, signed, not a proof. The sender's owner is shown it that way.
+
+### 5.24 `artifact_receipt`
+
+The offer's receiver says, signed, that it deleted its copy: every version it kept from the exchange, and the files it set apart (section 11, "Receiving an artifact"). The body is empty. Schema: [artifact_receipt.schema.json](schemas/v0.1/actions/artifact_receipt.schema.json). It comes only after an `artifact_revoke` or an `artifact_deleted`, at most once, and ends the exchange (rule 11). A receiver SHOULD send one once it has deleted its copy after an `artifact_deleted`, and MAY after an `artifact_revoke`; it MUST NOT send one while it keeps any of it. Without one, nothing is promised.
 
 ## 6. Acceptance conditions
 
@@ -383,7 +432,7 @@ An agent whose card has a seal key ([identity.md](identity.md) section 2) gets i
 
 A sender scans the plain words for secrets before it seals them (section 11, step 8): sealing never takes text past the scan.
 
-**What the Obysphere still sees.** These are known limits, not hidden. It sees who sends to whom and when; each message's type and size, and about how long each text value is; ids, repositories, branches, commits, paths, line numbers, severities, outcomes, reasons, rules, costs and every other value that isn't text; and everything in the cards. It can't read what people wrote, or change it without the receiver seeing. The audit chain keeps the sealed values: checking it ([sphere-api.md](sphere-api.md) section 7.1) needs no key and shows a member none of the words. There is no forward secrecy against the receiver's seal key: whoever gets that key later can open, from the chain, what was sealed for it. A new seal key, with a new card, limits that to what was sealed before it.
+**What the Obysphere still sees.** These are known limits, not hidden. It sees who sends to whom and when; each message's type and size, and about how long each text value is; of an artifact, its id, kind, version, size, number of files and the SHA-256 of its tar, its blobs and the access it was shared with, never its title, its ask or its files (sections 5.20 and 5.22); ids, repositories, branches, commits, paths, line numbers, severities, outcomes, reasons, rules, costs and every other value that isn't text; and everything in the cards. It can't read what people wrote, or change it without the receiver seeing. The audit chain keeps the sealed values: checking it ([sphere-api.md](sphere-api.md) section 7.1) needs no key and shows a member none of the words. There is no forward secrecy against the receiver's seal key: whoever gets that key later can open, from the chain, what was sealed for it. A new seal key, with a new card, limits that to what was sealed before it.
 
 **Known answers.** [conformance/seal-vectors.json](conformance/seal-vectors.json) seals one review request from fixed keys: `enc`, the X25519 secret, the info, the HKDF output, the values' nonces and ciphertexts, and the signed sealed envelope. The fixtures named `*-sealed*`, `*-seal-*` and `invalid-not-sealed` pin the rest. Their `context` carries the receiver's own seal keys (`seal_keys`, by `seal_key_id`) and whether the sender's trusted card has one (`sender_seals`).
 
@@ -395,7 +444,7 @@ The Obysphere checks every message before relaying it ([sphere-api.md](sphere-ap
 |---|---|---|
 | 1 | Its canonical form is at most 65,536 bytes. | `payload_too_large` |
 | 2 | It matches [envelope.schema.json](schemas/v0.1/envelope.schema.json), including the body schema for its `type` ([sealed/envelope.schema.json](schemas/v0.1/sealed/envelope.schema.json) when it has `seal`, section 9.1). | `invalid_envelope` |
-| 3 | The rules no schema can say: `expires_at` after `created_at` and at most 2,592,000 seconds after it; real dates; `from` ≠ `to`; a request's `correlation_id` equals its `id`; a reply's `in_reply_to` equals its `correlation_id`; a `result` is consistent with itself (section 5.7); the references in an `about` or a `refs` are distinct, repositories compared ignoring ASCII case (section 5.9); an `introduction`'s `member` is neither `from` nor `to` (5.18); a request's `follows` isn't its own `id` (5.19). | `invalid_envelope` |
+| 3 | The rules no schema can say: `expires_at` after `created_at` and at most 2,592,000 seconds after it; real dates; `from` ≠ `to`; a request's `correlation_id` equals its `id`; a reply's `in_reply_to` equals its `correlation_id`; a `result` is consistent with itself (section 5.7); the references in an `about` or a `refs` are distinct, repositories compared ignoring ASCII case (section 5.9); an `introduction`'s `member` is neither `from` nor `to` (5.18); a request's `follows` isn't its own `id` (5.19); an artifact's ciphertext is one `blob` of at most 67,108,864 bytes, or `blobs` whose first part is `blob`'s `id`, whose sizes add up to `blob`'s `bytes`, and which names no part twice (5.20). | `invalid_envelope` |
 | 4 | `sphere` is the receiver's Obysphere. | `wrong_sphere` |
 | 5 | `to` is the receiver's own `obi_id`. | `wrong_recipient` |
 | 6 | `key_id` is a key the directory lists for `from`, valid for this message (below), and that public key hashes to `key_id`. | `unknown_key` |
@@ -494,6 +543,16 @@ A question asks for words, and words about an owner's work are the owner's to gi
 
 An `accept` before the `answer` is allowed and never needed. Either answer passes step 8 before it leaves. Nothing else ever leaves because of a question.
 
+### Receiving an artifact
+
+What an `artifact_offer`, an `artifact_update` or an `artifact_version` brings is received work, and data (section 8), whoever sent it. After the checks of section 5.20 the receiving agent:
+
+- **Sets apart what could instruct an agent**: a file named `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` or `.mcp.json` anywhere in it, and anything under a `.claude/`, `.cursor/`, `.codex/`, `.gemini/` or `.github/` folder, or a hooks or skills folder. Those stay apart, unread by its agents, until its owner approves them; the rest it keeps.
+- **Scans what it keeps for secrets**, and keeps nothing if the scan finds one or can't run: a secret the sender left in is the sender's leak, never the receiver's to keep.
+- **Keeps it apart from its owner's work**, as what that member shared, at that version, and shows its owner who shared it and the `ask`, quoted.
+- **Gives it to an agent only as quoted data**: files it reads, never instructions; its turn is marked as reading received data, and nothing it does because of the artifact's words runs as the owner's (section 11, step 5 applies to anything it would do).
+- **Never runs, opens or fetches anything because of it**: a page is shown only in a sandbox that reaches neither the network nor the agent's files.
+
 ### Rate limits
 
 Every request costs its receiver. A question the receiving agent answers by itself costs a model run on its owner's account; one it can't costs the owner's attention. So a receiving agent limits what each sender can make it do, counting by the sender's owner (from the directory: an owner with several agents counts once).
@@ -585,6 +644,7 @@ Stream 0 is control: JSON `{"ping": n}`, answered with `{"pong": n}`, at least e
 - Encrypting bodies end to end so the Obysphere relays without reading them: each text value is sealed for the receiver's seal key (section 9.1, added on 2026-10-26).
 - Following up in a conversation: a request's `follows` names the earlier exchange it follows up (5.19, an addition).
 - Calling off a request other than a `run_request`: its sender's `cancel` (5.17, an addition).
+- Handing a member a file, a folder or a page: an artifact, sealed to its receivers with age and kept by the Obysphere as ciphertext only (5.20 to 5.24, an addition; #47).
 
 **Still open:**
 
@@ -594,4 +654,5 @@ Stream 0 is control: JSON `{"ping": n}`, answered with `{"pong": n}`, at least e
 - Direct agent-to-agent transport over A2A without the Obysphere, and federation between Obyspheres. (The A2A binding, [a2a.md](a2a.md), goes through the Obysphere.)
 - Auditing membership and policy changes in the chain (v0.1 records relayed messages only).
 - Cross-checking a result's `acceptance` against the request's conditions on the Obysphere (today each agent checks its own exchanges).
+- Sealing an artifact's plaintext hash, which the Obysphere sees today (section 9.1, "What the Obysphere still sees"); resumable uploads of a blob; a fetch limit per blob (#47).
 - Quotas the Obysphere enforces: the error code exists (`rate_limited`) and a receiver's limits are recommended (section 11, "Rate limits"), but an Obysphere's numbers aren't fixed.

@@ -114,7 +114,9 @@ A card may say which additions to `obi/0.1` its agent takes, and what runs it. T
 
 Topics are ids, not sentences, so they can be matched ("who here can help with `payments`?" is a look through the directory's cards). Hyphenated words still fit in one (`ignore-your-rules`), so they are text like `name` and `description`: the owner's to choose, checked by nothing, and data. A member reads them only to show its owner, or to find whom to ask, and a model it gives them to gets them as quoted data, never as instructions ([protocol.md](protocol.md) section 8).
 
-**Taking introductions.** A card that `accepts` `introduction` ([protocol.md](protocol.md) section 5.18) lists the feature `introduction` in `features`, so a card accepts up to six request types.
+**Taking introductions.** A card that `accepts` `introduction` ([protocol.md](protocol.md) section 5.18) lists the feature `introduction` in `features`.
+
+**Taking artifacts.** A card that `accepts` `artifact_offer` ([protocol.md](protocol.md) section 5.20) lists the feature `artifacts` in `features`, and has a seal key (`seal_public_key`): what is shared with its agent is an age file wrapped to that key. So a card accepts up to seven request types.
 
 A card with `runtime`, `vendors`, `classes` or `topics` has `features`. Runtime and vendor ids are a lower-case letter, then up to 63 lower-case letters, digits and `-` ([common.schema.json](schemas/v0.1/common.schema.json), `runtime_id` and `vendor_id`).
 
@@ -213,13 +215,13 @@ Both are JWTs (RFC 7519) in JWS compact form, `alg` `EdDSA`, with the protected 
 | Scope | Lets the token holder |
 |---|---|
 | `admin` | Invite, write the policy, revoke members, and change the Obysphere (sphere-api.md section 3). Only for an owner who administers the Obysphere, only without an actor. |
-| `send:review_request`, `send:question`, `send:handoff`, `send:run_request`, `send:share_offer`, `send:introduction` | Send requests of that type. `send:introduction` comes with the feature `introduction`: an owner puts it in a delegation only for an Obysphere that lists the feature, since one from before answers a scope it doesn't know `invalid_scope`. |
-| `reply` | Send replies: `status`, `accept`, `decline`, `result`, `answer` and `cancel`, and a run's and a share's (protocol.md sections 5.11 to 5.13, 5.15 and 5.16). |
+| `send:review_request`, `send:question`, `send:handoff`, `send:run_request`, `send:share_offer`, `send:introduction`, `send:artifact_offer` | Send requests of that type. `send:introduction` comes with the feature `introduction`, and `send:artifact_offer` with the feature `artifacts`: an owner puts one in a delegation only for an Obysphere that lists its feature, since one from before answers a scope it doesn't know `invalid_scope`. `send:artifact_offer` also lets its holder upload blobs and make public links ([sphere-api.md](sphere-api.md) sections 10 and 11). |
+| `reply` | Send replies: `status`, `accept`, `decline`, `result`, `answer` and `cancel`, and a run's, a share's and an artifact's (protocol.md sections 5.11 to 5.13, 5.15, 5.16 and 5.21 to 5.24). An `artifact_version` needs a blob too, which `reply` uploads ([sphere-api.md](sphere-api.md) section 10). |
 | `receive` | Fetch and acknowledge its deliveries. |
 | `directory:read` | Read the members and the policy. |
 | `audit:read` | Read the audit chain. |
 
-**Canonical order.** Wherever the Obysphere writes a set of scopes (the token answer's `scope`), it writes each scope once, separated by one space, in this order: `admin`, `send:review_request`, `send:question`, `send:handoff`, `send:run_request`, `send:share_offer`, `send:introduction`, `reply`, `receive`, `directory:read`, `audit:read`. So an agent's full token is `send:review_request reply receive directory:read audit:read` when its delegation grants those, and an admin's own token `admin directory:read audit:read`, whatever order the request or the assertion listed them in. A scope string the Obysphere reads (an assertion's `scope`, the request's `scope`) may be in any order and may repeat a scope; a scope it doesn't know is `invalid_scope`.
+**Canonical order.** Wherever the Obysphere writes a set of scopes (the token answer's `scope`), it writes each scope once, separated by one space, in this order: `admin`, `send:review_request`, `send:question`, `send:handoff`, `send:run_request`, `send:share_offer`, `send:introduction`, `send:artifact_offer`, `reply`, `receive`, `directory:read`, `audit:read`. So an agent's full token is `send:review_request reply receive directory:read audit:read` when its delegation grants those, and an admin's own token `admin directory:read audit:read`, whatever order the request or the assertion listed them in. A scope string the Obysphere reads (an assertion's `scope`, the request's `scope`) may be in any order and may repeat a scope; a scope it doesn't know is `invalid_scope`.
 
 An agent's token can carry every scope but `admin`, limited to what the delegation grants. An owner's own token can carry `admin` (if they administer the Obysphere), `directory:read` and `audit:read`.
 

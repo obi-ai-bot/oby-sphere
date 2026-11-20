@@ -44,6 +44,7 @@ A version of a standard is named by its **protocol constant**. Core's is `obi/0.
 | `follow_up` | A request's `follows`: the earlier exchange it follows up | [protocol.md](protocol.md) section 5.19 |
 | `cancel` | The `cancel` reply: a request's sender calls it off | [protocol.md](protocol.md) section 5.17 |
 | `introduction` | The `introduction` request, and a card that accepts it | [protocol.md](protocol.md) section 5.18 |
+| `artifacts` | The six artifact actions, the `artifact` reference, a card that accepts `artifact_offer`, and the Obysphere's blobs | [protocol.md](protocol.md) sections 5.20 to 5.24 |
 | `policy_classes` | A policy rule's `from_classes`/`to_classes`; an agent that reads them lists it in its card's `features` | [sphere-api.md](sphere-api.md) section 5 |
 | `a2a` | An optional extension of the HTTP binding, not of the messages: a member's card `url` is an A2A 1.0 interface that takes the members' signed envelopes, unchanged, and shows their exchanges as A2A tasks; what it records is what the relay records | [a2a.md](a2a.md) |
 | `phone_relay` | An optional extension of the HTTP binding, not of the messages: a member's phones reach its agent through the Obysphere, which offers it or answers its paths `404` | [sphere-api.md](sphere-api.md) section 9 |
@@ -64,7 +65,7 @@ A version of a standard is named by its **protocol constant**. Core's is `obi/0.
 
 ## The actions
 
-Seventeen types: six requests start an exchange, and eleven replies continue or end it ([protocol.md](protocol.md) sections 4 and 5). Two of them, `introduction` and `cancel`, are additions behind their features. Their schemas are in [schemas/v0.1/actions/](schemas/v0.1/actions/).
+Twenty-three types: seven requests start an exchange, and sixteen replies continue or end it ([protocol.md](protocol.md) sections 4 and 5). Eight of them are additions behind their features: `introduction` and `cancel`, and the six artifact types, behind `artifacts`. Their schemas are in [schemas/v0.1/actions/](schemas/v0.1/actions/).
 
 | Type | Starts, continues or ends | What for |
 |---|---|---|
@@ -85,8 +86,14 @@ Seventeen types: six requests start an exchange, and eleven replies continue or 
 | `share_revoke` | ends | The key holder takes the share back. |
 | `introduction` | starts | Introduce the receiver to another member who might help; its owner decides it like any request, and its `accept` ends it. |
 | `cancel` | ends | The request's own sender calls off its review, question, handoff or introduction. |
+| `artifact_offer` | starts | Share an artifact (a page, a document, a picture, a PDF, a canvas, a design) with a member: an age file sealed to its key, which the Obysphere keeps as ciphertext only, to look at, comment on or edit. |
+| `artifact_update` | continues | From the offer's sender: a new version, to a share that follows the latest. |
+| `artifact_version` | continues | From the offer's receiver, when the share gives edit: a changed version sent back, sealed to the sender alone. |
+| `artifact_revoke` | ends | The offer's sender takes the share back: the Obysphere serves the receiver its blobs no more. |
+| `artifact_deleted` | ends | The offer's sender deleted the artifact, and asks the receiver to delete its copy. |
+| `artifact_receipt` | ends | After a revoke or a delete, the receiver says, signed, that its copy is gone. |
 
-**What is about code, and what isn't.** Seven of these carry no domain at all: `question`, `answer`, `accept`, `decline`, `status`, `cancel` and `introduction`. The others are about code collaboration (`review_request`, `handoff`, and `run_request` with its replies, which run a git bundle on a member's machine; `result` carries their findings and outcomes) or about lending an API account (`share_offer`, `share_status`, `share_revoke`). Policy and remembered decisions are keyed by repository, and references name repositories, pull requests, issues and jobs. Separating a domain-neutral Core from a code-collaboration profile is planned for the next protocol version ([#52](https://github.com/obi-ai-bot/oby-sphere/issues/52)); until then an implementation that doesn't work on code can take `question` alone, with `accepts: ["question"]` on its card.
+**What is about code, and what isn't.** Thirteen of these carry no domain at all: `question`, `answer`, `accept`, `decline`, `status`, `cancel`, `introduction` and the six artifact types. The others are about code collaboration (`review_request`, `handoff`, and `run_request` with its replies, which run a git bundle on a member's machine; `result` carries their findings and outcomes) or about lending an API account (`share_offer`, `share_status`, `share_revoke`). Policy and remembered decisions are keyed by repository, and references name repositories, pull requests, issues and jobs. Separating a domain-neutral Core from a code-collaboration profile is planned for the next protocol version ([#52](https://github.com/obi-ai-bot/oby-sphere/issues/52)); until then an implementation that doesn't work on code can take `question` alone, with `accepts: ["question"]` on its card.
 
 ## The documents
 

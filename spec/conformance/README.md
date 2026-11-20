@@ -14,7 +14,7 @@ node conformance/run.mjs --impl "<command>" --kinds envelope,audit
 
 **Self-check** (`pnpm run check`, also `make spec-check` from the repository root, and CI on every pull request into `dev` and every push to `dev`):
 
-1. compiles every schema in `schemas/v0.1/` (draft 2020-12) and lints them: every object with properties sets `additionalProperties: false`; every string has a `maxLength` and a `pattern`, `enum` or `const`, unless it is data text; every data-text field (a reference to `line_text` or `block_text`) is annotated `x-obi-text: data` and sets its own bounds; the action types are exactly the seventeen of the protocol;
+1. compiles every schema in `schemas/v0.1/` (draft 2020-12) and lints them: every object with properties sets `additionalProperties: false`; every string has a `maxLength` and a `pattern`, `enum` or `const`, unless it is data text; every data-text field (a reference to `line_text` or `block_text`) is annotated `x-obi-text: data` and sets its own bounds; the action types are exactly the twenty-three of the protocol;
 2. checks the canonical-JSON vectors in `jcs-vectors.json` (RFC 8785);
 3. regenerates every fixture with `generate.mjs` and fails if a committed file differs, is missing, or is extra;
    then checks that the repository's `.gitleaks.toml` allowlists exactly the public keys in `keys.json` (below, "Keys");

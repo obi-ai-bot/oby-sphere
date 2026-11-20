@@ -33,7 +33,10 @@ interface AuditRow {
   result_for: string | null;
 }
 
-const rowMessage = (r: AuditRow): ExchangeMessage => ({ type: r.type, from: r.from_obi, to: r.to_obi, result_for: r.result_for ?? undefined });
+// An artifact_offer's exchange reads its messages' typed fields (`access`, `latest`, the artifact's
+// id: protocol.md section 4, rule 11), which only the recorded envelope holds; they are never words.
+const rowMessage = (r: AuditRow): ExchangeMessage =>
+  r.type.startsWith("artifact_") ? exchangeMessage(JSON.parse(r.envelope) as Envelope) : { type: r.type, from: r.from_obi, to: r.to_obi, result_for: r.result_for ?? undefined };
 const sendAnswer = (r: Pick<AuditRow, "msg_id" | "seq" | "hash" | "recorded_at">): SendReceipt => ({ id: r.msg_id, seq: r.seq, entry_hash: r.hash, recorded_at: r.recorded_at });
 
 /** What a send answers (send.response): the envelope's id, its entry's seq and hash, and when it was recorded. */

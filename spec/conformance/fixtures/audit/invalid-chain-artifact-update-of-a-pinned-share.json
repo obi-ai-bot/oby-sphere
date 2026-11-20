@@ -1,0 +1,113 @@
+{
+  "case": "audit",
+  "name": "invalid-chain-artifact-update-of-a-pinned-share",
+  "description": "An update to a share that keeps its version (latest: false).",
+  "expect": "reject",
+  "reason": "bad_reply",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "e397ebf5-df4d-8566-87b4-0aac4adb19db",
+          "type": "artifact_offer",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "e397ebf5-df4d-8566-87b4-0aac4adb19db",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "artifact": {
+              "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+              "title": "Checkout page, second pass",
+              "kind": "html",
+              "version": 3,
+              "bytes": 48213,
+              "files": 4,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "blob": {
+              "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "bytes": 51900,
+              "expires": "2026-10-21T12:00:00Z"
+            },
+            "access": "comment",
+            "latest": false,
+            "ask": "Does the header still work on a phone?"
+          },
+          "signature": "IK7x9HydsDx32N446kpW1fCCtFdvvl6WS4GAGZ7jAMwsN7pHMWePYPP2enr3NcNe4PkE0c_51dOMG10KUQeNAA"
+        },
+        "hash": "151be57f4532462fb4a362303ac41c6baa2da280e382b974dd707334974b98ef"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "151be57f4532462fb4a362303ac41c6baa2da280e382b974dd707334974b98ef",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "0fefa19b-7308-8271-8505-68c791b1f50f",
+          "type": "artifact_update",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "e397ebf5-df4d-8566-87b4-0aac4adb19db",
+          "in_reply_to": "e397ebf5-df4d-8566-87b4-0aac4adb19db",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "artifact": {
+              "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+              "title": "Checkout page, second pass",
+              "kind": "html",
+              "version": 4,
+              "bytes": 48213,
+              "files": 4,
+              "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "blob": {
+              "id": "c3bf2599-92be-8dbb-8b24-7d3d048b1d44",
+              "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              "bytes": 52344,
+              "expires": "2026-10-21T12:00:00Z"
+            },
+            "latest": true
+          },
+          "signature": "_HSimQz85dxV3c3ifwnEO1W8zJhM7MiNaEWhRbN3mgc1pv_Wp07GA1CHVLIwi70BtePOUJJfH_qUN6910aX7DA"
+        },
+        "hash": "0174084117fd49d84d3a2a0d81917f0710fb04061d3c7d7a7a02efe0eca1c382"
+      }
+    ]
+  }
+}
