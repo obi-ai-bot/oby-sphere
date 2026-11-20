@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "invalid-public-response-link-with-a-slash",
+  "description": "A link id that climbs out of /a/.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/public.response"
+  },
+  "input": {
+    "link_id": "../v0.1/spheres",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 51900
+  }
+}

@@ -48,6 +48,7 @@ const EXPORTS = {
   healthResponse: "wire/health.response.schema.json",
   featuresResponse: "wire/features.response.schema.json",
   blobResponse: "wire/blob.response.schema.json",
+  publicResponse: "wire/public.response.schema.json",
   sphere: "wire/sphere.schema.json",
   tokenResponse: "wire/token.response.schema.json",
   invitationResponse: "wire/invitation.response.schema.json",

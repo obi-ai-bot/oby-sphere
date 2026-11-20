@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/public.response.schema.json",
+  "title": "PUT /v0.1/spheres/{sphere}/public/{linkId}, and …/page",
+  "description": "What the Obysphere now serves for a public link (spec/sphere-api.md section 11): the SHA-256 and size of the ciphertext it keeps, or of the page the owner's client uploaded, which that client checks against what /a/{linkId} serves. Comes with the feature artifacts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "link_id",
+    "sha256",
+    "bytes"
+  ],
+  "properties": {
+    "link_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]{7,63}$",
+      "description": "The link's id, its owner's client's choice, unique on the server: /a/{linkId}."
+    },
+    "sha256": {
+      "$ref": "../common.schema.json#/$defs/hash"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 67108864
+    }
+  }
+}

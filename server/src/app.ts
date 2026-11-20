@@ -6,6 +6,7 @@ import { tokenEndpoint } from "./oauth.ts";
 import { getTask, noPushNotifications, notSupported, sendMessage } from "./routes/a2a.ts";
 import { audit } from "./routes/audit.ts";
 import { deleteBlob, fetchBlob, uploadBlob } from "./routes/blobs.ts";
+import { deletePublic, publicAsset, publicBlob, publicPage, putPublic, putPublicPage } from "./routes/public.ts";
 import { openChannel } from "./routes/channels.ts";
 import { deleteDevice, deleteRelay, openRelay, putDevice, putRelay } from "./routes/relays.ts";
 import { deleteRunner, putRunner } from "./routes/runner.ts";
@@ -64,6 +65,16 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs$`), uploadBlob],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs/${SEGMENT}$`), fetchBlob],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/blobs/${SEGMENT}$`), deleteBlob],
+  ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}$`), putPublic],
+  ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}/page$`), putPublicPage],
+  ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}$`), deletePublic],
+  // A public link's pages (spec/sphere-api.md section 11): no login, read only. The runtime first,
+  // so its paths are never read as a link's.
+  ["GET", /^\/a\/viewer\.js$/, publicAsset("viewer.js")],
+  ["GET", /^\/a\/vendor\/age\.bundle\.js$/, publicAsset("vendor/age.bundle.js")],
+  ["GET", /^\/a\/vendor\/LICENSES\.txt$/, publicAsset("vendor/LICENSES.txt")],
+  ["GET", new RegExp(`^/a/${SEGMENT}$`), publicPage],
+  ["GET", new RegExp(`^/a/${SEGMENT}/blob$`), publicBlob],
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/channels/${SEGMENT}$`), openChannel],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), putRunner],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), deleteRunner],

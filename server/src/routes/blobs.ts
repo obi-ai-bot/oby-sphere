@@ -74,6 +74,89 @@ const forget = (db: D1Database, sphere: string, id: string): D1PreparedStatement
 
 class Refused extends Error {}
 
+/**
+ * Streams `request`'s body to `key` in `store`, as ciphertext (section 10, upload checks 4 and 5):
+ * `application/octet-stream` with a `Content-Length` of 1 to 64 MiB; with `checkHeader`, an age
+ * file whose header wraps a key for each of `recipients`, read before anything reaches the
+ * bucket. Counted and hashed on its way; nothing is kept of a body that fails. Its SHA-256 and size.
+ */
+export async function putCiphertext(store: R2Bucket, key: string, request: Request, recipients: number, checkHeader: boolean): Promise<{ sha256: string; bytes: number }> {
+  if ((request.headers.get("Content-Type") ?? "").split(";")[0]!.trim().toLowerCase() !== "application/octet-stream") throw apiError("bad_request", "a blob is sent as application/octet-stream");
+  const length = Number(request.headers.get("Content-Length") ?? "");
+  if (!Number.isInteger(length) || length < 1) throw apiError("bad_request", "a blob says its size (Content-Length), at least 1 byte");
+  if (length > MAX_BLOB_BYTES) throw apiError("payload_too_large", `a blob is at most ${MAX_BLOB_BYTES} bytes: a larger ciphertext goes up in parts`);
+  if (!request.body) throw apiError("bad_request", "a blob has a body");
+
+  // The first part's header is read before anything goes to the bucket: what isn't an age file
+  // with a key for each recipient is refused without a byte kept.
+  const reader = request.body.getReader();
+  const first: Uint8Array[] = [];
+  let head = new Uint8Array(0);
+  for (let problem = !checkHeader ? null : ageHeaderProblem(head, recipients, false); problem !== null; ) {
+    if (problem !== "more") {
+      await reader.cancel();
+      throw apiError("bad_request", problem);
+    }
+    const { value, done } = await reader.read();
+    if (done) problem = ageHeaderProblem(head, recipients, true) ?? null;
+    else {
+      first.push(value);
+      const more = value.subarray(0, Math.max(0, MAX_HEADER_BYTES - head.length));
+      const joined = new Uint8Array(head.length + more.length);
+      joined.set(head);
+      joined.set(more, head.length);
+      head = joined;
+      problem = ageHeaderProblem(head, recipients, false);
+    }
+  }
+  const body = new ReadableStream<Uint8Array>({
+    start(out) {
+      for (const chunk of first) out.enqueue(chunk);
+    },
+    async pull(out) {
+      const { value, done } = await reader.read();
+      if (done) out.close();
+      else out.enqueue(value);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
+
+  // Then on its way to the bucket: counted and hashed. The bucket keeps nothing of a body that
+  // turns out longer or shorter than it said.
+  const digest = new crypto.DigestStream("SHA-256");
+  const hashing = digest.getWriter();
+  // A refused body never finishes its hash: nothing waits on it then.
+  const hashed = digest.digest;
+  hashed.catch(() => {});
+  let seen = 0;
+  let refusal: string | null = null;
+  const checked = body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, out) {
+        seen += chunk.byteLength;
+        if (seen > length) {
+          refusal = "the body is longer than its Content-Length";
+          throw new Refused(refusal);
+        }
+        await hashing.write(chunk);
+        out.enqueue(chunk);
+      },
+      async flush() {
+        await hashing.close();
+      },
+    }),
+  );
+  try {
+    await store.put(key, checked.pipeThrough(new FixedLengthStream(length)), { httpMetadata: { contentType: "application/octet-stream" } });
+  } catch (e) {
+    await store.delete(key);
+    if (refusal !== null) throw apiError("bad_request", refusal);
+    if (seen !== length) throw apiError("bad_request", "the body is shorter than its Content-Length");
+    throw e;
+  }
+  return { sha256: [...new Uint8Array(await hashed)].map((b) => b.toString(16).padStart(2, "0")).join(""), bytes: length };
+}
+
 // ---------------------------------------------------------------------------------------------
 // POST /v0.1/spheres/{sphere}/blobs?to=…&expires_at=…[&part=n]
 
@@ -109,82 +192,9 @@ export async function uploadBlob(request: Request, env: Env, deps: Deps, sphereI
     if (m.status !== "active") throw apiError("recipient_revoked", `${obi} was revoked`);
   }
 
-  if ((request.headers.get("Content-Type") ?? "").split(";")[0]!.trim().toLowerCase() !== "application/octet-stream") throw apiError("bad_request", "a blob is sent as application/octet-stream");
-  const length = Number(request.headers.get("Content-Length") ?? "");
-  if (!Number.isInteger(length) || length < 1) throw apiError("bad_request", "a blob says its size (Content-Length), at least 1 byte");
-  if (length > MAX_BLOB_BYTES) throw apiError("payload_too_large", `a blob is at most ${MAX_BLOB_BYTES} bytes: a larger ciphertext goes up in parts`);
-  if (!request.body) throw apiError("bad_request", "a blob has a body");
-
-  // The first part's header is read before anything goes to the bucket: what isn't an age file
-  // with a key for each recipient is refused without a byte kept.
-  const reader = request.body.getReader();
-  const first: Uint8Array[] = [];
-  let head = new Uint8Array(0);
-  for (let problem = part > 1 ? null : ageHeaderProblem(head, to.length, false); problem !== null; ) {
-    if (problem !== "more") {
-      await reader.cancel();
-      throw apiError("bad_request", problem);
-    }
-    const { value, done } = await reader.read();
-    if (done) problem = ageHeaderProblem(head, to.length, true) ?? null;
-    else {
-      first.push(value);
-      const more = value.subarray(0, Math.max(0, MAX_HEADER_BYTES - head.length));
-      const joined = new Uint8Array(head.length + more.length);
-      joined.set(head);
-      joined.set(more, head.length);
-      head = joined;
-      problem = ageHeaderProblem(head, to.length, false);
-    }
-  }
-  const body = new ReadableStream<Uint8Array>({
-    start(out) {
-      for (const chunk of first) out.enqueue(chunk);
-    },
-    async pull(out) {
-      const { value, done } = await reader.read();
-      if (done) out.close();
-      else out.enqueue(value);
-    },
-    cancel: (reason) => reader.cancel(reason),
-  });
-
-  // Then on its way to the bucket: counted and hashed. The bucket keeps nothing of a body that
-  // turns out longer or shorter than it said.
   const id = uuid();
-  const digest = new crypto.DigestStream("SHA-256");
-  const hashing = digest.getWriter();
-  // A refused body never finishes its hash: nothing waits on it then.
-  const hashed = digest.digest;
-  hashed.catch(() => {});
-  let seen = 0;
-  let refusal: string | null = null;
-  const checked = body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      async transform(chunk, out) {
-        seen += chunk.byteLength;
-        if (seen > length) {
-          refusal = "the body is longer than its Content-Length";
-          throw new Refused(refusal);
-        }
-        await hashing.write(chunk);
-        out.enqueue(chunk);
-      },
-      async flush() {
-        await hashing.close();
-      },
-    }),
-  );
   const key = blobKey(sphere.id, id);
-  try {
-    await store.put(key, checked.pipeThrough(new FixedLengthStream(length)), { httpMetadata: { contentType: "application/octet-stream" } });
-  } catch (e) {
-    await store.delete(key);
-    if (refusal !== null) throw apiError("bad_request", refusal);
-    if (seen !== length) throw apiError("bad_request", "the body is shorter than its Content-Length");
-    throw e;
-  }
-  const sha256 = [...new Uint8Array(await hashed)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const { sha256, bytes: length } = await putCiphertext(store, key, request, to.length, part === 1);
   try {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO blobs (sphere, id, uploader, sha256, bytes, expires_at_s, created_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)").bind(sphere.id, id, from, sha256, length, expires, now),

@@ -1,0 +1,14 @@
+{
+  "case": "wire",
+  "name": "valid-public-response",
+  "description": "A link's ciphertext, as the lab's ids look.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/public.response"
+  },
+  "input": {
+    "link_id": "l-0123456789abcdef",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 51900
+  }
+}

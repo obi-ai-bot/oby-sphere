@@ -8,6 +8,7 @@ import { apiError, json, readBody, readJson } from "../http.ts";
 import { b64url, fromB64url, keyIdOf, sha256Hex } from "../protocol/crypto.ts";
 import { PROTOCOL, timestamp } from "../protocol/envelope.ts";
 import { takenFeatures } from "../protocol/features.ts";
+import { deletePublicLinks } from "./public.ts";
 import { ZERO_HASH } from "../protocol/chain.ts";
 import { schemaErrors } from "../protocol/schemas.ts";
 import { CLIENTS, type Client } from "../clients.ts";
@@ -298,7 +299,8 @@ export async function deleteSphere(request: Request, env: Env, deps: Deps, spher
     db.prepare("DELETE FROM spheres WHERE id = ?1").bind(sphere.id),
     db.prepare("INSERT INTO deleted_spheres (id, deleted_at) VALUES (?1, ?2)").bind(sphere.id, timestamp(deps.now() / 1000)),
   ]);
-  // Its blobs' ciphertext goes with it (sphere-api.md section 10).
+  // Its blobs' ciphertext and its public links go with it (sphere-api.md sections 10 and 11).
+  await deletePublicLinks(env, sphere.id);
   if (env.ARTIFACTS) {
     for (let cursor: string | undefined, more = true; more; ) {
       const page = await env.ARTIFACTS.list({ prefix: `blobs/${sphere.id}/`, ...(cursor ? { cursor } : {}) });

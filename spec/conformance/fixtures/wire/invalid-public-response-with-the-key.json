@@ -1,0 +1,16 @@
+{
+  "case": "wire",
+  "name": "invalid-public-response-with-the-key",
+  "description": "A link answer that carries the link's key: the key lives only in the link's # part.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/public.response"
+  },
+  "input": {
+    "link_id": "l-0123456789abcdef",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 51900,
+    "key": "AGE-SECRET-KEY-1NOTAREALKEY"
+  }
+}

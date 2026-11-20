@@ -89,6 +89,10 @@ Read [protocol.md](protocol.md) (messages) and [identity.md](identity.md) (keys,
 | `POST /v0.1/spheres/{sphere}/blobs?to=&expires_at=&part=` (`artifacts`) | agent token | `send:artifact_offer` or `reply` | the ciphertext, `application/octet-stream`, at most 67,108,864 bytes | `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json) (section 10) |
 | `GET /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of a member it is for | `receive` | | `200` the ciphertext, `application/octet-stream` (section 10) |
 | `DELETE /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of its uploader | `send:artifact_offer` or `reply` | | `204` (section 10) |
+| `PUT /v0.1/spheres/{sphere}/public/{link_id}` (`artifacts`) | agent token of the link's owner | `send:artifact_offer` | the ciphertext, `application/octet-stream`, at most 67,108,864 bytes | `201` (`200` when it replaces) [public.response](schemas/v0.1/wire/public.response.schema.json) (section 11) |
+| `PUT /v0.1/spheres/{sphere}/public/{link_id}/page` (`artifacts`) | agent token of the link's owner | `send:artifact_offer` | `text/html`, UTF-8, at most 262,144 bytes | `200` public.response (section 11) |
+| `DELETE /v0.1/spheres/{sphere}/public/{link_id}` (`artifacts`) | agent token of the link's owner | `send:artifact_offer` | | `204` (section 11) |
+| `GET /a/{link_id}`, `GET /a/{link_id}/blob`, `GET /a/viewer.js`, `GET /a/vendor/age.bundle.js`, `GET /a/vendor/LICENSES.txt` (`artifacts`) | none | | | section 11 |
 | `GET /v0.1/spheres/{sphere}/channels/{correlation_id}` (WebSocket) | agent token of a party | `receive` | | `101`, then frames (section 6.3) |
 | `PUT /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | [runner-status](schemas/v0.1/runner-status.schema.json) | `200` member |
 | `DELETE /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | | `200` member |
@@ -103,7 +107,7 @@ A path for an Obysphere that doesn't exist is `404 not_found`; a token for anoth
 
 | Feature | What | Where |
 |---|---|---|
-| `artifacts` | Artifacts: the actions `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`, and the `artifact` reference ([protocol.md](protocol.md) sections 5.20 to 5.24), and the blobs that hold their ciphertext (section 10). A message that uses them waits until every active member's card lists the feature (section 6.1, check 11). An Obysphere that keeps no blobs doesn't list it, answers the blob paths `404 not_found`, and takes no artifact message (`409 feature_not_taken`). | [protocol.md](protocol.md) section 5.20, section 10 |
+| `artifacts` | Artifacts: the actions `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`, and the `artifact` reference ([protocol.md](protocol.md) sections 5.20 to 5.24), the blobs that hold their ciphertext (section 10), and public links (section 11). A message that uses them waits until every active member's card lists the feature (section 6.1, check 11). An Obysphere that keeps no blobs doesn't list it, answers the blob and public paths `404 not_found`, and takes no artifact message (`409 feature_not_taken`). | [protocol.md](protocol.md) section 5.20, section 10 |
 | `a2a` | The A2A binding: each member's card `url` is an A2A 1.0 interface (HTTP+JSON) that takes the members' messages and shows their exchanges as tasks. Its other A2A paths answer A2A's errors (a2a.md section 3). | [a2a.md](a2a.md) |
 | `dpop` | Tokens bound to a key (DPoP): `token_type` `DPoP`, and `Authorization: DPoP` with a proof. | [identity.md](identity.md) section 4.6 |
 | `operator_recovery` | The operator token reaches an Obysphere's owners, its admin flags, revoke and invitations, and an owner's key can be reset by an admin or the operator; every operator call is logged for the admins. | section 3.3 |
@@ -620,3 +624,42 @@ It answers `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json): `
 **What the Obysphere sees.** Who uploaded what size for whom, and when it was fetched; never what it holds. A blob for several members is one ciphertext with one wrapped key each: the Obysphere sees how many keys, not which is whose.
 
 **Not yet.** Resumable uploads, a fetch limit per blob, and a quota per member are left for later (protocol.md section 16).
+
+## 11. Public links
+
+A public link lets anyone who has it look at an artifact, read only, with no account and no login. Its ciphertext is an age file sealed to a key of the link's own, made by the owner's agent for this link alone; the key travels only in the link's fragment, after `#`, which a browser never sends to a server. The Obysphere keeps the ciphertext and serves a page that decrypts it in the visitor's browser: it never has the key. Public links come with the feature `artifacts`.
+
+The link is `<base>/a/<link_id>#<key>`: `link_id` is 8 to 64 lower-case letters, digits and hyphens, chosen by the owner's agent and unique on the server (it names no Obysphere), and `key` is the age identity (`AGE-SECRET-KEY-1…`). The owner's agent shows the whole link to its owner once, and keeps the key only where it keeps secrets.
+
+**Putting it up.** `PUT /v0.1/spheres/{sphere}/public/{link_id}`, by the link's owner's agent with `send:artifact_offer`, with the ciphertext as a blob is sent (section 10, upload checks 4 and 5, one recipient: the link's key). A link id another member holds, here or in another Obysphere, is `409 conflict`. It answers `201` [public.response](schemas/v0.1/wire/public.response.schema.json), `{"link_id", "sha256", "bytes"}`, and `200` when it replaces the link's ciphertext with a new version's, under the same link and key. A ciphertext over 64 MiB can't go public yet.
+
+**Its page.** `PUT /v0.1/spheres/{sphere}/public/{link_id}/page`, by the same agent, with an HTML page (`text/html`, UTF-8, at most 262,144 bytes; `404 not_found` before the link's ciphertext is up) sets what `/a/{link_id}` serves, byte for byte, and answers its SHA-256 and size. It is how a client shows its own words and offers its own way back to its owner. Without one, the Obysphere serves its own page, which names no product. A new version of the ciphertext keeps the page.
+
+**Taking it back.** `DELETE /v0.1/spheres/{sphere}/public/{link_id}`, by the same agent (`204`), deletes the ciphertext and the page. Deleting an Obysphere deletes its links.
+
+**What anyone may read**, with no token, `GET` only (anything else is `404 not_found`):
+
+- `GET /a/{link_id}`: the link's page, or the Obysphere's own; `404` with the Obysphere's own page once the link is taken back, whose script then says so.
+- `GET /a/{link_id}/blob`: the ciphertext, `application/octet-stream`; `404 not_found` once taken back.
+- `GET /a/viewer.js` and `GET /a/vendor/age.bundle.js`: the scripts that fetch the ciphertext from `/a/{link_id}/blob`, decrypt it with the key from `location.hash`, unpack the tar (plain files only) and show the files from memory, in a frame sandboxed `allow-scripts`; `GET /a/vendor/LICENSES.txt`, the licences of what the bundle holds (age-encryption, BSD-3-Clause; noble and scure, MIT).
+
+Every answer under `/a/` carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: same-origin`. A page carries this policy, whoever wrote it:
+
+```
+Content-Security-Policy: default-src 'none'; script-src 'self' blob:; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' blob:; font-src blob:; media-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+```
+
+So a page runs only the Obysphere's scripts, fetches only from the Obysphere, and is framed by nobody; what it shows, its own scripts included, runs from memory in a sandboxed frame that reaches neither the page nor the key.
+
+**Pinning the viewer.** A client's page loads the scripts with `integrity`, pinning their exact bytes:
+
+| Script | `integrity` |
+|---|---|
+| `/a/viewer.js` | `sha384-4YflJn4LpAlAAx2pJeYTmaZ1WmCBkwThFq9GVdVpHz8w6idW6tvB4HznelFBJHGZ` |
+| `/a/vendor/age.bundle.js` | `sha384-KV3Kql52w9QHYE3pRNW3IUmTrO2lDVy3SvuVq+XTwIYr53CmS8icszF7YDEvWhdb` |
+
+and, on the first view, checks that `/a/{link_id}` serves its page byte for byte (the SHA-256 its `PUT` answered). So an Obysphere that served another page, or changed a script, is caught by the client that made the link, and a browser refuses a changed script outright. A change to either script changes its hash, and is a change to this table. What this can't catch: an Obysphere that serves a visitor a different page than it serves the owner's client. The key in the fragment is as safe as the page that reads it.
+
+**Rate limit.** At most 120 requests a minute from one client address, every path under `/a/` counted; past that, `429 rate_limited` with `Retry-After`. The Obysphere keeps, for the minute only, a SHA-256 of the address with the minute, never the address.
+
+**What the Obysphere sees.** Who put a link up, its size and when it changed, and how often it is fetched; never the key, so never what it holds.

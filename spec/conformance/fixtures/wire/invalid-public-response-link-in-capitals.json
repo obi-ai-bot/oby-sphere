@@ -1,0 +1,15 @@
+{
+  "case": "wire",
+  "name": "invalid-public-response-link-in-capitals",
+  "description": "A link id in capitals: lower case only.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/public.response"
+  },
+  "input": {
+    "link_id": "L-0123456789ABCDEF",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 51900
+  }
+}
