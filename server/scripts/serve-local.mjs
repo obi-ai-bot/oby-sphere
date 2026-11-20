@@ -31,7 +31,12 @@ let worker;
 try {
   worker = await startWorker({
     config: join(server, "wrangler.jsonc"),
-    bindings: token ? { SPHERE_OPERATOR_TOKEN: { type: "secret_text", value: token } } : {},
+    // The operator token as a secret; PUBLIC_ORIGIN, when given, the origin public links are served
+    // on (spec/sphere-api.md section 11), like http://localhost:<port> beside the API's 127.0.0.1.
+    bindings: {
+      ...(token ? { SPHERE_OPERATOR_TOKEN: { type: "secret_text", value: token } } : {}),
+      ...(process.env.PUBLIC_ORIGIN ? { PUBLIC_ORIGIN: { type: "plain_text", value: process.env.PUBLIC_ORIGIN } } : {}),
+    },
     dev: {
       remote: false,
       server: { hostname: "127.0.0.1", port: Number(port) },

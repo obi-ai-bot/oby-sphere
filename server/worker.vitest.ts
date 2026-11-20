@@ -10,7 +10,7 @@ export default defineConfig(async () => {
     plugins: [
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations, SPHERE_OPERATOR_TOKEN: "test-operator-token-0123456789-abcdefghijkl", GOOGLE_CLIENT_ID: "test-client.apps.googleusercontent.com", CREATOR_WORKSPACES: "example.com, Other.example" } },
+        miniflare: { bindings: { TEST_MIGRATIONS: migrations, SPHERE_OPERATOR_TOKEN: "test-operator-token-0123456789-abcdefghijkl", GOOGLE_CLIENT_ID: "test-client.apps.googleusercontent.com", CREATOR_WORKSPACES: "example.com, Other.example", PUBLIC_ORIGIN: "http://public.test" } },
       }),
     ],
     test: { setupFiles: ["./test/setup.ts"], include: ["test/**/*.test.ts"] },

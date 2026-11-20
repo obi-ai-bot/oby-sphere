@@ -195,9 +195,11 @@ export async function uploadBlob(request: Request, env: Env, deps: Deps, sphereI
   const id = uuid();
   const key = blobKey(sphere.id, id);
   const { sha256, bytes: length } = await putCiphertext(store, key, request, to.length, part === 1);
+  // The part it went up as is kept: only part 1's age header was checked, so only part 1 may be an
+  // offer's one blob or its first part (sphere-api.md section 6.1, check 12).
   try {
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO blobs (sphere, id, uploader, sha256, bytes, expires_at_s, created_at_s) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)").bind(sphere.id, id, from, sha256, length, expires, now),
+      env.DB.prepare("INSERT INTO blobs (sphere, id, uploader, sha256, bytes, expires_at_s, created_at_s, part) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)").bind(sphere.id, id, from, sha256, length, expires, now, part),
       ...to.map((obi) => env.DB.prepare("INSERT INTO blob_recipients (sphere, blob, obi) VALUES (?1, ?2, ?3)").bind(sphere.id, id, obi)),
     ]);
   } catch (e) {

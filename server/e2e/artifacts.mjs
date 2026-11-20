@@ -64,7 +64,9 @@ const run = mkdtempSync(join(tmpdir(), "obi-sphere-artifacts-"));
 const operatorToken = randomBytes(32).toString("base64url");
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
-const env = { SPHERE_OPERATOR_TOKEN: operatorToken, HOME: run, TMPDIR: run, WRANGLER_SEND_METRICS: "false", PATH: process.env.PATH };
+// Public links on an origin of their own: the same server by another name.
+const publicBase = `http://localhost:${port}`;
+const env = { SPHERE_OPERATOR_TOKEN: operatorToken, PUBLIC_ORIGIN: publicBase, HOME: run, TMPDIR: run, WRANGLER_SEND_METRICS: "false", PATH: process.env.PATH };
 const sphereProcess = spawn(process.execPath, ["scripts/local.mjs", "--port", String(port), "--persist-to", join(run, "state")], { cwd: SERVER_DIR, env, detached: true, stdio: "ignore" });
 const stop = () => {
   try {
@@ -101,8 +103,8 @@ const upload = async (who, query, bytes, path = "/blobs") => {
   });
   return { status: res.status, body: await res.json() };
 };
-const fetchBytes = async (path, token) => {
-  const res = await fetch(base + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+const fetchBytes = async (path, token, at = base) => {
+  const res = await fetch(at + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
   return { status: res.status, bytes: Buffer.from(await res.arrayBuffer()), headers: res.headers };
 };
 
@@ -126,7 +128,7 @@ await step("1  a Sphere that takes artifacts; ana and ben join, their cards acce
     await new Promise((r) => setTimeout(r, 250));
   }
   const features = await client.call("GET", "/v0.1/features");
-  assert(features.body.features.includes("artifacts"), `features: ${JSON.stringify(features.body)}`);
+  assert(features.body.features.includes("artifacts") && features.body.features.includes("public_links"), `features: ${JSON.stringify(features.body)}`);
   expectStatus(await client.call("POST", "/v0.1/spheres", { token: operatorToken, body: { sphere: client.sphere, name: "Artifacts", admin: { owner: "ana", owner_key: ana.owner.key.publicKey } } }), 201, "create");
   const admin = (await ana.owner.token()).access_token;
   for (const m of [ana, ben, cleo]) {
@@ -216,13 +218,17 @@ await step("6  a public link: the ciphertext only, sealed to the link's own key,
   const r = await upload(ana, "", cipher, `/public/${ctx.linkId}`);
   expectStatus(r, 201, "put the link");
   assert(!JSON.stringify(r.body).includes(link.secret), "the answer holds the key");
-  const blob = await fetchBytes(`/a/${ctx.linkId}/blob`);
+  assert(r.body.url === `${publicBase}/a/${ctx.linkId}`, `the link's url: ${r.body.url}`);
+  // The API's origin serves no /a/, and the public origin nothing else.
+  assert((await fetchBytes(`/a/${ctx.linkId}/blob`)).status === 404, "the API's origin served the link");
+  assert((await fetchBytes("/v0.1/health", undefined, publicBase)).status === 404, "the public origin served the API");
+  const blob = await fetchBytes(`/a/${ctx.linkId}/blob`, undefined, publicBase);
   assert(blob.status === 200 && blob.bytes.equals(cipher), "the link serves the ciphertext as it went up");
   assert(blob.headers.get("cache-control") === "no-store", "never cached");
   assert(decrypt(blob.bytes, link.raw).equals(ctx.tar), "the link's key opens it");
-  const page = await fetchBytes(`/a/${ctx.linkId}`);
+  const page = await fetchBytes(`/a/${ctx.linkId}`, undefined, publicBase);
   assert(page.status === 200 && (page.headers.get("content-security-policy") ?? "").includes("connect-src 'self'"), "the page and its policy");
-  ctx.link = `${base}/a/${ctx.linkId}#${link.secret}`;
+  ctx.link = `${r.body.url}#${link.secret}`;
 });
 
 console.log(failed ? `\n${failed} step(s) failed.` : "\nAll steps passed.");

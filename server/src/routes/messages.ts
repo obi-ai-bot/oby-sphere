@@ -59,6 +59,8 @@ interface BlobPart {
 interface StoredBlob extends BlobPart {
   uploader: string;
   expires_at_s: number;
+  /** The part it went up as: only part 1's age header was checked (sphere-api.md section 10). */
+  part: number;
   named: number;
 }
 
@@ -71,9 +73,11 @@ function blobParts(env_: Envelope): BlobPart[] {
 /** Why the blobs a message names aren't the ones it may name; null when they are. */
 function blobProblem(env_: Envelope, parts: BlobPart[], stored: StoredBlob[], now: number): string | null {
   const expires = seconds((env_.body.blob as { expires: string }).expires);
-  for (const part of parts) {
+  for (const [i, part] of parts.entries()) {
     const b = stored.find((s) => s.id === part.id);
     if (!b || b.uploader !== env_.from || b.named !== 1) return `blob ${part.id} isn't one ${env_.from} uploaded for ${env_.to}`;
+    // The one blob, or the first part, is the one whose age header the Obysphere checked; each part in its place.
+    if (b.part !== i + 1) return `blob ${part.id} went up as part ${b.part}, and the message names it as part ${i + 1}`;
     if (b.expires_at_s <= now) return `blob ${part.id} has expired`;
     if (b.bytes !== part.bytes || b.sha256 !== part.sha256) return `blob ${part.id} isn't the size and hash the message says`;
     if (b.expires_at_s !== expires) return `blob ${part.id} expires at ${timestamp(b.expires_at_s)}, not when the message says`;
@@ -83,13 +87,16 @@ function blobProblem(env_: Envelope, parts: BlobPart[], stored: StoredBlob[], no
 
 /**
  * What recording an artifact message changes beside the chain: the exchange names each blob an
- * offer, an update or a version names; a share taken back (artifact_revoke, artifact_deleted)
- * cuts its receiver off from every blob its exchange named (sphere-api.md section 10).
+ * offer, an update or a version names; a share taken back (artifact_revoke, artifact_deleted), or
+ * declined by its receiver, cuts the receiver off from every blob its exchange named
+ * (sphere-api.md section 10).
  */
 function artifactWrites(db: D1Database, sphere: string, env_: Envelope, parts: BlobPart[]): D1PreparedStatement[] {
-  if (env_.type === "artifact_revoke" || env_.type === "artifact_deleted") {
-    return [db.prepare("DELETE FROM blob_recipients WHERE sphere = ?1 AND obi = ?2 AND blob IN (SELECT blob FROM artifact_blobs WHERE sphere = ?1 AND correlation_id = ?3)").bind(sphere, env_.to, env_.correlation_id)];
-  }
+  const cut = (obi: string) => db.prepare("DELETE FROM blob_recipients WHERE sphere = ?1 AND obi = ?2 AND blob IN (SELECT blob FROM artifact_blobs WHERE sphere = ?1 AND correlation_id = ?3)").bind(sphere, obi, env_.correlation_id);
+  if (env_.type === "artifact_revoke" || env_.type === "artifact_deleted") return [cut(env_.to)];
+  // A receiver that declines a share wants none of it: its blobs are served to it no more. (In
+  // any other exchange no blob is named, and this deletes nothing.)
+  if (env_.type === "decline") return [cut(env_.from)];
   return parts.map((p) => db.prepare("INSERT OR IGNORE INTO artifact_blobs (sphere, correlation_id, blob) VALUES (?1, ?2, ?3)").bind(sphere, env_.correlation_id, p.id));
 }
 
@@ -161,7 +168,7 @@ export async function recordSend(
         ? []
         : [
             env.DB.prepare(
-              `SELECT b.id, b.uploader, b.sha256, b.bytes, b.expires_at_s, EXISTS (SELECT 1 FROM blob_recipients r WHERE r.sphere = b.sphere AND r.blob = b.id AND r.obi = ?2) AS named
+              `SELECT b.id, b.uploader, b.sha256, b.bytes, b.expires_at_s, b.part, EXISTS (SELECT 1 FROM blob_recipients r WHERE r.sphere = b.sphere AND r.blob = b.id AND r.obi = ?2) AS named
                FROM blobs b WHERE b.sphere = ?1 AND b.id IN (${parts.map((_, i) => `?${i + 3}`).join(", ")})`,
             ).bind(sphere0.id, env_.to, ...parts.map((p) => p.id)),
           ]),

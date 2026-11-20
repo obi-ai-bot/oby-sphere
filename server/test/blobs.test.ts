@@ -215,6 +215,55 @@ describe("blobs (sphere-api.md section 10)", () => {
     expect(r.body.error.code).toBe("conflict");
   });
 
+  it("names a blob only in the place it went up as: an unchecked later part is never an offer's one blob or its first", async () => {
+    const w = await sharing();
+    const t = await tokens(w);
+    // Plaintext goes up as part 2, which has no age header to check.
+    const plain = new TextEncoder().encode("<html><title>Checkout</title>Not encrypted at all.</html>");
+    const sneaky = (await uploadBlob(w, t.ana, ["obi-ben"], plain, { query: "&part=2" })).body;
+    const asOne = (await sendOffer(w, "obi-ana", "obi-ben", offerOf(ref(sneaky)), t.ana)).r;
+    expect(asOne.status).toBe(409);
+    expect(asOne.body.error.code).toBe("conflict");
+    expect(asOne.body.error.message).toContain("part 2");
+    // Nor first among parts, nor anywhere but second.
+    const one = (await uploadBlob(w, t.ana, ["obi-ben"], ageFile(1, 1000))).body;
+    const partOf = (b: typeof one) => ({ id: b.id, sha256: b.sha256, bytes: b.bytes });
+    const whole = (first: typeof one, parts: (typeof one)[]) => ({ id: first.id, sha256: "e".repeat(64), bytes: parts.reduce((n, p) => n + p.bytes, 0), expires: first.expires });
+    const swapped = (await sendOffer(w, "obi-ana", "obi-ben", offerOf(whole(sneaky, [sneaky, one]), { blobs: [partOf(sneaky), partOf(one)] }), t.ana)).r;
+    expect(swapped.body.error.code).toBe("conflict");
+    const third = (await uploadBlob(w, t.ana, ["obi-ben"], crypto.getRandomValues(new Uint8Array(300)), { query: "&part=3" })).body;
+    const skipped = (await sendOffer(w, "obi-ana", "obi-ben", offerOf(whole(one, [one, third]), { blobs: [partOf(one), partOf(third)] }), t.ana)).r;
+    expect(skipped.body.error.code).toBe("conflict");
+    // In order, it goes.
+    expect((await sendOffer(w, "obi-ana", "obi-ben", offerOf(whole(one, [one, sneaky]), { blobs: [partOf(one), partOf(sneaky)] }), t.ana)).r.status).toBe(202);
+  });
+
+  it("cuts a receiver off from its share's blobs once it declines the share", async () => {
+    const w = await sharing();
+    const t = await tokens(w);
+    const b = (await uploadBlob(w, t.ana, ["obi-ben"], ageFile(1, 100))).body;
+    const { env: offer } = await sendOffer(w, "obi-ana", "obi-ben", offerOf(ref(b)), t.ana);
+    expect((await fetchBlob(w, b.id, t.ben)).status).toBe(200);
+    const decline = await w.reply(offer, "decline", { reason: "owner_declined" }, { seal: sealFor("obi-ana") });
+    expect((await w.send(decline, t.ben)).status).toBe(202);
+    expect((await fetchBlob(w, b.id, t.ben)).status).toBe(404);
+  });
+
+  it("deletes a Sphere's ciphertext before its rows, so a failure leaves it to delete again", async () => {
+    const w = await sharing();
+    const t = await tokens(w);
+    await uploadBlob(w, t.ana, ["obi-ben"], ageFile(1, 100));
+    const failing = { ...env, ARTIFACTS: { ...env.ARTIFACTS!, list: env.ARTIFACTS!.list.bind(env.ARTIFACTS), get: env.ARTIFACTS!.get.bind(env.ARTIFACTS), delete: async () => { throw new Error("the bucket is down"); } } };
+    const admin = await w.ownerToken("ana");
+    const down = await makeCall(w.clock, failing as unknown as Cloudflare.Env)("DELETE", `/v0.1/spheres/${w.sphere}`, { token: admin });
+    expect(down.status).toBe(500);
+    // Still there: the Obysphere, its blob's row and its ciphertext.
+    expect((await w.call("GET", `/v0.1/spheres/${w.sphere}`, { token: admin })).status).toBe(200);
+    expect(await held(w)).toHaveLength(1);
+    expect((await w.call("DELETE", `/v0.1/spheres/${w.sphere}`, { token: admin })).status).toBe(204);
+    expect(await held(w)).toEqual([]);
+  });
+
   it("cuts a receiver off from its share's blobs once the share is taken back, and only that receiver", async () => {
     const w = await sharing();
     const t = await tokens(w);

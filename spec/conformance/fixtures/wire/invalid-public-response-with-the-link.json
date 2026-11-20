@@ -11,6 +11,8 @@
     "link_id": "l-0123456789abcdef",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "bytes": 51900,
+    "expires": "2026-11-13T12:00:00Z",
+    "url": "https://a.sphere.example/a/l-0123456789abcdef",
     "link": "https://sphere.example/a/l-0123456789abcdef#AGE-SECRET-KEY-1NOTAREALKEY"
   }
 }

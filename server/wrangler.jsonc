@@ -47,6 +47,10 @@
   // Sphere takes no artifact. An environment below lists it again to take them: Deskree's doesn't
   // yet, so deploying it changes nothing until its owner adds the binding and makes the bucket.
   "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "obi-sphere-artifacts" }],
+  // Public links (spec/sphere-api.md section 11): the limit on what one visitor may ask of /a/, kept
+  // by Cloudflare's rate limiter, so a visit writes nothing; and the separate origin /a/ is served
+  // on, PUBLIC_ORIGIN under vars, never the API's. Without both, the Sphere serves no public link.
+  "ratelimits": [{ "name": "PUBLIC_LIMIT", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }],
   "env": {
     // Deskree's own instance, at obysphere.deskree.com in Deskree's Cloudflare account
     // (docs/deploy-cloudflare.md). Copy this block, rename it and put your own values in to run yours.

@@ -6,7 +6,7 @@ import { tokenEndpoint } from "./oauth.ts";
 import { getTask, noPushNotifications, notSupported, sendMessage } from "./routes/a2a.ts";
 import { audit } from "./routes/audit.ts";
 import { deleteBlob, fetchBlob, uploadBlob } from "./routes/blobs.ts";
-import { deletePublic, publicAsset, publicBlob, publicPage, putPublic, putPublicPage } from "./routes/public.ts";
+import { deletePublic, publicAsset, publicBlob, publicNothing, publicOrigin, publicPage, putPublic, putPublicPage } from "./routes/public.ts";
 import { openChannel } from "./routes/channels.ts";
 import { deleteDevice, deleteRelay, openRelay, putDevice, putRelay } from "./routes/relays.ts";
 import { deleteRunner, putRunner } from "./routes/runner.ts";
@@ -68,13 +68,7 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}$`), putPublic],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}/page$`), putPublicPage],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/public/${SEGMENT}$`), deletePublic],
-  // A public link's pages (spec/sphere-api.md section 11): no login, read only. The runtime first,
-  // so its paths are never read as a link's.
-  ["GET", /^\/a\/viewer\.js$/, publicAsset("viewer.js")],
-  ["GET", /^\/a\/vendor\/age\.bundle\.js$/, publicAsset("vendor/age.bundle.js")],
-  ["GET", /^\/a\/vendor\/LICENSES\.txt$/, publicAsset("vendor/LICENSES.txt")],
-  ["GET", new RegExp(`^/a/${SEGMENT}$`), publicPage],
-  ["GET", new RegExp(`^/a/${SEGMENT}/blob$`), publicBlob],
+
   ["GET", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/channels/${SEGMENT}$`), openChannel],
   ["PUT", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), putRunner],
   ["DELETE", new RegExp(`^/v0\\.1/spheres/${SEGMENT}/members/${SEGMENT}/runner$`), deleteRunner],
@@ -98,10 +92,25 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["DELETE", new RegExp(`^/v0\\.1/relay/${SEGMENT}/devices/${SEGMENT}$`), deleteDevice],
 ];
 
+/**
+ * A public link's pages (spec/sphere-api.md section 11): no login, read only, and only on
+ * PUBLIC_ORIGIN, which serves nothing else; the API's origin has no /a/. The runtime first, so its
+ * paths are never read as a link's.
+ */
+const PUBLIC_ROUTES: [string, RegExp, Handler][] = [
+  ["GET", /^\/a\/viewer\.js$/, publicAsset("viewer.js")],
+  ["GET", /^\/a\/vendor\/age\.bundle\.js$/, publicAsset("vendor/age.bundle.js")],
+  ["GET", /^\/a\/vendor\/LICENSES\.txt$/, publicAsset("vendor/LICENSES.txt")],
+  ["GET", new RegExp(`^/a/${SEGMENT}$`), publicPage],
+  ["GET", new RegExp(`^/a/${SEGMENT}/blob$`), publicBlob],
+];
+
 export async function handle(request: Request, env: Env, deps: Deps): Promise<Response> {
   try {
-    const path = new URL(request.url).pathname;
-    for (const [method, pattern, handler] of ROUTES) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const onPublic = url.origin === publicOrigin(env);
+    for (const [method, pattern, handler] of onPublic ? PUBLIC_ROUTES : ROUTES) {
       const m = pattern.exec(path);
       if (!m || method !== request.method) continue;
       const params = m.slice(1).map((p) => {
@@ -113,6 +122,7 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
       });
       return await handler(request, env, deps, ...params);
     }
+    if (onPublic) return await publicNothing(request, env, deps);
     throw apiError("not_found", "no such endpoint");
   } catch (e) {
     if (e instanceof ApiError) return errorResponse(e);

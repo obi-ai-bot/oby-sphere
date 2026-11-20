@@ -2,6 +2,7 @@
 // an owner who lost their key binds a new one, and the old key's agents are revoked; and the owner
 // events every member reads.
 
+import { deleteRevokedMembersLinks } from "./public.ts";
 import { adminOrOperator, bearer, isOperator, requireOwnerToken, requireScope } from "../auth.ts";
 import { getOwner, guardedWrite, memberJson, operatorLogStatement, requireSphere, withRetries, type KeyRow, type MemberRow, type OwnerRow, type SphereRow } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
@@ -84,6 +85,8 @@ export async function replaceOwnerKey(
     ...(o.statements ?? []),
   ]);
   if (!written) return null;
+  // The revoked agents' public links go with them (sphere-api.md section 11).
+  await deleteRevokedMembersLinks(env, sphere.id);
   const event = await db.prepare("SELECT * FROM owner_events WHERE sphere = ?1 AND owner = ?2 ORDER BY id DESC LIMIT 1").bind(sphere.id, ownerId).first<EventRow>();
   const bound = { owner_key: newKey, owner_key_id: newKeyId };
   return { bound, answer: { sphere: sphere.id, owner: ownerId, ...bound, admin: owner.admin === 1, event: eventJson(event!) } };

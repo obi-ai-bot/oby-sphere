@@ -913,11 +913,14 @@ export function buildFixtures() {
   wireCase("invalid-blob-response-with-a-url", "A blob answer that hands out a URL to fetch it from elsewhere.", BLOB, { ...blobAnswer, url: "https://bucket.example/blob" }, "reject");
   // A public link (sphere-api.md section 11): what the Obysphere serves, never its key.
   const PUBLIC = "wire/public.response";
-  const linkAnswer = { link_id: "l-0123456789abcdef", sha256: "a".repeat(64), bytes: 51900 };
+  const linkAnswer = { link_id: "l-0123456789abcdef", sha256: "a".repeat(64), bytes: 51900, expires: "2026-11-13T12:00:00Z", url: "https://a.sphere.example/a/l-0123456789abcdef" };
   wireCase("valid-public-response", "A link's ciphertext, as the lab's ids look.", PUBLIC, linkAnswer, "accept");
   wireCase("invalid-public-response-with-the-key", "A link answer that carries the link's key: the key lives only in the link's # part.", PUBLIC, { ...linkAnswer, key: "AGE-SECRET-KEY-1NOTAREALKEY" }, "reject");
   wireCase("invalid-public-response-with-the-link", "A link answer that carries the whole link: the Obysphere never has its # part.", PUBLIC, { ...linkAnswer, link: "https://sphere.example/a/l-0123456789abcdef#AGE-SECRET-KEY-1NOTAREALKEY" }, "reject");
   wireCase("invalid-public-response-link-with-a-slash", "A link id that climbs out of /a/.", PUBLIC, { ...linkAnswer, link_id: "../v0.1/spheres" }, "reject");
+  wireCase("invalid-public-response-url-with-the-key", "A link answer whose url carries the key after '#': the Obysphere never has it.", PUBLIC, { ...linkAnswer, url: `${linkAnswer.url}#AGE-SECRET-KEY-1NOTAREALKEY` }, "reject");
+  wireCase("invalid-public-response-url-elsewhere", "A url that isn't a link's page: another path.", PUBLIC, { ...linkAnswer, url: "https://a.sphere.example/v0.1/spheres/x" }, "reject");
+  wireCase("invalid-public-response-without-expiry", "A link with no expiry: every link has one.", PUBLIC, (({ expires: _e, ...rest }) => rest)(linkAnswer), "reject");
   wireCase("invalid-public-response-link-in-capitals", "A link id in capitals: lower case only.", PUBLIC, { ...linkAnswer, link_id: "L-0123456789ABCDEF" }, "reject");
   wireCase("valid-policy-put-artifacts", "A rule that lets every member share artifacts with every other.", POLICY_PUT, { expected_version: 1, rules: [rule({ actions: ["artifact_offer"], repos: ["*"] })] }, "accept");
   wireCase("valid-policy-put-classes", "A rule that requires a class of the sending and the receiving side.", POLICY_PUT, { expected_version: 1, rules: [rule({ actions: ["run_request"], from_classes: ["holder"], to_classes: ["executor"] })] }, "accept");

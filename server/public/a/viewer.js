@@ -12,7 +12,7 @@
  * Served by the Obysphere at /a/viewer.js (spec/sphere-api.md section 11), whatever page loads it:
  * the Obysphere's own, or the one the link's owner's client uploaded, which pins it by its SRI
  * hash. From oby's lab (tools/obid-spec/lab-ui/artifacts/public/viewer.js), with the link's id
- * read from the path when the page doesn't say it.
+ * read from the path when the page doesn't say it, and the key taken out of the address once read.
  */
 (function () {
   'use strict';
@@ -123,6 +123,9 @@
   }
 
   var key = decodeURIComponent(location.hash.slice(1));
+  // The key leaves the address bar, the history and anything that copies the page's address from
+  // now on: it lives in this script alone.
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   if (!key) {
     fail('This link is missing its key: copy the whole link.');
     return;

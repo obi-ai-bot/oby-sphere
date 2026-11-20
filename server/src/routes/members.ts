@@ -7,6 +7,7 @@ import {
 } from "../db.ts";
 import type { Deps, Env } from "../env.ts";
 import { apiError, json, readJson } from "../http.ts";
+import { deleteRevokedMembersLinks } from "./public.ts";
 import { cardParams, featuresUsed, publishingProblem, verifyCard, type AgentCard } from "../protocol/card.ts";
 import { constantTimeEqual, keyIdOf, randomToken, sha256, sha256Hex, uuid } from "../protocol/crypto.ts";
 import { timestamp } from "../protocol/envelope.ts";
@@ -347,6 +348,8 @@ export async function revoke(request: Request, env: Env, deps: Deps, sphereId: s
       env.DB.prepare("DELETE FROM relays WHERE sphere = ?1 AND obi = ?2").bind(sphere.id, obi),
     ]);
     if (!written) return null;
+    // Its public links go with it (sphere-api.md section 11).
+    await deleteRevokedMembersLinks(env, sphere.id);
     return json(200, await loadMemberJson(env.DB, sphere.id, obi));
   }, deps.retryBudgetMs);
 }
