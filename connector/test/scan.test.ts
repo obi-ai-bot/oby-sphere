@@ -1,7 +1,7 @@
 // The outgoing scan: what it stops, what it lets through, and that it never repeats a match.
 
 import { strict as assert } from "node:assert";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,12 @@ import { test } from "node:test";
 import { builtinScan, scanOutgoing, strings } from "../src/scan.ts";
 
 const token = (prefix: string, n: number) => prefix + randomBytes(n).toString("base64").replace(/[^A-Za-z0-9]/g, "x").slice(0, n);
+// n distinct letters and digits, with at least one digit, one capital and one small letter, in a
+// random order: always what the high-entropy rule looks for, never the same string twice. A plain
+// `token` lacks a digit, or falls under the entropy bar, about once in 700 draws.
+const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const shuffled = (xs: string[]) => xs.map((x) => ({ x, k: randomInt(2 ** 47) })).sort((a, b) => a.k - b.k).map(({ x }) => x);
+const distinct = (n: number) => shuffled(["0", "a", "A", ...shuffled([...ALNUM.replace(/[0aA]/g, "")]).slice(0, n - 3)]).join("");
 
 test("the built-in rules stop common secrets, wherever they are in the body", () => {
   const cases: [string, string][] = [
@@ -21,7 +27,7 @@ test("the built-in rules stop common secrets, wherever they are in the body", ()
     ["password = Tr0ub4dor&3xyz", "secret-assignment"],
     [`token ${token("xoxb-", 30)}`, "slack-token"],
     [`eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.${token("", 30)}`, "jwt"],
-    [`a random ${token("", 40)}`, "high-entropy-string"],
+    [`a random ${distinct(40)}`, "high-entropy-string"],
   ];
   for (const [text, rule] of cases) {
     const found = builtinScan(strings({ summary: "fine", findings: [{ detail: text }] }));
