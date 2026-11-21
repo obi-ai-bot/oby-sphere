@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Shared with you</title>
+<!--
+  The Obysphere's own page for a public link (spec/sphere-api.md section 11, Apache-2.0), served at
+  /a/<linkId> when the link's owner's client uploaded no page of its own. The Obysphere holds only
+  ciphertext and this page; the key is in the link's # part, which a browser never sends. The page
+  reads it, fetches the ciphertext, decrypts it here (age, /a/vendor/age.bundle.js) and shows the
+  files from memory in a sandboxed frame. It names no product: what a client says of itself goes in
+  the page that client uploads.
+-->
+<style>
+html,body{margin:0;height:100%;background:#0b0b0b;color:#ececec;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.06);color:#a3a3a8;font-size:13px;flex-wrap:wrap}
+header b{color:#ececec;font-weight:600}
+#status{margin:48px auto;max-width:560px;padding:0 16px;text-align:center;color:#a3a3a8;font-size:15px}
+#view{position:absolute;inset:46px 0 0 0}
+#view iframe{width:100%;height:100%;border:0;background:#fff}
+#view pre{margin:0;padding:32px;white-space:pre-wrap;color:#ececec}
+#view ol{max-width:640px;margin:32px auto;color:#ececec}
+</style>
+<script src="/a/vendor/age.bundle.js" integrity="{{AGE_SRI}}"></script>
+<script src="/a/viewer.js" integrity="{{VIEWER_SRI}}" defer></script>
+</head>
+<body>
+<header><b>Shared with you</b><span>read only, decrypted in this browser</span></header>
+<p id="status" role="status">Opening what was shared…</p>
+<div id="view"></div>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "case": "envelope",
+  "name": "invalid-missing-artifact-offer-artifact",
+  "description": "A artifact offer body without artifact.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "f1a31aec-740e-80e1-85f6-51987708a142",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "f1a31aec-740e-80e1-85f6-51987708a142",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "blob": {
+        "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 51900,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Does the header still work on a phone?"
+    },
+    "signature": "juWArp4ZEXMneAGHy_sbApIY0fdUjUNf2h5Kl4aPalcc7U24LZEJDB7S2KQFO83szzEqbCd6qOCsm0pI5XnrBQ"
+  }
+}

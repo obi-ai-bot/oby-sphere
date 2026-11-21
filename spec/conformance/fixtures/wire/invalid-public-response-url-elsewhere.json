@@ -1,0 +1,17 @@
+{
+  "case": "wire",
+  "name": "invalid-public-response-url-elsewhere",
+  "description": "A url that isn't a link's page: another path.",
+  "expect": "reject",
+  "reason": "bad_request",
+  "context": {
+    "schema": "wire/public.response"
+  },
+  "input": {
+    "link_id": "l-0123456789abcdef",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 51900,
+    "expires": "2026-11-13T12:00:00Z",
+    "url": "https://a.sphere.example/v0.1/spheres/x"
+  }
+}

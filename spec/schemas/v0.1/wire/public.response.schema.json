@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/wire/public.response.schema.json",
+  "title": "PUT /v0.1/spheres/{sphere}/public/{linkId}, and \u2026/page",
+  "description": "What the Obysphere now serves for a public link (spec/sphere-api.md section 11): the SHA-256 and size of the ciphertext it keeps, or of the page the owner's client uploaded, which that client checks against what /a/{linkId} serves; when the link expires; and its URL on the Obysphere's public origin, without the key, which the client adds after '#'. Comes with the feature public_links.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "link_id",
+    "sha256",
+    "bytes",
+    "expires",
+    "url"
+  ],
+  "properties": {
+    "link_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9-]{7,63}$",
+      "description": "The link's id, its owner's client's choice, unique on the server: /a/{linkId}."
+    },
+    "sha256": {
+      "$ref": "../common.schema.json#/$defs/hash"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 67108864
+    },
+    "expires": {
+      "$ref": "../common.schema.json#/$defs/timestamp",
+      "description": "When the link stops being served, unless its owner puts it up again: at most 30 days on."
+    },
+    "url": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 400,
+      "pattern": "^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?/a/[a-z0-9][a-z0-9-]{7,63}$",
+      "description": "The link without its key: the public origin's /a/{linkId}. No query and no '#'."
+    }
+  }
+}

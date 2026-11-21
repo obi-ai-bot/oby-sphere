@@ -1,0 +1,19 @@
+{
+  "case": "wire",
+  "name": "valid-blob-response-64-mib",
+  "description": "A blob as large as one blob may be: 67,108,864 bytes.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/blob.response"
+  },
+  "input": {
+    "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 67108864,
+    "expires": "2026-10-21T12:00:00Z",
+    "to": [
+      "obi-a",
+      "obi-c"
+    ]
+  }
+}

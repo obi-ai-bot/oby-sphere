@@ -82,6 +82,10 @@ jobs:
         working-directory: server
         run: pnpm run check:validators
 
+      - name: The public link's runtime is built from public/a/
+        working-directory: server
+        run: pnpm run check:viewer
+
       - name: The protocol code is the client library's (src/protocol/lib matches client/src)
         working-directory: server
         run: pnpm run check:client
@@ -109,6 +113,10 @@ jobs:
       - name: Scenario steps 1, 3, 5 and 7 against a local Sphere
         working-directory: server
         run: pnpm run scenario
+
+      - name: Artifacts end to end against a local Sphere, with real age files and sealed words
+        working-directory: server
+        run: pnpm run artifacts
 
       - name: Receiver track and conformance report/badge tests (careful passes, reckless fails)
         working-directory: spec

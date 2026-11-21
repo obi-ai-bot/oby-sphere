@@ -8,6 +8,25 @@ export interface Env {
   DOORBELLS: DurableObjectNamespace<import("./doorbell.ts").Doorbell>;
   /** One PhoneRelay per phone relay: a Mac and its paired phones (src/relay.ts). */
   RELAYS: DurableObjectNamespace<import("./relay.ts").PhoneRelay>;
+  /**
+   * Where artifacts' blobs are kept, ciphertext only (spec/sphere-api.md section 10): an R2 bucket.
+   * Unbound (the Node build, or an environment that doesn't list it), this Sphere takes no artifact:
+   * /v0.1/features doesn't list `artifacts`, and the blob paths answer 404.
+   */
+  ARTIFACTS?: R2Bucket;
+  /**
+   * The rate limit on public links' pages (spec/sphere-api.md section 11): Cloudflare's rate
+   * limiter, keyed by the visitor's address (an IPv6 one by its /64), so a visit writes nothing.
+   * Unbound, the Sphere serves no public link.
+   */
+  PUBLIC_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
+  /**
+   * The origin public links are served on (spec/sphere-api.md section 11), like
+   * `https://a.sphere.example.com`: another host than the API's, routed to this Worker too, so a
+   * member's page never runs on the API's origin. The API refuses /a/ on its own origin, and this
+   * one serves nothing but /a/. Unset, or not an http or https origin, the Sphere serves no public link.
+   */
+  PUBLIC_ORIGIN?: string;
   /** The operator token that creates Spheres: a Worker secret, at least 32 characters. Unset: every operator call is 403. */
   SPHERE_OPERATOR_TOKEN?: string;
   /** Only the operator token's SHA-256, lower-case hex: a self-hosted Sphere's, kept from its claim (node/main.ts). SPHERE_OPERATOR_TOKEN wins when both are set. */

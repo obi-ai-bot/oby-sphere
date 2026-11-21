@@ -9,6 +9,7 @@ declare global {
       TEST_MIGRATIONS: D1Migration[];
       SPHERE_OPERATOR_TOKEN: string;
       GOOGLE_CLIENT_ID: string;
+      PUBLIC_ORIGIN: string;
     }
   }
 }

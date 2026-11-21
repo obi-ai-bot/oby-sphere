@@ -23,7 +23,8 @@ describe("health", () => {
   it("lists the additions it takes and the extensions it offers at /v0.1/features, never in health (spec/README.md, Versions)", async () => {
     const r = await makeCall(new Clock())("GET", "/v0.1/features");
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ features: [...FEATURES, "a2a", "dpop", "operator_recovery", "owner_account_link", "owner_rebind", "phone_relay", "signin_providers", "sphere_url_aud"].sort() });
+    // The test Worker binds the ARTIFACTS bucket, the PUBLIC_LIMIT rate limiter and a PUBLIC_ORIGIN, so it takes artifacts and serves public links.
+    expect(r.body).toEqual({ features: [...FEATURES, "a2a", "artifacts", "dpop", "operator_recovery", "owner_account_link", "owner_rebind", "phone_relay", "public_links", "signin_providers", "sphere_url_aud"].sort() });
     expectSchema("featuresResponse", r.body);
   });
 

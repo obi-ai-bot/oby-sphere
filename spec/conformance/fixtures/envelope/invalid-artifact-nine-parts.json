@@ -1,0 +1,103 @@
+{
+  "case": "envelope",
+  "name": "invalid-artifact-nine-parts",
+  "description": "Nine parts (the most is eight).",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "a0a7434c-5449-8580-8921-d0bdf6407338",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "a0a7434c-5449-8580-8921-d0bdf6407338",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "Checkout page, second pass",
+        "kind": "html",
+        "version": 3,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "blob": {
+        "id": "dac8f28a-9e63-8fe2-8ad6-46a08ef3d903",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bytes": 36864,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Does the header still work on a phone?",
+      "blobs": [
+        {
+          "id": "dac8f28a-9e63-8fe2-8ad6-46a08ef3d903",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "b42e2aaf-9abd-8889-88f2-168e4b917ace",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "65810bdc-3ee1-889c-8410-d7a5b780ce19",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "d496b9c3-d7b0-8ee0-8b3a-f41eabaf30b5",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "c9afe84b-e142-8a64-8f88-748b6f85291c",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "693a2bb3-eef3-8f58-8968-60b019ff0b99",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "cee52f4a-de05-8e0c-8afa-4c95e2368844",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "43c90ac4-e542-82c1-85e5-3d05fa7c0cac",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        },
+        {
+          "id": "fcd5e851-8392-83b3-8418-587ba893d576",
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "bytes": 4096
+        }
+      ]
+    },
+    "signature": "KErgLp-B1xssKXkkSLYI7waBna7dTAFYZ9_SFKqNSatpxY8oB7zmurU4nxJv7KBVFf-vpSNaMzTbbJBV6j25AA"
+  }
+}

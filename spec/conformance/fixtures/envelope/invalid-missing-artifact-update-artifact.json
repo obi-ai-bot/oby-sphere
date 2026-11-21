@@ -1,0 +1,46 @@
+{
+  "case": "envelope",
+  "name": "invalid-missing-artifact-update-artifact",
+  "description": "A artifact update body without artifact.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "5d44e90b-37ef-8769-8ccc-de09d42523ec",
+    "type": "artifact_update",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "blob": {
+        "id": "c3bf2599-92be-8dbb-8b24-7d3d048b1d44",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "bytes": 52344,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "latest": true
+    },
+    "signature": "lCh2gBq3AkIzQtFFTROoGY16wUeTAu4XQFzrtzqvReUiF0zlUkYs6HbhtQd9YpOss87EAER3hc0uWzps694tCQ"
+  }
+}

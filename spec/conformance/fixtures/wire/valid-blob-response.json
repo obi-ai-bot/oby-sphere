@@ -1,0 +1,19 @@
+{
+  "case": "wire",
+  "name": "valid-blob-response",
+  "description": "A blob kept for two members.",
+  "expect": "accept",
+  "context": {
+    "schema": "wire/blob.response"
+  },
+  "input": {
+    "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "bytes": 51900,
+    "expires": "2026-10-21T12:00:00Z",
+    "to": [
+      "obi-a",
+      "obi-c"
+    ]
+  }
+}

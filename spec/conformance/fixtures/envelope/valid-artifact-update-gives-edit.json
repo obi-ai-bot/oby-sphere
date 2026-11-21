@@ -1,0 +1,55 @@
+{
+  "case": "envelope",
+  "name": "valid-artifact-update-gives-edit",
+  "description": "An update that gives edit from now on.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "fcb54050-411e-8d4a-88a2-f1ed45a2ed28",
+    "type": "artifact_update",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "in_reply_to": "293ecc97-39be-89df-82d7-918d301f18fa",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "Checkout page, second pass",
+        "kind": "html",
+        "version": 4,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "blob": {
+        "id": "c3bf2599-92be-8dbb-8b24-7d3d048b1d44",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "bytes": 52344,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "latest": true,
+      "access": "edit"
+    },
+    "signature": "IH9o6r5rnIwM7R2CsYiLfNMt7smC1L4jVNyStCt6FftdoJgn9xchEqBWYGfiep5VIXxEdbuzwiQAscIeZvcbAA"
+  }
+}

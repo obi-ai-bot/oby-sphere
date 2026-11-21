@@ -33,7 +33,10 @@ interface AuditRow {
   result_for: string | null;
 }
 
-const rowMessage = (r: AuditRow): ExchangeMessage => ({ type: r.type, from: r.from_obi, to: r.to_obi, result_for: r.result_for ?? undefined });
+// An artifact_offer's exchange reads its messages' typed fields (`access`, `latest`, the artifact's
+// id: protocol.md section 4, rule 11), which only the recorded envelope holds; they are never words.
+const rowMessage = (r: AuditRow): ExchangeMessage =>
+  r.type.startsWith("artifact_") ? exchangeMessage(JSON.parse(r.envelope) as Envelope) : { type: r.type, from: r.from_obi, to: r.to_obi, result_for: r.result_for ?? undefined };
 const sendAnswer = (r: Pick<AuditRow, "msg_id" | "seq" | "hash" | "recorded_at">): SendReceipt => ({ id: r.msg_id, seq: r.seq, entry_hash: r.hash, recorded_at: r.recorded_at });
 
 /** What a send answers (send.response): the envelope's id, its entry's seq and hash, and when it was recorded. */
@@ -42,6 +45,59 @@ export interface SendReceipt {
   seq: number;
   entry_hash: string;
   recorded_at: string;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Artifacts' blobs at send (sphere-api.md sections 6.1, check 12, and 10).
+
+interface BlobPart {
+  id: string;
+  sha256: string;
+  bytes: number;
+}
+
+interface StoredBlob extends BlobPart {
+  uploader: string;
+  expires_at_s: number;
+  /** The part it went up as: only part 1's age header was checked (sphere-api.md section 10). */
+  part: number;
+  named: number;
+}
+
+/** The parts of the ciphertext an artifact_offer, artifact_update or artifact_version names: `blobs`, or its one `blob`. */
+function blobParts(env_: Envelope): BlobPart[] {
+  if (env_.type !== "artifact_offer" && env_.type !== "artifact_update" && env_.type !== "artifact_version") return [];
+  return ((env_.body.blobs ?? [env_.body.blob]) as unknown as BlobPart[]).filter(Boolean);
+}
+
+/** Why the blobs a message names aren't the ones it may name; null when they are. */
+function blobProblem(env_: Envelope, parts: BlobPart[], stored: StoredBlob[], now: number): string | null {
+  const expires = seconds((env_.body.blob as { expires: string }).expires);
+  for (const [i, part] of parts.entries()) {
+    const b = stored.find((s) => s.id === part.id);
+    if (!b || b.uploader !== env_.from || b.named !== 1) return `blob ${part.id} isn't one ${env_.from} uploaded for ${env_.to}`;
+    // The one blob, or the first part, is the one whose age header the Obysphere checked; each part in its place.
+    if (b.part !== i + 1) return `blob ${part.id} went up as part ${b.part}, and the message names it as part ${i + 1}`;
+    if (b.expires_at_s <= now) return `blob ${part.id} has expired`;
+    if (b.bytes !== part.bytes || b.sha256 !== part.sha256) return `blob ${part.id} isn't the size and hash the message says`;
+    if (b.expires_at_s !== expires) return `blob ${part.id} expires at ${timestamp(b.expires_at_s)}, not when the message says`;
+  }
+  return null;
+}
+
+/**
+ * What recording an artifact message changes beside the chain: the exchange names each blob an
+ * offer, an update or a version names; a share taken back (artifact_revoke, artifact_deleted), or
+ * declined by its receiver, cuts the receiver off from every blob its exchange named
+ * (sphere-api.md section 10).
+ */
+function artifactWrites(db: D1Database, sphere: string, env_: Envelope, parts: BlobPart[]): D1PreparedStatement[] {
+  const cut = (obi: string) => db.prepare("DELETE FROM blob_recipients WHERE sphere = ?1 AND obi = ?2 AND blob IN (SELECT blob FROM artifact_blobs WHERE sphere = ?1 AND correlation_id = ?3)").bind(sphere, obi, env_.correlation_id);
+  if (env_.type === "artifact_revoke" || env_.type === "artifact_deleted") return [cut(env_.to)];
+  // A receiver that declines a share wants none of it: its blobs are served to it no more. (In
+  // any other exchange no blob is named, and this deletes nothing.)
+  if (env_.type === "decline") return [cut(env_.from)];
+  return parts.map((p) => db.prepare("INSERT OR IGNORE INTO artifact_blobs (sphere, correlation_id, blob) VALUES (?1, ?2, ?3)").bind(sphere, env_.correlation_id, p.id));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -89,6 +145,8 @@ export async function recordSend(
   // The additions it uses (protocol.md sections 5.17 to 5.19), and the earlier request it follows up.
   const uses = messageFeatures(env_.type, env_.body);
   const follows = typeof env_.body.follows === "string" ? env_.body.follows : null;
+  // The blobs an offer, an update or a version names, each a part (sphere-api.md section 10).
+  const parts = blobParts(env_);
 
   return withRetries(async () => {
     // Everything the checks read, in one transaction: one consistent snapshot, one round trip.
@@ -106,8 +164,17 @@ export async function recordSend(
           ]),
       ...(uses.length === 0 ? [] : [env.DB.prepare("SELECT obi, card FROM members WHERE sphere = ?1 AND status = 'active'").bind(sphere0.id)]),
       ...(follows === null ? [] : [env.DB.prepare("SELECT * FROM audit WHERE sphere = ?1 AND msg_id = ?2").bind(sphere0.id, follows)]),
+      ...(parts.length === 0
+        ? []
+        : [
+            env.DB.prepare(
+              `SELECT b.id, b.uploader, b.sha256, b.bytes, b.expires_at_s, b.part, EXISTS (SELECT 1 FROM blob_recipients r WHERE r.sphere = b.sphere AND r.blob = b.id AND r.obi = ?2) AS named
+               FROM blobs b WHERE b.sphere = ?1 AND b.id IN (${parts.map((_, i) => `?${i + 3}`).join(", ")})`,
+            ).bind(sphere0.id, env_.to, ...parts.map((p) => p.id)),
+          ]),
     ]);
     const at = { active: 5 + (reply === null ? 0 : 2), follows: 5 + (reply === null ? 0 : 2) + (uses.length === 0 ? 0 : 1) };
+    const blobsAt = at.follows + (follows === null ? 0 : 1);
     const rows = <T,>(i: number) => reads[i]!.results as unknown as T[];
     const sphere = rows<SphereRow>(0)[0];
     if (!sphere) throw apiError("not_found", `no Sphere ${sphere0.id}`);
@@ -143,7 +210,7 @@ export async function recordSend(
     // Obysphere and every active member take it (sphere-api.md section 6.1, check 11).
     if (uses.length > 0) {
       const active = rows<{ obi: string; card: string }>(at.active);
-      const problem = notTakenProblem(uses, active.map((m) => ({ obi: m.obi, card: JSON.parse(m.card) as AgentCard })));
+      const problem = notTakenProblem(uses, active.map((m) => ({ obi: m.obi, card: JSON.parse(m.card) as AgentCard })), env);
       if (problem) throw apiError("feature_not_taken", problem);
       // An introduction's member is an active member (protocol.md section 5.18).
       if (env_.type === "introduction" && !active.some((m) => m.obi === env_.body.member)) throw apiError("not_found", `${String(env_.body.member)} is not an active member`);
@@ -166,6 +233,12 @@ export async function recordSend(
       const problem = exchangeProblem(exchangeMessage(env_), req && rowMessage(req), rows<AuditRow>(6).map(rowMessage));
       if (problem) throw apiError("bad_reply", problem);
     }
+    // An artifact's blobs: each one the sender uploaded for the receiver, not expired, the size and
+    // hash the message says, and expiring when it says (sphere-api.md section 6.1, check 12).
+    if (parts.length > 0) {
+      const problem = blobProblem(env_, parts, rows<StoredBlob>(blobsAt), now);
+      if (problem) throw apiError("conflict", problem);
+    }
     // 13. Record: the audit entry and the delivery, in one transaction.
     const seq = sphere.head_seq + 1;
     const recordedAt = timestamp(now);
@@ -182,6 +255,7 @@ export async function recordSend(
       env.DB.prepare("INSERT INTO deliveries (id, sphere, to_obi, seq, expires_at_s, state) VALUES (?1, ?2, ?3, ?4, ?5, 'queued')").bind(
         uuid(), sphere.id, env_.to, seq, seconds(env_.expires_at),
       ),
+      ...artifactWrites(env.DB, sphere.id, env_, parts),
     ]);
     if (!written) return null;
     await ring(env, sphere.id, env_.to);

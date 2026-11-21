@@ -1,0 +1,64 @@
+{
+  "case": "envelope",
+  "name": "valid-artifact-offer-sealed",
+  "description": "An offer sealed for obi-a: its title and its ask are sealed; the blob, the access and the hashes stay in the clear, for the Obysphere to check.",
+  "expect": "accept",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": [],
+    "seal_keys": {
+      "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw": "TcXrRpAVnUcjEeJPuHRRGLxmlrnQuzoxtLkpI60WEzQ"
+    },
+    "sender_seals": true
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "93a6220f-27b8-8a5c-8d5b-70391b7f20c3",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "93a6220f-27b8-8a5c-8d5b-70391b7f20c3",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "4tLC3RpIhNM4zu0btuFt55F8sHqoi9M0xzeo1C-PLM_x10en9toGY5D1",
+        "kind": "html",
+        "version": 3,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "blob": {
+        "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 51900,
+        "expires": "2026-10-21T12:00:00Z"
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Qwst4jtrIujQSIRP3OG9ml6kBYtAdeeOwezfmwDQ8nprwHSJGyp00pzFzg4fgA-90VeqcMGT"
+    },
+    "seal": {
+      "suite": "x25519-hkdf-sha256-chacha20poly1305",
+      "key_id": "x25519:PaIXyelDBIRj15syradls0uYgGT2K4s6HjszUw4KZrw",
+      "enc": "KQhVPoUZ21FKoLi9O9bzj-w1pmURfNaL7PKiI-2wmms"
+    },
+    "signature": "_Y4BLNt6eDRuB-hDGScXjRGFCWhm5DtREV4XzEtKm0-4WlWSb0I52qUI6yi6rWd7uQrD3EkWSlFbRD5omZOBCQ"
+  }
+}

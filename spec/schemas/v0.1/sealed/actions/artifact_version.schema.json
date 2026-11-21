@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/obi-ai-bot/obi-sphere/raw/main/spec/schemas/v0.1/sealed/actions/artifact_version.schema.json",
+  "title": "artifact_version body (sealed)",
+  "description": "A changed version of the artifact, sent back by the offer's receiver when the share gives edit (spec/protocol.md section 5.22), sealed to the sender alone. The sender checks it like anything received, and nothing in it acts as its owner's. Comes with the feature artifacts. Sealed: derived from actions/artifact_version.schema.json by spec/conformance/generate.mjs, every x-obi-text field a sealed_text (spec/protocol.md section 9.1). Don't edit it by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact",
+    "blob"
+  ],
+  "properties": {
+    "artifact": {
+      "$ref": "../common.schema.json#/$defs/artifact"
+    },
+    "blob": {
+      "$ref": "../common.schema.json#/$defs/blob"
+    },
+    "blobs": {
+      "$ref": "../common.schema.json#/$defs/blob_parts",
+      "description": "The blob's parts, in order, when the ciphertext is over 64 MiB: blob is then the whole, and its id the first part's."
+    }
+  }
+}

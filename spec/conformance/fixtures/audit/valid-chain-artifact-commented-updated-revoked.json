@@ -1,0 +1,220 @@
+{
+  "case": "audit",
+  "name": "valid-chain-artifact-commented-updated-revoked",
+  "description": "A page shared to comment on: a comment, version 4, another comment, the share taken back, and the receiver's receipt.",
+  "expect": "accept",
+  "context": {
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM",
+        "valid_from_seq": 1,
+        "valid_until_seq": 6
+      },
+      "ed25519:HAhBXFX_KPyGvYSeI-mWqYTBrGCjxRegv6GepSVZj8Q": {
+        "obi": "obi-a",
+        "public_key": "uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk",
+        "valid_from_seq": 7,
+        "valid_until_seq": null
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE",
+        "valid_from_seq": 1,
+        "valid_until_seq": null
+      }
+    }
+  },
+  "input": {
+    "sphere": "conf-sphere",
+    "entries": [
+      {
+        "sphere": "conf-sphere",
+        "seq": 1,
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "recorded_at": "2026-10-14T11:59:01Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "type": "artifact_offer",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "artifact": {
+              "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+              "title": "Checkout page, second pass",
+              "kind": "html",
+              "version": 3,
+              "bytes": 48213,
+              "files": 4,
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "blob": {
+              "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+              "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "bytes": 51900,
+              "expires": "2026-10-21T12:00:00Z"
+            },
+            "access": "comment",
+            "latest": true,
+            "ask": "Does the header still work on a phone?"
+          },
+          "signature": "qio-VwX9yaFjaGe4p11C6en2LiW9i1-ygZfw9Tl2pMSGdEGQ_-tUlURsX5ChzxAMA-goYXI8iCmNjrSrcfiECw"
+        },
+        "hash": "387e14c2fd31f4b8fd7d2fdffeb2dd11fff898dd1c9d89d87d961cded653a5eb"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 2,
+        "prev": "387e14c2fd31f4b8fd7d2fdffeb2dd11fff898dd1c9d89d87d961cded653a5eb",
+        "recorded_at": "2026-10-14T11:59:02Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "46ca6501-840f-8783-8809-af42e438efba",
+          "type": "answer",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "by": "owner",
+            "text": "The header wraps at 320 pixels.",
+            "refs": [
+              {
+                "kind": "artifact",
+                "artifact": "095c261b-34b6-8c71-89df-bc7518cd4507",
+                "version": 3
+              }
+            ]
+          },
+          "signature": "dxDNqneDYw45T9Fdp7D6vQWjVabhFoxtYYAsiS0IltU_HH2bHHIfFTmUK99zam0locrVZ7WwuJLgrwsq42ZRAw"
+        },
+        "hash": "730224267535b894c3ffb2e83670cda8bb7302819bea78c179dbfcd8ed5c1a46"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 3,
+        "prev": "730224267535b894c3ffb2e83670cda8bb7302819bea78c179dbfcd8ed5c1a46",
+        "recorded_at": "2026-10-14T11:59:03Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "7ce14813-7c72-8fa8-8e5c-1486352143de",
+          "type": "artifact_update",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {
+            "artifact": {
+              "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+              "title": "Checkout page, second pass",
+              "kind": "html",
+              "version": 4,
+              "bytes": 48213,
+              "files": 4,
+              "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "blob": {
+              "id": "c3bf2599-92be-8dbb-8b24-7d3d048b1d44",
+              "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              "bytes": 52344,
+              "expires": "2026-10-21T12:00:00Z"
+            },
+            "latest": true
+          },
+          "signature": "qefL61HTCoujCqDOx7XN4fjWmwgi6960brxB7PnqnbBwus9uKIn_x-Hxa_kfKSKIdgJNOYN5UnzQL0wzM-SsDw"
+        },
+        "hash": "a65a1cc23f7cf304a8db816416cedc23f90b974e8d93efc043c0e08222bcabc1"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 4,
+        "prev": "a65a1cc23f7cf304a8db816416cedc23f90b974e8d93efc043c0e08222bcabc1",
+        "recorded_at": "2026-10-14T11:59:04Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "d11ffbfb-aa0c-8f36-870e-43a935be0639",
+          "type": "answer",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {
+            "by": "owner",
+            "text": "The header wraps at 320 pixels.",
+            "refs": [
+              {
+                "kind": "artifact",
+                "artifact": "095c261b-34b6-8c71-89df-bc7518cd4507",
+                "version": 4
+              }
+            ]
+          },
+          "signature": "BDwWP_-o94ek-C06K6JxEhDd0G_WAQ8i6qiuZQ-L8guARotuiMGUuPHYH-YcyqDhCoAYjKG5MTKyTZLLDdC2AA"
+        },
+        "hash": "229a0a708cad6f352c8b0a7a45d5ea47e207b7e84a051661fc656f34b3110196"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 5,
+        "prev": "229a0a708cad6f352c8b0a7a45d5ea47e207b7e84a051661fc656f34b3110196",
+        "recorded_at": "2026-10-14T11:59:05Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "f6973b51-5496-8544-8b07-d8ae9ea0bd91",
+          "type": "artifact_revoke",
+          "from": "obi-b",
+          "to": "obi-a",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+          "body": {},
+          "signature": "NmzhextCDuFnuAzS_zPc8M8KZWYDKNmIgkKR_GixV-bwVdtwydq6wet2IWEqYbEg8rfLVXbQNy75avXQK5DdBQ"
+        },
+        "hash": "1d81970300efcade65fe1e4722eb45ea1ea4d1f2b780c9ebd791179cdeb2bd4c"
+      },
+      {
+        "sphere": "conf-sphere",
+        "seq": 6,
+        "prev": "1d81970300efcade65fe1e4722eb45ea1ea4d1f2b780c9ebd791179cdeb2bd4c",
+        "recorded_at": "2026-10-14T11:59:06Z",
+        "envelope": {
+          "protocol": "obi/0.1",
+          "id": "b15d6b8b-ac2c-80ef-89f7-5e030bc68ef8",
+          "type": "artifact_receipt",
+          "from": "obi-a",
+          "to": "obi-b",
+          "sphere": "conf-sphere",
+          "correlation_id": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "in_reply_to": "1dff0eab-03aa-8b0b-8394-87b984f2e245",
+          "created_at": "2026-10-14T11:59:00Z",
+          "expires_at": "2026-10-14T13:00:00Z",
+          "key_id": "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M",
+          "body": {},
+          "signature": "bx072h_coTsclOLCpCXP0MPKb1oD_zXVlgi8SelpYLZSqJaZWC_7vFt2faU7eU0b9Cd_N-ynEtDlp612CTzZBA"
+        },
+        "hash": "1712accd53b472eb7cf6871dc6bb8fe45db25401f3c12fab7d53d12ab07dd9f1"
+      }
+    ]
+  }
+}

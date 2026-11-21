@@ -72,6 +72,13 @@ pnpm run deploy -- --env deskree    # new migrations first, then the Worker
 
 Apply a migration immediately before the deploy that needs it, as the script does: between the two, the running Worker meets a table it doesn't know. Then check the routes, old and new (a call without a token answers `401` on every route that needs one).
 
+Artifacts (the feature `artifacts`, [spec/sphere-api.md](../spec/sphere-api.md) section 10) need an R2 bucket bound as `ARTIFACTS`; public links (`public_links`, section 11) also need the rate limiter `PUBLIC_LIMIT` and a second hostname, their own origin, so that members' pages never run on the API's. `env.deskree` lists none of them yet, so deploying it changes nothing: `GET /v0.1/features` lists neither, and their paths answer `404`. To turn them on:
+
+1. Make the bucket: `wrangler r2 bucket create obi-sphere-artifacts`.
+2. In `env.deskree`, add `"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "obi-sphere-artifacts" }]` and `"ratelimits": [{ "name": "PUBLIC_LIMIT", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }]`.
+3. Give public links their hostname, **`a.obysphere.deskree.com`**: add `{ "pattern": "a.obysphere.deskree.com", "custom_domain": true }` to `env.deskree`'s `routes`, and `"PUBLIC_ORIGIN": "https://a.obysphere.deskree.com"` to its `vars`. That host serves only `/a/…`, and `obysphere.deskree.com` no longer serves `/a/`.
+4. Deploy.
+
 The phone relay is an optional extension ([spec/sphere-api.md](../spec/sphere-api.md), section 9), on unless `PHONE_RELAY` is `off`: `env.deskree` doesn't set it, so its members' phones keep their relay. `GET /v0.1/features` lists it; health is unchanged.
 
 The first deploy with the Doorbell adds a Durable Object class (`v2-doorbells` in `wrangler.jsonc`). Cloudflare then refuses `wrangler rollback` to any version before it ([Rollbacks, "Bindings"](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/#bindings)): from there on, undo by deploying the older code with the `Doorbell` class still exported. The first deploy with the phone relay does the same with `PhoneRelay` (`v3-relays`), and adds migration `0005_relays.sql`.

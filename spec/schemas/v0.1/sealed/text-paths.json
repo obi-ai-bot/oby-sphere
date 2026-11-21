@@ -26,6 +26,10 @@
     "introduction": [
       "/note"
     ],
+    "artifact_offer": [
+      "/artifact/title",
+      "/ask"
+    ],
     "status": [
       "/note"
     ],
@@ -46,6 +50,15 @@
     "run_cancel": [],
     "share_status": [],
     "share_revoke": [],
-    "cancel": []
+    "cancel": [],
+    "artifact_update": [
+      "/artifact/title"
+    ],
+    "artifact_version": [
+      "/artifact/title"
+    ],
+    "artifact_revoke": [],
+    "artifact_deleted": [],
+    "artifact_receipt": []
   }
 }

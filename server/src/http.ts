@@ -65,10 +65,10 @@ export function errorResponse(e: ApiError): Response {
   return json(STATUS[e.code], { error: { code: e.code, message: oneLine(e.message, 500), ...(details.length ? { details } : {}) } }, headers);
 }
 
-/** The request's body bytes, or 413 payload_too_large past the limit. */
-export async function readBody(request: Request): Promise<Uint8Array> {
+/** The request's body bytes, or 413 payload_too_large past `max` (131,072 bytes unless said), before it is read when its Content-Length says so. */
+export async function readBody(request: Request, max = MAX_BODY_BYTES): Promise<Uint8Array> {
   const declared = request.headers.get("Content-Length");
-  if (declared !== null && Number(declared) > MAX_BODY_BYTES) throw apiError("payload_too_large", `the body is over ${MAX_BODY_BYTES} bytes`);
+  if (declared !== null && Number(declared) > max) throw apiError("payload_too_large", `the body is over ${max} bytes`);
   if (!request.body) return new Uint8Array();
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -77,9 +77,9 @@ export async function readBody(request: Request): Promise<Uint8Array> {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
+    if (size > max) {
       await reader.cancel().catch(() => {});
-      throw apiError("payload_too_large", `the body is over ${MAX_BODY_BYTES} bytes`);
+      throw apiError("payload_too_large", `the body is over ${max} bytes`);
     }
     chunks.push(value);
   }

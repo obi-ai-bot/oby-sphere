@@ -65,7 +65,8 @@ export function taskState(requestType: string, latest?: Envelope): string {
     case "accept":
       return requestType === "introduction" ? "TASK_STATE_COMPLETED" : "TASK_STATE_WORKING";
     case "answer":
-      return "TASK_STATE_COMPLETED";
+      // In an artifact_offer's exchange an answer is a comment, and the share goes on (protocol.md section 4, rule 11).
+      return requestType === "artifact_offer" ? "TASK_STATE_WORKING" : "TASK_STATE_COMPLETED";
     case "result":
       return latest.body.outcome === "failed" ? "TASK_STATE_FAILED" : "TASK_STATE_COMPLETED";
     case "run_return":
@@ -75,6 +76,9 @@ export function taskState(requestType: string, latest?: Envelope): string {
     case "cancel":
     case "run_cancel":
     case "share_revoke":
+    case "artifact_revoke":
+    case "artifact_deleted":
+    case "artifact_receipt":
       return "TASK_STATE_CANCELED";
     default:
       // status, run_progress, share_status; and a reply a later addition brings, until this view knows it.

@@ -1,0 +1,56 @@
+{
+  "case": "envelope",
+  "name": "invalid-artifact-blob-expires-in-milliseconds",
+  "description": "A blob whose expiry is a number of milliseconds: a timestamp is RFC 3339.",
+  "expect": "reject",
+  "reason": "invalid_envelope",
+  "context": {
+    "now": "2026-10-14T12:00:00Z",
+    "sphere": "conf-sphere",
+    "receiver": "obi-a",
+    "keys": {
+      "ed25519:z6WLmvO2TG4LaAn2ppQXKN2Po5NJVyWEm4RIFgMBs-M": {
+        "obi": "obi-a",
+        "public_key": "ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM"
+      },
+      "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo": {
+        "obi": "obi-b",
+        "public_key": "h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE"
+      }
+    },
+    "seen_ids": []
+  },
+  "input": {
+    "protocol": "obi/0.1",
+    "id": "78dac0eb-1db8-82f2-8e4c-33159ae1a922",
+    "type": "artifact_offer",
+    "from": "obi-b",
+    "to": "obi-a",
+    "sphere": "conf-sphere",
+    "correlation_id": "78dac0eb-1db8-82f2-8e4c-33159ae1a922",
+    "created_at": "2026-10-14T11:59:00Z",
+    "expires_at": "2026-10-14T13:00:00Z",
+    "key_id": "ed25519:H-9yFl9PSNCrT9XfIJgvS57h-Jk8tKrfXycR3Szmivo",
+    "body": {
+      "artifact": {
+        "id": "095c261b-34b6-8c71-89df-bc7518cd4507",
+        "title": "Checkout page, second pass",
+        "kind": "html",
+        "version": 3,
+        "bytes": 48213,
+        "files": 4,
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "blob": {
+        "id": "2df7e68a-3370-854b-80c3-f69b6b23cb0e",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "bytes": 51900,
+        "expires": 1792584000000
+      },
+      "access": "comment",
+      "latest": true,
+      "ask": "Does the header still work on a phone?"
+    },
+    "signature": "NNsPzmnfhzy0hUv4LrtlcChH1nX7O6VgnA_26bu6ajRML4tvfxtvE3--mByDrgAFTzPYXwYYE3XvwsNm1A3vDQ"
+  }
+}

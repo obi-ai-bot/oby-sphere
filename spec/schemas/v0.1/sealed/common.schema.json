@@ -200,7 +200,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "ref": {
-      "description": "A typed reference to what a question is about or what an answer draws on: a repository, a pull request, an issue, or a job of the answering Obi. Never a URL, a path or a command (spec/protocol.md, 'References').",
+      "description": "A typed reference to what a question is about or what an answer draws on: a repository, a pull request, an issue, a job of the answering Obi, or (with the feature artifacts) an artifact an artifact_offer named, at one of its versions. Never a URL, a path or a command (spec/protocol.md, 'References').",
       "oneOf": [
         {
           "type": "object",
@@ -277,6 +277,27 @@
               "$ref": "#/$defs/job_id"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "artifact"
+          ],
+          "properties": {
+            "kind": {
+              "const": "artifact"
+            },
+            "artifact": {
+              "$ref": "#/$defs/uuid",
+              "description": "The artifact's id, as an artifact_offer's artifact.id gives it."
+            },
+            "version": {
+              "$ref": "#/$defs/artifact_version",
+              "description": "One of its versions, when the reference is about one."
+            }
+          }
         }
       ]
     },
@@ -325,7 +346,13 @@
         "share_status",
         "share_revoke",
         "cancel",
-        "introduction"
+        "introduction",
+        "artifact_offer",
+        "artifact_update",
+        "artifact_version",
+        "artifact_revoke",
+        "artifact_deleted",
+        "artifact_receipt"
       ]
     },
     "request_type": {
@@ -336,7 +363,8 @@
         "handoff",
         "run_request",
         "share_offer",
-        "introduction"
+        "introduction",
+        "artifact_offer"
       ]
     },
     "agent": {
@@ -419,6 +447,143 @@
           "minimum": 1,
           "maximum": 2147483648
         }
+      }
+    },
+    "artifact_kind": {
+      "description": "What an artifact is (spec/protocol.md section 5.20): a web page and its files, a Markdown document, an image, a PDF, a canvas, or a design of boards.",
+      "enum": [
+        "html",
+        "markdown",
+        "image",
+        "pdf",
+        "canvas",
+        "design"
+      ]
+    },
+    "artifact_access": {
+      "description": "What an artifact's receiver may do with it (spec/protocol.md section 5.20): look at it, comment on it with answers too, or also send changed versions back.",
+      "enum": [
+        "view",
+        "comment",
+        "edit"
+      ]
+    },
+    "artifact_version": {
+      "description": "An artifact's version number, counted by whoever keeps that copy, from 1.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000000
+    },
+    "artifact": {
+      "description": "What an offer, an update or a version sent back says of the artifact: never a file's content. Its title is data; the rest is what the receiver checks against what it opens (spec/protocol.md section 5.20).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "version",
+        "bytes",
+        "files",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid",
+          "description": "The artifact's id in its owner's keeping: the same in every offer, update and version of it."
+        },
+        "title": {
+          "$ref": "#/$defs/sealed_text",
+          "x-obi-text": "sealed",
+          "minLength": 23,
+          "maxLength": 1088,
+          "description": "Its title, in its owner's words."
+        },
+        "kind": {
+          "$ref": "#/$defs/artifact_kind"
+        },
+        "version": {
+          "$ref": "#/$defs/artifact_version"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456,
+          "description": "The size of its files together, before they were packed: at most 268,435,456 bytes (256 MiB)."
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "How many files it has."
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash",
+          "description": "SHA-256 of the tar its files were packed in, before it was encrypted."
+        }
+      }
+    },
+    "blob": {
+      "description": "The ciphertext the Obysphere holds for an offer, an update or a version sent back (sphere-api.md section 10): an age file. With blobs, the whole ciphertext, cut into those parts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256",
+        "bytes",
+        "expires"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid",
+          "description": "The blob's id, as the Obysphere gave it at upload; with blobs, the first part's."
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash",
+          "description": "SHA-256 of the whole ciphertext."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912,
+          "description": "The whole ciphertext's size. One blob is at most 67,108,864 bytes (64 MiB); a larger ciphertext comes in parts."
+        },
+        "expires": {
+          "$ref": "#/$defs/timestamp",
+          "description": "When the Obysphere stops serving it (and every part of it), as it answered at upload."
+        }
+      }
+    },
+    "blob_part": {
+      "description": "One part of a ciphertext over 64 MiB, in order: a blob of its own.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        }
+      }
+    },
+    "blob_parts": {
+      "description": "A ciphertext over 64 MiB, cut into 2 to 8 parts of at most 64 MiB each, in order: the receiver fetches each, checks each part's hash and the whole one's, and joins them before it decrypts.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/blob_part"
       }
     },
     "grant_id": {

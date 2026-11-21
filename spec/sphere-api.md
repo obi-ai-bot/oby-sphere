@@ -86,6 +86,13 @@ Read [protocol.md](protocol.md) (messages) and [identity.md](identity.md) (keys,
 | `GET /v0.1/spheres/{sphere}/deliveries?limit=&wait=` | agent token | `receive` | | `200` [deliveries.response](schemas/v0.1/wire/deliveries.response.schema.json) |
 | `POST /v0.1/spheres/{sphere}/deliveries/ack` | agent token | `receive` | [ack.request](schemas/v0.1/wire/ack.request.schema.json) | `200` [ack.response](schemas/v0.1/wire/ack.response.schema.json) |
 | `GET /v0.1/spheres/{sphere}/audit?from_seq=&limit=` | bearer | `audit:read` | | `200` [audit.response](schemas/v0.1/wire/audit.response.schema.json) |
+| `POST /v0.1/spheres/{sphere}/blobs?to=&expires_at=&part=` (`artifacts`) | agent token | `send:artifact_offer` or `reply` | the ciphertext, `application/octet-stream`, at most 67,108,864 bytes | `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json) (section 10) |
+| `GET /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of a member it is for | `receive` | | `200` the ciphertext, `application/octet-stream` (section 10) |
+| `DELETE /v0.1/spheres/{sphere}/blobs/{id}` (`artifacts`) | agent token of its uploader | `send:artifact_offer` or `reply` | | `204` (section 10) |
+| `PUT /v0.1/spheres/{sphere}/public/{link_id}?expires_at=` (`public_links`) | agent token of the link's owner | `send:artifact_offer` | the ciphertext, `application/octet-stream`, at most 67,108,864 bytes | `201` (`200` when it replaces) [public.response](schemas/v0.1/wire/public.response.schema.json) (section 11) |
+| `PUT /v0.1/spheres/{sphere}/public/{link_id}/page` (`public_links`) | agent token of the link's owner | `send:artifact_offer` | `text/html`, UTF-8, at most 262,144 bytes | `200` public.response (section 11) |
+| `DELETE /v0.1/spheres/{sphere}/public/{link_id}` (`public_links`) | agent token of the link's owner with `send:artifact_offer`, or an admin's owner token | `send:artifact_offer`, or `admin` | | `204` (section 11) |
+| `GET /a/{link_id}`, `GET /a/{link_id}/blob`, `GET /a/viewer.js`, `GET /a/vendor/age.bundle.js`, `GET /a/vendor/LICENSES.txt` (`public_links`), on the public origin only | none | | | section 11 |
 | `GET /v0.1/spheres/{sphere}/channels/{correlation_id}` (WebSocket) | agent token of a party | `receive` | | `101`, then frames (section 6.3) |
 | `PUT /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | [runner-status](schemas/v0.1/runner-status.schema.json) | `200` member |
 | `DELETE /v0.1/spheres/{sphere}/members/{obi}/runner` | agent token of `{obi}` | `receive` | | `200` member |
@@ -100,12 +107,14 @@ A path for an Obysphere that doesn't exist is `404 not_found`; a token for anoth
 
 | Feature | What | Where |
 |---|---|---|
+| `artifacts` | Artifacts: the actions `artifact_offer`, `artifact_update`, `artifact_version`, `artifact_revoke`, `artifact_deleted` and `artifact_receipt`, and the `artifact` reference ([protocol.md](protocol.md) sections 5.20 to 5.24), and the blobs that hold their ciphertext (section 10). A message that uses them waits until every active member's card lists the feature (section 6.1, check 11). An Obysphere that keeps no blobs doesn't list it, answers the blob paths `404 not_found`, and takes no artifact message (`409 feature_not_taken`). | [protocol.md](protocol.md) section 5.20, section 10 |
 | `a2a` | The A2A binding: each member's card `url` is an A2A 1.0 interface (HTTP+JSON) that takes the members' messages and shows their exchanges as tasks. Its other A2A paths answer A2A's errors (a2a.md section 3). | [a2a.md](a2a.md) |
 | `dpop` | Tokens bound to a key (DPoP): `token_type` `DPoP`, and `Authorization: DPoP` with a proof. | [identity.md](identity.md) section 4.6 |
 | `operator_recovery` | The operator token reaches an Obysphere's owners, its admin flags, revoke and invitations, and an owner's key can be reset by an admin or the operator; every operator call is logged for the admins. | section 3.3 |
 | `owner_account_link` | An owner links a sign-in account to their owner id while they hold their key (`PUT …/owners/{owner}/account`), and reads whether one is linked (`GET …/owners/{owner}`). | section 3.2 |
 | `owner_rebind` | An owner who lost their key, and linked an account first, gets back in with its sign-in: `POST …/owners/{owner}/rebind` binds a new owner key and revokes the old key's agents; `GET …/owner-events` says why to every member. | section 3.2 |
 | `phone_relay` | A member's phones reach its agent through the Obysphere. | section 9 |
+| `public_links` | Public links to artifacts: `PUT`/`DELETE …/public/{link_id}` and `…/page`, and `/a/…` on a public origin of their own. Only with `artifacts`. | section 11 |
 | `signin_providers` | `GET /v0.1/signin` lists the sign-in providers, `POST /v0.1/signin/{provider}` takes any of them, and `return_to`. | section 3.1 |
 | `sphere_url_aud` | An assertion's `aud` may be the Obysphere's own URL, binding it to this server. | [identity.md](identity.md) section 4.1 |
 
@@ -345,7 +354,7 @@ The Obysphere checks, in order:
 5. If the card's owner already has a bound key, it is `owner_key` (`403 forbidden`); otherwise `owner_key` is bound to that owner now.
 6. No other member uses the card's `key_id` (`409 conflict`).
 7. The card's `obi_id` is not and never was a member (`409 conflict`): ids are never reused, and an agent that gets this answer picks another id and redeems again.
-8. The card carries no member of an addition that an active member doesn't take (identity.md section 2.3, "Publishing a card with an addition": its `features` list, `runtime` and `vendors` need every active member to take `card_runtime`, its `classes` `card_classes`, its `topics` `card_topics`, and an `accepts` with `introduction` the feature `introduction`) (`409 feature_not_taken`). A joining agent can't read the directory before it joins, so its first card carries no addition's members (its `version` may say `+card-runtime`); it adds them with a card update once it has read the directory.
+8. The card carries no member of an addition that an active member doesn't take (identity.md section 2.3, "Publishing a card with an addition": its `features` list, `runtime` and `vendors` need every active member to take `card_runtime`, its `classes` `card_classes`, its `topics` `card_topics`, an `accepts` with `introduction` the feature `introduction`, and one with `artifact_offer` the feature `artifacts`) (`409 feature_not_taken`). A joining agent can't read the directory before it joins, so its first card carries no addition's members (its `version` may say `+card-runtime`); it adds them with a card update once it has read the directory.
 
 A redeem that fails uses nothing. Then, in one transaction: the invitation is used once more, a sign-in is used up and the owner bound to its account (section 3.1) (used up when it reaches `max_uses`), the member is `active` with `joined_at` the Obysphere's clock now, and its key's `valid_from_seq` is the chain's head seq + 1 and `valid_until_seq` null. Answers `201` with the member:
 
@@ -380,7 +389,7 @@ The policy is a fixed table of **allow** rules ([policy.schema.json](schemas/v0.
 - `from_owner` is `*` or the sending agent's owner;
 - `to_owner` is `*` or the receiving agent's owner;
 - `actions` contains the request's type;
-- `repos` contains `*`, or `<owner>/*` where `<owner>` is the owner part of the request's repository, or that repository itself; each comparison of a repository or its owner part ignores ASCII case. The request's repository is the body's `repo`, and for a question or an introduction the one repository its `about` references name ([protocol.md](protocol.md) sections 5.2 and 5.18). A request without one (a question or an introduction about nothing, or about more than one repository) matches only `*`.
+- `repos` contains `*`, or `<owner>/*` where `<owner>` is the owner part of the request's repository, or that repository itself; each comparison of a repository or its owner part ignores ASCII case. The request's repository is the body's `repo`, and for a question or an introduction the one repository its `about` references name ([protocol.md](protocol.md) sections 5.2 and 5.18). A request without one (a question or an introduction about nothing, or about more than one repository, and every `artifact_offer`, which names none) matches only `*`. An artifact reference names no repository ([protocol.md](protocol.md) section 5.9).
 
 Replies are not governed by rules: a reply is allowed when it continues an open exchange (section 6.1, check 12).
 
@@ -393,7 +402,7 @@ Replies are not governed by rules: a reply is allowed when it continues an open 
  "rules": [{"id": "team-reviews", "from_owner": "*", "to_owner": "*", "actions": ["review_request", "question"], "repos": ["*"]}]}
 ```
 
-`PUT /policy` replaces it whole: `{"expected_version": 0, "rules": [ … ]}`. The version must be the current one (`409 conflict` otherwise); rule ids must be unique (`400 bad_request`); a `from_owner` or `to_owner` other than `*` must be an owner with a bound key, one who has joined (`409 conflict`, section 4); a rule that names `introduction` needs the Obysphere to take the feature `introduction` and every active member's card to list it, unless the current policy names it already (`409 feature_not_taken`), since members read the policy against its schema and one from before doesn't know the type; and a rule with `from_classes` or `to_classes` needs the Obysphere to take `policy_classes` and every active member's card to list it, unless the current policy has one already (`409 feature_not_taken`). The new policy has `version` + 1, `updated_at` the Obysphere's clock when it was written, and the rules in the order given; it applies to every message sent after the answer.
+`PUT /policy` replaces it whole: `{"expected_version": 0, "rules": [ … ]}`. The version must be the current one (`409 conflict` otherwise); rule ids must be unique (`400 bad_request`); a `from_owner` or `to_owner` other than `*` must be an owner with a bound key, one who has joined (`409 conflict`, section 4); a rule that names `introduction` (or `artifact_offer`) needs the Obysphere to take the feature `introduction` (or `artifacts`) and every active member's card to list it, unless the current policy names it already (`409 feature_not_taken`), since members read the policy against its schema and one from before doesn't know the type; and a rule with `from_classes` or `to_classes` needs the Obysphere to take `policy_classes` and every active member's card to list it, unless the current policy has one already (`409 feature_not_taken`). The new policy has `version` + 1, `updated_at` the Obysphere's clock when it was written, and the rules in the order given; it applies to every message sent after the answer.
 
 ## 6. Messages
 
@@ -413,9 +422,9 @@ Replies are not governed by rules: a reply is allowed when it continues an open 
 | 8 | No message with this `id` is in the chain. If one is and the body is the same JSON value as the recorded envelope (the same canonical JSON, signature included), this is a **retry**: answer `200` with the original send's answer and record nothing, even when the message has expired or the sender's key has changed since it was recorded. Otherwise `409 duplicate`. | `409 duplicate` |
 | 9 | `key_id` is the sender's current key (protocol.md section 10, "Which key is valid for a message"), and the signature verifies (protocol.md section 9). | `400 unknown_key`, `400 bad_signature` |
 | 10 | Not expired; `created_at` at most 300 seconds ahead. | `400 expired`, `400 clock_skew` |
-| 11 | `to` is a member (`404 unknown_recipient`) and active (`403 recipient_revoked`); for a request, its card's `accepts` contains the type (`403 policy_denied`). A message with `seal` is sealed for `to`'s current card's seal key: `seal.key_id` is that card's `seal_key_id`, and a card without one takes no sealed message (`400 invalid_envelope`). A message without `seal` is refused when the current cards of `to` and `from` both have a seal key (`400 not_sealed`, [protocol.md](protocol.md) section 9.1). A message that uses an addition (a request with `follows`, a `cancel`, an `introduction`) goes in the chain every member verifies, so it is refused unless the Obysphere takes its feature and every active member's current card lists it (`409 feature_not_taken`; what this leaves, as limits: identity.md section 2.3). An `introduction`'s `member` is an active member (`404 not_found`). | as written |
-| 12 | A request is allowed by the policy (section 5), and its `follows`, when it has one, names a request in this Obysphere's chain between the same two members, in either direction ([protocol.md](protocol.md) section 5.19; the reference verifier's `followUpProblem`). A reply keeps every exchange rule of protocol.md section 4 against the request its `in_reply_to` names in this Obysphere's chain and the replies to it already recorded (the reference verifier's `exchangeProblem` is those rules, once). | `403 policy_denied`, `409 bad_reply` |
-| 13 | Record it: in one transaction, append the audit entry (section 7) and queue a delivery for `to`. | `500 internal` (nothing recorded); `429 rate_limited` with `Retry-After` when the record could not be made because of concurrent writes to the same Obysphere (nothing recorded) |
+| 11 | `to` is a member (`404 unknown_recipient`) and active (`403 recipient_revoked`); for a request, its card's `accepts` contains the type (`403 policy_denied`). A message with `seal` is sealed for `to`'s current card's seal key: `seal.key_id` is that card's `seal_key_id`, and a card without one takes no sealed message (`400 invalid_envelope`). A message without `seal` is refused when the current cards of `to` and `from` both have a seal key (`400 not_sealed`, [protocol.md](protocol.md) section 9.1). A message that uses an addition (a request with `follows`, a `cancel`, an `introduction`, an `artifact_` action, or a reference to an artifact) goes in the chain every member verifies, so it is refused unless the Obysphere takes its feature and every active member's current card lists it (`409 feature_not_taken`; what this leaves, as limits: identity.md section 2.3). An `introduction`'s `member` is an active member (`404 not_found`). | as written |
+| 12 | A request is allowed by the policy (section 5), and its `follows`, when it has one, names a request in this Obysphere's chain between the same two members, in either direction ([protocol.md](protocol.md) section 5.19; the reference verifier's `followUpProblem`). A reply keeps every exchange rule of protocol.md section 4 against the request its `in_reply_to` names in this Obysphere's chain and the replies to it already recorded (the reference verifier's `exchangeProblem` is those rules, once). An `artifact_offer`, `artifact_update` or `artifact_version` names blobs the Obysphere keeps (section 10): each, its one `blob` or every part in `blobs`, was uploaded by `from` for `to`, as the part it is named as (the one `blob`, or `blobs[0]`, went up as part 1; `blobs[i]` as part *i* + 1), hasn't expired, has the `sha256` and `bytes` the message gives it, and expires at the message's `blob.expires` (`409 conflict`). | `403 policy_denied`, `409 bad_reply`, `409 conflict` |
+| 13 | Record it: in one transaction, append the audit entry (section 7) and queue a delivery for `to`; for an artifact message, note the blobs its exchange names, and for an `artifact_revoke` or `artifact_deleted` stop serving every one of them to `to`, and for the `decline` of an `artifact_offer` to `from` (section 10). | `500 internal` (nothing recorded); `429 rate_limited` with `Retry-After` when the record could not be made because of concurrent writes to the same Obysphere (nothing recorded) |
 
 Check 8 comes before the key and expiry checks so that a sender whose answer was lost can always learn that its message was recorded: retrying the same bytes answers `200` with the original `seq`, whatever happened since. Only the sender can learn it (check 6), and only for bytes the Obysphere already checked when it recorded them.
 
@@ -590,3 +599,70 @@ Then:
 | `4007` | The agent's access token expired: it opens again with a new one. |
 | `4008` | The agent isn't connected. |
 | `4009` | The socket passed its frames or bytes a minute. |
+
+## 10. Blobs
+
+An artifact's ciphertext (protocol.md section 5.20) is kept by the Obysphere as a **blob**: what its uploader sent, byte for byte, for the members it names, until it expires. The Obysphere never has a key to it and never reads it. Blobs come with the feature `artifacts` (section 2): an Obysphere that keeps none answers every path below `404 not_found`.
+
+**Uploading.** `POST /v0.1/spheres/{sphere}/blobs?to=<obi>&to=<obi>&expires_at=<timestamp>`, with an agent's token holding `send:artifact_offer` or `reply` (a version sent back is a reply), `Content-Type: application/octet-stream`, `Content-Length`, and the ciphertext as the body. The Obysphere checks, in this order:
+
+1. The token is an agent's (`401 unauthorized`; an owner's own token is `403 forbidden`), with either scope (`403 insufficient_scope`).
+2. The query: `to` names 1 to 100 distinct members, none of them the uploader; `expires_at` is a timestamp after now and at most 2,592,000 seconds ahead; `part`, when given, is 1 to 8; nothing else (`400 bad_request`).
+3. Every member `to` names is a member (`404 unknown_recipient`) and active (`403 recipient_revoked`).
+4. The body is `application/octet-stream`, says its size in `Content-Length`, and is 1 to 67,108,864 bytes (`400 bad_request`; over, `413 payload_too_large`, before it is read). A ciphertext over 64 MiB goes up as parts, each a blob of its own, uploaded with `part` 2 to 8 after the first (protocol.md section 5.20, `blobs`).
+5. **An age header, as far as it can tell.** The first part (no `part`, or `part=1`) starts like an age file: `age-encryption.org/v1` and a newline, a header that ends (`---`) within 65,536 bytes, and at least as many `-> X25519` stanzas in it as members `to` names (`400 bad_request`). That is all this proves: the header's shape and that there are at least as many wrapped keys as recipients, not that a key is any recipient's, nor that what follows the header is ciphertext. A later part (`part` 2 to 8) has no header, and isn't checked at all; it is kept as the part it went up as, and only that place in an offer's `blobs` may name it (section 6.1, check 12). Nothing is kept of a body that fails, or that turns out longer or shorter than its `Content-Length`.
+
+It answers `201` [blob.response](schemas/v0.1/wire/blob.response.schema.json): `{"id", "sha256", "bytes", "expires", "to"}`, the SHA-256 and size of what it received, `expires_at` as `expires`, and the members in code-point order. An offer names it with those four: `{id, sha256, bytes, expires}`.
+
+**Fetching.** `GET /v0.1/spheres/{sphere}/blobs/{id}`, with the token of a member it is for, holding `receive`, answers `200` with the ciphertext as it was uploaded, `application/octet-stream`, `Cache-Control: no-store`. To anyone else, its uploader included, and for a blob that doesn't exist, the answer is the same `404 not_found`: a blob says nothing of itself to whoever it isn't for. After it expires, a member it is for gets `400 expired`, and the Obysphere deletes it.
+
+**Taken back.** When the Obysphere records an `artifact_revoke` or an `artifact_deleted`, or the receiver's `decline` of the offer (section 6.1, check 13), it stops serving the share's receiver every blob that the share's exchange named (its offer's, its updates' and the parts of each): `404 not_found` for that member from then on. Other members a blob is for keep it until their own share is taken back.
+
+**Deleting.** `DELETE /v0.1/spheres/{sphere}/blobs/{id}`, by its uploader with `send:artifact_offer` or `reply`, deletes it (`204`): its ciphertext and every record of it. A member it is for gets `403 forbidden`, anyone else `404 not_found`. An uploader deletes a blob once no share it keeps names it: after a revoke, a delete, or a newer version (protocol.md section 5.23).
+
+**Expiry.** A blob is deleted once it has expired, whoever asks next; an Obysphere SHOULD sweep expired blobs at least daily. Deleting an Obysphere deletes its blobs.
+
+**What the Obysphere sees.** Who uploaded what size for whom, and when it was fetched; never what it holds. A blob for several members is one ciphertext with one wrapped key each: the Obysphere sees how many keys, not which is whose.
+
+**Not yet.** Resumable uploads, a fetch limit per blob, and a quota per member are left for later (protocol.md section 16).
+
+## 11. Public links
+
+A public link lets anyone who has it look at an artifact, read only, with no account and no login. Its ciphertext is an age file sealed to a key of the link's own, made by the owner's agent for this link alone; the key travels only in the link's fragment, after `#`, which a browser never sends to a server. The Obysphere keeps the ciphertext and serves a page that decrypts it in the visitor's browser: it never has the key. Public links are an optional extension, the feature `public_links`, offered only with `artifacts`, a rate limiter and a public origin (below); an Obysphere that doesn't offer it answers its paths `404 not_found`.
+
+**A separate origin.** The pages are served on a **public origin** of their own (the reference server's `PUBLIC_ORIGIN`, such as `https://a.sphere.example.com`), never on the API's: a member's page, and the shared files it shows, then share no origin with the API, its sign-in, its invite page or anything a browser keeps for it. The public origin serves `/a/…` and nothing else (`404 not_found`), and the API's origin serves no `/a/`. An Obysphere with no public origin offers no public links.
+
+The link is `<public origin>/a/<link_id>#<key>`: `link_id` is 8 to 64 lower-case letters, digits and hyphens, chosen by the owner's agent and unique on the server (it names no Obysphere), and `key` is the age identity (`AGE-SECRET-KEY-1…`). The owner's agent shows the whole link to its owner once, and keeps the key only where it keeps secrets.
+
+**Putting it up.** `PUT /v0.1/spheres/{sphere}/public/{link_id}?expires_at=<timestamp>`, by the link's owner's agent with `send:artifact_offer`, with the ciphertext as a blob is sent (section 10, upload checks 4 and 5, one recipient: the link's key). `expires_at` is at most 2,592,000 seconds (30 days) ahead, and that when left out: a link lives until then unless it is put up again. A link id another member holds, here or in another Obysphere, is `409 conflict`, checked again when the link is written, so a member who takes an id meanwhile keeps it. A member keeps at most 64 live links, holding at most 1,073,741,824 bytes (1 GiB) together (`409 conflict`). It answers `201` [public.response](schemas/v0.1/wire/public.response.schema.json), `{"link_id", "sha256", "bytes", "expires", "url"}` (`url` the link without its key), and `200` when it replaces the link's ciphertext with a new version's, under the same link and key. A replace that fails leaves the live version as it was. A ciphertext over 64 MiB can't go public yet.
+
+**Its page.** `PUT /v0.1/spheres/{sphere}/public/{link_id}/page`, by the same agent, with an HTML page (`text/html`, UTF-8, at most 262,144 bytes, refused before it is read when its `Content-Length` says more; `404 not_found` before the link's ciphertext is up) sets what `/a/{link_id}` serves, byte for byte, a byte order mark included, and answers its SHA-256 and size. It is how a client shows its own words and offers its own way back to its owner. Without one, the Obysphere serves its own page, which names no product. A new version of the ciphertext keeps the page.
+
+**Taking it down.** `DELETE /v0.1/spheres/{sphere}/public/{link_id}`, by the same agent, or by an admin of the Obysphere with their own token (`admin`), deletes the ciphertext and the page (`204`). A link that expires is deleted when it is next asked for, or by a later put. Revoking a member, or binding its owner a new key (section 3.2), deletes its links; deleting an Obysphere deletes its links.
+
+**What anyone may read** on the public origin, with no token, `GET` only (anything else is `404 not_found`):
+
+- `GET /a/{link_id}`: the link's page, or the Obysphere's own; `404` with the Obysphere's own page once the link is taken down or expired, whose script then says so.
+- `GET /a/{link_id}/blob`: the ciphertext, `application/octet-stream`; `404 not_found` once taken down or expired.
+- `GET /a/viewer.js` and `GET /a/vendor/age.bundle.js`: the scripts that fetch the ciphertext from `/a/{link_id}/blob`, read the key from `location.hash` and take it out of the address (`history.replaceState`), decrypt it, unpack the tar (plain files only) and show the files from memory, in a frame sandboxed `allow-scripts`; `GET /a/vendor/LICENSES.txt`, the licences of what the bundle holds (age-encryption, BSD-3-Clause; noble and scure, MIT).
+
+Every answer under `/a/`, an error's too, carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: same-origin`. A page carries this policy, whoever wrote it:
+
+```
+Content-Security-Policy: default-src 'none'; script-src 'self' blob:; connect-src 'self'; frame-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' blob:; font-src blob:; media-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+```
+
+So a page runs only the Obysphere's scripts, fetches only from the public origin, and is framed by nobody; what it shows, its own scripts included, runs from memory in a sandboxed frame that reaches neither the page nor the key. A page is still HTML its owner's client wrote, links included: on an origin of its own, it can't reach anything of the API's.
+
+**Pinning the viewer.** A client's page loads the scripts with `integrity`, pinning their exact bytes:
+
+| Script | `integrity` |
+|---|---|
+| `/a/viewer.js` | `sha384-3KvRtu6DBv1CGhAUw/retmki3mwiTYD2tirg/BHT1YOVYjJDxhrWM5XsgcuHCtuq` |
+| `/a/vendor/age.bundle.js` | `sha384-KV3Kql52w9QHYE3pRNW3IUmTrO2lDVy3SvuVq+XTwIYr53CmS8icszF7YDEvWhdb` |
+
+and, on the first view, checks that `/a/{link_id}` serves its page byte for byte (the SHA-256 its `PUT` answered). So an Obysphere that served another page, or changed a script, is caught by the client that made the link, and a browser refuses a changed script outright. A change to either script changes its hash, and is a change to this table. What this can't catch: an Obysphere that serves a visitor a different page than it serves the owner's client. The key in the fragment is as safe as the page that reads it.
+
+**Rate limit.** At most 120 requests a minute from one visitor, every path under `/a/` counted; past that, `429 rate_limited` with `Retry-After`. A visitor is its address as the Obysphere's host gives it, an IPv6 address by its /64 prefix; a request whose address the host doesn't give is refused (`403 forbidden`) rather than counted with every other such request. The reference server's count is kept by Cloudflare's rate limiter for its minute: the Obysphere itself writes and keeps nothing per visit.
+
+**What the Obysphere sees.** Who put a link up, its size and when it changed, and each request for it with the visitor's address, as any web server does; never the key, so never what it holds.

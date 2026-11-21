@@ -93,6 +93,7 @@ The image runs the Worker's own code ([`server/src/`](../server/src/)) on Node, 
 - SQLite stands in for D1, through the same calls and the same migrations.
 - The Doorbell and the phone relay run in memory.
 - `node:http` and [`ws`](https://github.com/websockets/ws) serve the API and the WebSockets.
+- No bucket for artifacts' blobs yet, so the image takes no artifacts: `GET /v0.1/features` doesn't list `artifacts`, and its blob and public paths answer `404` ([spec/sphere-api.md](../spec/sphere-api.md) section 10).
 
 `pnpm run test:node` checks the claim, the HTTPS rule, the relay's sockets and a restart. `pnpm run load -- --node` and the scenario (`OBI_SPHERE_URL=http://127.0.0.1:<port> pnpm run scenario`, with the token claimed) run against it as they do against the Worker.
 
