@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/sphere.mjs": {
+      "maxDuration": 300,
+      "includeFiles": "{public/**,rep.mjs,API.md}"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/sphere?__path=/$1" }],
+  "env": {
+    "SPHERE_STORE": "redis",
+    "SPHERE_SEALED": "1",
+    "SPHERE_TRUST_PROXY": "1",
+    "NODEJS_HELPERS": "0"
+  }
+}

@@ -1,0 +1,50 @@
+# Syntax, the relay's tests (both stores, sealing, the Vercel entry; no Claude and no network
+# needed), and the Docker image building and answering its health check.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      - run: npm test
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: docker build -t obysphere .
+      - name: Starts and answers its health check
+        run: |
+          docker run -d --name sphere -p 8080:8080 \
+            -e SPHERE_KEY="$(openssl rand -base64 24)" -e SPHERE_ADMIN_KEY="$(openssl rand -base64 24)" obysphere
+          for i in $(seq 1 30); do curl -fs localhost:8080/healthz && exit 0; sleep 1; done
+          docker logs sphere; exit 1

@@ -1,42 +1,20 @@
-# Dependencies
+# A Sphere's state and logs (demo.sh, node server.mjs)
+data/
+logs/
+
+# Dependencies (there are none at runtime; editors and tools sometimes add them)
 node_modules/
-.pnpm-store/
 
-# Build output
-dist/
-build/
-out/
-*.tsbuildinfo
-
-# Cloudflare / Wrangler
-.wrangler/
-.dev.vars
-.dev.vars.*
+# Deploys
+.vercel/
 
 # Env and secrets
 .env
 .env.*
 !.env.example
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Test and coverage
-coverage/
-.nyc_output/
-.vitest/
-
-# Caches
-.cache/
-.eslintcache
-.turbo/
-
 # Editors and OS
 .vscode/
 .idea/
 .DS_Store
+*.log

@@ -1,40 +1,12 @@
-# Settings for gitleaks (and any scanner that reads them) on this repository: gitleaks's own
-# rules, and one allowlist.
+# Settings for gitleaks (and any scanner that reads them): gitleaks's own rules, and one allowlist.
 #
-# The conformance suite signs its fixtures with test keys anyone can derive from a public seed
-# string (spec/conformance/keys.json, "Keys" in spec/conformance/README.md). Their Ed25519 *public*
-# keys appear in the fixtures as `owner_key`, `bound_owner_key` and `public_key`, and look like API
-# keys to the generic rule. They are not secrets. The allowlist names exactly those public keys,
-# and only under spec/conformance/, so any other value there, or these values anywhere else, is
-# still reported. `node conformance/run.mjs` (spec/) checks this list against keys.json.
+# The tests use made-up keys and tokens (a join key, an admin key, a fake Upstash token) that
+# look like secrets to the generic rule. They aren't. The allowlist covers only test/.
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Public keys of the conformance suite's derivable test keys (spec/conformance/keys.json)"
-# A rule-level allowlist: a global one skips whole files by path before looking at the value.
+description = "Made-up keys and tokens in the tests"
 targetRules = ["generic-api-key"]
-condition = "AND"
-paths = ['''^spec/conformance/.*\.json$''']
-regexTarget = "match"
-regexes = [
-  '''ntsfB6eWkZc1OaiYP3IQWc8ULKnQgLnlTcEu78Ix1kM''',
-  '''h0N1imyuq1rRFqca2MG9WIbmY4HFUvtr0utDYJvrlsE''',
-  '''RoESYLJuxOPLcPjwG2EmdmFcd7e6Xx4NTyfgccIN17w''',
-  '''c_0owck2Hx_xroaJ-4Ai0Q5Z07xXZnR9ZKobo9ktXzg''',
-  '''uvPsVSM4yoagSvPLJ_9trskiok2az7Xwc1VZlWdH8bk''',
-  '''RX8-irCtsWuRqyd1II8LKF5FMnJYEeUmyJwVOLpMjnY''',
-]
-
-[[allowlists]]
-description = "The job channel's derived test keys in commit 7c981d8's channel-vectors.json (SHA-256 of public seed strings, not secrets; renamed in 8825561 so they no longer look like keys)"
-targetRules = ["generic-api-key"]
-condition = "AND"
-commits = ["7c981d8aef323e9c4c6bfd1ff5e2c405f8d32ba3"]
-paths = ['''^spec/conformance/channel-vectors\.json$''']
-regexTarget = "match"
-regexes = [
-  '''18lEK8uvo9KZ1Yh6bTYUF84EI0gNmZ2SMrc8Mgt0qr0''', # guest>host
-  '''stJJdufM2GLtmRXQHYLEDNgbu97ZXUpvGPoIoHGQUfs''', # host>guest
-]
+paths = ['''^test/.*\.mjs$''']

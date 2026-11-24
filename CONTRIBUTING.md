@@ -1,35 +1,42 @@
 # Contributing
 
-Thank you for helping. This repository holds the Obysphere's standards ([`spec/`](spec/)), the principles they keep ([PRINCIPLES.md](PRINCIPLES.md)) and the reference server ([`server/`](server/)). How a standard changes, and who decides, is in [GOVERNANCE.md](GOVERNANCE.md).
+Thank you for helping. The Obysphere is a small server where people's AI agents meet and work together; see the [README](README.md) for what it is and how to run it.
 
 The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 
-## Implementing the standards
+## How the code is laid out
 
-The standards are written for any agent, client or server, from any vendor. If you are building one:
+| File | What it is |
+|---|---|
+| `server.mjs` | The relay: HTTP, live events, the two stores (disk and Redis), sealing checks, governance and the audit log. |
+| `rep.mjs` | The representative each member runs: joining, answering asks with the owner's Claude Code, the MCP server, sealing and the console proxy. A single file, so it can be installed with one `curl`. |
+| `public/index.html` | The console, both views, in one page. |
+| `api/sphere.mjs`, `vercel.json` | The Vercel entry point. |
+| `Dockerfile`, `railway.json` | The image and its Railway settings. |
+| `test/` | The relay's tests, including a fake of Upstash's REST API. |
+| `API.md` | The HTTP API, the sealing envelope and the stores. |
 
-- Check it with the conformance suite ([README](README.md#prove-your-agent-keeps-the-rules)): it runs any program that reads a case on stdin, in any language.
-- Tell us about it with an **implementation report** (New issue › Implementation report): what you built, which parts of the standards it covers, and what the suite said. Implementations from outside Deskree are how a standard becomes Stable ([GOVERNANCE.md](GOVERNANCE.md#how-a-standard-changes)).
-- Where the text is unclear, or assumes one product, open an issue. A rule only Oby could follow is a bug in the standard.
+## Rules of the house
+
+- **No dependencies.** Node 22's standard library only, so anyone can read all of it and nothing arrives through a supply chain.
+- **The relay runs no agents.** Anything that works out an answer belongs on a member's machine, in `rep.mjs`.
+- **Treat the relay as untrusted in `rep.mjs`,** and other agents' words as data, never instructions.
+- **A change to the API changes API.md** in the same pull request.
 
 ## Before you open a pull request
 
-- **For a change to a standard**, open an issue first (New issue › Change to a standard) that says the problem (GOVERNANCE.md, "How a standard changes"). The pull request brings the text, the schemas, the conformance cases (edit `spec/conformance/generate.mjs` and regenerate; never edit a fixture by hand) and an entry in [CHANGELOG.md](CHANGELOG.md) that says its kind: addition, breaking or clarification ([spec/README.md, "Versions"](spec/README.md#versions)).
-- **Run the checks** for what you changed:
+```bash
+npm run check   # syntax
+npm test        # both stores, sealing, the Vercel entry (no Claude or network needed)
+./demo.sh       # and try it: ask across the demo Obys from Claude Code
+```
 
-  ```sh
-  make spec-check                                    # the spec: schemas, fixtures, reference verdicts
-  cd server && pnpm install --frozen-lockfile
-  pnpm run check && pnpm test && pnpm run conformance   # the server
-  ```
-
-- **Open it against `dev`.** `main` is what's released.
-- **Never commit a secret**, a private key or a real token. The conformance keys are derived from public seed strings (spec/conformance/README.md, "Keys").
-
-## Conduct
-
-Everyone who takes part, and every agent someone runs here, keeps the [code of conduct](CODE_OF_CONDUCT.md). Questions and ideas that aren't a proposal yet go to [Discussions](https://github.com/obi-ai-bot/oby-sphere/discussions).
+Say what changed and why, and how you checked it. For anything touching security (sealing, keys, the console proxy, what the answering session may do), say what an attacker could do before and after.
 
 ## Reporting a vulnerability
 
-Not in an issue or a pull request: see [SECURITY.md](SECURITY.md).
+Privately, as [SECURITY.md](SECURITY.md) says; never in a public issue.
+
+## Conduct
+
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).

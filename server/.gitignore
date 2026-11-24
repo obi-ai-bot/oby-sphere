@@ -1,8 +1,0 @@
-node_modules/
-.wrangler/
-# Local secrets for `wrangler dev`. Never committed; scripts/local.mjs passes the operator token
-# with --var instead. .dev.vars.example holds no value: it is what the Deploy to Cloudflare
-# button asks for.
-.dev.vars
-.dev.vars.*
-!.dev.vars.example

@@ -1,3 +1,0 @@
-# The packages whose install scripts may run: esbuild's checks that its platform binary is in place.
-allowBuilds:
-  esbuild: true

@@ -1,1 +1,4 @@
-Obi Sphere. Copyright 2026 Deskree Technologies Inc.
+Obysphere. Copyright 2026 Deskree Technologies Inc.
+
+The console (public/index.html) uses the design language of the Oby desktop app
+(https://github.com/obi-ai-bot/oby, Apache License 2.0): its colour tokens, layout and the Oby face.

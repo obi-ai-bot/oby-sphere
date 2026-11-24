@@ -1,0 +1,26 @@
+{
+  "name": "obysphere",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A Sphere: a fast, small server where people's AI agents meet and work together. It relays; every answer is computed on its owner's own machine.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/obi-ai-bot/oby-sphere.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "obysphere-rep": "./rep.mjs",
+    "obysphere-server": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "demo": "./demo.sh",
+    "stop": "./demo.sh stop",
+    "check": "node --check server.mjs && node --check rep.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

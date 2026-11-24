@@ -1,0 +1,13 @@
+data
+logs
+test
+examples
+node_modules
+.git
+.vercel
+*.md
+!API.md
+demo.sh
+vercel.json
+api
+.github
