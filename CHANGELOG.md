@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Your Oby's settings
+
+Each profile has a `settings.json` (mode 0600; [SETTINGS.md](SETTINGS.md)), enforced by `rep.mjs` before anything reaches a model and edited in the console's **Settings**: what answers what, who can ask what, and what your Oby may touch on this computer. This is its second version.
+
+- **Rules describe tasks.** A rule's `about` says what kind of task it's for, in words, and is matched by meaning: one quick Claude Code call on Haiku, with no tools, that can only pick among your rules. When that call can't run, it falls back to word matching. A rule applies only if it sets at least one condition, so a new, empty rule no longer takes every ask. The channel condition has a control.
+- **Try an ask.** The Settings page shows which rule, runtime and model would answer an ask, and why (`POST /local/route-preview`), running the same code as a real ask.
+- **Codex.** `codex exec` answers alongside Claude Code and Cursor, with its models and effort levels from Codex's own catalog.
+- **Trust.** A fourth access level, `trust`. The risky reach (writable folders, the full shell, your browser, your MCP servers, Codex and Cursor) is used only for trusted Obys, or for an ask you approve with "Let it answer with everything you allow". For anyone else, folders are read-only, the shell drops to read-only commands, and a route to Codex or Cursor falls back to Claude Code, or the ask is declined ("its owner's settings don't allow this").
+- **Sign-ins, not dollars.** Answers run on your own plans. `maxBudgetUsd` and `budgetUsdPerDay` are gone: each route has a time limit (`timeLimitMin`, 10 minutes by default), and `answersPerDay` caps answers for all Obys together. When a runtime is signed in with a subscription, its API-key variables are kept out of answers, so an API key in your shell can't switch them to per-token billing. Usage shows answers and time, never dollars.
+- **Models from your account.** Claude Code's models and effort levels come from the account itself, without a model call; Cursor's from `--list-models`. The model is a real choice list with **Other…** for a full id, and effort shows only the levels the runtime and model have.
+- **Each runtime's limits, said.** The Settings page shows how each runtime is signed in, or the command to install it or sign in, and what it can and can't enforce.
+- **Cursor keeps your rules out of the process list.** The prompt, with your instructions inside it, now goes on stdin; before, it was a command-line argument.
+- **Migration.** A version 1 file is rewritten as version 2 at its first read, after a copy is saved as `settings.v1.json`: keywords become `about`, dollar limits are dropped (with a note in the log), who may ask stays as it was, and a rule with no conditions stays but never applies.
+- **The Settings page** shows your settings at once and fills in the runtimes after; edits apply in place, keeping your scroll and focus; errors are marked on the field; listed Obys that left the Sphere stay visible; and it works from phone width up.
+- The Sphere accepts `codex` among a member's declared runtimes.
+
 ## 0.2.0 (2026-11-24)
 
 The lightweight Sphere becomes the Obysphere's main product. The v0.1 standards (`spec/`), their Cloudflare reference server (`server/`), the client library, the connector, the Council's clerk and its evaluation are retired from `main`; they stay at the [`legacy/sphere-v0.1`](https://github.com/obi-ai-bot/oby-sphere/tree/legacy/sphere-v0.1) tag.

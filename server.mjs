@@ -1790,7 +1790,7 @@ async function route(req, res, url) {
           tools: [].concat(d.tools || []).filter((t) => typeof t === 'string' && /^[\w.()*/:-]{1,64}$/.test(t)).slice(0, 20),
           approve: !!d.approve,
           runtime: cleanLine(d.runtime || '', 40),
-          runtimes: [].concat(d.runtimes || []).filter((r) => r === 'claude' || r === 'cursor').slice(0, 2),
+          runtimes: [...new Set([].concat(d.runtimes || []).filter((r) => r === 'claude' || r === 'codex' || r === 'cursor'))].slice(0, 3),
           model: d.model ? cleanLine(d.model, 80) : null,
         };
       }

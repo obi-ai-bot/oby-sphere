@@ -128,11 +128,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .icon-button:hover { color: var(--text); background: var(--hover); }
 .icon-button.is-on { color: var(--text); background: var(--active); }
 .panel-toggle { display: none; }
-.trail { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: var(--text-base); white-space: nowrap; overflow: hidden; }
-.trail-part { color: var(--muted); }
+.trail { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: var(--text-base); white-space: nowrap; overflow: hidden; container: trail / inline-size; }
+/* short of room, the crumbs before the page give way first, with an ellipsis, then the page name */
+.trail-part { flex: 0 1000 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .trail-part.is-link:hover { color: var(--text); }
-.trail-now { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.trail-now { flex: 0 1 auto; min-width: 0; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .trail svg { flex: none; color: var(--muted); }
+/* too little room for both: the page name alone */
+@container trail (max-width: 180px) { .trail-part, .trail-chev { display: none; } }
 .bar-end { flex: none; display: flex; align-items: center; gap: 10px; }
 .modes { flex: none; height: 30px; padding: 2px; display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); }
 .modes button { height: 24px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-md); transition: color var(--fade), background-color var(--fade); }
@@ -264,8 +267,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .page-title { color: var(--ink); font-size: var(--text-title); font-weight: 600; line-height: 32px; }
 .page-sub { margin-top: 2px; color: var(--muted); font-size: var(--text-md); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 28px 0 10px; }
-.section-head h3 { color: var(--label); font-size: var(--text-sm); font-weight: 500; }
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 28px 0 10px; }
+/* a heading keeps its line; a note that doesn't fit beside it goes under it */
+.section-head h3 { flex: 0 0 auto; max-width: 100%; color: var(--label); font-size: var(--text-sm); font-weight: 500; }
 .section-head .link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
 .section-head .link:hover { color: var(--ink); }
 
@@ -380,7 +384,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .switch.is-on { background: var(--online); }
 .switch.is-on::after { transform: translateX(16px); }
 .switch:disabled { opacity: 0.4; }
-.set-select { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font: var(--text-md) var(--font); }
+.set-select { height: 32px; max-width: 100%; min-width: 0; padding: 0 30px 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.75 5 6.75 8 3.75'/%3E%3C/svg%3E") no-repeat right 11px center / 10px 10px; color: var(--ink); font: var(--text-md) var(--font); -webkit-appearance: none; appearance: none; text-overflow: ellipsis; outline: none; transition: border-color var(--fade); }
+.set-select:hover, .set-select:focus { border-color: var(--field-edge-on); }
+.set-select:disabled { opacity: 0.5; }
+.set-select option, .set-select optgroup { background: var(--surface); color: var(--ink); }
 .set-field { width: 100%; height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font: var(--text-base) var(--font); outline: none; transition: border-color var(--fade); }
 .set-field::placeholder { color: var(--muted); }
 .set-field:hover, .set-field:focus { border-color: var(--field-edge-on); }
@@ -401,6 +408,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .connector .needs { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--needs); color: #241500; font-size: 11px; font-weight: 600; display: grid; place-items: center; }
 .ask-card { padding: 14px 16px 12px; border-radius: 18px; background: var(--chip); display: flex; flex-direction: column; gap: 10px; animation: msg-in 360ms var(--warm) both; }
 .ask-card + .ask-card { margin-top: 10px; }
+#pending-box:not(:empty) { margin-bottom: 28px; }
 .ask-card .who { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: var(--text-md); font-weight: 500; flex-wrap: wrap; }
 .ask-card .why { color: var(--needs); font-size: var(--text-sm); font-weight: 400; }
 .ask-card .q { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--item); font-size: var(--text-base); line-height: 20px; max-height: 220px; overflow-y: auto; }
@@ -412,18 +420,95 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .set-field.set-text { width: 240px; }
 .set-field.set-wide { width: 100%; }
 .set-row.is-stack { flex-direction: column; align-items: stretch; }
-.rule { border: 1px solid var(--line); border-radius: 14px; padding: 2px 16px; }
-.rule + .rule { margin-top: 10px; }
-.rule-head { display: flex; align-items: center; gap: 8px; padding: 10px 0 6px; }
-.rule-head .set-field { flex: 1; min-width: 0; font-weight: 500; }
-.rule-label { color: var(--label); font-size: var(--text-sm); padding-top: 8px; }
 .chips-pick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-.chips-pick button { height: 26px; padding: 0 10px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade); }
+.chips-pick button { height: 32px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade); }
 .chips-pick button:hover { color: var(--text); }
 .chips-pick button.is-on { background: var(--active); color: var(--ink); border-color: transparent; }
-.folder-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.chips-pick button .away { color: var(--muted); }
+.folder-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
 .folder-row + .folder-row { border-top: 1px solid var(--surface-edge); }
-.folder-row .p { flex: 1; min-width: 0; color: var(--ink); font: 12.5px/18px var(--mono); overflow-wrap: anywhere; }
+.folder-row .p { flex: 1 1 200px; min-width: 0; color: var(--ink); font: 12.5px/18px var(--mono); overflow-wrap: break-word; }
+.folder-row .p .folder-tag { display: block; margin-top: 4px; font-family: var(--font); }
+.folder-row .p .folder-tag:empty { display: none; }
+.folder-row .p .folder-tag .set-tag { margin-left: 0; }
+
+/* Settings v2: set-* for the page, route-* for what answers what (the Instruments page owns .rule) */
+.set-root { max-width: 880px; }
+.set-root :is(.set-select, .set-field, .set-area, .set-button, .switch, .icon-button, .chips-pick button):focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.set-root .set-row { flex-wrap: wrap; row-gap: 0; }
+/* a stacked row is one column: wrapping would size its children at their narrowest (the add-folder row grew to two lines' height) */
+.set-root .set-row.is-stack { flex-wrap: nowrap; }
+.set-root .set-row:not(.is-stack) > .set-row-text { flex: 1 1 220px; }
+.set-root .set-row-ctl { flex: 0 1 auto; }
+.set-lead { margin: -8px 0 12px; color: var(--text); font-size: var(--text-md); line-height: 19px; }
+.set-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; margin-left: 6px; border-radius: var(--radius-pill); border: 1px solid rgba(255, 159, 10, 0.45); color: var(--needs); font-size: 11px; font-weight: 400; white-space: nowrap; vertical-align: 1px; }
+.set-err { margin-top: 6px; min-width: 0; overflow-wrap: anywhere; color: var(--danger); font-size: var(--text-sm); line-height: 16px; flex-basis: 100%; }
+.set-invalid, .set-invalid:hover, .set-invalid:focus { border-color: var(--danger) !important; }
+.chips-pick.set-invalid { outline: 1px solid var(--danger); outline-offset: 4px; border-radius: 8px; }
+.set-runtimes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; container-type: inline-size; }
+/* two to a row: a last card on its own takes the whole row (three fit from 560px) */
+@container (max-width: 559.98px) { .set-rt:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+.set-rt { min-width: 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 6px; }
+.set-rt-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.set-rt-name { color: var(--ink); font-size: var(--text-base); font-weight: 500; }
+.set-rt-ver { color: var(--muted); font: 11px/16px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.set-rt-state { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: var(--text-md); }
+.set-rt-more { color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.set-rt-more .set-tag { margin-left: 0; margin-right: 4px; }
+.set-cmd { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.set-cmd code { flex: 1; min-width: 0; padding: 7px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.set-cmd .set-button { height: 32px; }
+.route-card { position: relative; margin-top: 10px; padding: 12px 16px 14px; border: 1px solid var(--line); border-radius: 14px; transition: border-color var(--fade), opacity var(--fade); }
+.route-card.is-idle { border-style: dashed; }
+.route-card.is-idle .route-body { opacity: 0.75; }
+.route-card.is-new { animation: msg-in 360ms var(--warm) both; }
+.route-head { display: flex; align-items: center; gap: 6px; }
+.route-num { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--chip-hover); color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.route-head .set-field { flex: 1; min-width: 0; font-weight: 500; }
+.route-head .icon-button { flex: none; width: 32px; height: 32px; }
+.route-head .icon-button:disabled { opacity: 0.3; }
+.route-summary { margin: 8px 0 0; color: var(--text); font-size: var(--text-md); line-height: 19px; overflow-wrap: anywhere; }
+.route-idle { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 159, 10, 0.08); color: var(--needs); font-size: var(--text-sm); line-height: 16px; }
+.route-label { margin: 14px 0 6px; color: var(--label); font-size: var(--text-sm); }
+.route-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 12px; align-items: start; }
+.route-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.route-field.is-wide { grid-column: 1 / -1; }
+.route-field > .route-label-sm, .route-label-sm { color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.route-field .set-select, .route-field .set-field { width: 100%; }
+.route-field .chips-pick { justify-content: flex-start; }
+.route-help { color: var(--muted); font-size: 11px; line-height: 15px; }
+.route-none { min-height: 32px; display: flex; align-items: center; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.route-warn { color: var(--needs); font-size: var(--text-sm); line-height: 16px; }
+.route-hints { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.route-hints:empty { display: none; }
+.route-hints .is-warn { color: var(--needs); }
+.route-default { padding: 12px 16px 14px; border-radius: 14px; background: var(--chip); }
+.route-default-title { color: var(--ink); font-size: var(--text-base); }
+.route-undo { margin-top: 10px; padding: 8px 8px 8px 14px; border-radius: 10px; background: var(--chip-hover); display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: var(--text-md); }
+.route-undo > span { min-width: 0; overflow-wrap: anywhere; }
+.set-group .route-undo { margin: 8px 0; }
+.route-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.route-try { margin-top: 12px; padding: 12px 16px 14px; border-radius: 14px; background: var(--chip); }
+.route-try-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
+.route-try-out { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--surface-edge); display: flex; flex-direction: column; gap: 4px; font-size: var(--text-md); line-height: 19px; }
+.route-try-out:empty { display: none; }
+.route-try-out b { color: var(--ink); font-weight: 500; }
+.set-agent { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.set-agent .owner-avatar.is-gone { background: var(--chip-hover) !important; }
+.set-usage { margin-top: 10px; color: var(--muted); font-size: var(--text-sm); }
+@media (max-width: 560px) {
+  .set-root .set-row { flex-wrap: wrap; gap: 8px 16px; }
+  .set-root .set-row-ctl { justify-content: flex-start; }
+  .set-root .chips-pick { justify-content: flex-start; }
+  .set-root .set-row-ctl:has(.set-text) { flex-basis: 100%; }
+  .set-root .set-field.set-text { width: 100%; }
+  .route-card, .route-default, .route-try { padding-left: 12px; padding-right: 12px; }
+  .route-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .route-try-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  .route-grid { grid-template-columns: 1fr; }
+}
 .warn { color: var(--needs); }
 .saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
@@ -1451,11 +1536,21 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       const { pending } = await local('GET', '/local/pending');
       const ids = (pending || []).map((p) => p.id).join(',');
       if (ids !== (S.pending || []).map((p) => p.id).join(',')) {
+        if (pending?.length) await settingsForPending();
         S.pending = pending || [];
         renderNav();
         if (S.mode === 'console' && S.page === 'you') renderPending();
       }
     } catch (e) { if (e.status === 404) pendingOff = true; }
+  }
+  // the Waiting card offers "everything you allow" only when your settings allow more than answering
+  async function settingsForPending() {
+    if (!CONSOLE || document.getElementById('settings-root') || SET.timer) return;
+    if (SET.settings && Date.now() - SET.loadedAt < 30e3) return;
+    try {
+      const s = await local('GET', '/local/settings');
+      if (s.settings && !document.getElementById('settings-root') && !SET.timer) { SET.settings = s.settings; normalizeSettings(SET.settings); SET.loadedAt = Date.now(); }
+    } catch {}
   }
   function renderPending() {
     const box = document.getElementById('pending-box');
@@ -1469,6 +1564,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function pendingHtml() {
     const list = S.pending || [];
     if (!list.length) return '';
+    const risky = riskyReach(SET.settings);
     return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">Your Oby answers none of these until you say so</span></div>` +
       list.map((p) => `<div class="ask-card" data-pending="${esc(p.id)}">
         <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
@@ -1476,6 +1572,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="answer">Let my Oby answer</button>
+          ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
           <button class="set-button" data-decide="decline">Decline</button>
           <span class="saved-note" data-note></span>
@@ -1514,19 +1611,72 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   // ---------------------------------------------------------------- your Oby's settings (kept and enforced on this machine)
-  const SET = { settings: null, env: null, usage: null, path: '', state: '', error: null, timer: null };
+  // Settings v2. The page is built once; after that each change updates only the part it affects,
+  // so scroll and focus stay. The runtime probe (/local/environment) fills in when it arrives.
+  const SET = { settings: null, env: null, envFailed: false, usage: null, path: '', state: '', error: null, timer: null, rev: 0, saving: Promise.resolve(true), other: new Set(), undo: null, loadedAt: 0, tryBusy: false, tryKey: null };
+  const RUNTIME_IDS = ['claude', 'codex', 'cursor'];
+  const RUNTIME_WORDS = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor' };
+  const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+  const EFFORT_WORDS = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
+  const FALLBACK_EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['low', 'medium', 'high', 'xhigh'], cursor: [] };
+  const FALLBACK_MODELS = { claude: [['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']], codex: [], cursor: [] };
+  const TIME_LIMITS = [1, 2, 5, 10, 20, 30, 60, 120];
+  const ACCESS_LEVELS = ['decline', 'approve', 'answer', 'trust'];
+  const ACCESS_WORDS = { decline: 'Decline', approve: 'Ask me first', answer: 'Answer', trust: 'Trust' };
+  const TRUSTED_TAG = '<span class="set-tag">Trusted Obys only</span>';
+  const others = () => members().filter((a) => !isMe(a)).sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
+  const fid = (k) => 'set-' + String(k).replace(/[^A-Za-z0-9]+/g, '-');
+  const andList = (xs, word = 'and') => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} ${word} ${xs[xs.length - 1]}`);
+  // rep.mjs writes plain apostrophes; the page uses curly ones
+  const curly = (t) => String(t ?? '').replace(/(\w)'(\w)/g, '$1’$2').replace(/(^|[\s(])'/g, '$1‘').replace(/'/g, '’').replace(/(^|[\s(])"/g, '$1“').replace(/"/g, '”');
+  const sentence = (t) => { const c = curly(t).trim(); return c ? c.charAt(0).toUpperCase() + c.slice(1) + (/[.!?]$/.test(c) ? '' : '.') : ''; };
+  const pathHtml = (p) => esc(p).replace(/\//g, '/<wbr>');
+  const minutesWords = (v) => (v >= 60 && v % 60 === 0 ? `${v / 60} hour${v === 60 ? '' : 's'}` : `${v} min`);
+
   async function loadSettings() {
     const el = $('#page');
-    el.innerHTML = head('Settings', 'Loading…');
+    if (!document.getElementById('settings-root')) el.innerHTML = head('Settings', 'Loading your settings…');
+    SET.env = null; SET.envFailed = false;
+    const envP = local('GET', '/local/environment').catch(() => null);
     try {
-      const [s, env, usage] = await Promise.all([local('GET', '/local/settings'), local('GET', '/local/environment').catch(() => null), local('GET', '/local/usage').catch(() => null)]);
-      SET.settings = s.settings; SET.path = s.path; SET.env = env; SET.usage = usage; SET.state = ''; SET.error = s.error ? { message: `${s.error}${s.field ? ` (${s.field})` : ''}` } : null;
-      if (!SET.settings) { $('#page').innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'unreadable')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
+      const [s, usage] = await Promise.all([local('GET', '/local/settings'), local('GET', '/local/usage').catch(() => null)]);
+      SET.settings = s.settings; SET.path = s.path; SET.usage = usage; SET.state = ''; SET.loadedAt = Date.now();
+      SET.error = s.error ? { message: String(s.error), field: s.field || null } : null;
+      if (!SET.settings) { el.innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'it can’t be read')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
+      normalizeSettings(SET.settings);
       renderSettings();
     } catch (e) {
       el.innerHTML = head('Settings', e.status === 404 ? 'This console’s rep.mjs is older than settings: update it to change them here.' : esc(e.message));
+      return;
+    }
+    const env = await envP;
+    SET.env = env; SET.envFailed = !env;
+    if (document.getElementById('settings-root')) paintEnv();
+    // a slow probe gets the last look (stale: true) while a fresh one runs: ask again once it has had time
+    if (env?.stale) {
+      const loadedAt = SET.loadedAt;
+      setTimeout(async () => {
+        const fresh = await local('GET', '/local/environment').catch(() => null);
+        if (!fresh || SET.loadedAt !== loadedAt || !document.getElementById('settings-root')) return;
+        SET.env = fresh; SET.envFailed = false;
+        paintEnv();
+      }, 4000);
     }
   }
+
+  // fill in what the page reads, so it never trips on a missing part (the file on disk stays as rep.mjs wrote it)
+  function normalizeSettings(s) {
+    s.routing = s.routing || {};
+    s.routing.default = s.routing.default || { runtime: 'claude', model: null, effort: null, timeLimitMin: 10 };
+    s.routing.rules = Array.isArray(s.routing.rules) ? s.routing.rules : [];
+    for (const r of s.routing.rules) { r.when = r.when || {}; r.use = r.use || { runtime: 'claude', model: null, effort: null, timeLimitMin: 10 }; }
+    s.access = s.access || {};
+    s.machine = s.machine || {};
+    s.machine.folders = Array.isArray(s.machine.folders) ? s.machine.folders : [];
+    s.machine.web = s.machine.web || {};
+    s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
+  }
+
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
   function setAt(obj, path, value) {
     const ks = path.split('.');
@@ -1534,208 +1684,994 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     ks.slice(0, -1).forEach((k, i) => { if (o[k] == null) o[k] = /^\d+$/.test(ks[i + 1]) ? [] : {}; o = o[k]; });
     o[ks[ks.length - 1]] = value;
   }
-  function saveSoon(now) {
+
+  // ---- saving: one PUT at a time; a reply only replaces what's here if nothing changed meanwhile
+  function changed(now) {
+    SET.rev++;
+    staleTry();
     clearTimeout(SET.timer);
     SET.state = 'Saving…';
     paintState();
-    SET.timer = setTimeout(saveSettings, now ? 0 : 450);
+    SET.timer = setTimeout(() => { SET.timer = null; saveSettings(); }, now ? 0 : 450);
   }
-  async function saveSettings() {
-    try {
-      const r = await local('PUT', '/local/settings', { settings: SET.settings });
-      SET.settings = r.settings; SET.error = null; SET.state = 'Saved';
-      document.querySelectorAll('.is-bad').forEach((n) => n.classList.remove('is-bad'));
-    } catch (e) {
-      SET.error = e; SET.state = '';
-    }
-    paintState();
+  function saveSettings() {
+    clearTimeout(SET.timer); SET.timer = null;
+    const rev = SET.rev;
+    const body = JSON.parse(JSON.stringify(SET.settings));
+    SET.saving = SET.saving.then(async () => {
+      try {
+        const r = await local('PUT', '/local/settings', { settings: body });
+        if (rev === SET.rev && r.settings) {
+          const foldersBefore = JSON.stringify(SET.settings.machine?.folders || []);
+          SET.settings = r.settings; normalizeSettings(SET.settings);
+          if (JSON.stringify(SET.settings.machine.folders) !== foldersBefore) paintPart('folders');
+        }
+        if (rev === SET.rev) { SET.error = null; SET.state = 'Saved'; clearErrors(); }
+        paintState();
+        return true;
+      } catch (e) {
+        if (rev === SET.rev) { SET.error = { message: e.message, field: e.field || null }; SET.state = ''; clearErrors(); markError(e.field, e.message); }
+        paintState();
+        return false;
+      }
+    });
+    return SET.saving;
+  }
+  // wait for anything typed to reach the file (the route preview reads the saved settings)
+  async function flushSettings() {
+    if (SET.timer) return saveSettings();
+    return SET.saving;
   }
   function paintState() {
     const n = document.getElementById('settings-state');
     if (!n) return;
-    n.textContent = SET.error ? `Needs fixing: ${SET.error.message}` : SET.state;
+    n.textContent = SET.error ? `Needs fixing: ${fieldWords(SET.error.field)}${SET.error.field ? ' ' : ''}${errorWords(SET.error)}` : SET.state;
     n.classList.toggle('is-problem', !!SET.error);
   }
 
-  const RUNTIME_WORDS = { claude: 'Claude Code', cursor: 'Cursor' };
-  const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-  function runtimeOptions(cur) {
-    const list = SET.env?.runtimes?.length ? SET.env.runtimes : [{ id: 'claude', label: 'Claude Code', installed: true }, { id: 'cursor', label: 'Cursor', installed: null }];
-    return list.map((r) => {
-      const why = r.installed === false ? ' (not installed)' : r.signedIn === false ? ' (not signed in)' : '';
-      return `<option value="${esc(r.id)}"${r.id === cur ? ' selected' : ''}>${esc(r.label || RUNTIME_WORDS[r.id] || r.id)}${why}</option>`;
+  // ---- errors on the field: rep.mjs answers { error: "routing.rules[0].use.model: is …", field }
+  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“about”', from: '“asked by”', hasFiles: 'files', hop: 'relayed', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks that carry files', sendFiles: 'sending files', consultOthers: 'consulting other Obys', acceptHops: 'relayed asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'fetching pages', search: 'web search', browser: 'browser', mcp: 'MCP servers' };
+  const dotted = (f) => String(f || '').replace(/\[(\d+)\]/g, '.$1');
+  function fieldWords(field) {
+    if (!field) return '';
+    const ks = dotted(field).split('.');
+    const where = [];
+    const ri = ks.indexOf('rules');
+    if (ks[0] === 'routing' && ri === 1 && /^\d+$/.test(ks[2] || '')) {
+      const r = SET.settings?.routing?.rules?.[Number(ks[2])];
+      where.push(`rule ${Number(ks[2]) + 1}${r?.name ? ` (${r.name})` : ''}`);
+    } else if (ks[0] === 'routing' && ks[1] === 'default') where.push('the default');
+    else if (ks[0] === 'access' && ks[1] === 'rules') where.push('your rules');
+    else if (ks[0] === 'access' && ks[1] === 'default') where.push('Obys you haven’t listed');
+    else if (ks[0] === 'access' && ks[1] === 'agents' && ks[2]) where.push(`@${ks[2]}`);
+    else if (ks[0] === 'machine' && ks[1] === 'folders' && /^\d+$/.test(ks[2] || '')) where.push(`folder ${Number(ks[2]) + 1}`);
+    const last = [...ks].reverse().find((k) => FIELD_WORDS[k] && !(k === 'rules' || /^\d+$/.test(k)));
+    if (last && !(ks[0] === 'access' && ks[1] === 'agents')) where.push(FIELD_WORDS[last]);
+    return where.length ? where.join(', ') + ':' : `${field}:`;
+  }
+  function errorWords(err) {
+    let m = String(err?.message || '');
+    if (err?.field && m.startsWith(err.field + ':')) m = m.slice(err.field.length + 1).trim();
+    else if (err?.field && m.startsWith(dotted(err.field) + ':')) m = m.slice(dotted(err.field).length + 1).trim();
+    // the file says null; the page says what you'd pick instead
+    m = m.replace(/,? or null for the default/g, ', or leave it on Default')
+      .replace(/,? or null for either/g, ', or leave it on Either')
+      .replace(/,? or null for any/g, ', or leave it on Any channel')
+      .replace(/,? or null for (\d+)/g, ' ($1 min when not set)');
+    return curly(m);
+  }
+  function clearErrors() {
+    const root = document.getElementById('settings-root');
+    if (!root) return;
+    root.querySelectorAll('.set-invalid[data-invalid-from-save]').forEach((n) => { n.classList.remove('set-invalid'); n.removeAttribute('aria-invalid'); n.removeAttribute('aria-describedby'); delete n.dataset.invalidFromSave; });
+    root.querySelectorAll('.set-err[data-from-save]').forEach((n) => n.remove());
+  }
+  // a check the page made itself (a folder to add, an ask to try): cleared when that field changes
+  function clearFieldError(el) {
+    if (!el) return;
+    el.classList.remove('set-invalid'); el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby');
+    delete el.dataset.invalidFromSave;
+    const host = el.closest('.route-field, .set-row, .folder-row, .route-try') || el.parentElement;
+    host?.querySelectorAll(':scope > .set-err').forEach((n) => n.remove());
+  }
+  function fieldEl(field) {
+    const root = document.getElementById('settings-root');
+    if (!root || !field) return null;
+    let ks = dotted(field).split('.');
+    while (ks.length) {
+      const k = ks.join('.');
+      const hits = [...root.querySelectorAll(`[data-k="${CSS.escape(k)}"], [data-k-box="${CSS.escape(k)}"]`)].filter((n) => !n.hidden && n.offsetParent !== null);
+      // a model under “Other…”: the text box holds the value, not the select
+      if (hits.length) return hits.find((n) => n.dataset.modelOther !== undefined) || hits[0];
+      if (ks[0] === 'access' && ks[1] === 'agents' && ks[2]) { const a = root.querySelector(`[data-agent="${CSS.escape(ks[2])}"]`); if (a) return a; }
+      ks = ks.slice(0, -1);
+    }
+    return null;
+  }
+  function showFieldError(el, words, fromSave = true) {
+    if (!el) return;
+    el.classList.add('set-invalid');
+    el.setAttribute('aria-invalid', 'true');
+    if (fromSave) el.dataset.invalidFromSave = '1'; else delete el.dataset.invalidFromSave;
+    const host = el.closest('.route-field, .set-row, .folder-row, .route-try') || el.parentElement;
+    host.querySelectorAll(':scope > .set-err').forEach((n) => n.remove());
+    const p = document.createElement('p');
+    p.className = 'set-err';
+    p.setAttribute('role', 'alert');
+    if (fromSave) p.dataset.fromSave = '1';
+    p.textContent = words.charAt(0).toUpperCase() + words.slice(1);
+    host.append(p);
+    const errId = fid('err-' + (el.dataset.k || el.dataset.kBox || el.id || 'x'));
+    p.id = errId;
+    el.setAttribute('aria-describedby', errId);
+  }
+  // under the field itself the field is plain, so the engine's "is …" becomes a sentence of its own
+  function inlineErrorWords(err) {
+    const m = errorWords(err)
+      .replace(/^is /, 'Use ')
+      .replace(/^has at most /, 'Use at most ')
+      .replace(/^for (.+?) is /, 'For $1, use ')
+      .replace(/^(isn’t|can’t|needs|maps) /, 'It $1 ');
+    return sentence(m);
+  }
+  function markError(field, message) {
+    const el = fieldEl(field);
+    if (!el) return;
+    showFieldError(el, inlineErrorWords({ message, field }));
+  }
+
+  // ---- this machine's runtimes (from /local/environment), with plain fallbacks while it's probed
+  const envRuntime = (id) => SET.env?.runtimes?.find((r) => r.id === id) || null;
+  const rtLabel = (id) => envRuntime(id)?.label || RUNTIME_WORDS[id] || id;
+  function runtimeIds() {
+    const ids = [...RUNTIME_IDS];
+    for (const r of SET.env?.runtimes || []) if (!ids.includes(r.id)) ids.push(r.id);
+    return ids;
+  }
+  function normModel(m) {
+    if (typeof m === 'string') return { id: m, label: m, note: '', resolved: '', isDefault: m === 'default', supportsEffort: undefined, efforts: null, defaultEffort: null };
+    const id = String(m?.id ?? m?.value ?? m?.slug ?? '');
+    const lv = m?.efforts ?? m?.supportedEffortLevels ?? m?.supported_reasoning_levels ?? null;
+    return {
+      id,
+      label: String(m?.label ?? m?.displayName ?? m?.display_name ?? id),
+      note: String(m?.note || ''),
+      resolved: String(m?.resolved || m?.resolvedModel || ''),
+      isDefault: m?.default === true || m?.isDefault === true || id === 'default',
+      // rep.mjs sends efforts: [] (and no supportsEffort) for a model without effort, such as Haiku 4.5
+      supportsEffort: typeof m?.supportsEffort === 'boolean' ? m.supportsEffort : Array.isArray(lv) && lv.length === 0 ? false : undefined,
+      efforts: Array.isArray(lv) ? lv.map((x) => (typeof x === 'string' ? x : x?.id ?? x?.effort)).filter(Boolean) : null,
+      defaultEffort: m?.defaultEffort ?? m?.default_reasoning_level ?? null,
+    };
+  }
+  function modelsOf(id) {
+    const rt = envRuntime(id);
+    if (rt?.models?.length) return rt.models.map(normModel).filter((m) => m.id);
+    return (FALLBACK_MODELS[id] || []).map(([mid, label]) => normModel({ id: mid, label }));
+  }
+  // the runtime's own default model, by name, when this Mac told us; else null
+  function knownDefaultModel(id) {
+    const ms = modelsOf(id);
+    const d = ms.find((m) => m.isDefault);
+    if (!d) return null;
+    const twin = d.resolved && ms.find((m) => !m.isDefault && (m.resolved === d.resolved || m.id === d.resolved));
+    if (twin) return twin.label;
+    if (d.id !== 'default') return d.label;
+    return d.resolved || null;
+  }
+  const defaultModelWords = (id) => knownDefaultModel(id) || `${rtLabel(id)} decides`;
+  function modelWords(id, model) {
+    if (model == null) { const d = knownDefaultModel(id); return d ? `${d} (its default)` : 'its default model'; }
+    const m = modelsOf(id).find((x) => x.id === model);
+    return m ? m.label : model;
+  }
+  function trustedOnly(id) {
+    const k = envRuntime(id)?.keeps;
+    return k ? k.secrets === false || k.folders === false : id !== 'claude';
+  }
+  function effortInfo(id, model) {
+    const rt = envRuntime(id);
+    let levels = (rt ? rt.efforts || [] : FALLBACK_EFFORTS[id] || []).map((e) => (typeof e === 'string' ? { id: e, label: EFFORT_WORDS[e] || e } : { id: e.id, label: e.label || EFFORT_WORDS[e.id] || e.id }));
+    if (!levels.length) return { levels, reason: id === 'cursor' ? 'None: some Cursor models carry it in their name, like “-high”.' : `${rtLabel(id)} has no effort setting.` };
+    const ms = modelsOf(id);
+    const m = model == null ? ms.find((x) => x.isDefault) : ms.find((x) => x.id === model);
+    if (m && m.supportsEffort === false) return { levels: [], reason: 'This model has no effort setting.' };
+    if (m?.efforts?.length) levels = m.efforts.map((e) => levels.find((l) => l.id === e) || { id: e, label: EFFORT_WORDS[e] || e });
+    levels.sort((a, b) => EFFORT_ORDER.indexOf(a.id) - EFFORT_ORDER.indexOf(b.id));
+    const dflt = m?.defaultEffort ? EFFORT_WORDS[m.defaultEffort] || m.defaultEffort : id !== 'claude' && rt?.defaultEffort ? EFFORT_WORDS[rt.defaultEffort] || rt.defaultEffort : null;
+    return { levels, reason: null, dflt: dflt ? `Default (${dflt})` : 'Model’s default' };
+  }
+  function useWords(use) {
+    const id = use?.runtime || 'claude';
+    const parts = [rtLabel(id), modelWords(id, use?.model ?? null)];
+    if (use?.effort && !effortInfo(id, use?.model ?? null).reason) parts.push(`${EFFORT_WORDS[use.effort] || use.effort} effort`);
+    parts.push(`up to ${minutesWords(use?.timeLimitMin ?? 10)}`);
+    return parts.join(' · ');
+  }
+  function routesUsing(pred) {
+    const s = SET.settings;
+    if (!s) return [];
+    return [s.routing.default, ...s.routing.rules.map((r) => r.use)].filter((u) => u && pred(u.runtime || 'claude'));
+  }
+  // what reaches past the answer-only defaults: used only for trusted Obys, or an ask you let through with everything
+  function riskyReach(s) {
+    if (!s) return false;
+    const m = s.machine || {};
+    const uses = [s.routing?.default, ...(s.routing?.rules || []).map((r) => r.use)].filter(Boolean);
+    return (m.folders || []).some((f) => f.write) || m.shell === 'full' || (m.browser && m.browser !== 'off') || (m.mcp || []).length > 0 || uses.some((u) => u.runtime && u.runtime !== 'claude');
+  }
+
+  // ---- parts of the page
+  function runtimesHtml() {
+    return runtimeIds().map((id) => {
+      const rt = envRuntime(id);
+      const name = rtLabel(id);
+      let dot = 'waiting', state, cmd = null, cmdWhy = '';
+      if (!rt) state = SET.envFailed ? 'Couldn’t check this Mac' : 'Checking…';
+      else if (!rt.installed) { dot = 'offline'; state = 'Not installed'; cmd = rt.install; cmdWhy = 'Install it in Terminal:'; }
+      else if (rt.signedIn === true) {
+        dot = 'online';
+        const plan = rt.auth?.plan ? String(rt.auth.plan) : '';
+        // a plan tier reads "Team plan"; Codex's only subscription sign-in is ChatGPT
+        const planWords = plan ? (/plan$|chatgpt/i.test(plan) ? plan : `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`) : id === 'codex' ? 'ChatGPT' : '';
+        state = rt.auth?.kind === 'api-key' ? 'Signed in with an API key: billed per token' : rt.auth?.kind === 'subscription' ? `Signed in${planWords ? ` · ${planWords}` : ' with your subscription'}` : 'Signed in';
+      } else if (rt.signedIn === false) { dot = 'offline'; state = 'Not signed in'; cmd = rt.signIn; cmdWhy = 'Sign in in Terminal:'; }
+      else { state = 'Couldn’t tell whether it’s signed in'; cmd = rt.signIn; cmdWhy = 'To sign in, in Terminal:'; }
+      const k = rt?.keeps;
+      const cant = k ? [['folders', 'keep to your folders'], ['secrets', 'keep away from your secrets'], ['shellOff', 'go without a shell'], ['writes', 'stay read-only'], ['web', 'stay off the web']].filter(([key]) => k[key] === false).map(([, w]) => w) : [];
+      const noUse = k ? [['browser', 'your browser'], ['mcp', 'your MCP servers']].filter(([key]) => k[key] === false).map(([, w]) => w) : [];
+      const more = [];
+      if (rt && trustedOnly(id)) more.push(`${TRUSTED_TAG}${cant.length ? `It can’t ${esc(andList(cant, 'or'))}.` : ''}`);
+      else if (cant.length) more.push(`It can’t ${esc(andList(cant, 'or'))}.`);
+      if (noUse.length) more.push(`It can’t use ${esc(andList(noUse, 'or'))}.`);
+      // the state line already says an API key is billed per token
+      const note = String(rt?.note || '').split(' · ').filter((x) => !(rt?.auth?.kind === 'api-key' && /^billed per token\b/i.test(x.trim()))).join(' · ');
+      if (note) more.push(esc(sentence(note)));
+      return `<div class="set-rt">
+        <div class="set-rt-top"><span class="set-rt-name">${esc(name)}</span><span class="set-rt-ver">${rt?.version ? esc(rt.version) : ''}</span></div>
+        <div class="set-rt-state"><span class="status"><span class="status-dot is-${dot}"></span></span><span>${esc(state)}</span></div>
+        ${cmd ? `<div class="set-rt-more">${esc(cmdWhy)}</div><div class="set-cmd"><code class="mono">${esc(cmd)}</code><button class="set-button sm" data-copy="${esc(cmd)}" aria-label="Copy: ${esc(cmd)}">Copy</button></div>` : ''}
+        ${more.map((x) => `<div class="set-rt-more">${x}</div>`).join('')}
+      </div>`;
     }).join('');
   }
-  function modelList(runtime) {
-    const r = SET.env?.runtimes?.find((x) => x.id === runtime);
-    const ms = r?.models?.length ? r.models : runtime === 'claude' ? [{ id: 'opus', label: 'Opus' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'haiku', label: 'Haiku' }, { id: 'fable', label: 'Fable' }] : [];
-    return `<datalist id="models-${esc(runtime)}">${ms.map((m) => `<option value="${esc(m.id)}">${esc(m.label || m.id)}</option>`).join('')}</datalist>`;
-  }
-  function useControls(base, use) {
-    const rt = use?.runtime || 'claude';
-    const efforts = SET.env?.runtimes?.find((x) => x.id === rt)?.efforts || (rt === 'claude' ? EFFORTS : []);
-    return `<select class="set-select" data-k="${base}.runtime">${runtimeOptions(rt)}</select>
-      <input class="set-field set-text" style="width:150px" list="models-${esc(rt)}" placeholder="model" data-k="${base}.model" data-t="nullable" value="${esc(use?.model || '')}">${modelList(rt)}
-      <select class="set-select" data-k="${base}.effort" data-t="nullable" ${efforts.length ? '' : 'disabled'} title="Reasoning effort"><option value="">Default effort</option>${efforts.map((e) => `<option value="${e}"${use?.effort === e ? ' selected' : ''}>${e} effort</option>`).join('')}</select>
-      <span class="muted" style="font-size:12px">up to $</span><input class="set-field set-num" type="number" min="0" step="0.1" data-k="${base}.maxBudgetUsd" data-t="num" value="${use?.maxBudgetUsd ?? ''}" title="Most one answer may spend">`;
-  }
-  const others = () => members().filter((a) => !isMe(a)).sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
-  const ACCESS_WORDS = { answer: 'Answer', approve: 'Ask me first', decline: 'Decline' };
 
+  function runtimeOptsHtml(id) {
+    return runtimeIds().map((r) => {
+      const rt = envRuntime(r);
+      const why = !rt ? '' : rt.installed === false ? ' (not installed)' : rt.signedIn === false ? ' (not signed in)' : '';
+      return `<option value="${esc(r)}"${r === id ? ' selected' : ''}>${esc(rtLabel(r))}${why}</option>`;
+    }).join('');
+  }
+  function useHtml(base, use) {
+    const id = use?.runtime || 'claude';
+    const rid = fid(base);
+    const runtimeOpts = runtimeOptsHtml(id);
+    const tl = use?.timeLimitMin ?? 10;
+    const times = TIME_LIMITS.includes(tl) ? TIME_LIMITS : [...TIME_LIMITS, tl].sort((a, b) => a - b);
+    return `<div class="route-grid">
+        <div class="route-field"><label class="route-label-sm" for="${rid}-runtime">Runtime</label><select class="set-select" id="${rid}-runtime" data-k="${base}.runtime">${runtimeOpts}</select></div>
+        <div class="route-field" data-model-for="${base}">${modelHtml(base, use)}</div>
+        <div class="route-field" data-effort-for="${base}">${effortHtml(base, use)}</div>
+        <div class="route-field"><label class="route-label-sm" for="${rid}-time">Time limit</label><select class="set-select" id="${rid}-time" data-k="${base}.timeLimitMin" data-t="int">${times.map((v) => `<option value="${v}"${v === tl ? ' selected' : ''}>${esc(minutesWords(v))}</option>`).join('')}</select></div>
+      </div>
+      <div class="route-hints" data-hints-for="${base}">${hintsHtml(base, use)}</div>`;
+  }
+  function modelHtml(base, use) {
+    const id = use?.runtime || 'claude';
+    const rid = fid(base);
+    const cur = use?.model ?? null;
+    const ms = modelsOf(id).filter((m) => m.id !== 'default' || cur === 'default');
+    const known = cur == null || ms.some((m) => m.id === cur);
+    const other = !known || SET.other.has(base);
+    const opts = `<option value=""${cur == null && !other ? ' selected' : ''}>Default (${esc(defaultModelWords(id))})</option>` +
+      // the closed select shows only the name; the full id and the runtime's note go under the row (modelHint) and in the option's tooltip
+      ms.map((m) => {
+        const twin = ms.some((x) => x !== m && x.label === m.label);
+        const text = twin ? `${m.label} · ${m.resolved || m.id}` : m.label;
+        const tip = [m.resolved && m.resolved !== m.label ? m.resolved : '', m.note && m.note !== m.label ? m.note : ''].filter(Boolean).join(' · ');
+        return `<option value="${esc(m.id)}"${tip ? ` title="${esc(tip)}"` : ''}${m.id === cur && !other ? ' selected' : ''}>${esc(text)}</option>`;
+      }).join('') +
+      `<option value="__other__"${other ? ' selected' : ''}>Other…</option>`;
+    return `<label class="route-label-sm" for="${rid}-model">Model</label><select class="set-select" id="${rid}-model" data-k="${base}.model" data-t="model">${opts}</select>
+      <input class="set-field" id="${rid}-model-other" data-k="${base}.model" data-t="nullable" data-model-other="${base}" aria-label="Full model name" placeholder="Full model name" value="${other ? esc(cur ?? '') : ''}" spellcheck="false" autocomplete="off"${other ? '' : ' hidden'}>`;
+  }
+  function effortHtml(base, use) {
+    const id = use?.runtime || 'claude';
+    const cur = use?.effort ?? null;
+    const info = effortInfo(id, use?.model ?? null);
+    if (info.reason) return `<span class="route-label-sm">Effort</span><p class="route-none">${esc(info.reason)}</p>${cur ? `<p class="route-warn">The stored effort (${esc(EFFORT_WORDS[cur] || cur)}) isn’t used here.</p>` : ''}`;
+    const known = cur == null || info.levels.some((l) => l.id === cur);
+    let warn = '';
+    if (!known) {
+      const top = info.levels[info.levels.length - 1];
+      warn = EFFORT_ORDER.indexOf(cur) > EFFORT_ORDER.indexOf(top.id) ? `This model goes up to ${top.label}, so it will use ${top.label}.` : `This model has no ${EFFORT_WORDS[cur] || cur} level; it will use the nearest one.`;
+    }
+    const rid = fid(base);
+    const opts = `<option value=""${cur == null ? ' selected' : ''}>${esc(info.dflt)}</option>` +
+      info.levels.map((l) => `<option value="${esc(l.id)}"${l.id === cur ? ' selected' : ''}>${esc(l.label)}</option>`).join('') +
+      (known ? '' : `<option value="${esc(cur)}" selected>${esc(EFFORT_WORDS[cur] || cur)} (above this model)</option>`);
+    return `<label class="route-label-sm" for="${rid}-effort">Effort</label><select class="set-select" id="${rid}-effort" data-k="${base}.effort" data-t="nullable">${opts}</select>${warn ? `<p class="route-warn">${esc(warn)}</p>` : ''}`;
+  }
+  function hintsHtml(base, use) {
+    const id = use?.runtime || 'claude';
+    const rt = envRuntime(id);
+    const name = rtLabel(id);
+    const isDefault = base === 'routing.default';
+    const out = [];
+    const picked = use?.model != null && !SET.other.has(base) ? modelsOf(id).find((m) => m.id === use.model) : null;
+    if (picked) {
+      const full = picked.resolved || (picked.id !== picked.label ? picked.id : '');
+      const named = full && full !== picked.label ? `${picked.label} is ${full}.` : '';
+      const note = picked.note && picked.note !== picked.label ? sentence(picked.note) : '';
+      if (named || note) out.push(['', [named, note].filter(Boolean).join(' ')]);
+    }
+    if (rt && rt.installed === false) out.push(['is-warn', isDefault ? `${name} isn’t installed on this Mac, so your Oby can’t answer with it yet.` : `${name} isn’t installed on this Mac: until it is, these asks go to your default.`]);
+    else if (rt && rt.signedIn === false) out.push(['is-warn', isDefault ? `${name} isn’t signed in, so your Oby can’t answer with it yet.` : `${name} isn’t signed in: until it is, these asks go to your default.`]);
+    if (trustedOnly(id)) {
+      const dflt = SET.settings?.routing?.default;
+      const instead = isDefault || (dflt?.runtime || 'claude') !== 'claude' ? 'Claude Code with its default model' : 'your default';
+      out.push(['', `${name} can read anywhere on this Mac, so it answers trusted Obys only. Anyone else gets ${instead}, with the same time limit.`]);
+    }
+    if (rt?.auth?.kind === 'api-key') out.push(['', `${name} is signed in with an API key: these answers are billed per token.`]);
+    return out.map(([c, w]) => `<p class="${c}">${esc(w)}</p>`).join('');
+  }
+
+  function conditionCount(r) {
+    const w = r?.when || {};
+    return (w.about && String(w.about).trim() ? 1 : 0) + ((w.from || []).length ? 1 : 0) + (w.hasFiles != null ? 1 : 0) + (w.hop != null ? 1 : 0) + (w.channel ? 1 : 0);
+  }
+  function askerWords(name) {
+    const a = members().find((x) => x.name === name);
+    return a ? obyOf(a) : `@${name}`;
+  }
+  function ruleSummary(r) {
+    const w = r.when || {};
+    if (!conditionCount(r)) return `No condition yet, so it never applies. When it does, it uses ${useWords(r.use)}.`;
+    const c = [];
+    if (w.about && String(w.about).trim()) c.push(`are about ${String(w.about).trim()}`);
+    if ((w.from || []).length) c.push(`come from ${andList(w.from.map(askerWords), 'or')}`);
+    if (w.hasFiles === true) c.push('carry files');
+    if (w.hasFiles === false) c.push('carry no files');
+    if (w.hop === true) c.push('are relayed by another Oby');
+    if (w.hop === false) c.push('are asked directly');
+    if (w.channel) c.push(`are in #${w.channel}`);
+    return `Asks that ${andList(c)} go to ${useWords(r.use)}.`;
+  }
+  function triHtml(b, k, value, label, yes, no) {
+    const id = fid(`${b}.when.${k}`);
+    return `<div class="route-field"><label class="route-label-sm" for="${id}">${label}</label><select class="set-select" id="${id}" data-k="${b}.when.${k}" data-t="tri"><option value=""${value == null ? ' selected' : ''}>Either</option><option value="true"${value === true ? ' selected' : ''}>${yes}</option><option value="false"${value === false ? ' selected' : ''}>${no}</option></select></div>`;
+  }
+  function channelNames(extra) {
+    const names = [...S.channels.keys()].sort((a, b) => (a === 'general' ? -1 : b === 'general' ? 1 : a.localeCompare(b)));
+    if (extra && !names.includes(extra)) names.push(extra);
+    return names;
+  }
+  // who can be named as an asker: the Sphere's other Obys, then Obys you listed that aren't here, then any a rule names
+  function askerNames(extra = []) {
+    const names = others().map((a) => a.name);
+    const add = (n) => { if (n && !names.includes(n) && !(S.me && S.me.name === n)) names.push(n); };
+    Object.keys(SET.settings?.access?.agents || {}).sort().forEach(add);
+    extra.forEach(add);
+    return names;
+  }
+  function askerChips(b, from) {
+    const picked = new Set(from || []);
+    const names = askerNames([...picked]);
+    if (!names.length) return '<span class="muted" style="font-size:12px">No other Obys yet</span>';
+    return names.map((n) => {
+      const a = members().find((x) => x.name === n);
+      const away = !a ? ' <span class="away">· not here</span>' : !a.online ? ' <span class="away">· away</span>' : '';
+      return `<button type="button" data-chip-from="${b}" data-name="${esc(n)}" class="${picked.has(n) ? 'is-on' : ''}" aria-pressed="${picked.has(n)}">${esc(a ? ownerName(a) : '@' + n)}${away}</button>`;
+    }).join('');
+  }
+  // what the head buttons call a rule: its name once it has one
+  const ruleCalled = (r, i) => (r?.name ? `“${r.name}”` : `rule ${i + 1}`);
+  const RULE_BUTTON_WORDS = { up: (nm) => `Move ${nm} up`, down: (nm) => `Move ${nm} down`, remove: (nm) => `Delete ${nm}` };
   function ruleHtml(r, i, n) {
     const b = `routing.rules.${i}`;
     const w = r.when || {};
-    const from = new Set(w.from || []);
-    const tri = (k, yes, no) => `<select class="set-select" data-k="${b}.when.${k}" data-t="tri"><option value=""${w[k] == null ? ' selected' : ''}>Any</option><option value="true"${w[k] === true ? ' selected' : ''}>${yes}</option><option value="false"${w[k] === false ? ' selected' : ''}>${no}</option></select>`;
-    return `<div class="rule">
-      <div class="rule-head"><input class="set-field" data-k="${b}.name" value="${esc(r.name || '')}" placeholder="Rule ${i + 1}">
-        <button class="icon-button sm" data-rule-move="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Try it earlier">↑</button>
-        <button class="icon-button sm" data-rule-move="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''} title="Try it later">↓</button>
-        <button class="icon-button sm" data-rule-remove="${i}" title="Remove this rule">✕</button></div>
-      <div class="rule-label">When</div>
-      <div class="set-row"><div class="set-row-text"><div class="set-row-title">Asked by</div><div class="set-row-sub">None picked: any Oby.</div></div><div class="chips-pick">${others().map((a) => `<button data-rule-from="${i}" data-name="${esc(a.name)}" class="${from.has(a.name) ? 'is-on' : ''}">${esc(ownerName(a))}</button>`).join('') || '<span class="muted">No other Obys yet</span>'}</div></div>
-      <div class="set-row"><div class="set-row-text"><div class="set-row-title">The ask mentions</div><div class="set-row-sub">Any of these words or phrases, separated by commas.</div></div><input class="set-field set-text" data-k="${b}.when.keywords" data-t="list" value="${esc((w.keywords || []).join(', '))}" placeholder="review, pull request, diff"></div>
-      <div class="set-row"><div class="set-row-text"><div class="set-row-title">Files and hops</div></div><div class="set-row-ctl">${tri('hasFiles', 'Has files', 'No files')}${tri('hop', 'Relayed by an Oby', 'Asked directly')}</div></div>
-      <div class="rule-label">Use</div>
-      <div class="set-row"><div class="set-row-ctl" style="justify-content:flex-start">${useControls(`${b}.use`, r.use)}</div></div>
+    const idle = !conditionCount(r);
+    const nm = ruleCalled(r, i);
+    const ico = (d) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+    return `<article class="route-card${idle ? ' is-idle' : ''}" data-rule="${i}" aria-label="Rule ${i + 1}">
+      <div class="route-head">
+        <span class="route-num" aria-hidden="true">${i + 1}</span>
+        <input class="set-field" data-k="${b}.name" value="${esc(r.name || '')}" placeholder="Name this rule" aria-label="Rule ${i + 1} name" autocomplete="off">
+        <button type="button" class="icon-button" data-rule-move="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="${esc(RULE_BUTTON_WORDS.up(nm))}" title="Try it earlier">${ico('M7 11V3M3.5 6.5 7 3l3.5 3.5')}</button>
+        <button type="button" class="icon-button" data-rule-move="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''} aria-label="${esc(RULE_BUTTON_WORDS.down(nm))}" title="Try it later">${ico('M7 3v8M3.5 7.5 7 11l3.5-3.5')}</button>
+        <button type="button" class="icon-button" data-rule-remove="${i}" aria-label="${esc(RULE_BUTTON_WORDS.remove(nm))}" title="Delete this rule">${ico('M3.5 3.5l7 7M10.5 3.5l-7 7')}</button>
+      </div>
+      <p class="route-summary" data-sum="${i}">${esc(ruleSummary(r))}</p>
+      <p class="route-idle" data-idle="${i}"${idle ? '' : ' hidden'}>Add a condition: this rule never applies yet.</p>
+      <div class="route-body">
+        <div class="route-label">When</div>
+        <div class="route-grid">
+          <div class="route-field is-wide"><label class="route-label-sm" for="${fid(b + '.when.about')}">The ask is about</label><input class="set-field" id="${fid(b + '.when.about')}" data-k="${b}.when.about" data-t="nullable" value="${esc(w.about || '')}" placeholder="reviewing code, pull requests or diffs" autocomplete="off"><span class="route-help">A kind of task, in your words. Matched by meaning, not exact words.</span></div>
+          <div class="route-field is-wide" role="group" aria-labelledby="${fid(b + '.from')}-l"><span class="route-label-sm" id="${fid(b + '.from')}-l">Asked by <span class="route-help">(none picked: any Oby)</span></span><div class="chips-pick" data-k-box="${b}.when.from">${askerChips(b, w.from)}</div></div>
+          ${triHtml(b, 'hasFiles', w.hasFiles ?? null, 'Files', 'With files', 'Without files')}
+          ${triHtml(b, 'hop', w.hop ?? null, 'Relayed', 'Relayed by an Oby', 'Asked directly')}
+          <div class="route-field"><label class="route-label-sm" for="${fid(b + '.when.channel')}">Channel</label><select class="set-select" id="${fid(b + '.when.channel')}" data-k="${b}.when.channel" data-t="nullable"><option value=""${w.channel ? '' : ' selected'}>Any channel</option>${channelNames(w.channel).map((c) => `<option value="${esc(c)}"${c === w.channel ? ' selected' : ''}>#${esc(c)}</option>`).join('')}</select></div>
+        </div>
+        <div class="route-label">Use</div>
+        <div class="route-use" data-use="${b}.use">${useHtml(`${b}.use`, r.use)}</div>
+      </div>
+    </article>`;
+  }
+  function undoBar(kind) {
+    const u = SET.undo;
+    return u?.kind === kind ? `<div class="route-undo" role="status" data-undo-bar><span>${esc(u.words)}</span><button type="button" class="set-button sm" data-undo>Undo</button></div>` : '';
+  }
+  function rulesHtml() {
+    const rules = SET.settings.routing.rules;
+    return rules.map((r, i) => ruleHtml(r, i, rules.length)).join('') + undoBar('rule') +
+      `<div class="route-actions"><button type="button" class="set-button" data-rule-add>Add a rule</button></div>`;
+  }
+  function defaultHtml() {
+    const d = SET.settings.routing.default;
+    return `<div class="route-default">
+      <div class="route-default-title">By default</div>
+      <p class="route-summary" data-sum="default">${esc(`Any ask no rule takes goes to ${useWords(d)}.`)}</p>
+      <div class="route-use" data-use="routing.default" style="margin-top:10px">${useHtml('routing.default', d)}</div>
     </div>`;
+  }
+  function tryFromOpts(cur = '') {
+    const opt = (v, t) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`;
+    return opt('', 'Any Oby') + askerNames().map((n) => {
+      const a = members().find((x) => x.name === n);
+      return opt(n, a ? obyOf(a) + (a.online ? '' : ' · away') : `@${n} · not here`);
+    }).join('');
+  }
+  // the listed Obys changed: offer the same askers everywhere, keeping what's picked and focused
+  function paintAskers() {
+    const root = document.getElementById('settings-root');
+    if (!root) return;
+    SET.settings.routing.rules.forEach((r, i) => swap(root.querySelector(`[data-k-box="routing.rules.${i}.when.from"]`), askerChips(`routing.rules.${i}`, r.when?.from)));
+    const sel = root.querySelector('#set-try-from');
+    if (sel) { const v = sel.value; sel.innerHTML = tryFromOpts(v); sel.value = [...sel.options].some((o) => o.value === v) ? v : ''; }
+  }
+  function tryHtml() {
+    const opt = (v, t) => `<option value="${esc(v)}">${esc(t)}</option>`;
+    return `<div class="route-try" role="group" aria-labelledby="set-try-title">
+      <div class="route-default-title" id="set-try-title">Try an ask</div>
+      <p class="route-summary">See which rule and model would answer it, without asking anyone.</p>
+      <div class="route-try-row"><input class="set-field" id="set-try-text" aria-label="An ask to try" placeholder="Can you review this pull request?" autocomplete="off"><button type="button" class="set-button" data-try>Try it</button></div>
+      <div class="route-grid" style="margin-top:8px">
+        <div class="route-field"><label class="route-label-sm" for="set-try-from">Asked by</label><select class="set-select" id="set-try-from">${tryFromOpts()}</select></div>
+        <div class="route-field"><label class="route-label-sm" for="set-try-files">Files</label><select class="set-select" id="set-try-files">${opt('', 'No files')}${opt('true', 'With files')}</select></div>
+        <div class="route-field"><label class="route-label-sm" for="set-try-hop">Relayed</label><select class="set-select" id="set-try-hop">${opt('', 'Asked directly')}${opt('true', 'Relayed by an Oby')}</select></div>
+        <div class="route-field"><label class="route-label-sm" for="set-try-channel">Channel</label><select class="set-select" id="set-try-channel">${channelNames().map((c) => opt(c, '#' + c)).join('')}</select></div>
+      </div>
+      <div class="route-try-out" id="set-try-out" aria-live="polite"></div>
+    </div>`;
+  }
+  const HOW_WORDS = { meaning: 'Picked by meaning: a quick check matched the ask to what the rule is about.', words: 'Matched by words: the meaning check couldn’t run, so the rule’s phrases were looked for in the ask.', conditions: 'Its conditions all hold.', default: 'No rule applies, so your default answers.' };
+  const FELL_WORDS = { 'not-installed': (n) => `${n} isn’t installed on this Mac, so it falls back.`, 'not-signed-in': (n) => `${n} isn’t signed in, so it falls back.`, 'needs-trust': (n) => `${n} answers trusted Obys only, so for this asker it falls back.` };
+  function tryResultHtml(r, picked) {
+    const rules = SET.settings.routing.rules;
+    const who = r.rule == null ? 'Your default' : `Rule ${r.rule + 1}${(r.name || rules[r.rule]?.name) ? `: ${r.name || rules[r.rule].name}` : ''}`;
+    const fellFrom = picked?.runtime ? rtLabel(picked.runtime) : 'That runtime';
+    // declined before any rule is tried (who asks, its topic, files, relaying, a limit): no rule or runtime
+    const gated = r.answerable === false && r.declined && r.use == null;
+    const lead = gated ? '<div><b>It would be declined.</b></div>'
+      : r.answerable === false
+      ? `<div><b>${esc(who)}</b> would take it, but your Oby couldn’t answer it.</div>`
+      : `<div><b>${esc(who)}</b> would answer, with ${esc(useWords(r.use || {}))}.</div>`;
+    if (r.note) return `${lead}<div class="${r.fellBack || r.answerable === false ? 'warn' : 'muted'}">${esc(curly(r.note))}</div>`;
+    const why = r.answerable === false ? (r.fellBack === 'needs-trust' ? 'This asker would be declined, since nothing your settings allow them can answer.' : 'No runtime it may use is ready on this Mac.') : '';
+    return `${lead}
+      <div class="muted">${esc(HOW_WORDS[r.how] || '')}</div>
+      ${r.fellBack ? `<div class="warn">${esc((FELL_WORDS[r.fellBack] || (() => 'It falls back to another runtime.'))(fellFrom))}</div>` : ''}
+      ${why ? `<div class="warn">${esc(why)}</div>` : ''}`;
+  }
+  // what a preview depends on: if it changes, the shown result is out of date
+  const tryKey = () => JSON.stringify([SET.settings?.routing, SET.settings?.access]);
+  function staleTry() {
+    if (!SET.tryKey || SET.tryKey === tryKey()) return;
+    SET.tryKey = null;
+    const out = document.getElementById('set-try-out');
+    if (out && out.textContent.trim()) out.innerHTML = '<div class="muted">Your settings changed since: try it again.</div>';
+  }
+
+  function agentsHtml() {
+    const a = SET.settings.access;
+    const u = SET.usage;
+    const dflt = ACCESS_WORDS[a.default || 'answer'];
+    const listed = a.agents || {};
+    const rows = others().map((ag) => ({ name: ag.name, ag }));
+    for (const n of Object.keys(listed)) if (!rows.some((r) => r.name === n) && !(S.me && S.me.name === n)) rows.push({ name: n, ag: members().find((x) => x.name === n) || null });
+    if (!rows.length) return '<div class="set-row"><div class="set-row-text"><div class="set-row-sub">No other Obys in this Sphere yet.</div></div></div>' + undoBar('agent');
+    return rows.map(({ name, ag }) => {
+      const cur = listed[name] || '';
+      const sid = fid('agent-' + name);
+      const where = !ag ? ' · not in this Sphere now' : !ag.online ? ' · away' : '';
+      const asks = u?.asksByAgent?.[name] ? ` · ${u.asksByAgent[name]} ask${u.asksByAgent[name] === 1 ? '' : 's'} today` : '';
+      const title = ag ? obyOf(ag) : `@${name}`;
+      return `<div class="set-row"><div class="set-row-text set-agent">${ag ? avatar(ag, 22) : `<span class="owner-avatar is-gone" style="width:22px;height:22px;font-size:9px" aria-hidden="true">?</span>`}<div style="min-width:0"><div class="set-row-title"><label for="${sid}">${esc(title)}</label></div><div class="set-row-sub">@${esc(name)}${esc(where)}${esc(asks)}</div></div></div>
+        <div class="set-row-ctl"><select class="set-select" id="${sid}" data-agent="${esc(name)}"><option value=""${cur ? '' : ' selected'}>Default (${esc(dflt)})</option>${ACCESS_LEVELS.map((v) => `<option value="${v}"${cur === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select>${!cur ? '' : ag ? `<button type="button" class="set-button sm" data-agent-reset="${esc(name)}" aria-label="Reset ${esc(title)} to your default">Reset</button>` : `<button type="button" class="set-button sm" data-agent-reset="${esc(name)}" aria-label="Remove ${esc(title)} from your list">Remove</button>`}</div></div>`;
+    }).join('') + undoBar('agent');
+  }
+  function usageWords() {
+    const u = SET.usage;
+    if (!u) return '';
+    const n = u.answers || 0;
+    const secs = u.seconds || 0;
+    const time = !secs ? '' : secs < 60 ? ', under a minute in all' : `, ${Math.round(secs / 60)} min in all`;
+    return `Today: ${n} answer${n === 1 ? '' : 's'}${time}.`;
+  }
+  function accessHtml() {
+    const a = SET.settings.access;
+    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div></div><button type="button" class="switch${on ? ' is-on' : ''}" role="switch" aria-checked="${on}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div>`;
+    const num = (k, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div></div><div class="set-row-ctl"><input class="set-field set-num" id="${fid(k)}" type="number" inputmode="numeric" min="0" step="1" data-k="${k}" data-t="int0" value="${esc(getAt(SET.settings, k) ?? 0)}"></div></div>`;
+    return `<div class="set-group">
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="set-access-default">Obys you haven’t listed</label></div><div class="set-row-sub">Including any that join later. Trust lets an Oby use what’s marked “Trusted Obys only”.</div></div><div class="set-row-ctl"><select class="set-select" id="set-access-default" data-k="access.default">${ACCESS_LEVELS.map((v) => `<option value="${v}"${(a.default || 'answer') === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select></div></div>
+        <div data-part="agents">${agentsHtml()}</div>
+      </div>
+      <div class="set-group">
+        ${sw('access.acceptFiles', a.acceptFiles !== false, 'Take asks that carry files', 'Off: such asks are declined before any model sees them.')}
+        ${sw('access.sendFiles', a.sendFiles !== false, 'Send files back', 'Let your Oby attach files to its answers.')}
+        ${sw('access.consultOthers', a.consultOthers !== false, 'Consult other Obys', 'Let your Oby ask other Obys while it answers.')}
+        ${sw('access.acceptHops', a.acceptHops !== false, 'Take asks relayed by other Obys', 'From an Oby that is itself answering someone else.')}
+      </div>
+      <div class="set-group">
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid('access.declineTopics')}">Decline asks about</label></div><div class="set-row-sub">Words or phrases, separated by commas. Checked before any model sees the ask.</div></div><div class="set-row-ctl"><input class="set-field set-text" id="${fid('access.declineTopics')}" data-k="access.declineTopics" data-t="list" value="${esc((a.declineTopics || []).join(', '))}" placeholder="salary, hiring" autocomplete="off"></div></div>
+        ${num('access.asksPerAgentPerDay', 'Asks per Oby, per day', 'More than this from one Oby are declined until tomorrow. 0: no limit.')}
+        ${num('access.answersPerDay', 'Answers per day', `From all Obys together. 0: no limit. <span data-part="usage">${esc(usageWords())}</span>`)}
+        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title"><label for="${fid('access.rules')}">Your rules, in words</label></div><div class="set-row-sub">Given to your Oby with every ask.</div></div><textarea class="set-area" id="${fid('access.rules')}" data-k="access.rules" placeholder="Don’t share anything about customers by name.">${esc(a.rules || '')}</textarea></div>
+      </div>`;
+  }
+
+  function foldersHtml() {
+    const m = SET.settings.machine;
+    const home = SET.env?.home;
+    const fs = m.folders || [];
+    return fs.map((f, i) => {
+      const id = fid(`machine.folders.${i}.write`);
+      return `<div class="folder-row"><span class="p">${pathHtml(f.path)}${i === 0 ? ' <span class="muted" style="font-family:var(--font)">· starts here</span>' : ''}${home && f.path === home ? ' <span class="warn" style="font-family:var(--font)">· your whole home folder</span>' : ''}<span class="folder-tag" data-tag-for="machine.folders.${i}.write">${f.write ? TRUSTED_TAG : ''}</span></span>
+        <select class="set-select" id="${id}" data-k="machine.folders.${i}.write" data-t="bool-select" aria-label="Access to ${esc(f.path)}"><option value="false"${f.write ? '' : ' selected'}>Read</option><option value="true"${f.write ? ' selected' : ''}>Read and write</option></select>
+        <button type="button" class="icon-button" data-folder-remove="${i}" aria-label="Remove ${esc(f.path)}" title="Remove" ${fs.length < 2 ? 'disabled' : ''}><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"/></svg></button></div>`;
+    }).join('') + undoBar('folder') || '<div class="folder-row"><span class="muted">No folders yet: add the one your Oby starts in.</span></div>';
+  }
+  function shellSub(v) {
+    return v === 'full' ? `${TRUSTED_TAG} Any command runs as you. For anyone else it drops to read-only commands.` : v === 'read' ? 'ls, cat, rg, find, git log, git diff and other read-only commands.' : 'No commands.';
+  }
+  function browserSub(v) {
+    const chrome = SET.env?.chrome;
+    return (v === 'chrome' ? `${TRUSTED_TAG} Your own Chrome, signed in to your sites. Off for anyone else.` : 'No browser.') + (chrome?.note ? ` ${esc(sentence(chrome.note))}` : '');
+  }
+  function keepsNote() {
+    const ids = [...new Set(routesUsing((id) => !!envRuntime(id)?.keeps && trustedOnly(id)).map((u) => u.runtime))];
+    if (!ids.length) return '';
+    return `<p class="note">${esc(andList(ids.map(rtLabel)))} can’t be kept to these folders or away from your secrets, which is why ${ids.length > 1 ? 'they answer' : 'it answers'} trusted Obys only.</p>`;
+  }
+  function mcpHtml() {
+    const m = SET.settings.machine;
+    const list = SET.env?.mcpServers;
+    const picked = new Set(m.mcp || []);
+    const names = (list || []).map((x) => x.name);
+    for (const n of picked) if (!names.includes(n)) names.push(n);
+    if (!names.length) return `<span class="muted" style="font-size:12px">${SET.env || SET.envFailed ? 'None found' : 'Looking…'}</span>`;
+    return names.map((n) => `<button type="button" data-mcp="${esc(n)}" class="${picked.has(n) ? 'is-on' : ''}" aria-pressed="${picked.has(n)}">${esc(n)}${list && !list.some((x) => x.name === n) ? ' <span class="away">· not found</span>' : ''}</button>`).join('');
+  }
+  function machineHtml() {
+    const m = SET.settings.machine;
+    const chrome = SET.env?.chrome;
+    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div></div><button type="button" class="switch${on ? ' is-on' : ''}" role="switch" aria-checked="${on}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div>`;
+    return `<div class="set-group">
+        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Folders</div><div class="set-row-sub">It never reads .env, keys, SSH, cloud or Git credentials inside them, and never your home folder or / as a whole. Writing is for trusted Obys only; everyone else reads.</div></div>
+          <div data-part="folders">${foldersHtml()}</div>
+          <div class="folder-row"><input class="set-field" style="flex:1 1 160px;min-width:0" id="set-folder-new" aria-label="Another folder, by its full path" placeholder="/path/to/another/folder" autocomplete="off" spellcheck="false"><button type="button" class="set-button" data-folder-add>Add folder</button></div>
+          <div data-part="keeps">${keepsNote()}</div></div>
+      </div>
+      <div class="set-group">
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="set-machine-shell">Shell</label></div><div class="set-row-sub" data-sub-for="machine.shell">${shellSub(m.shell || 'off')}</div></div><div class="set-row-ctl"><select class="set-select" id="set-machine-shell" data-k="machine.shell"><option value="off"${(m.shell || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="read"${m.shell === 'read' ? ' selected' : ''}>Read-only commands</option><option value="full"${m.shell === 'full' ? ' selected' : ''}>Any command</option></select></div></div>
+        ${sw('machine.web.fetch', !!m.web?.fetch, 'Fetch web pages', 'Let it open URLs.')}
+        ${sw('machine.web.search', !!m.web?.search, 'Search the web', 'Let it search.')}
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="set-machine-browser">Your browser</label></div><div class="set-row-sub" data-sub-for="machine.browser">${browserSub(m.browser || 'off')}</div></div><div class="set-row-ctl" data-part="browser-ctl"><select class="set-select" id="set-machine-browser" data-k="machine.browser"><option value="off"${(m.browser || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="chrome"${m.browser === 'chrome' ? ' selected' : ''} ${chrome && chrome.available === false && m.browser !== 'chrome' ? 'disabled' : ''}>Your Chrome</option></select></div></div>
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-mcp-l">Your MCP servers ${TRUSTED_TAG}</div><div class="set-row-sub">From your Claude Code (user scope). Picked ones are available when your Oby answers a trusted Oby.</div></div><div class="chips-pick" role="group" aria-labelledby="set-mcp-l" data-k-box="machine.mcp" data-part="mcp">${mcpHtml()}</div></div>
+      </div>`;
   }
 
   function renderSettings() {
     const s = SET.settings;
     if (!s) return;
-    const a = s.access || {}, m = s.machine || {}, rt = s.routing || {};
-    const home = SET.env?.home;
-    const u = SET.usage;
-    const agentRows = others().map((ag) => {
-      const cur = a.agents?.[ag.name] || '';
-      return `<div class="set-row"><div class="set-row-text" style="display:flex;align-items:center;gap:10px">${avatar(ag, 22)}<div><div class="set-row-title">${esc(obyOf(ag))}</div><div class="set-row-sub">@${esc(ag.name)}${u?.asksByAgent?.[ag.name] ? ` · ${u.asksByAgent[ag.name]} asks today` : ''}</div></div></div>
-        <select class="set-select" data-agent="${esc(ag.name)}"><option value=""${cur ? '' : ' selected'}>Default (${esc(ACCESS_WORDS[a.default || 'answer'])})</option>${['answer', 'approve', 'decline'].map((v) => `<option value="${v}"${cur === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select></div>`;
-    }).join('');
-    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div><div class="set-row-sub">${sub}</div></div><button class="switch${on ? ' is-on' : ''}" data-k="${k}" data-t="bool" aria-label="${esc(title)}"></button></div>`;
-    const folders = (m.folders || []).map((f, i) => `<div class="folder-row"><span class="p">${esc(f.path)}${i === 0 ? ' <span class="muted" style="font-family:var(--font)">· starts here</span>' : ''}${home && f.path === home ? ' <span class="warn">· your whole home folder</span>' : ''}</span>
-        <select class="set-select" data-k="machine.folders.${i}.write" data-t="bool-select"><option value="false"${f.write ? '' : ' selected'}>Read</option><option value="true"${f.write ? ' selected' : ''}>Read and write</option></select>
-        <button class="icon-button sm" data-folder-remove="${i}" title="Remove" ${(m.folders || []).length < 2 ? 'disabled' : ''}>✕</button></div>`).join('');
-    const mcp = SET.env?.mcpServers || [];
-    const chrome = SET.env?.chrome;
-    $('#page').innerHTML = `<div id="settings-root">` +
-      head('Settings', `Your Oby’s, kept and enforced on this machine by rep.mjs. The Sphere sees only a short summary.`, `<span class="saved-note" id="settings-state"></span>`) +
+    normalizeSettings(s);
+    clearTimeout(SET.undo?.timer);
+    SET.undo = null; SET.tryKey = null;
+    $('#page').innerHTML = `<div id="settings-root" class="set-root">` +
+      head('Settings', 'Your Oby’s, kept and enforced on this machine by rep.mjs. The Sphere sees only a short summary.', `<span class="saved-note" id="settings-state" role="status" aria-live="polite"></span>`) +
+      `<p class="set-lead">Answers run on your own sign-ins: your plan’s usage, not per-token billing.</p>
+       <div class="set-runtimes" data-part="runtimes" aria-label="Runtimes on this Mac">${runtimesHtml()}</div>
 
-      `<div class="section-head"><h3>Models and tools: what answers what</h3><span class="link">The first rule that matches decides</span></div>
-       <div class="set-group"><div class="set-row"><div class="set-row-text"><div class="set-row-title">By default</div><div class="set-row-sub">When no rule below matches.</div></div><div class="set-row-ctl">${useControls('routing.default', rt.default)}</div></div></div>
-       <div style="margin-top:10px">${(rt.rules || []).map((r, i, all) => ruleHtml(r, i, all.length)).join('')}</div>
-       <button class="set-button" data-rule-add style="margin-top:10px">Add a rule</button>
+       <div class="section-head"><h3>What answers what</h3><span class="link">The first rule that applies decides</span></div>
+       <div data-part="default">${defaultHtml()}</div>
+       <div data-part="rules">${rulesHtml()}</div>
+       <div data-part="try">${tryHtml()}</div>
 
        <div class="section-head"><h3>Who can ask your Oby, and what</h3></div>
-       <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Obys you haven’t listed</div><div class="set-row-sub">Including any that join later.</div></div><select class="set-select" data-k="access.default">${['answer', 'approve', 'decline'].map((v) => `<option value="${v}"${(a.default || 'answer') === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select></div>
-         ${agentRows}
-       </div>
-       <div class="set-group">
-         ${sw('access.acceptFiles', a.acceptFiles !== false, 'Take asks that carry files', 'Off: such asks are declined before any model sees them.')}
-         ${sw('access.sendFiles', a.sendFiles !== false, 'Send files back', 'Let your Oby attach files to its answers.')}
-         ${sw('access.consultOthers', a.consultOthers !== false, 'Consult other Obys', 'Let your Oby ask other Obys while it answers.')}
-         ${sw('access.acceptHops', a.acceptHops !== false, 'Take asks relayed by other Obys', 'From an Oby that is itself answering someone else.')}
-       </div>
-       <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Decline asks about</div><div class="set-row-sub">Words or phrases, separated by commas; checked before any model sees the ask.</div></div><input class="set-field set-text" data-k="access.declineTopics" data-t="list" value="${esc((a.declineTopics || []).join(', '))}" placeholder="salary, hiring"></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Asks per Oby, per day</div><div class="set-row-sub">0: no limit.</div></div><input class="set-field set-num" type="number" min="0" step="1" data-k="access.asksPerAgentPerDay" data-t="num" value="${a.asksPerAgentPerDay ?? 0}"></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Spend per day</div><div class="set-row-sub">${u ? `Today: $${(u.costUsd || 0).toFixed(2)} over ${u.answers || 0} answers. ` : ''}0: no limit.</div></div><div class="set-row-ctl"><span class="muted">$</span><input class="set-field set-num" type="number" min="0" step="0.5" data-k="access.budgetUsdPerDay" data-t="num" value="${a.budgetUsdPerDay ?? 0}"></div></div>
-         <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Your rules, in words</div><div class="set-row-sub">Given to your Oby with every ask.</div></div><textarea class="set-area" data-k="access.rules" placeholder="Don’t share anything about customers by name.">${esc(a.rules || '')}</textarea></div>
-       </div>
+       <div data-part="access">${accessHtml()}</div>
 
        <div class="section-head"><h3>This computer: what your Oby may touch</h3></div>
-       <div class="set-group">
-         <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Folders</div><div class="set-row-sub">It never reads .env, keys, SSH, cloud or Git credentials inside them, and never your home folder or / as a whole.</div></div>
-           <div>${folders}</div>
-           <div class="folder-row"><input class="set-field set-wide" id="folder-new" placeholder="/path/to/another/folder"><button class="set-button" data-folder-add>Add folder</button></div></div>
-       </div>
-       <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Shell</div><div class="set-row-sub">${m.shell === 'full' ? '<span class="warn">Any command runs as you. Only for Obys you trust completely.</span>' : m.shell === 'read' ? 'ls, cat, rg, find, git log, git diff and other read-only commands.' : 'No commands.'}</div></div><select class="set-select" data-k="machine.shell"><option value="off"${(m.shell || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="read"${m.shell === 'read' ? ' selected' : ''}>Read-only commands</option><option value="full"${m.shell === 'full' ? ' selected' : ''}>Any command</option></select></div>
-         ${sw('machine.web.fetch', !!m.web?.fetch, 'Fetch web pages', 'Let it open URLs.')}
-         ${sw('machine.web.search', !!m.web?.search, 'Search the web', 'Let it search.')}
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Your browser</div><div class="set-row-sub">${m.browser === 'chrome' ? '<span class="warn">Your own Chrome, signed in to your sites. Only for Obys you trust completely.</span>' : 'No browser.'}${chrome?.note ? ` ${esc(chrome.note)}` : ''}</div></div><select class="set-select" data-k="machine.browser"><option value="off"${(m.browser || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="chrome"${m.browser === 'chrome' ? ' selected' : ''} ${chrome && chrome.available === false ? 'disabled' : ''}>Your Chrome (Claude in Chrome)</option></select></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Your MCP servers</div><div class="set-row-sub">From your Claude Code (user scope). Picked ones are available to your Oby when it answers.</div></div><div class="chips-pick">${mcp.map((x) => `<button data-mcp="${esc(x.name)}" class="${(m.mcp || []).includes(x.name) ? 'is-on' : ''}">${esc(x.name)}</button>`).join('') || '<span class="muted">None found</span>'}</div></div>
-       </div>
-       <p class="note">Stored at <span class="mono">${esc(SET.path)}</span>. Changes apply from the next ask.</p>
+       <div data-part="machine">${machineHtml()}</div>
+       <p class="note">Stored at <span class="mono">${pathHtml(SET.path)}</span>. Changes apply from the next ask.</p>
       </div>`;
     paintState();
+    if (SET.error) markError(SET.error.field, SET.error.message);
     wireSettings();
   }
 
+  // replace one part's contents, keeping focus (and the caret) on the control that had it
+  function focusKey(el) {
+    if (!el || el === document.body) return null;
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    const attrs = ['data-k', 'data-agent', 'data-agent-reset', 'data-rule-move', 'data-dir', 'data-rule-remove', 'data-chip-from', 'data-name', 'data-mcp', 'data-copy', 'data-folder-remove', 'data-model-other', 'data-undo'];
+    const sel = attrs.filter((a) => el.hasAttribute(a)).map((a) => `[${a}="${CSS.escape(el.getAttribute(a))}"]`).join('');
+    return sel ? el.tagName.toLowerCase() + sel : null;
+  }
+  function swap(el, html) {
+    if (!el) return;
+    const active = document.activeElement;
+    const inside = active && el.contains(active);
+    const key = inside ? focusKey(active) : null;
+    let range = null;
+    try { if (inside && typeof active.selectionStart === 'number') range = [active.selectionStart, active.selectionEnd]; } catch {}
+    el.innerHTML = html;
+    if (key) {
+      const n = el.querySelector(key);
+      if (n && !n.disabled) { n.focus({ preventScroll: true }); if (range) try { n.setSelectionRange(range[0], range[1]); } catch {} }
+      else el.closest('.route-card, .set-group, .route-default')?.querySelector('input, select, button:not([disabled])')?.focus({ preventScroll: true });
+    }
+  }
+  const part = (name) => document.querySelector(`#settings-root [data-part="${name}"]`);
+  function paintPart(name) {
+    if (!SET.settings || !document.getElementById('settings-root')) return;
+    const html = { runtimes: runtimesHtml, default: defaultHtml, rules: rulesHtml, agents: agentsHtml, folders: foldersHtml, keeps: keepsNote, mcp: mcpHtml }[name];
+    if (html) swap(part(name), html());
+  }
+  function paintUse(base) {
+    const use = getAt(SET.settings, base);
+    const root = document.getElementById('settings-root');
+    if (!root || !use) return;
+    swap(root.querySelector(`[data-model-for="${base}"]`), modelHtml(base, use));
+    paintEffort(base);
+  }
+  function paintEffort(base) {
+    const use = getAt(SET.settings, base);
+    const root = document.getElementById('settings-root');
+    if (!root || !use) return;
+    swap(root.querySelector(`[data-effort-for="${base}"]`), effortHtml(base, use));
+    swap(root.querySelector(`[data-hints-for="${base}"]`), hintsHtml(base, use));
+  }
+  function paintSummary(i) {
+    const root = document.getElementById('settings-root');
+    if (!root) return;
+    if (i === 'default') {
+      const n = root.querySelector('[data-sum="default"]');
+      if (n) n.textContent = `Any ask no rule takes goes to ${useWords(SET.settings.routing.default)}.`;
+      SET.settings.routing.rules.forEach((_, j) => paintSummary(j)); // a rule's fallback words mention the default
+      return;
+    }
+    const r = SET.settings.routing.rules[i];
+    const card = root.querySelector(`.route-card[data-rule="${i}"]`);
+    if (!r || !card) return;
+    card.querySelector('[data-sum]').textContent = ruleSummary(r);
+    const nm = ruleCalled(r, i);
+    card.querySelectorAll('[data-rule-move]').forEach((btn) => btn.setAttribute('aria-label', RULE_BUTTON_WORDS[btn.dataset.dir === '-1' ? 'up' : 'down'](nm)));
+    card.querySelector('[data-rule-remove]')?.setAttribute('aria-label', RULE_BUTTON_WORDS.remove(nm));
+    const idle = !conditionCount(r);
+    card.classList.toggle('is-idle', idle);
+    card.querySelector('[data-idle]').hidden = !idle;
+  }
+  // the probe arrived: fill in everything that depends on it, in place
+  function paintEnv() {
+    const root = document.getElementById('settings-root');
+    if (!root || !SET.settings) return;
+    paintPart('runtimes');
+    // the select element stays, so focus does too
+    root.querySelectorAll('select[data-k$=".runtime"]').forEach((sel) => { const v = sel.value; sel.innerHTML = runtimeOptsHtml(v); sel.value = v; });
+    paintUse('routing.default');
+    SET.settings.routing.rules.forEach((_, i) => paintUse(`routing.rules.${i}.use`));
+    paintSummary('default');
+    paintPart('folders');
+    paintPart('keeps');
+    paintPart('mcp');
+    const b = root.querySelector('[data-sub-for="machine.browser"]');
+    if (b) b.innerHTML = browserSub(SET.settings.machine.browser || 'off');
+    const chrome = SET.env?.chrome;
+    const opt = root.querySelector('#set-machine-browser option[value="chrome"]');
+    if (opt) opt.disabled = !!(chrome && chrome.available === false && SET.settings.machine.browser !== 'chrome');
+    if (SET.error) markError(SET.error.field, SET.error.message);
+  }
+
+  function conv(el) {
+    const t = el.dataset.t, v = el.value;
+    if (t === 'int0') return v.trim() === '' ? 0 : Number(v);
+    if (t === 'int') return Number(v);
+    if (t === 'list') return v.split(',').map((x) => x.trim()).filter(Boolean);
+    if (t === 'nullable') return v.trim() === '' ? null : v.trim();
+    if (t === 'tri') return v === '' ? null : v === 'true';
+    if (t === 'bool-select') return v === 'true';
+    return v;
+  }
+  // after a value changed: update what depends on it, nothing else
+  function afterChange(k) {
+    const rm = /^routing\.rules\.(\d+)\./.exec(k);
+    const um = /^(routing\.(?:default|rules\.\d+\.use))\.(runtime|model|effort|timeLimitMin)$/.exec(k);
+    if (um) {
+      const [, base, what] = um;
+      if (what === 'runtime') {
+        const use = getAt(SET.settings, base);
+        use.model = null; use.effort = null;
+        SET.other.delete(base);
+        paintUse(base);
+        paintPart('keeps');
+        if (base === 'routing.default') SET.settings.routing.rules.forEach((_, i) => swap(document.querySelector(`#settings-root [data-hints-for="routing.rules.${i}.use"]`), hintsHtml(`routing.rules.${i}.use`, SET.settings.routing.rules[i].use)));
+      } else if (what === 'model') paintEffort(base);
+      else if (what === 'effort') paintEffort(base);
+      paintSummary(base === 'routing.default' ? 'default' : Number(rm[1]));
+      return;
+    }
+    if (rm) return paintSummary(Number(rm[1]));
+    if (k === 'access.default') return paintPart('agents');
+    if (k === 'machine.shell' || k === 'machine.browser') {
+      const n = document.querySelector(`#settings-root [data-sub-for="${k}"]`);
+      if (n) n.innerHTML = k === 'machine.shell' ? shellSub(SET.settings.machine.shell) : browserSub(SET.settings.machine.browser);
+      return;
+    }
+    const fm = /^machine\.folders\.(\d+)\.write$/.exec(k);
+    if (fm) { const n = document.querySelector(`#settings-root [data-tag-for="${k}"]`); if (n) n.innerHTML = getAt(SET.settings, k) ? TRUSTED_TAG : ''; }
+  }
+
+  function addFolderError(words) {
+    const input = $('#set-folder-new');
+    if (!input) return;
+    showFieldError(input, words, false);
+    input.focus();
+  }
+  async function addFolder() {
+    const input = $('#set-folder-new');
+    const v = input.value.trim();
+    clearFieldError(input);
+    if (!v) return addFolderError('Type the folder’s full path first.');
+    if (!v.startsWith('/') && !v.startsWith('~')) return addFolderError('Use the folder’s full path, starting with / (or ~ for your home folder).');
+    const fs = SET.settings.machine.folders;
+    if (fs.some((f) => f.path === v || f.path === v.replace(/\/+$/, ''))) return addFolderError('That folder is already on the list.');
+    const before = fs.slice();
+    SET.settings.machine.folders = [...fs, { path: v, write: false }];
+    SET.rev++;
+    clearTimeout(SET.timer); SET.timer = null;
+    SET.state = 'Saving…'; paintState();
+    const ok = await saveSettings();
+    if (!ok && SET.error && /^machine\.folders/.test(dotted(SET.error.field || ''))) {
+      // the new folder didn't pass: take it back off and say why next to the field
+      const err = SET.error;
+      SET.settings.machine.folders = before;
+      SET.error = null; SET.state = ''; clearErrors(); paintState();
+      paintPart('folders');
+      addFolderError(errorWords(err));
+      SET.rev++;
+      changed(true);
+      return;
+    }
+    input.value = '';
+    paintPart('folders');
+    paintPart('keeps');
+    input.focus();
+  }
+
+  async function tryAsk() {
+    const out = $('#set-try-out');
+    const input = $('#set-try-text');
+    const text = input.value.trim();
+    clearFieldError(input);
+    if (!text) { showFieldError(input, 'Type an ask to try first.', false); input.focus(); return; }
+    if (SET.tryBusy) return;
+    SET.tryBusy = true;
+    out.innerHTML = '<div class="muted">Working it out…</div>';
+    try {
+      await flushSettings();
+      if (SET.error) { out.innerHTML = `<div class="warn">Fix the marked field first: the preview uses your saved settings.</div>`; return; }
+      const body = { text };
+      const from = $('#set-try-from').value, files = $('#set-try-files').value, hop = $('#set-try-hop').value, channel = $('#set-try-channel').value;
+      if (from) body.from = from;
+      if (files) body.hasFiles = true;
+      if (hop) body.hop = true;
+      if (channel) body.channel = channel;
+      const key = tryKey();
+      const r = await local('POST', '/local/route-preview', body);
+      if (key !== tryKey()) { out.innerHTML = '<div class="muted">Your settings changed meanwhile: try it again.</div>'; return; }
+      const picked = r.rule == null ? SET.settings.routing.default : SET.settings.routing.rules[r.rule]?.use;
+      out.innerHTML = tryResultHtml(r, picked);
+      SET.tryKey = key;
+    } catch (e) {
+      out.innerHTML = `<div class="warn">${esc(e.status === 404 ? 'This rep.mjs can’t preview asks yet: update it.' : e.message)}</div>`;
+    } finally { SET.tryBusy = false; }
+  }
+
+  function moveRule(i, dir) {
+    const rs = SET.settings.routing.rules, j = i + dir;
+    if (j < 0 || j >= rs.length) return;
+    [rs[i], rs[j]] = [rs[j], rs[i]];
+    SET.other.clear();
+    changed(true);
+    paintPart('rules');
+    const btn = document.querySelector(`#settings-root [data-rule-move="${j}"][data-dir="${dir}"]`);
+    (btn && !btn.disabled ? btn : document.querySelector(`#settings-root [data-rule-move="${j}"][data-dir="${-dir}"]`))?.focus({ preventScroll: false });
+  }
+  // one removal can be undone at a time: a new one ends the last one's chance (its change is already saved)
+  const UNDO_PART = { rule: 'rules', folder: 'folders', agent: 'agents' };
+  const UNDO_AFTER = { rule: '[data-rule-add]', folder: '#set-folder-new', agent: '#set-access-default' };
+  function offerUndo(kind, words, restore) {
+    clearTimeout(SET.undo?.timer);
+    const old = SET.undo?.kind;
+    SET.undo = { kind, words, restore, timer: setTimeout(() => {
+      SET.undo = null;
+      const n = document.querySelector('#settings-root [data-undo-bar]');
+      if (!n) return;
+      const had = n.contains(document.activeElement);
+      n.remove();
+      if (had) document.querySelector(`#settings-root ${UNDO_AFTER[kind]}`)?.focus();
+    }, 12000) };
+    if (old && old !== kind) document.querySelectorAll('#settings-root [data-undo-bar]').forEach((n) => n.remove());
+  }
+  function removeRule(i) {
+    const [rule] = SET.settings.routing.rules.splice(i, 1);
+    // read the list when Undo is pressed: a save in between replaces SET.settings (and its rules array)
+    offerUndo('rule', `Deleted ${rule.name ? `“${rule.name}”` : `rule ${i + 1}`}.`, () => {
+      const now = SET.settings.routing.rules;
+      const at = Math.min(i, now.length);
+      now.splice(at, 0, rule);
+      SET.other.clear(); // “Other…” is kept per rule position, and the positions moved
+      return `.route-card[data-rule="${at}"] [data-k$=".name"]`;
+    });
+    SET.other.clear();
+    changed(true);
+    paintPart('rules');
+    document.querySelector('#settings-root [data-undo]')?.focus();
+  }
+  function removeFolder(i) {
+    const [f] = SET.settings.machine.folders.splice(i, 1);
+    offerUndo('folder', `Removed ${f.path}.`, () => {
+      const at = Math.min(i, SET.settings.machine.folders.length);
+      SET.settings.machine.folders.splice(at, 0, f);
+      return `[data-k="machine.folders.${at}.write"]`;
+    });
+    changed(true);
+    paintPart('folders');
+    paintPart('keeps');
+    document.querySelector('#settings-root [data-undo]')?.focus();
+  }
+  function resetAgent(name, keepFocus = false) {
+    const ag = { ...(SET.settings.access.agents || {}) };
+    const level = ag[name];
+    delete ag[name];
+    SET.settings.access.agents = ag;
+    const here = members().some((x) => x.name === name);
+    offerUndo('agent', here ? `@${name} now gets your default.` : `Removed @${name}.`, () => {
+      SET.settings.access.agents = { ...(SET.settings.access.agents || {}), [name]: level };
+      return `[data-agent="${CSS.escape(name)}"]`;
+    });
+    changed(true);
+    paintPart('agents');
+    paintAskers();
+    const sel = document.querySelector(`#settings-root [data-agent="${CSS.escape(name)}"]`);
+    ((keepFocus && sel) || document.querySelector('#settings-root [data-undo]') || sel)?.focus();
+  }
+  function undoRemove() {
+    const u = SET.undo;
+    if (!u) return;
+    clearTimeout(u.timer);
+    SET.undo = null;
+    const focus = u.restore();
+    changed(true);
+    paintPart(UNDO_PART[u.kind]);
+    if (u.kind === 'folder') paintPart('keeps');
+    if (u.kind === 'agent') paintAskers();
+    document.querySelector(`#settings-root ${focus}`)?.focus();
+  }
+  function addRule() {
+    const d = SET.settings.routing.default || {};
+    const rs = SET.settings.routing.rules;
+    rs.push({ name: '', when: { about: null, from: [], hasFiles: null, hop: null, channel: null }, use: { runtime: d.runtime || 'claude', model: d.model ?? null, effort: d.effort ?? null, timeLimitMin: d.timeLimitMin ?? 10 } });
+    changed(true);
+    paintPart('rules');
+    const card = document.querySelector(`#settings-root .route-card[data-rule="${rs.length - 1}"]`);
+    if (card) { card.classList.add('is-new'); card.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); card.querySelector('[data-k$=".name"]')?.focus({ preventScroll: true }); }
+  }
+
+  // one set of listeners on the page's root; every part can be repainted without re-wiring
   function wireSettings() {
     const root = document.getElementById('settings-root');
     if (!root) return;
-    const conv = (el) => {
-      const t = el.dataset.t, v = el.value;
-      if (t === 'num') return v === '' ? 0 : Math.max(0, Number(v));
-      if (t === 'list') return v.split(',').map((x) => x.trim()).filter(Boolean);
-      if (t === 'nullable') return v === '' ? null : v;
-      if (t === 'tri') return v === '' ? null : v === 'true';
-      if (t === 'bool-select') return v === 'true';
-      return v;
+    const onValue = (el, now) => {
+      if (el.dataset.agent !== undefined) {
+        if (!el.value) return resetAgent(el.dataset.agent, true); // back to the default: a removal, with undo
+        const ag = { ...(SET.settings.access.agents || {}) };
+        ag[el.dataset.agent] = el.value;
+        SET.settings.access.agents = ag;
+        changed(true);
+        paintPart('agents');
+        return;
+      }
+      if (!el.dataset.k) return;
+      if (el.dataset.t === 'model') {
+        const base = el.dataset.k.replace(/\.model$/, '');
+        const other = el.parentElement.querySelector('[data-model-other]');
+        if (el.value === '__other__') {
+          SET.other.add(base);
+          other.hidden = false;
+          other.value = getAt(SET.settings, el.dataset.k) || '';
+          other.focus();
+          return;
+        }
+        SET.other.delete(base);
+        other.hidden = true;
+        other.value = '';
+        setAt(SET.settings, el.dataset.k, el.value || null);
+      } else setAt(SET.settings, el.dataset.k, conv(el));
+      afterChange(el.dataset.k);
+      changed(now);
     };
-    root.querySelectorAll('input[data-k], select[data-k], textarea[data-k]').forEach((el) => {
-      const ev = el.tagName === 'SELECT' ? 'change' : 'input';
-      el.addEventListener(ev, () => {
-        setAt(SET.settings, el.dataset.k, conv(el));
-        if (/\.runtime$/.test(el.dataset.k) || el.dataset.k === 'machine.shell' || el.dataset.k === 'machine.browser') { saveSoon(true); renderSettings(); return; }
-        saveSoon(el.tagName === 'SELECT');
-      });
+    root.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.tagName !== 'SELECT') return;
+      if (el.closest('.route-try') === null) return onValue(el, true);
+      // a different asker, files, relay or channel: the shown result was for other inputs
+      const out = document.getElementById('set-try-out');
+      if (SET.tryKey && out?.textContent.trim()) { SET.tryKey = null; out.innerHTML = '<div class="muted">Changed: try it again.</div>'; }
     });
-    root.querySelectorAll('button.switch[data-k]').forEach((b) => (b.onclick = () => {
-      const cur = getAt(SET.settings, b.dataset.k);
-      const def = b.dataset.k.startsWith('access.') ? cur !== false : !!cur;
-      setAt(SET.settings, b.dataset.k, !def);
-      b.classList.toggle('is-on', !def);
-      saveSoon(true);
-    }));
-    root.querySelectorAll('[data-agent]').forEach((sel) => (sel.onchange = () => {
-      SET.settings.access = SET.settings.access || {};
-      const ag = { ...(SET.settings.access.agents || {}) };
-      if (sel.value) ag[sel.dataset.agent] = sel.value; else delete ag[sel.dataset.agent];
-      SET.settings.access.agents = ag;
-      saveSoon(true);
-    }));
-    root.querySelectorAll('[data-rule-from]').forEach((b) => (b.onclick = () => {
-      const r = SET.settings.routing.rules[Number(b.dataset.ruleFrom)];
-      r.when = r.when || {};
-      const set = new Set(r.when.from || []);
-      set.has(b.dataset.name) ? set.delete(b.dataset.name) : set.add(b.dataset.name);
-      r.when.from = [...set];
-      b.classList.toggle('is-on');
-      saveSoon(true);
-    }));
-    root.querySelector('[data-rule-add]')?.addEventListener('click', () => {
-      SET.settings.routing = SET.settings.routing || {};
-      SET.settings.routing.rules = SET.settings.routing.rules || [];
-      SET.settings.routing.rules.push({ name: '', when: { from: [], keywords: [], hasFiles: null, hop: null, channel: null }, use: { ...(SET.settings.routing.default || { runtime: 'claude', model: 'sonnet' }) } });
-      saveSoon(true); renderSettings();
+    root.addEventListener('input', (e) => {
+      const el = e.target;
+      if (el.id === 'set-folder-new' || el.id === 'set-try-text') { if (el.getAttribute('aria-invalid')) clearFieldError(el); return; }
+      if ((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.dataset.k) onValue(el, false);
     });
-    root.querySelectorAll('[data-rule-remove]').forEach((b) => (b.onclick = () => { SET.settings.routing.rules.splice(Number(b.dataset.ruleRemove), 1); saveSoon(true); renderSettings(); }));
-    root.querySelectorAll('[data-rule-move]').forEach((b) => (b.onclick = () => {
-      const i = Number(b.dataset.ruleMove), j = i + Number(b.dataset.dir), rs = SET.settings.routing.rules;
-      if (j < 0 || j >= rs.length) return;
-      [rs[i], rs[j]] = [rs[j], rs[i]];
-      saveSoon(true); renderSettings();
-    }));
-    root.querySelectorAll('[data-folder-remove]').forEach((b) => (b.onclick = () => { SET.settings.machine.folders.splice(Number(b.dataset.folderRemove), 1); saveSoon(true); renderSettings(); }));
-    root.querySelector('[data-folder-add]')?.addEventListener('click', () => {
-      const v = $('#folder-new').value.trim();
-      if (!v) return;
-      SET.settings.machine = SET.settings.machine || {};
-      SET.settings.machine.folders = [...(SET.settings.machine.folders || []), { path: v, write: false }];
-      saveSoon(true); renderSettings();
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      if (e.target.id === 'set-folder-new') { e.preventDefault(); addFolder(); }
+      else if (e.target.id === 'set-try-text') { e.preventDefault(); tryAsk(); }
     });
-    root.querySelectorAll('[data-mcp]').forEach((b) => (b.onclick = () => {
-      SET.settings.machine = SET.settings.machine || {};
-      const set = new Set(SET.settings.machine.mcp || []);
-      set.has(b.dataset.mcp) ? set.delete(b.dataset.mcp) : set.add(b.dataset.mcp);
-      SET.settings.machine.mcp = [...set];
-      b.classList.toggle('is-on');
-      saveSoon(true);
-    }));
-    root.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+    root.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b || !root.contains(b) || b.disabled) return;
+      const d = b.dataset;
+      if (d.copy !== undefined) {
+        try { await navigator.clipboard.writeText(d.copy); b.textContent = 'Copied'; }
+        catch { const c = b.parentElement.querySelector('code'); const r = document.createRange(); r.selectNodeContents(c); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; }
+        setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+      } else if (b.classList.contains('switch') && d.k) {
+        const cur = getAt(SET.settings, d.k);
+        const on = d.k.startsWith('access.') ? cur !== false : !!cur;
+        setAt(SET.settings, d.k, !on);
+        b.classList.toggle('is-on', !on);
+        b.setAttribute('aria-checked', String(!on));
+        changed(true);
+      } else if (d.chipFrom !== undefined) {
+        const r = getAt(SET.settings, d.chipFrom);
+        r.when = r.when || {};
+        const set = new Set(r.when.from || []);
+        set.has(d.name) ? set.delete(d.name) : set.add(d.name);
+        r.when.from = [...set];
+        b.classList.toggle('is-on', set.has(d.name));
+        b.setAttribute('aria-pressed', String(set.has(d.name)));
+        paintSummary(Number(d.chipFrom.split('.')[2]));
+        changed(true);
+      } else if (d.mcp !== undefined) {
+        const set = new Set(SET.settings.machine.mcp || []);
+        set.has(d.mcp) ? set.delete(d.mcp) : set.add(d.mcp);
+        SET.settings.machine.mcp = [...set];
+        b.classList.toggle('is-on', set.has(d.mcp));
+        b.setAttribute('aria-pressed', String(set.has(d.mcp)));
+        changed(true);
+      } else if (d.ruleAdd !== undefined) addRule();
+      else if (d.ruleMove !== undefined) moveRule(Number(d.ruleMove), Number(d.dir));
+      else if (d.ruleRemove !== undefined) removeRule(Number(d.ruleRemove));
+      else if (d.undo !== undefined) undoRemove();
+      else if (d.agentReset !== undefined) resetAgent(d.agentReset);
+      else if (d.folderRemove !== undefined) removeFolder(Number(d.folderRemove));
+      else if (d.folderAdd !== undefined) addFolder();
+      else if (d.try !== undefined) tryAsk();
+      else if (d.page) setPage(d.page);
+    });
   }
 
   function wirePage() {
