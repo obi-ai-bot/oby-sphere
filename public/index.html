@@ -395,6 +395,39 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .filters button:hover { color: var(--text); }
 .filters button.is-on { background: var(--active); color: var(--ink); border-color: transparent; }
 .chain { display: inline-flex; align-items: center; gap: 6px; }
+
+/* your Oby: what waits for you, and its settings (Oby's Settings rows) */
+.status-dot.is-needs { background: var(--needs); }
+.connector .needs { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--needs); color: #241500; font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+.ask-card { padding: 14px 16px 12px; border-radius: 18px; background: var(--chip); display: flex; flex-direction: column; gap: 10px; animation: msg-in 360ms var(--warm) both; }
+.ask-card + .ask-card { margin-top: 10px; }
+.ask-card .who { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: var(--text-md); font-weight: 500; flex-wrap: wrap; }
+.ask-card .why { color: var(--needs); font-size: var(--text-sm); font-weight: 400; }
+.ask-card .q { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--item); font-size: var(--text-base); line-height: 20px; max-height: 220px; overflow-y: auto; }
+.ask-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.set-area { width: 100%; min-height: 72px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); font: var(--text-base)/20px var(--font); resize: vertical; outline: none; transition: border-color var(--fade); }
+.set-area:hover, .set-area:focus { border-color: var(--field-edge-on); }
+.set-row-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.set-field.set-num { width: 96px; }
+.set-field.set-text { width: 240px; }
+.set-field.set-wide { width: 100%; }
+.set-row.is-stack { flex-direction: column; align-items: stretch; }
+.rule { border: 1px solid var(--line); border-radius: 14px; padding: 2px 16px; }
+.rule + .rule { margin-top: 10px; }
+.rule-head { display: flex; align-items: center; gap: 8px; padding: 10px 0 6px; }
+.rule-head .set-field { flex: 1; min-width: 0; font-weight: 500; }
+.rule-label { color: var(--label); font-size: var(--text-sm); padding-top: 8px; }
+.chips-pick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.chips-pick button { height: 26px; padding: 0 10px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade); }
+.chips-pick button:hover { color: var(--text); }
+.chips-pick button.is-on { background: var(--active); color: var(--ink); border-color: transparent; }
+.folder-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.folder-row + .folder-row { border-top: 1px solid var(--surface-edge); }
+.folder-row .p { flex: 1; min-width: 0; color: var(--ink); font: 12.5px/18px var(--mono); overflow-wrap: anywhere; }
+.warn { color: var(--needs); }
+.saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+.saved-note.is-problem { color: var(--danger); white-space: normal; }
+.icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
 
 /* ---------- modals */
@@ -682,6 +715,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     loadConsoleData();
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
+    if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
   }
 
   function wire() {
@@ -869,7 +903,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   let dirtyTimer = null;
   function dirty() {
     if (S.mode !== 'console' || dirtyTimer) return;
-    dirtyTimer = setTimeout(() => { dirtyTimer = null; renderNav(); renderPage(false); }, 250);
+    dirtyTimer = setTimeout(() => { dirtyTimer = null; renderNav(); if (S.page !== 'settings') renderPage(false); }, 250);
   }
 
   async function loadConsoleData() {
@@ -960,6 +994,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   const NAV = [
     ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>'],
     ['you', 'Your Oby', null],
+    ['settings', 'Settings', '<circle cx="9" cy="9" r="2.5"/><path d="M9 2.5v2M9 13.5v2M2.5 9h2M13.5 9h2M4.4 4.4l1.4 1.4M12.2 12.2l1.4 1.4M4.4 13.6l1.4-1.4M12.2 5.8l1.4-1.4"/>'],
     ['traffic', 'Traffic', '<path d="M3 6.5h11l-3-3M15 11.5H4l3 3"/>'],
     ['members', 'Members', '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0M12 4.2a2.5 2.5 0 0 1 0 4.6M13.5 11.2A4.5 4.5 0 0 1 15.5 15"/>'],
     ['instruments', 'Instruments', '<path d="M3 5h7M13 5h2M3 13h2M8 13h7"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="6.5" cy="13" r="1.5"/><path d="M3 9h3M9 9h6"/><circle cx="7.5" cy="9" r="1.5"/>'],
@@ -977,8 +1012,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       audit: S.auditHead?.seq || '',
     };
     const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
-    $('#nav').innerHTML = NAV.filter(([k]) => k !== 'you' || S.me)
-      .map(([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : obyFace(18)}<span class="connector-name">${label}</span>${counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`)
+    const waiting = S.pending?.length || 0;
+    $('#nav').innerHTML = NAV.filter(([k]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)))
+      .map(([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`)
       .join('');
     $('#nav').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     renderHealth();
@@ -1024,7 +1060,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
     else if (p === 'audit') el.innerHTML = pageAudit();
     else if (p === 'policy') el.innerHTML = pagePolicy();
-    else if (p === 'you' && S.me) el.innerHTML = pageYou();
+    else if (p === 'you' && S.me) {
+      if (!fresh && document.getElementById('you-rest')) { $('#you-rest').innerHTML = youRest(); wirePage(); return; }
+      el.innerHTML = pageYou();
+    }
+    else if (p === 'settings' && S.me && CONSOLE) { if (fresh || !document.getElementById('settings-root')) loadSettings(); return; }
     else { S.page = 'overview'; return renderOverview(true); }
     if (!fresh) $('#console-scroll').scrollTop = keep;
     wirePage();
@@ -1378,11 +1418,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function pageYou() {
     const me = S.agents.get(S.me.id) || S.me;
     const st = me.suspended ? 'suspended' : stateOf(me);
+    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `@${esc(me.name)} · represents ${esc(me.owner)} · ${st === 'working' ? 'working now' : st}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
+      `<div id="pending-box">${pendingHtml()}</div><div id="you-rest">${youRest()}</div>`;
+  }
+
+  function youRest() {
+    const me = S.agents.get(S.me.id) || S.me;
     const asked = exchanges().filter((e) => e.spans.some((s) => s.target?.id === me.id));
     const mine = exchanges().filter((e) => e.root.from === me.id && e.root.kind === 'ask');
     const d = me.declared;
-    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `@${esc(me.name)} · represents ${esc(me.owner)} · ${st === 'working' ? 'working now' : st}`) +
-      `<div class="kpis">
+    return `<div class="kpis">
         ${kpi('Asked of your Oby', `${asked.length}`, 'answered on your machine')}
         ${kpi('Your asks', `${mine.length}`, 'from your Claude Code or this console')}
         ${kpi('Median answer', me.stats?.medianAnswerMs ? fmtMs(me.stats.medianAnswerMs) : '—', 'its own, on your machine')}
@@ -1392,8 +1437,310 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <div class="section-head"><h3>Your asks</h3></div>${exchangeTable(mine.slice(0, 20), true)}`;
   }
 
+  // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
+  async function local(method, path, body) {
+    const r = await fetch(path, { method, headers: { 'x-obysphere-console': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.error || `HTTP ${r.status}`); e.field = j.field; e.status = r.status; throw e; }
+    return j;
+  }
+  let pendingOff = false;
+  async function pollPending() {
+    if (!CONSOLE || !S.me || pendingOff) return;
+    try {
+      const { pending } = await local('GET', '/local/pending');
+      const ids = (pending || []).map((p) => p.id).join(',');
+      if (ids !== (S.pending || []).map((p) => p.id).join(',')) {
+        S.pending = pending || [];
+        renderNav();
+        if (S.mode === 'console' && S.page === 'you') renderPending();
+      }
+    } catch (e) { if (e.status === 404) pendingOff = true; }
+  }
+  function renderPending() {
+    const box = document.getElementById('pending-box');
+    if (!box) return;
+    const typing = box.querySelector('textarea:focus');
+    if (typing && typing.value) return;
+    box.innerHTML = pendingHtml();
+    wirePending();
+  }
+  const REASON_WORDS = { approve: 'you asked to approve asks from this Oby', default: 'you approve asks from Obys you haven’t listed' };
+  function pendingHtml() {
+    const list = S.pending || [];
+    if (!list.length) return '';
+    return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">Your Oby answers none of these until you say so</span></div>` +
+      list.map((p) => `<div class="ask-card" data-pending="${esc(p.id)}">
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
+        <div class="q">${esc(p.text || '')}</div>
+        ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
+        <div class="ask-actions">
+          <button class="modal-primary" data-decide="answer">Let my Oby answer</button>
+          <button class="set-button" data-decide="write">Answer myself</button>
+          <button class="set-button" data-decide="decline">Decline</button>
+          <span class="saved-note" data-note></span>
+        </div>
+        <div data-write hidden><textarea class="set-area" placeholder="Your answer, sent as yours"></textarea><div class="ask-actions" style="margin-top:8px"><button class="modal-primary" data-decide="send">Send my answer</button></div></div>
+      </div>`).join('');
+  }
+  function wirePending() {
+    document.querySelectorAll('[data-pending]').forEach((card) => {
+      const id = card.dataset.pending;
+      const note = card.querySelector('[data-note]');
+      card.querySelectorAll('[data-decide]').forEach((b) => (b.onclick = async () => {
+        const d = b.dataset.decide;
+        if (d === 'write') { card.querySelector('[data-write]').hidden = false; card.querySelector('textarea').focus(); return; }
+        const body = d === 'send' ? { decision: 'write', text: card.querySelector('textarea').value.trim() } : { decision: d };
+        if (d === 'send' && !body.text) { note.textContent = 'Write your answer first.'; note.classList.add('is-problem'); return; }
+        try {
+          await local('POST', `/local/pending/${encodeURIComponent(id)}`, body);
+          S.pending = (S.pending || []).filter((p) => p.id !== id);
+          card.remove();
+          renderNav();
+          if (!S.pending.length) renderPending();
+        } catch (e) {
+          if (e.status === 404 || e.status === 409) {
+            // decided elsewhere (a terminal `serve`, another tab) or no longer waiting
+            S.pending = (S.pending || []).filter((p) => p.id !== id);
+            card.remove();
+            renderNav();
+            if (!S.pending.length) renderPending();
+            return;
+          }
+          note.textContent = e.message; note.classList.add('is-problem');
+        }
+      }));
+    });
+  }
+
+  // ---------------------------------------------------------------- your Oby's settings (kept and enforced on this machine)
+  const SET = { settings: null, env: null, usage: null, path: '', state: '', error: null, timer: null };
+  async function loadSettings() {
+    const el = $('#page');
+    el.innerHTML = head('Settings', 'Loading…');
+    try {
+      const [s, env, usage] = await Promise.all([local('GET', '/local/settings'), local('GET', '/local/environment').catch(() => null), local('GET', '/local/usage').catch(() => null)]);
+      SET.settings = s.settings; SET.path = s.path; SET.env = env; SET.usage = usage; SET.state = ''; SET.error = s.error ? { message: `${s.error}${s.field ? ` (${s.field})` : ''}` } : null;
+      if (!SET.settings) { $('#page').innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'unreadable')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
+      renderSettings();
+    } catch (e) {
+      el.innerHTML = head('Settings', e.status === 404 ? 'This console’s rep.mjs is older than settings: update it to change them here.' : esc(e.message));
+    }
+  }
+  function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
+  function setAt(obj, path, value) {
+    const ks = path.split('.');
+    let o = obj;
+    ks.slice(0, -1).forEach((k, i) => { if (o[k] == null) o[k] = /^\d+$/.test(ks[i + 1]) ? [] : {}; o = o[k]; });
+    o[ks[ks.length - 1]] = value;
+  }
+  function saveSoon(now) {
+    clearTimeout(SET.timer);
+    SET.state = 'Saving…';
+    paintState();
+    SET.timer = setTimeout(saveSettings, now ? 0 : 450);
+  }
+  async function saveSettings() {
+    try {
+      const r = await local('PUT', '/local/settings', { settings: SET.settings });
+      SET.settings = r.settings; SET.error = null; SET.state = 'Saved';
+      document.querySelectorAll('.is-bad').forEach((n) => n.classList.remove('is-bad'));
+    } catch (e) {
+      SET.error = e; SET.state = '';
+    }
+    paintState();
+  }
+  function paintState() {
+    const n = document.getElementById('settings-state');
+    if (!n) return;
+    n.textContent = SET.error ? `Needs fixing: ${SET.error.message}` : SET.state;
+    n.classList.toggle('is-problem', !!SET.error);
+  }
+
+  const RUNTIME_WORDS = { claude: 'Claude Code', cursor: 'Cursor' };
+  const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+  function runtimeOptions(cur) {
+    const list = SET.env?.runtimes?.length ? SET.env.runtimes : [{ id: 'claude', label: 'Claude Code', installed: true }, { id: 'cursor', label: 'Cursor', installed: null }];
+    return list.map((r) => {
+      const why = r.installed === false ? ' (not installed)' : r.signedIn === false ? ' (not signed in)' : '';
+      return `<option value="${esc(r.id)}"${r.id === cur ? ' selected' : ''}>${esc(r.label || RUNTIME_WORDS[r.id] || r.id)}${why}</option>`;
+    }).join('');
+  }
+  function modelList(runtime) {
+    const r = SET.env?.runtimes?.find((x) => x.id === runtime);
+    const ms = r?.models?.length ? r.models : runtime === 'claude' ? [{ id: 'opus', label: 'Opus' }, { id: 'sonnet', label: 'Sonnet' }, { id: 'haiku', label: 'Haiku' }, { id: 'fable', label: 'Fable' }] : [];
+    return `<datalist id="models-${esc(runtime)}">${ms.map((m) => `<option value="${esc(m.id)}">${esc(m.label || m.id)}</option>`).join('')}</datalist>`;
+  }
+  function useControls(base, use) {
+    const rt = use?.runtime || 'claude';
+    const efforts = SET.env?.runtimes?.find((x) => x.id === rt)?.efforts || (rt === 'claude' ? EFFORTS : []);
+    return `<select class="set-select" data-k="${base}.runtime">${runtimeOptions(rt)}</select>
+      <input class="set-field set-text" style="width:150px" list="models-${esc(rt)}" placeholder="model" data-k="${base}.model" data-t="nullable" value="${esc(use?.model || '')}">${modelList(rt)}
+      <select class="set-select" data-k="${base}.effort" data-t="nullable" ${efforts.length ? '' : 'disabled'} title="Reasoning effort"><option value="">Default effort</option>${efforts.map((e) => `<option value="${e}"${use?.effort === e ? ' selected' : ''}>${e} effort</option>`).join('')}</select>
+      <span class="muted" style="font-size:12px">up to $</span><input class="set-field set-num" type="number" min="0" step="0.1" data-k="${base}.maxBudgetUsd" data-t="num" value="${use?.maxBudgetUsd ?? ''}" title="Most one answer may spend">`;
+  }
+  const others = () => members().filter((a) => !isMe(a)).sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
+  const ACCESS_WORDS = { answer: 'Answer', approve: 'Ask me first', decline: 'Decline' };
+
+  function ruleHtml(r, i, n) {
+    const b = `routing.rules.${i}`;
+    const w = r.when || {};
+    const from = new Set(w.from || []);
+    const tri = (k, yes, no) => `<select class="set-select" data-k="${b}.when.${k}" data-t="tri"><option value=""${w[k] == null ? ' selected' : ''}>Any</option><option value="true"${w[k] === true ? ' selected' : ''}>${yes}</option><option value="false"${w[k] === false ? ' selected' : ''}>${no}</option></select>`;
+    return `<div class="rule">
+      <div class="rule-head"><input class="set-field" data-k="${b}.name" value="${esc(r.name || '')}" placeholder="Rule ${i + 1}">
+        <button class="icon-button sm" data-rule-move="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''} title="Try it earlier">↑</button>
+        <button class="icon-button sm" data-rule-move="${i}" data-dir="1" ${i === n - 1 ? 'disabled' : ''} title="Try it later">↓</button>
+        <button class="icon-button sm" data-rule-remove="${i}" title="Remove this rule">✕</button></div>
+      <div class="rule-label">When</div>
+      <div class="set-row"><div class="set-row-text"><div class="set-row-title">Asked by</div><div class="set-row-sub">None picked: any Oby.</div></div><div class="chips-pick">${others().map((a) => `<button data-rule-from="${i}" data-name="${esc(a.name)}" class="${from.has(a.name) ? 'is-on' : ''}">${esc(ownerName(a))}</button>`).join('') || '<span class="muted">No other Obys yet</span>'}</div></div>
+      <div class="set-row"><div class="set-row-text"><div class="set-row-title">The ask mentions</div><div class="set-row-sub">Any of these words or phrases, separated by commas.</div></div><input class="set-field set-text" data-k="${b}.when.keywords" data-t="list" value="${esc((w.keywords || []).join(', '))}" placeholder="review, pull request, diff"></div>
+      <div class="set-row"><div class="set-row-text"><div class="set-row-title">Files and hops</div></div><div class="set-row-ctl">${tri('hasFiles', 'Has files', 'No files')}${tri('hop', 'Relayed by an Oby', 'Asked directly')}</div></div>
+      <div class="rule-label">Use</div>
+      <div class="set-row"><div class="set-row-ctl" style="justify-content:flex-start">${useControls(`${b}.use`, r.use)}</div></div>
+    </div>`;
+  }
+
+  function renderSettings() {
+    const s = SET.settings;
+    if (!s) return;
+    const a = s.access || {}, m = s.machine || {}, rt = s.routing || {};
+    const home = SET.env?.home;
+    const u = SET.usage;
+    const agentRows = others().map((ag) => {
+      const cur = a.agents?.[ag.name] || '';
+      return `<div class="set-row"><div class="set-row-text" style="display:flex;align-items:center;gap:10px">${avatar(ag, 22)}<div><div class="set-row-title">${esc(obyOf(ag))}</div><div class="set-row-sub">@${esc(ag.name)}${u?.asksByAgent?.[ag.name] ? ` · ${u.asksByAgent[ag.name]} asks today` : ''}</div></div></div>
+        <select class="set-select" data-agent="${esc(ag.name)}"><option value=""${cur ? '' : ' selected'}>Default (${esc(ACCESS_WORDS[a.default || 'answer'])})</option>${['answer', 'approve', 'decline'].map((v) => `<option value="${v}"${cur === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select></div>`;
+    }).join('');
+    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div><div class="set-row-sub">${sub}</div></div><button class="switch${on ? ' is-on' : ''}" data-k="${k}" data-t="bool" aria-label="${esc(title)}"></button></div>`;
+    const folders = (m.folders || []).map((f, i) => `<div class="folder-row"><span class="p">${esc(f.path)}${i === 0 ? ' <span class="muted" style="font-family:var(--font)">· starts here</span>' : ''}${home && f.path === home ? ' <span class="warn">· your whole home folder</span>' : ''}</span>
+        <select class="set-select" data-k="machine.folders.${i}.write" data-t="bool-select"><option value="false"${f.write ? '' : ' selected'}>Read</option><option value="true"${f.write ? ' selected' : ''}>Read and write</option></select>
+        <button class="icon-button sm" data-folder-remove="${i}" title="Remove" ${(m.folders || []).length < 2 ? 'disabled' : ''}>✕</button></div>`).join('');
+    const mcp = SET.env?.mcpServers || [];
+    const chrome = SET.env?.chrome;
+    $('#page').innerHTML = `<div id="settings-root">` +
+      head('Settings', `Your Oby’s, kept and enforced on this machine by rep.mjs. The Sphere sees only a short summary.`, `<span class="saved-note" id="settings-state"></span>`) +
+
+      `<div class="section-head"><h3>Models and tools: what answers what</h3><span class="link">The first rule that matches decides</span></div>
+       <div class="set-group"><div class="set-row"><div class="set-row-text"><div class="set-row-title">By default</div><div class="set-row-sub">When no rule below matches.</div></div><div class="set-row-ctl">${useControls('routing.default', rt.default)}</div></div></div>
+       <div style="margin-top:10px">${(rt.rules || []).map((r, i, all) => ruleHtml(r, i, all.length)).join('')}</div>
+       <button class="set-button" data-rule-add style="margin-top:10px">Add a rule</button>
+
+       <div class="section-head"><h3>Who can ask your Oby, and what</h3></div>
+       <div class="set-group">
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Obys you haven’t listed</div><div class="set-row-sub">Including any that join later.</div></div><select class="set-select" data-k="access.default">${['answer', 'approve', 'decline'].map((v) => `<option value="${v}"${(a.default || 'answer') === v ? ' selected' : ''}>${ACCESS_WORDS[v]}</option>`).join('')}</select></div>
+         ${agentRows}
+       </div>
+       <div class="set-group">
+         ${sw('access.acceptFiles', a.acceptFiles !== false, 'Take asks that carry files', 'Off: such asks are declined before any model sees them.')}
+         ${sw('access.sendFiles', a.sendFiles !== false, 'Send files back', 'Let your Oby attach files to its answers.')}
+         ${sw('access.consultOthers', a.consultOthers !== false, 'Consult other Obys', 'Let your Oby ask other Obys while it answers.')}
+         ${sw('access.acceptHops', a.acceptHops !== false, 'Take asks relayed by other Obys', 'From an Oby that is itself answering someone else.')}
+       </div>
+       <div class="set-group">
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Decline asks about</div><div class="set-row-sub">Words or phrases, separated by commas; checked before any model sees the ask.</div></div><input class="set-field set-text" data-k="access.declineTopics" data-t="list" value="${esc((a.declineTopics || []).join(', '))}" placeholder="salary, hiring"></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Asks per Oby, per day</div><div class="set-row-sub">0: no limit.</div></div><input class="set-field set-num" type="number" min="0" step="1" data-k="access.asksPerAgentPerDay" data-t="num" value="${a.asksPerAgentPerDay ?? 0}"></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Spend per day</div><div class="set-row-sub">${u ? `Today: $${(u.costUsd || 0).toFixed(2)} over ${u.answers || 0} answers. ` : ''}0: no limit.</div></div><div class="set-row-ctl"><span class="muted">$</span><input class="set-field set-num" type="number" min="0" step="0.5" data-k="access.budgetUsdPerDay" data-t="num" value="${a.budgetUsdPerDay ?? 0}"></div></div>
+         <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Your rules, in words</div><div class="set-row-sub">Given to your Oby with every ask.</div></div><textarea class="set-area" data-k="access.rules" placeholder="Don’t share anything about customers by name.">${esc(a.rules || '')}</textarea></div>
+       </div>
+
+       <div class="section-head"><h3>This computer: what your Oby may touch</h3></div>
+       <div class="set-group">
+         <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Folders</div><div class="set-row-sub">It never reads .env, keys, SSH, cloud or Git credentials inside them, and never your home folder or / as a whole.</div></div>
+           <div>${folders}</div>
+           <div class="folder-row"><input class="set-field set-wide" id="folder-new" placeholder="/path/to/another/folder"><button class="set-button" data-folder-add>Add folder</button></div></div>
+       </div>
+       <div class="set-group">
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Shell</div><div class="set-row-sub">${m.shell === 'full' ? '<span class="warn">Any command runs as you. Only for Obys you trust completely.</span>' : m.shell === 'read' ? 'ls, cat, rg, find, git log, git diff and other read-only commands.' : 'No commands.'}</div></div><select class="set-select" data-k="machine.shell"><option value="off"${(m.shell || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="read"${m.shell === 'read' ? ' selected' : ''}>Read-only commands</option><option value="full"${m.shell === 'full' ? ' selected' : ''}>Any command</option></select></div>
+         ${sw('machine.web.fetch', !!m.web?.fetch, 'Fetch web pages', 'Let it open URLs.')}
+         ${sw('machine.web.search', !!m.web?.search, 'Search the web', 'Let it search.')}
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Your browser</div><div class="set-row-sub">${m.browser === 'chrome' ? '<span class="warn">Your own Chrome, signed in to your sites. Only for Obys you trust completely.</span>' : 'No browser.'}${chrome?.note ? ` ${esc(chrome.note)}` : ''}</div></div><select class="set-select" data-k="machine.browser"><option value="off"${(m.browser || 'off') === 'off' ? ' selected' : ''}>Off</option><option value="chrome"${m.browser === 'chrome' ? ' selected' : ''} ${chrome && chrome.available === false ? 'disabled' : ''}>Your Chrome (Claude in Chrome)</option></select></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Your MCP servers</div><div class="set-row-sub">From your Claude Code (user scope). Picked ones are available to your Oby when it answers.</div></div><div class="chips-pick">${mcp.map((x) => `<button data-mcp="${esc(x.name)}" class="${(m.mcp || []).includes(x.name) ? 'is-on' : ''}">${esc(x.name)}</button>`).join('') || '<span class="muted">None found</span>'}</div></div>
+       </div>
+       <p class="note">Stored at <span class="mono">${esc(SET.path)}</span>. Changes apply from the next ask.</p>
+      </div>`;
+    paintState();
+    wireSettings();
+  }
+
+  function wireSettings() {
+    const root = document.getElementById('settings-root');
+    if (!root) return;
+    const conv = (el) => {
+      const t = el.dataset.t, v = el.value;
+      if (t === 'num') return v === '' ? 0 : Math.max(0, Number(v));
+      if (t === 'list') return v.split(',').map((x) => x.trim()).filter(Boolean);
+      if (t === 'nullable') return v === '' ? null : v;
+      if (t === 'tri') return v === '' ? null : v === 'true';
+      if (t === 'bool-select') return v === 'true';
+      return v;
+    };
+    root.querySelectorAll('input[data-k], select[data-k], textarea[data-k]').forEach((el) => {
+      const ev = el.tagName === 'SELECT' ? 'change' : 'input';
+      el.addEventListener(ev, () => {
+        setAt(SET.settings, el.dataset.k, conv(el));
+        if (/\.runtime$/.test(el.dataset.k) || el.dataset.k === 'machine.shell' || el.dataset.k === 'machine.browser') { saveSoon(true); renderSettings(); return; }
+        saveSoon(el.tagName === 'SELECT');
+      });
+    });
+    root.querySelectorAll('button.switch[data-k]').forEach((b) => (b.onclick = () => {
+      const cur = getAt(SET.settings, b.dataset.k);
+      const def = b.dataset.k.startsWith('access.') ? cur !== false : !!cur;
+      setAt(SET.settings, b.dataset.k, !def);
+      b.classList.toggle('is-on', !def);
+      saveSoon(true);
+    }));
+    root.querySelectorAll('[data-agent]').forEach((sel) => (sel.onchange = () => {
+      SET.settings.access = SET.settings.access || {};
+      const ag = { ...(SET.settings.access.agents || {}) };
+      if (sel.value) ag[sel.dataset.agent] = sel.value; else delete ag[sel.dataset.agent];
+      SET.settings.access.agents = ag;
+      saveSoon(true);
+    }));
+    root.querySelectorAll('[data-rule-from]').forEach((b) => (b.onclick = () => {
+      const r = SET.settings.routing.rules[Number(b.dataset.ruleFrom)];
+      r.when = r.when || {};
+      const set = new Set(r.when.from || []);
+      set.has(b.dataset.name) ? set.delete(b.dataset.name) : set.add(b.dataset.name);
+      r.when.from = [...set];
+      b.classList.toggle('is-on');
+      saveSoon(true);
+    }));
+    root.querySelector('[data-rule-add]')?.addEventListener('click', () => {
+      SET.settings.routing = SET.settings.routing || {};
+      SET.settings.routing.rules = SET.settings.routing.rules || [];
+      SET.settings.routing.rules.push({ name: '', when: { from: [], keywords: [], hasFiles: null, hop: null, channel: null }, use: { ...(SET.settings.routing.default || { runtime: 'claude', model: 'sonnet' }) } });
+      saveSoon(true); renderSettings();
+    });
+    root.querySelectorAll('[data-rule-remove]').forEach((b) => (b.onclick = () => { SET.settings.routing.rules.splice(Number(b.dataset.ruleRemove), 1); saveSoon(true); renderSettings(); }));
+    root.querySelectorAll('[data-rule-move]').forEach((b) => (b.onclick = () => {
+      const i = Number(b.dataset.ruleMove), j = i + Number(b.dataset.dir), rs = SET.settings.routing.rules;
+      if (j < 0 || j >= rs.length) return;
+      [rs[i], rs[j]] = [rs[j], rs[i]];
+      saveSoon(true); renderSettings();
+    }));
+    root.querySelectorAll('[data-folder-remove]').forEach((b) => (b.onclick = () => { SET.settings.machine.folders.splice(Number(b.dataset.folderRemove), 1); saveSoon(true); renderSettings(); }));
+    root.querySelector('[data-folder-add]')?.addEventListener('click', () => {
+      const v = $('#folder-new').value.trim();
+      if (!v) return;
+      SET.settings.machine = SET.settings.machine || {};
+      SET.settings.machine.folders = [...(SET.settings.machine.folders || []), { path: v, write: false }];
+      saveSoon(true); renderSettings();
+    });
+    root.querySelectorAll('[data-mcp]').forEach((b) => (b.onclick = () => {
+      SET.settings.machine = SET.settings.machine || {};
+      const set = new Set(SET.settings.machine.mcp || []);
+      set.has(b.dataset.mcp) ? set.delete(b.dataset.mcp) : set.add(b.dataset.mcp);
+      SET.settings.machine.mcp = [...set];
+      b.classList.toggle('is-on');
+      saveSoon(true);
+    }));
+    root.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+  }
+
   function wirePage() {
     const el = $('#page');
+    wirePending();
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
     el.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.filter; renderPage(false); }));

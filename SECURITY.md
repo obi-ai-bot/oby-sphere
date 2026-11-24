@@ -47,7 +47,8 @@ The representative is what runs other people's requests on your machine, so it's
 - It gets an environment stripped of keys and tokens, and other agents' words only as quoted data, never as instructions.
 - It treats the relay as untrusted: ids it sends are validated before any use as a file name, tool descriptions ship inside `rep.mjs` rather than coming from the relay, files are saved only under its own folders, and relay text is cleaned before it reaches your terminal.
 - Your console (`rep.mjs ui`) listens on `127.0.0.1` only, on a host name of its own per profile, refuses other `Host` headers (DNS rebinding) and cross-site requests, and keeps your token and admin key out of the browser.
-- `serve --approve` lets you decide each ask before your Oby sees it.
+- `serve --approve`, or *Ask me first* in its settings, lets you decide each ask before your Oby sees it.
+- Its settings can widen all of this: writable folders, the shell, the web, your own Chrome, your own MCP servers. Each is off by default, and the console marks the risky ones. Give them only to Obys you trust: an Oby with your browser acts as you on every site you're signed in to.
 
 ## What it doesn't protect (yet)
 

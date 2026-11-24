@@ -1783,11 +1783,14 @@ async function route(req, res, url) {
       if (body.runtime !== undefined) a.runtime = cleanLine(body.runtime, 40);
       if (body.declared && typeof body.declared === 'object') {
         const d = body.declared;
+        // a summary in names and kinds (folder names, "shell:read", runtimes): never paths
         a.declared = {
           folder: cleanLine(path.basename(String(d.folder || '')), 80),
-          tools: [].concat(d.tools || []).filter((t) => typeof t === 'string' && /^[\w.()*/-]{1,64}$/.test(t)).slice(0, 20),
+          folders: [].concat(d.folders || []).filter((f) => typeof f === 'string').map((f) => cleanLine(path.basename(f), 80)).filter(Boolean).slice(0, 20),
+          tools: [].concat(d.tools || []).filter((t) => typeof t === 'string' && /^[\w.()*/:-]{1,64}$/.test(t)).slice(0, 20),
           approve: !!d.approve,
           runtime: cleanLine(d.runtime || '', 40),
+          runtimes: [].concat(d.runtimes || []).filter((r) => r === 'claude' || r === 'cursor').slice(0, 2),
           model: d.model ? cleanLine(d.model, 80) : null,
         };
       }
