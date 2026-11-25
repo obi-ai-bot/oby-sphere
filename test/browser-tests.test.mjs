@@ -19,33 +19,55 @@
 // - Invite member: the one text to copy.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, until } from './browser-helpers.mjs';
 
 const REQUIRED = process.env.OBYSPHERE_BROWSER_TESTS === '1';
 const ANSWER = 'Here is my answer, from a fake runtime on this machine.';
 const EACH = { timeout: 90000 }; // each flow; every wait inside it gives up sooner
-const { browser, reason } = await loadChromium();
+const VERSION_TEST = 'CI and CONTRIBUTING.md install the Playwright version these tests name';
+const { chromium, reason } = await loadChromium();
 
-test('CI and CONTRIBUTING.md install the Playwright version these tests name', () => {
+test(VERSION_TEST, () => {
   const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   assert.equal(/PLAYWRIGHT_VERSION: '([^']+)'/.exec(read('.github/workflows/ci.yml'))?.[1], PLAYWRIGHT_VERSION);
   assert.deepEqual([...read('CONTRIBUTING.md').matchAll(/playwright@(\S+)/g)].map((m) => m[1]), [PLAYWRIGHT_VERSION]);
 });
 
-if (!browser) {
+if (!chromium) {
   if (REQUIRED) test('the browser tests can run (OBYSPHERE_BROWSER_TESTS=1)', () => assert.fail(reason));
   else test('the console in a real browser', { skip: reason }, () => {});
 } else {
+  // A filter that leaves the browser tests out skips their before() and after(); the file must
+  // still end on its own, with no Chromium or temp folder left behind.
+  test('a run that filters out the browser tests ends on its own', { timeout: 60000 }, async () => {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT; // a run of its own, not a child of this one
+    // the file itself, not under `node --test`, so the kill below reaches it (and its Chromium)
+    const child = spawn(process.execPath, ['--test-name-pattern', `^${VERSION_TEST}$`, fileURLToPath(import.meta.url)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (out += d));
+    const timer = setTimeout(() => child.kill('SIGKILL'), 30000);
+    const [code, signal] = await new Promise((resolve) => child.on('close', (c, s) => resolve([c, s])));
+    clearTimeout(timer);
+    assert.equal(signal, null, `the filtered run was still going after 30 s:\n${out.slice(-2000)}`);
+    assert.equal(code, 0, out.slice(-2000));
+    assert.match(out, /# pass 1\b/, out.slice(-2000));
+  });
+
   describe('the console in a real browser', () => {
-    const world = new World();
-    let sphere, alice;
+    let browser, world, sphere, alice;
     const run = (t, url, vp, fn) => withPage(browser, t, url, vp, fn).catch((e) => {
       e.message += `\n${world.logs()}`;
       throw e;
     });
 
     before(async () => {
+      browser = await chromium.launch();
+      world = new World();
       world.fake.control({ text: ANSWER });
       sphere = await world.startSphere();
       await world.join('alice', 'Alice Test', 'Knows the release notes');
@@ -56,8 +78,11 @@ if (!browser) {
       alice = await world.console('alice', { serve: true });
     });
     after(async () => {
-      await browser.close();
-      await world.stop();
+      try {
+        await browser?.close();
+      } finally {
+        await world?.stop();
+      }
     });
 
     for (const vp of VIEWPORTS) {

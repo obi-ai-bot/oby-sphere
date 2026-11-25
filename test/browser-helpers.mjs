@@ -27,6 +27,9 @@ const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ---- Playwright and Chromium: a reason instead of an error when either is missing
 
+// Chromium is started once here, to know it can, and closed again: the tests start their own
+// in before(), so nothing is left running (and the run doesn't hang) when a filter such as
+// --test-name-pattern leaves them out and node:test skips their hooks.
 export async function loadChromium() {
   let pw;
   try {
@@ -36,7 +39,8 @@ export async function loadChromium() {
   }
   const chromium = pw.chromium || pw.default?.chromium;
   try {
-    return { browser: await chromium.launch() };
+    await (await chromium.launch()).close();
+    return { chromium };
   } catch (e) {
     return { reason: `Chromium didn't start (${firstLine(e.message)}). Install it with: npx playwright install chromium` };
   }
