@@ -80,6 +80,8 @@ for (const kind of ['fs', 'redis']) {
     });
     after(async () => {
       for (const p of procs) p.kill();
+      // a relay saves its snapshot as it stops: let it finish before its folder goes
+      await Promise.all(procs.map((p) => (p.exitCode !== null || p.signalCode !== null ? null : new Promise((r) => p.once('exit', r)))));
       await fake?.close();
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(home, { recursive: true, force: true });

@@ -138,8 +138,13 @@ function help() {
                     [--allow Read,Glob,Grep] [--profile <name>] [--insecure]
   node rep.mjs serve   [--profile <name>] [--approve] [--notify]   answer asks on this machine
   node rep.mjs mcp     [--profile <name>] [--serve]                MCP server for Claude Code / Cursor
-  node rep.mjs ui      [--profile <name>] [--port 4849] [--serve] [--open] [--admin-key <key>]
+  node rep.mjs ui      [--profile <name>] [--port 4849] [--serve] [--open]
                                          your console: the Sphere in a browser, signed in as you
+  node rep.mjs admin   claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
+  node rep.mjs admin   policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]
+                                         this Sphere's admins and policy. claim makes your Oby an admin:
+                                         it reads the admin key from OBYSPHERE_ADMIN_KEY or asks for it,
+                                         never from the command line, and doesn't store it
   node rep.mjs mcp-config [--profile <name>]                       how to add it to Claude Code / Cursor
   node rep.mjs settings [--profile <name>] [--json]                where your Oby's settings are, and what they say
   node rep.mjs agents | whoami | inbox | read [channel]
@@ -268,7 +273,7 @@ async function whoami() {
     settings = `  ${red('settings need fixing:')} ${printable(e.message)}`;
   }
   out(`${p.agent.name} — representative of ${p.agent.owner} in ${cleanLine(sphere?.name, 80)} (${p.sphere})
-  online: ${me?.online ? 'yes' : 'no, run `serve`'} · runtime: ${cleanLine(me?.runtime, 40)}${me?.suspended ? ' · SUSPENDED by the operator' : ''}
+  online: ${me?.online ? 'yes' : 'no, run `serve`'} · runtime: ${cleanLine(me?.runtime, 40)}${me?.suspended ? ' · SUSPENDED by the operator' : ''}${me?.admin === true ? ' · an admin of this Sphere' : ''}
   sealing: ${sphere?.policy?.sealed ? 'on' : 'off'} on this Sphere · your keys ${published ? 'published' : 'not published yet (run serve, mcp or ui once)'}
   settings: ${settingsFile(p)}
 ${settings}`);
@@ -315,10 +320,15 @@ async function ui() {
   const host = `${slug(p.profile) || 'me'}.localhost`;
   const hosts = new Set([`${host}:${port}`, `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
   const origins = new Set([...hosts].map((h) => `http://${h}`));
-  const adminKey = (typeof opt['admin-key'] === 'string' && opt['admin-key']) || process.env.OBYSPHERE_ADMIN_KEY || null;
   const api = client(p);
   const sec = getSec(p);
   await ensurePublished(api, p).catch((e) => log(yellow('  could not publish your keys: ') + e.message));
+  // ===== admin roles: --admin-key (or OBYSPHERE_ADMIN_KEY), the old way, makes this profile's Oby
+  // an admin once, at start, and is then forgotten: the page and the proxy never use it
+  let adminKey = (typeof opt['admin-key'] === 'string' && opt['admin-key']) || process.env.OBYSPHERE_ADMIN_KEY || null;
+  const claimed = adminKey ? await claimAdmin(p, adminKey).then(() => true, (e) => (log(yellow('  could not make your Oby an admin: ') + printable(e.message)), false)) : false;
+  adminKey = null;
+  if (opt['admin-key'] !== undefined) log(dim(`  --admin-key shows in your shell history and the process list: next time run node ${rel(SELF)} admin claim once instead.`));
   const fileKeys = new Map(); // file id -> its key, iv, tag, name and mime, from a message you opened
   const pending = new Map(); // file id -> encrypted by this console, waiting for its message
   let agentsAt = 0;
@@ -381,7 +391,7 @@ async function ui() {
           if (!r.ok || !/^text\/html\b/i.test(r.headers.get('content-type') || '')) return sendJson(res, 502, { error: "The Sphere's page isn't HTML.", code: 'proxy' });
           page = await r.text();
         }
-        const me = { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName, admin: !!adminKey };
+        const me = { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName };
         const html = page.replace('<head>', `<head><script>window.OBYSPHERE_CONSOLE=${JSON.stringify(me).replace(/</g, '\\u003c')}</script>`);
         const pairs = readJsonFile(pairsFile, {});
         const fresh = !pairs[pairKey];
@@ -474,8 +484,8 @@ async function ui() {
       if (body) headers['content-type'] = safeMime(req.headers['content-type'] || 'application/json');
       if (req.headers['x-file-name']) headers['x-file-name'] = String(req.headers['x-file-name']).slice(0, 400);
       if (req.headers.accept) headers.accept = String(req.headers.accept).slice(0, 200);
-      if (adminKey && (url.pathname === '/api/info' || url.pathname.startsWith('/api/admin/'))) headers['x-admin-key'] = adminKey;
-      else if (req.headers['x-admin-key']) headers['x-admin-key'] = String(req.headers['x-admin-key']).slice(0, 200);
+      // admin calls go with your token alone; the admin key passes through once, for Admin access… (a claim)
+      if (req.method === 'POST' && url.pathname === '/api/admin/claim' && req.headers['x-admin-key']) headers['x-admin-key'] = String(req.headers['x-admin-key']).slice(0, 200);
       const ac = new AbortController();
       res.on('close', () => ac.abort());
       const r = await fetch(p.sphere + url.pathname + url.search, { method: req.method, headers, body, signal: ac.signal, redirect: 'error' });
@@ -553,7 +563,7 @@ async function ui() {
   server.listen(port, '127.0.0.1', () => {
     const link = `http://${host}:${port}/`;
     log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(link)}`);
-    log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${adminKey ? ', with the admin key' : ''}; only this machine can open it (also at http://localhost:${port}/)`));
+    log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it (also at http://localhost:${port}/)`));
     if (opt.open && process.platform === 'darwin') spawn('open', [link], { stdio: 'ignore' }).on('error', () => {});
   });
   if (opt.serve) serveWhenReachable(p);
@@ -675,6 +685,218 @@ ${JSON.stringify({ mcpServers: { obysphere: { command: node, args: [SELF, 'mcp',
 
 --serve makes your representative answer for you while that session is open.
 Leave it out if you run \`node rep.mjs serve\` in a terminal instead (both at once is fine too).`);
+}
+
+// ================================================================ admin: this Sphere's admins and policy
+//
+// Admins are members. `admin claim` trades the Sphere's admin key, once, for an
+// admin role for this profile's Oby; after that its own token is enough for every
+// admin call. The key comes from OBYSPHERE_ADMIN_KEY or a hidden prompt, never from
+// the command line (shell history, the process list), and isn't stored.
+
+const ADMIN_USAGE = `usage: node rep.mjs admin claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
+       node rep.mjs admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]`;
+
+async function adminCmd() {
+  const [sub, ...args] = pos;
+  const subs = {
+    claim: adminClaim,
+    status: adminStatus,
+    grant: (p) => adminRole(p, args[0], true),
+    revoke: (p) => adminRole(p, args[0], false),
+    policy: adminPolicy,
+    'rotate-key': adminRotate,
+  };
+  if (!sub || !Object.hasOwn(subs, sub)) die(ADMIN_USAGE);
+  if (opt['admin-key'] !== undefined)
+    die('The admin key never goes on the command line: your shell history and the process list would show it. Set OBYSPHERE_ADMIN_KEY for one command, or run `admin claim` in a terminal to be asked for it.');
+  await subs[sub](loadProfile());
+}
+
+async function adminClaim(p) {
+  const { sphere, me } = await client(p).get('/api/info'); // the token works (or: join again)
+  const where = printable(cleanLine(sphere?.name, 80) || p.sphereName);
+  // suspended: the relay refuses everything but /api/info, a claim included, and the role does nothing
+  if (me?.suspended === true)
+    die(`${p.agent.name} is suspended in ${where}${me.admin === true ? ': it keeps its admin role, but the role does nothing' : ''} until an admin resumes it. Claiming can't change that.`);
+  if (me?.admin === true) return out(`${p.agent.name} is already an admin of ${where}.`);
+  let key = process.env.OBYSPHERE_ADMIN_KEY || '';
+  if (!key) {
+    if (!process.stdin.isTTY) die('Give the admin key in OBYSPHERE_ADMIN_KEY, or run this in a terminal to be asked for it. It never goes on the command line.');
+    key = await readHidden(`${where}'s admin key (not shown, not stored): `);
+  }
+  await claimAdmin(p, key);
+  console.log(`${green('✓')} ${bold(p.agent.name)} is an admin of ${bold(where)} now (the audit log says so).
+  The key wasn't stored: your Oby's token is enough from here on.
+  See the admins with: node ${rel(SELF)} admin status
+  Change this Sphere's policy with: node ${rel(SELF)} admin policy, or in your console's Policy.`);
+}
+
+// the claim itself (also `ui --admin-key`, the old way): the key in one header, once
+async function claimAdmin(p, key) {
+  key = String(key || '').trim();
+  if (!key) throw new Error('No admin key given.');
+  if (key.length > 200 || /[^\x21-\x7e]/.test(key)) throw new Error("That doesn't look like an admin key.");
+  return adminFetch(p, 'POST', '/api/admin/claim', {}, { 'x-admin-key': key });
+}
+
+async function adminStatus(p) {
+  const api = client(p);
+  const [{ sphere, me, admin }, { agents }] = await Promise.all([api.get('/api/info'), api.get('/api/agents')]);
+  const admins = (agents || []).filter((a) => validAgent(a) && !a.removed && a.admin === true);
+  if (opt.json) {
+    const pol = sphere?.policy || {};
+    return console.log(
+      JSON.stringify(
+        {
+          sphere: cleanLine(sphere?.name, 80),
+          you: { handle: p.agent.name, admin: admin === true, role: me?.admin === true },
+          admins: admins.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60), suspended: !!a.suspended })),
+          policy: { sealed: !!pol.sealed, paused: !!sphere?.paused, maxDepth: Number(pol.maxDepth) || 0, maxFileBytes: Number(pol.maxFileBytes) || 0 },
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  const you = admin === true ? 'an admin' : me?.admin === true ? 'an admin, but suspended: the role works again once an admin resumes you' : 'not an admin';
+  const list = admins.map((a) => `@${slug(a.name)} (${cleanLine(a.owner, 60)})${a.suspended ? ', suspended' : ''}`).join(', ');
+  out(`${p.agent.name} in ${cleanLine(sphere?.name, 80)} (${p.sphere})
+  you:    ${you}
+  admins: ${list || 'none yet: whoever holds the admin key can run admin claim'}
+  policy: ${policyLine(sphere)}`);
+  if (admin !== true) log(dim(`  To become one: node ${rel(SELF)} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`));
+}
+
+async function adminRole(p, handle, on) {
+  if (!handle) die(`usage: node rep.mjs admin ${on ? 'grant' : 'revoke'} <handle>`);
+  const { agents } = await client(p).get('/api/agents');
+  const n = slug(handle);
+  const here = (agents || []).filter((a) => validAgent(a) && !a.removed);
+  const a = here.find((x) => slug(x.name) === n);
+  if (!a) die(`There's no member @${n || '?'} here. Members: ${here.map((x) => '@' + slug(x.name)).join(', ') || 'none'}.`);
+  const r = await adminFetch(p, 'POST', `/api/admin/agents/${a.id}/role`, { admin: on }).catch((e) => {
+    // the relay says "or use the admin key", which this command never sends: say what works here
+    if (e.code === 'last_admin') die(`${p.agent.name} is this Sphere's only admin who isn't suspended, so it can't step down: make another member an admin first (node ${rel(SELF)} admin grant <handle>), then revoke.`);
+    throw e;
+  });
+  const now = r.agent?.admin === true;
+  out(`${green('✓')} @${slug(a.name)} (${cleanLine(a.owner, 60)}) ${now ? 'is an admin' : 'is not an admin'} of this Sphere${now === on ? ' now' : ''}.`);
+}
+
+async function adminPolicy(p) {
+  const set = {};
+  if (opt.sealed !== undefined) {
+    if (opt.sealed !== 'on' && opt.sealed !== 'off') die('--sealed on, or --sealed off');
+    set.sealed = opt.sealed === 'on';
+  }
+  if (opt['max-depth'] !== undefined) {
+    const v = Number(opt['max-depth']);
+    if (!Number.isInteger(v) || v < 0 || v > 10) die('--max-depth is a whole number from 0 to 10: how many hops one question may cause');
+    set.maxDepth = v;
+  }
+  if (opt['max-file-bytes'] !== undefined) {
+    const v = parseSize(opt['max-file-bytes']);
+    if (!v) die('--max-file-bytes is a size: 5242880, 512KB or 5MB');
+    set.maxFileBytes = v;
+  }
+  const pause = opt.pause !== undefined;
+  const resume = opt.resume !== undefined;
+  if (pause && resume) die('--pause or --resume, not both');
+  if ((pause && opt.pause !== true) || (resume && opt.resume !== true)) die('--pause and --resume take no value');
+  if (pause || resume) set.paused = pause;
+  if (!Object.keys(set).length) {
+    const { sphere, admin } = await client(p).get('/api/info');
+    out(`${cleanLine(sphere?.name, 80)}: this Sphere, for everyone in it
+  ${policyLine(sphere)}`);
+    if (admin !== true) log(dim(`  Only admins change it (node ${rel(SELF)} admin status).`));
+    return;
+  }
+  const r = await adminFetch(p, 'POST', '/api/admin/policy', set);
+  out(`${green('✓')} Saved, and in the audit log. This Sphere, for everyone in it:
+  ${policyLine({ policy: r.policy, paused: r.policy?.paused })}`);
+}
+
+async function adminRotate(p) {
+  if (!opt.yes) {
+    if (!process.stdin.isTTY) die('Rotating the join key stops every invite link you sent (members keep their tokens). Add --yes to do it.');
+    const a = await askOwner('Rotate the join key? Invite links you sent stop working; members keep their tokens. [y/N] ');
+    if (a !== 'y' && a !== 'yes') return log('Not rotated.');
+  }
+  const r = await adminFetch(p, 'POST', '/api/admin/rotate-key', {});
+  if (typeof r.key !== 'string' || !/^[A-Za-z0-9_-]{16,200}$/.test(r.key)) die('The Sphere answered the rotation with something unexpected.');
+  console.log(`${green('✓')} The join key is rotated: old invite links no longer work, and members keep their tokens.
+New invite link (anyone with it can join and watch):
+  ${p.sphere}/#key=${r.key}`);
+}
+
+// an admin call with this Oby's token (and, for a claim only, the admin key)
+async function adminFetch(p, method, url, body, headers = {}) {
+  const r = await fetch(p.sphere + url, {
+    method,
+    headers: { authorization: `Bearer ${p.token}`, ...headers, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    redirect: 'error',
+  });
+  const data = await r.json().catch(() => ({}));
+  if (r.ok) return data && typeof data === 'object' ? data : {};
+  if (r.status === 401 && headers['x-admin-key']) throw new Error("That isn't this Sphere's admin key.");
+  if (r.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
+  if (r.status === 403 && data?.code === 'forbidden' && !headers['x-admin-key'])
+    throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: node ${rel(SELF)} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
+  throw Object.assign(new Error(relayError(data, r.status)), { code: /^[a-z_]{1,32}$/.test(String(data?.code || '')) ? data.code : null });
+}
+
+function policyLine(sphere) {
+  const pol = sphere?.policy || {};
+  const depth = Number(pol.maxDepth);
+  const bytes = Number(pol.maxFileBytes);
+  return [
+    pol.sealed ? 'contents sealed end to end' : 'contents readable by the relay',
+    sphere?.paused ? 'paused: no new messages' : 'accepting messages',
+    Number.isFinite(depth) ? `hop limit ${depth}` : 'hop limit ?',
+    Number.isFinite(bytes) && bytes > 0 ? `largest file ${fmtSize(bytes)}` : 'largest file ?',
+  ].join(' · ');
+}
+
+// 5242880, 512KB, 5MB
+function parseSize(x) {
+  const m = /^(\d+(?:\.\d+)?)\s*(b|k|kb|m|mb)?$/i.exec(String(x).trim());
+  if (!m) return 0;
+  const mult = { b: 1, k: 1024, kb: 1024, m: 1048576, mb: 1048576 }[(m[2] || 'b').toLowerCase()];
+  return Math.floor(Number(m[1]) * mult);
+}
+
+// a line typed in the terminal without echo (a key): null when there's no terminal
+function readHidden(question) {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    if (!stdin.isTTY) return resolve(null);
+    process.stderr.write(question);
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    let s = '';
+    const done = (v) => {
+      stdin.removeListener('data', onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      process.stderr.write('\n');
+      resolve(v);
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n' || ch === '\u0004') return done(s);
+        if (ch === '\u0003') {
+          done(null);
+          process.exit(130);
+        }
+        if (ch === '\u007f' || ch === '\b') s = s.slice(0, -1);
+        else if (ch >= ' ') s += ch;
+      }
+    };
+    stdin.on('data', onData);
+  });
 }
 
 // ================================================================ the representative (answers asks)
@@ -3741,7 +3963,7 @@ async function checkLatestVersion(appHome, file) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, help };
+const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
   commands[cmd]().catch((e) => {

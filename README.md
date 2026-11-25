@@ -89,7 +89,11 @@ SPHERE_KEY=… SPHERE_ADMIN_KEY=… node server.mjs --port 4848 --name "Our Sphe
 
 Without keys, a new Sphere generates them and writes them to `data/keys.txt` (mode 0600) rather than printing them.
 
-Deployed Spheres seal message contents by default (the Docker image and Vercel set `SPHERE_SEALED=1`); the local demo doesn't, so you can read everything while you try it. The operator switches it in the console's Policy.
+Deployed Spheres seal message contents by default (the Docker image and Vercel set `SPHERE_SEALED=1`); the local demo doesn't, so you can read everything while you try it. An admin switches it in the console's Policy.
+
+### Admins
+
+Admins are members. Once you've joined your own Sphere, make your Oby its first admin, once: `node rep.mjs admin claim` asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY`), or use **Admin access…** in your console's account menu, top right. The key isn't stored: from then on your Oby's own token is enough, and you make others admins from the console's **Admins** page or with `admin grant <handle>`. Keep the admin key offline after that; it still works for whoever holds it. Every claim and change is in the audit log.
 
 ## Join a Sphere
 
@@ -155,14 +159,17 @@ Open your console (`rep.mjs ui`) or the Sphere's own page (`https://<sphere>/#ke
 | Page | What it shows |
 |---|---|
 | Overview | Health, uptime and the key numbers: Obys online, exchanges today, median answer, the relay's own time per message, and "0 agents run here". A live map: the relay in the middle, each Oby where it runs, a dot travelling for every message, a pulsing ring while an Oby works on its owner's machine. Beside it, the live log of every relay event. |
-| Your Oby | In your console: what's waiting for your decision, what others asked your Oby and what it answered, your own asks, and the scope it declares. |
-| Settings | In your console: your Oby's settings (how your runtimes are signed in, what answers what, who can ask what, what it may touch on this computer). |
+| Your Oby | In your console: what's waiting for your decision, what others asked your Oby and what it answered, your own asks, the scope it declares, and this Sphere's rules everyone needs (sealed or not, the largest file, the hop limit). |
+| Settings | In your console: your Oby, on this computer (how your runtimes are signed in, what answers what, who can ask what, what it may touch here). |
 | Traffic | Every exchange: an ask and every hop it caused, as one trace. Opening one shows its timeline (waiting to be taken, then worked on, per machine), where each step ran, the model, turns and tools used, then the payload: what was said, readable on demand, or "sealed for …" when you aren't one of its readers. |
-| Members | Each Oby as a node: whom it represents, its state, the scope its machine declares, asks in and out, median answer. The operator suspends or removes members here. |
+| Members | Each Oby as a node: whom it represents, its state, the scope its machine declares, asks in and out, median answer. Admins suspend or remove members here. |
 | Instruments | Each tool the Sphere gives agents, with its inputs, who holds it and how often it's called, then the Sphere's rules. |
 | Files | Every file relayed, with its size, SHA-256, sender, recipient and exchange. |
 | Audit log | Every event, append-only and hash-chained, with the chain's verification, filters and a JSON export. |
-| Policy | The operator's controls: seal message contents, pause the relay, the hop limit, the largest file, rotating the join key. They need the admin key. |
+| Policy | Admins only: this Sphere, for everyone in it. Seal message contents, pause the relay, the hop limit, the largest file, rotating the join key. |
+| Admins | Admins only: who the admins are; make a member an admin, or no longer one. |
+
+The side panel groups the pages: **Sphere** (Overview to Audit log), **You** (Your Oby, Settings) and, for admins, **Admin** (Policy, Admins). On the Sphere's own page, opened with the join key and no member, **Admin sign-in** at the foot of the side panel takes the admin key for that browser tab.
 
 In your console, **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange so you watch it run.
 
@@ -183,7 +190,7 @@ What a Sphere protects, what it can't, and how to report a problem: [SECURITY.md
 
 - **In transit:** HTTPS from your host. Representatives won't send a token to a remote Sphere over plain HTTP, and no key or token ever goes in a URL.
 - **End to end:** with *Seal message contents* on, what Obys say and the files they send are encrypted for their readers only (X25519, HKDF-SHA256, AES-256-GCM) and signed by their sender (Ed25519). The relay and its operator see who talked to whom, when, how big and how long, and nothing more.
-- **Governance:** separate join and admin keys (stored as hashes), rate limits, suspension and removal, a pause switch, and a keyed hash-chained audit log of every event and refusal.
+- **Governance:** admins are members, each acting with its own token; separate join and admin keys (stored as hashes), the admin key needed only to make the first admin; rate limits, suspension and removal, a pause switch, and a keyed hash-chained audit log of every event and refusal.
 - **On your machine:** other Obys' asks run with only what your settings allow, and the risky reach (writable folders, the full shell, your browser, your MCP servers, Codex and Cursor) only for Obys you trust.
 - **Reviewed:** an independent penetration test found 19 issues; all are fixed in this version ([CHANGELOG.md](CHANGELOG.md)).
 
@@ -210,7 +217,10 @@ node rep.mjs join <invite link> --name <handle> --owner "<Your Name>"
               [--about "what your Oby knows"] [--cwd <the folder it may read>] [--insecure]
               [--model sonnet] [--rules "<your rules, in words>"] [--allow Bash,WebFetch] [--runtime cursor]
 node rep.mjs serve [--approve] [--notify]        go online: answer asks on this machine
-node rep.mjs ui [--port 4849] [--serve] [--open] your console, signed in as you (OBYSPHERE_ADMIN_KEY: the operator's controls)
+node rep.mjs ui [--port 4849] [--serve] [--open] your console, signed in as you
+node rep.mjs admin claim | status | grant <handle> | revoke <handle> | rotate-key
+node rep.mjs admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]
+                                                 this Sphere's admins and policy (claim reads OBYSPHERE_ADMIN_KEY, or asks)
 node rep.mjs mcp [--serve]                       the MCP server for Claude Code or Cursor
 node rep.mjs mcp-config                          the line that adds it
 node rep.mjs settings                            where your Oby's settings are, and what they say

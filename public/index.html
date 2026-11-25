@@ -541,6 +541,26 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .gate .modal-primary { width: 100%; }
 .gate .err { color: var(--danger); font-size: var(--text-sm); }
 
+/* ---------- admin: the account menu at the top right, Admin access, the nav's foot */
+.account { position: relative; display: flex; }
+.account-button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; transition: background-color var(--fade); }
+.account-button:hover, .account-button[aria-expanded="true"] { background: var(--hover); }
+.account-menu { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: 260px; max-width: calc(100vw - 32px); padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transform-origin: top right; animation: add-panel-in 220ms var(--warm) both; }
+.account-menu button { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 10px; border-radius: 10px; color: var(--text); font-size: var(--text-base); text-align: left; transition: background-color var(--fade), color var(--fade); }
+.account-menu button:hover, .account-menu button:focus-visible { background: var(--hover); color: var(--ink); outline: 0; }
+.account-menu button > svg { flex: none; color: var(--muted); }
+.account-menu .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-who { padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 2px; }
+.account-who b { color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-who span { color: var(--muted); font-size: var(--text-sm); }
+.nav-foot { margin-top: 12px; }
+.nav-foot .connector-name { color: var(--muted); }
+.adm-row { display: flex; gap: 8px; }
+.adm-row .set-field { flex: 1; min-width: 0; }
+.adm-row .modal-primary { flex: none; }
+.adm-row .modal-primary:disabled { opacity: 0.5; }
+.modal-error { margin-top: 10px; color: var(--danger); font-size: var(--text-sm); line-height: 17px; }
+
 /* ---------- a narrow window */
 @media (max-width: 980px) {
   .split { grid-template-columns: 1fr; }
@@ -611,6 +631,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
             <button role="tab" data-mode="console"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg><span class="lbl">Console</span></button>
             <button role="tab" data-mode="conversation"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg><span class="lbl">Conversation</span></button>
           </div>
+          <span id="bar-account"></span>
         </div>
       </header>
       <p class="update-line" id="update-line" hidden></p>
@@ -679,6 +700,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <div id="new-slot"></div>
     </div>
   </div>
+
+  <div class="modal-backdrop" id="admin-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title" style="width:min(460px,100%)">
+      <header class="modal-head">
+        <h2 id="adm-title">Admin access</h2>
+        <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
+      </header>
+      <p class="modal-line" id="adm-line"></p>
+      <div class="adm-row">
+        <input class="set-field" id="adm-key" type="password" autocomplete="off" spellcheck="false" aria-label="Admin key" placeholder="Admin key">
+        <button class="modal-primary" id="adm-go"></button>
+      </div>
+      <p class="modal-error" id="adm-error" role="alert" hidden></p>
+      <p class="modal-note" id="adm-note"></p>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -734,8 +771,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
   };
   try { localStorage.removeItem('obysphere.admin'); } catch {}
-  if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
-  S.adminKey = session.get('obysphere.admin');
+  // in your console, admins are members: no admin key is ever kept in the page (Admin access… claims once)
+  if (CONSOLE) session.set('obysphere.admin', null);
+  else if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
+  S.adminKey = CONSOLE ? null : session.get('obysphere.admin');
   S.mode = hp.get('mode') || store.get('obysphere.mode') || 'console';
   S.page = hp.get('page') || 'overview';
   if (!S.key) return gate();
@@ -800,6 +839,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       setupComposer();
     } else $('#watch-foot').hidden = false;
     wire();
+    renderAccount();
     renderAll();
     connect();
     loadConsoleData();
@@ -824,15 +864,18 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop').forEach((m) => !m.hidden && closeModal(m));
         closeAdd();
+        toggleAccount(false);
         $('#side').classList.remove('is-open');
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && S.me) { e.preventDefault(); openNew(); }
     });
+    wireAdmin();
   }
 
   function closeModal(m) {
     m.hidden = true;
     if (m.id === 'new-modal') { $('#composer-home').append($('#composer')); closeAdd(); }
+    if (m.id === 'admin-modal') { $('#adm-key').value = ''; $('#adm-error').hidden = true; }
   }
 
   function setMode(mode) {
@@ -946,6 +989,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function upsertAgent(a) {
     S.agents.set(a.id, { ...(S.agents.get(a.id) || {}), ...a });
     if (S.me && a.id === S.me.id && !a.removed) S.me = S.agents.get(a.id);
+    if (S.me && a.id === S.me.id) adminFromMe();
     renderBar();
     if (S.mode === 'conversation') { renderMembers(); renderLive(); renderTo(); }
     else { updateTopo(); dirty(); }
@@ -1082,17 +1126,25 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   // ---------------------------------------------------------------- console: side panel
+  const ICON_GEAR = '<circle cx="9" cy="9" r="2.5"/><path d="M9 2.5v2M9 13.5v2M2.5 9h2M13.5 9h2M4.4 4.4l1.4 1.4M12.2 12.2l1.4 1.4M4.4 13.6l1.4-1.4M12.2 5.8l1.4-1.4"/>';
+  const ICON_SHIELD = '<path d="M9 2.5 14.5 4.5v4c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7v-4z"/>';
+  const ICON_ADMINS = '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0"/><path d="M13.5 8.5l2 .8v1.6c0 1.3-.8 2.4-2 2.9-1.2-.5-2-1.6-2-2.9V9.3z"/>';
+  const ICON_KEY = '<circle cx="6" cy="9" r="3"/><path d="M9 9h6.5M13 9v2.5M15.5 9v2"/>';
+  const navIcon = (icon, px = 18) => `<svg width="${px}" height="${px}" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`;
+  // [page, label, icon, group]: the nav in three groups; Admin shows only for admins
   const NAV = [
-    ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>'],
-    ['you', 'Your Oby', null],
-    ['settings', 'Settings', '<circle cx="9" cy="9" r="2.5"/><path d="M9 2.5v2M9 13.5v2M2.5 9h2M13.5 9h2M4.4 4.4l1.4 1.4M12.2 12.2l1.4 1.4M4.4 13.6l1.4-1.4M12.2 5.8l1.4-1.4"/>'],
-    ['traffic', 'Traffic', '<path d="M3 6.5h11l-3-3M15 11.5H4l3 3"/>'],
-    ['members', 'Members', '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0M12 4.2a2.5 2.5 0 0 1 0 4.6M13.5 11.2A4.5 4.5 0 0 1 15.5 15"/>'],
-    ['instruments', 'Instruments', '<path d="M3 5h7M13 5h2M3 13h2M8 13h7"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="6.5" cy="13" r="1.5"/><path d="M3 9h3M9 9h6"/><circle cx="7.5" cy="9" r="1.5"/>'],
-    ['files', 'Files', '<path d="M4.5 2.5h6l3 3v10h-9z"/><path d="M10.5 2.5v3h3"/>'],
-    ['audit', 'Audit log', '<path d="M5 4.5h9M5 9h9M5 13.5h6"/><path d="M2.5 4.5h.01M2.5 9h.01M2.5 13.5h.01"/>'],
-    ['policy', 'Policy', '<path d="M9 2.5 14.5 4.5v4c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7v-4z"/>'],
+    ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>', 'sphere'],
+    ['traffic', 'Traffic', '<path d="M3 6.5h11l-3-3M15 11.5H4l3 3"/>', 'sphere'],
+    ['members', 'Members', '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0M12 4.2a2.5 2.5 0 0 1 0 4.6M13.5 11.2A4.5 4.5 0 0 1 15.5 15"/>', 'sphere'],
+    ['instruments', 'Instruments', '<path d="M3 5h7M13 5h2M3 13h2M8 13h7"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="6.5" cy="13" r="1.5"/><path d="M3 9h3M9 9h6"/><circle cx="7.5" cy="9" r="1.5"/>', 'sphere'],
+    ['files', 'Files', '<path d="M4.5 2.5h6l3 3v10h-9z"/><path d="M10.5 2.5v3h3"/>', 'sphere'],
+    ['audit', 'Audit log', '<path d="M5 4.5h9M5 9h9M5 13.5h6"/><path d="M2.5 4.5h.01M2.5 9h.01M2.5 13.5h.01"/>', 'sphere'],
+    ['you', 'Your Oby', null, 'you'],
+    ['settings', 'Settings', ICON_GEAR, 'you'],
+    ['policy', 'Policy', ICON_SHIELD, 'admin'],
+    ['admins', 'Admins', ICON_ADMINS, 'admin'],
   ];
+  const NAV_GROUPS = [['sphere', 'Sphere'], ['you', 'You'], ['admin', 'Admin']];
   function renderNav() {
     const ex = exchanges();
     const counts = {
@@ -1101,13 +1153,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       instruments: S.instruments?.instruments?.length || '',
       files: S.messages.reduce((n, m) => n + (m.files?.length || 0), 0) || '',
       audit: S.auditHead?.seq || '',
+      admins: members().filter((a) => a.admin).length || '',
     };
     const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
-    $('#nav').innerHTML = NAV.filter(([k]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)))
-      .map(([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`)
-      .join('');
+    const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
+    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
+    $('#nav').innerHTML = NAV_GROUPS.map(([g, label]) => {
+      const items = shown.filter((x) => x[3] === g);
+      return items.length ? `<div class="sidebar-group-head">${label}</div>${items.map(item).join('')}` : '';
+    }).join('') + navFoot();
     $('#nav').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+    $('#nav').querySelector('[data-admin-signin]')?.addEventListener('click', () => openAdmin('signin'));
+    $('#nav').querySelector('[data-admin-signout]')?.addEventListener('click', adminSignOut);
     renderHealth();
   }
   function renderHealth() {
@@ -1150,7 +1208,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (p === 'instruments') el.innerHTML = pageInstruments();
     else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
     else if (p === 'audit') el.innerHTML = pageAudit();
-    else if (p === 'policy') el.innerHTML = pagePolicy();
+    else if (p === 'policy' && S.admin) el.innerHTML = pagePolicy();
+    else if (p === 'admins' && S.admin) el.innerHTML = pageAdmins();
     else if (p === 'you' && S.me) {
       if (!fresh && document.getElementById('you-rest')) { $('#you-rest').innerHTML = youRest(); wirePage(); return; }
       el.innerHTML = pageYou();
@@ -1278,7 +1337,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -1375,11 +1434,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const scope = d ? `reads ${esc(d.folder || '?')}${d.tools?.length ? ` · ${esc(d.tools.join(', '))}` : ''}${d.approve ? ' · owner approves each ask' : ' · answers by itself'}` : '<span class="muted">not declared</span>';
         const s = a.stats || {};
         const conns = a.connections ? [a.connections.rep ? 'representative' : '', a.connections.session ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected' : [a.online ? 'representative' : '', a.inSession ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected';
-        const actions = S.admin && !isMe(a)
+        const actions = S.admin && !isMe(a) && agentIdOk(a.id)
           ? `<button class="set-button sm" data-suspend="${a.id}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${a.id}">Remove</button>`
           : '';
         return `<tr>
-          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
+          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.admin ? ' · admin' : ''}</div></div></div></td>
           <td>${a.suspended ? `<span class="state"><span class="status"><span class="status-dot is-suspended"></span></span>Suspended</span>` : st === 'working' ? `<span class="state"><span class="status"><span class="status-dot is-working"></span></span>Working</span>` : stateHtml(st === 'online' ? 'answered' : 'offline').replace('Answered', 'Online').replace('Waiting, offline', 'Offline')}<div class="muted" style="font-size:12px">${esc(conns)}${a.lastSeen && !a.online ? ` · seen ${esc(ago(a.lastSeen))}` : ''}</div></td>
           <td class="hide-narrow"><div class="clip" style="max-width:220px">${scope}</div><div class="muted" style="font-size:12px">${esc(a.runtime || '')}</div>${nokeys}</td>
           <td class="num hide-narrow">${s.asksIn ?? '—'} <span class="muted">in</span> · ${s.asksOut ?? '—'} <span class="muted">out</span></td>
@@ -1391,7 +1450,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     return (
       head('Members', `${list.length} Obys · ${online} online · what each one's machine says it may do`, `<button class="set-button" data-invite>Invite member</button>`) +
       `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>State</th><th class="hide-narrow">Scope, as declared</th><th class="hide-narrow">Asks</th><th class="r">Median answer</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-       <p class="note">Scope is what each member's own machine declares; the Sphere can't see inside it. ${S.admin ? 'Suspending stops a member’s messages both ways; removing ends its token.' : 'Suspending and removing need the admin key (Policy).'}</p>
+       <p class="note">Scope is what each member's own machine declares; the Sphere can't see inside it. ${S.admin ? 'Suspending stops a member’s messages both ways; removing ends its token.' : 'Admins suspend and remove members.'}</p>
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
   }
@@ -1423,7 +1482,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       ['Writes per agent', r.rate?.writesPerMin ? `${r.rate.writesPerMin} a minute` : '—'],
       ['Joins per address', r.rate?.joinsPerMinPerIp ? `${r.rate.joinsPerMinPerIp} a minute` : '—'],
       ['Relay time per message', st?.relay ? `p50 ${st.relay.p50Ms.toFixed(2)} ms · p95 ${st.relay.p95Ms.toFixed(2)} ms` : '—'],
-      ['Message contents', S.sphere.policy?.sealed ? 'sealed end to end; the relay sees who, when and sizes' : 'readable by the relay (seal them in Policy)'],
+      ['Message contents', S.sphere.policy?.sealed ? 'sealed end to end; the relay sees who, when and sizes' : 'readable by the relay (admins can seal them in Policy)'],
       ['Text', 'control and direction-override characters removed'],
       ['Audit', 'every event hash-chained'],
       ['Where agents run', 'on their owners’ machines, never here'],
@@ -1460,7 +1519,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       (list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Size</th><th class="hide-narrow">SHA-256</th><th>From → to</th><th class="hide-narrow">Exchange</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
   }
 
-  const AUDIT_FILTERS = { all: null, traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'remove'], governance: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove'], denials: ['deny'] };
+  const AUDIT_FILTERS = { all: null, traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'remove'], governance: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], denials: ['deny'] };
   function pageAudit() {
     const f = AUDIT_FILTERS[S.auditFilter];
     const list = S.audit.filter((e) => !f || f.includes(e.type)).slice().reverse();
@@ -1482,16 +1541,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <p class="note">Append-only. Each event's hash covers the one before it, so changing or removing any event breaks every hash after it.</p>`;
   }
 
+  // Policy: this Sphere's, for everyone in it. Only admins reach this page (renderPage).
   function pagePolicy() {
     const p = S.sphere.policy || S.instruments?.rules || {};
     const dis = S.admin ? '' : 'disabled';
     const opt = (vals, cur, fmt) => vals.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${fmt(v)}</option>`).join('');
-    const adminRow = S.admin
-      ? `<div class="set-row"><div class="set-row-text"><div class="set-row-title">Admin</div><div class="set-row-sub">${CONSOLE?.admin ? 'This console holds the Sphere’s admin key.' : 'You entered the admin key on this browser.'}</div></div>${CONSOLE?.admin ? '' : '<button class="set-button" data-forget-admin>Forget it</button>'}</div>`
-      : `<div class="set-row"><div class="set-row-text"><div class="set-row-title">Admin key</div><div class="set-row-sub">Changing the Sphere's policy needs its admin key, printed when the Sphere starts.</div></div><form data-admin-form style="display:flex;gap:8px"><input class="set-field" name="k" placeholder="Admin key" autocomplete="off" style="width:200px"><button class="set-button">Unlock</button></form></div>`;
-    return head('Policy', 'How this Sphere governs its agents. Changes take effect at once and go in the audit log.') +
-      `<div class="set-group">${adminRow}</div>
-       <div class="section-head"><h3>Relay</h3></div>
+    const via = S.adminKey ? 'You signed in with the admin key in this browser tab.' : 'You’re here as an admin of this Sphere.';
+    return head('Policy', 'This Sphere, for everyone in it. Only admins see and change it; changes take effect at once and go in the audit log.') +
+      `<div class="section-head"><h3>Relay</h3></div>
        <div class="set-group">
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Accept new messages</div><div class="set-row-sub">Off pauses the relay: Obys can still read and watch, but nothing new is carried.</div></div><button class="switch${S.sphere.paused ? '' : ' is-on'}" data-pause ${dis} aria-label="Accept new messages"></button></div>
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Seal message contents</div><div class="set-row-sub">On: what Obys say and send is encrypted end to end. The relay, and you as its operator, see only who talked to whom, when, how big and how long; each owner reads their own Oby's messages in their console.</div></div><button class="switch${p.sealed ? ' is-on' : ''}" data-seal ${dis} aria-label="Seal message contents"></button></div>
@@ -1502,8 +1559,37 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <div class="set-group">
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Join key</div><div class="set-row-sub">Anyone with the invite link can join and watch. Rotating it stops old links; members keep their tokens.</div></div><button class="set-button" data-rotate ${dis}>Rotate join key</button></div>
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Members</div><div class="set-row-sub">Suspend or remove a member from Members.</div></div><button class="set-button" data-page="members">Open Members</button></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Admins</div><div class="set-row-sub">Who else may change this policy, and govern members.</div></div><button class="set-button" data-page="admins">Open Admins</button></div>
        </div>
+       <p class="note">${via}${S.me && CONSOLE ? ' Your own Oby’s settings are in Settings: those are yours, on this computer.' : ''}</p>
        <p class="note" id="policy-note"></p>`;
+  }
+
+  // Admins: members who govern this Sphere. Each acts with its own token; the admin key still works.
+  function pageAdmins() {
+    const list = members().sort((a, b) => (b.admin - a.admin) || (isMe(b) - isMe(a)) || ownerName(a).localeCompare(ownerName(b)));
+    const admins = list.filter((a) => a.admin);
+    // without the key, your Oby can't step down while it's the only working admin (the relay says so too)
+    const lastOne = !S.adminKey && admins.filter((a) => !a.suspended).length <= 1;
+    const rows = list
+      .map((a) => {
+        const me = isMe(a);
+        let action;
+        if (!agentIdOk(a.id)) action = ''; // an id the relay shouldn't have sent: no button, nothing put in a path
+        else if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${a.id}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
+        else if (a.suspended) action = '<span class="muted" style="font-size:12px">suspended</span>';
+        else action = `<button class="set-button sm" data-role="${a.id}" data-to="1">Make admin</button>`;
+        return `<tr>
+          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
+          <td>${a.admin ? `<span class="chip-tag is-ink">Admin</span>${a.suspended ? '<div class="muted" style="font-size:12px">suspended: the role works again once resumed</div>' : ''}` : '<span class="muted">Member</span>'}</td>
+          <td class="r" style="white-space:nowrap">${action}</td>
+        </tr>`;
+      })
+      .join('');
+    return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members · they change Policy, suspend and remove members, and make other admins`) +
+      `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+       <p class="note">Admins are members: each acts with its own Oby’s sign-in, and the audit log says who did what. The Sphere’s admin key still works for whoever holds it, so keep it somewhere safe; it’s needed only to make the first admin (Admin access… in your console, or <span class="mono">rep.mjs admin claim</span>).</p>
+       <p class="note is-problem" id="admins-problem" hidden></p>`;
   }
 
   function pageYou() {
@@ -1524,8 +1610,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         ${kpi('Median answer', me.stats?.medianAnswerMs ? fmtMs(me.stats.medianAnswerMs) : '—', 'its own, on your machine')}
         ${kpi('Scope', d?.folder ? esc(d.folder) : '—', d ? `${d.approve ? 'you approve each ask' : 'answers by itself'} · ${esc((d.tools || []).join(', ') || 'reads only')}` : 'starts with `rep.mjs serve`')}
       </div>
+      ${thisSphere()}
       <div class="section-head"><h3>Asked of your Oby</h3></div>${exchangeTable(asked.slice(0, 20), true)}
       <div class="section-head"><h3>Your asks</h3></div>${exchangeTable(mine.slice(0, 20), true)}`;
+  }
+
+  // what everyone in the Sphere needs to know of its policy, read-only (admins change it in Policy)
+  function thisSphere() {
+    const pol = S.sphere.policy || {};
+    const depth = Number(pol.maxDepth);
+    const hops = !Number.isFinite(depth) ? '—' : depth === 0 ? 'none: Obys can’t ask Obys' : `up to ${depth} hop${depth === 1 ? '' : 's'}`;
+    return `<div class="section-head"><h3>This Sphere</h3><span class="link">${S.admin ? 'Yours to change in Policy' : 'Set by its admins, for everyone in it'}</span></div>
+      <div class="rules">
+        <div class="rule"><span>Message contents</span><span>${pol.sealed ? 'sealed end to end' : 'readable by the relay'}</span></div>
+        <div class="rule"><span>Largest file</span><span>${pol.maxFileBytes ? esc(size(pol.maxFileBytes)) : '—'}</span></div>
+        <div class="rule"><span>Agents asking agents</span><span>${esc(hops)}</span></div>
+      </div>`;
   }
 
   // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
@@ -2285,7 +2385,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     clearTimeout(SET.undo?.timer);
     SET.undo = null; SET.tryKey = null;
     $('#page').innerHTML = `<div id="settings-root" class="set-root">` +
-      head('Settings', 'Your Oby’s, kept and enforced on this machine by rep.mjs. The Sphere sees only a short summary.', `<span class="saved-note" id="settings-state" role="status" aria-live="polite"></span>`) +
+      head('Settings', 'Your Oby, on this computer: kept and enforced here by rep.mjs. The Sphere sees only a short summary.', `<span class="saved-note" id="settings-state" role="status" aria-live="polite"></span>`) +
       `<p class="set-lead">Answers run on your own sign-ins: your plan’s usage, not per-token billing.</p>
        <div class="set-runtimes" data-part="runtimes" aria-label="Runtimes on this Mac">${runtimesHtml()}</div>
 
@@ -2703,15 +2803,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (!CONSOLE) { store.set('obysphere.key', r.key); S.key = r.key; }
       note('policy-note', `New invite link: ${link}`);
     }, 'policy-note'));
-    el.querySelector('[data-admin-form]')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const k = e.target.k.value.trim();
-      if (!k) return;
-      S.adminKey = k;
-      try { await api('/api/admin/check'); session.set('obysphere.admin', k); S.admin = true; renderPage(false); }
-      catch { S.adminKey = null; note('policy-note', 'That isn’t this Sphere’s admin key.', true); }
-    });
-    el.querySelector('[data-forget-admin]')?.addEventListener('click', () => { session.set('obysphere.admin', null); S.adminKey = null; S.admin = false; renderPage(false); });
+    el.querySelectorAll('[data-role]').forEach((b) => (b.onclick = () => {
+      const a = agent(b.dataset.role);
+      const on = b.dataset.to === '1';
+      if (!on && isMe(a) && !confirm('Step down as an admin? To come back you’d need another admin, or the admin key.')) return;
+      admin(async () => { const r = await apiPost(`/api/admin/agents/${a.id}/role`, { admin: on }); if (r.agent) upsertAgent(r.agent); renderNav(); renderPage(false); }, 'admins-problem');
+    }));
   }
   function applyPolicy(r) {
     if (r?.policy) { S.sphere.policy = r.policy; if ('paused' in r.policy) S.sphere.paused = r.policy.paused; }
@@ -2721,6 +2818,129 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   async function admin(fn, noteId) {
     try { await fn(); } catch (e) { note(noteId, e.message, true); }
+  }
+
+  // ===== admin roles: who you are (top right), Admin access…, Admin sign-in (a browser with no member)
+  const ADMIN_PAGES = ['policy', 'admins'];
+  // an agent id as the relay makes them: admin buttons put it in markup and in a request path,
+  // so an id that isn't one (a relay that sends `"` or `/../`) gets no button at all
+  function agentIdOk(id) {
+    return typeof id === 'string' && /^a_[A-Za-z0-9_-]{1,32}$/.test(id);
+  }
+  // in your console, you're an admin while your Oby holds the role (and isn't suspended);
+  // in a browser with the admin key, the key decides
+  function adminFromMe() {
+    if (S.adminKey || !S.me) return;
+    const me = S.agents.get(S.me.id);
+    const now = !!(me && me.admin && !me.suspended && !me.removed);
+    if (now === S.admin) return;
+    S.admin = now;
+    renderAccount();
+    if (!now && ADMIN_PAGES.includes(S.page) && S.mode === 'console') setPage('overview');
+  }
+  function renderAccount() {
+    const el = document.getElementById('bar-account');
+    if (!el) return;
+    if (!(CONSOLE && S.me)) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="account"><button class="account-button" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-label="You: ${esc(S.me.owner)}" title="You: ${esc(S.me.owner)}">${avatar(S.me, 26, false)}</button></div>`;
+    $('#account-button').onclick = (e) => { e.stopPropagation(); toggleAccount(); };
+  }
+  function toggleAccount(open) {
+    const box = document.querySelector('#bar-account .account');
+    if (!box) return;
+    const menu = box.querySelector('.account-menu');
+    const btn = $('#account-button');
+    if (menu) { if (open !== true) { menu.remove(); btn.setAttribute('aria-expanded', 'false'); } return; }
+    if (open === false) return;
+    const it = (k, icon, label) => `<button role="menuitem" data-acc="${k}">${icon}<span class="t">${label}</span></button>`;
+    box.insertAdjacentHTML('beforeend', `<div class="account-menu" role="menu">
+        <div class="account-who"><b>${esc(S.me.owner)}</b><span>@${esc(S.me.name)} · ${S.admin ? 'an admin of this Sphere' : 'a member of this Sphere'}</span></div>
+        <div class="add-sep"></div>
+        ${it('you', obyFace(16), 'Your Oby')}
+        ${it('settings', navIcon(ICON_GEAR, 16), 'Settings')}
+        <div class="add-sep"></div>
+        ${S.admin ? it('policy', navIcon(ICON_SHIELD, 16), 'Policy') + it('admins', navIcon(ICON_ADMINS, 16), 'Admins') : it('claim', navIcon(ICON_KEY, 16), 'Admin access…')}
+      </div>`);
+    btn.setAttribute('aria-expanded', 'true');
+    box.querySelectorAll('[data-acc]').forEach((b) => (b.onclick = () => {
+      toggleAccount(false);
+      if (b.dataset.acc === 'claim') openAdmin('claim');
+      else setPage(b.dataset.acc);
+    }));
+    box.querySelector('[data-acc]')?.focus();
+  }
+  function navFoot() {
+    if (CONSOLE) return '';
+    return S.adminKey
+      ? `<button class="connector nav-foot" data-admin-signout>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-out</span></button>`
+      : `<button class="connector nav-foot" data-admin-signin>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-in</span></button>`;
+  }
+  // claim: your console, your Oby becomes an admin (the key goes once, isn't stored).
+  // signin: a browser with no member keeps the key in this tab (sessionStorage), as before.
+  function openAdmin(mode) {
+    const m = $('#admin-modal');
+    m.dataset.mode = mode;
+    const claim = mode === 'claim';
+    $('#adm-title').textContent = claim ? 'Admin access' : 'Admin sign-in';
+    $('#adm-line').textContent = claim
+      ? 'Enter this Sphere’s admin key once to make your Oby an admin. The key isn’t stored.'
+      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this tab only, and forgotten when you close it.';
+    $('#adm-go').textContent = claim ? 'Make my Oby an admin' : 'Sign in';
+    $('#adm-note').textContent = claim
+      ? 'It goes to the Sphere once, through your console on this machine, and the audit log records the claim. From then on your Oby’s own sign-in is enough. In a terminal: rep.mjs admin claim.'
+      : 'A member can instead make their own Oby an admin from their console (Admin access…), so the key needn’t be in a browser at all.';
+    $('#adm-error').hidden = true;
+    $('#adm-key').value = '';
+    m.hidden = false;
+    $('#adm-key').focus();
+  }
+  async function submitAdmin() {
+    const mode = $('#admin-modal').dataset.mode;
+    const input = $('#adm-key');
+    const k = input.value.trim();
+    if (!k) return input.focus();
+    const go = $('#adm-go');
+    const bad = (t) => { $('#adm-error').textContent = t; $('#adm-error').hidden = false; };
+    $('#adm-error').hidden = true;
+    go.disabled = true;
+    try {
+      if (mode === 'claim') {
+        const r = await fetch('/api/admin/claim', { method: 'POST', headers: { ...headers({ 'content-type': 'application/json' }), 'x-admin-key': k }, body: '{}' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : j.error || `It didn’t work (HTTP ${r.status}).`);
+        if (j.agent) upsertAgent(j.agent);
+        S.admin = true;
+      } else {
+        // checked on its own first: until it's known to be right, no other call (the stream, the
+        // stats) carries it, so a typo neither counts again nor closes this page's stream
+        const r = await fetch('/api/admin/check', { headers: { ...headers(), 'x-admin-key': k } });
+        if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : r.status === 429 ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
+        S.adminKey = k;
+        session.set('obysphere.admin', k);
+        S.admin = true;
+      }
+      input.value = '';
+      closeModal($('#admin-modal'));
+      renderAccount();
+      setPage('policy');
+    } catch (e) {
+      bad(`Couldn’t reach the Sphere: ${e.message}`);
+    } finally {
+      go.disabled = false;
+    }
+  }
+  function adminSignOut() {
+    session.set('obysphere.admin', null);
+    S.adminKey = null;
+    S.admin = false;
+    if (ADMIN_PAGES.includes(S.page)) S.page = 'overview';
+    renderAll();
+    syncHash();
+  }
+  function wireAdmin() {
+    $('#adm-go').onclick = submitAdmin;
+    $('#adm-key').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submitAdmin(); } };
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('#bar-account')) toggleAccount(false); });
   }
   function note(id, text, bad) {
     const n = document.getElementById(id);
