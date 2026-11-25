@@ -10,16 +10,16 @@ An ask from bob waits for Alice's decision. In 0.3.0 her phone hears about it. B
 
 On main:
 
-- **An ask waits** when your settings say *Ask me first* for that Oby, or with `serve --approve` (`gate()`, then `ownerDecides()` in `startRep()`, in [`rep.mjs`](../../rep.mjs)).
+- **An ask waits** when your settings say *Ask me first* for that Oby, or with `serve --approve` (`gate()`, through `instrumentGate()` in `handle()`'s `check()`, then `ownerDecides()` in `startRep()`, in [`rep.mjs`](../../rep.mjs)).
 - **It waits as a file.** `addPending()` writes `pending/w_<12 hex>.json` (0600), with the ask's words, who asked, the channel and `expiresAt` (`APPROVE_WAIT_MS`, an hour). Any of this profile's processes on this machine can decide: the console's `POST /local/pending/:id` and the terminal both call `decidePending()`, which writes `w_….decision.json` with the `wx` flag, so the first decision wins and a later one gets 409. `waitPending()` reads it, declines at the deadline, and removes both files.
 - **The decisions:** `answer`, `trust` (let it answer with everything you allow), `decline`, and `write` (with your text).
 - **Only this machine can reach them.** `/local/*` answers on 127.0.0.1, from the console's own origin, with its header (`ui()`).
 - **No web push.** The console refuses service workers (`worker-src 'none'` in `PAGE_HEADERS`, and 403 for a `Service-Worker` header), and the browser's [Push API](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) needs one. So a phone hears about asks through a service like ntfy, not through the console.
 
-What 0.3.0 adds that matters (from `plans/wave3.md` and the `wave3/*-r` branches):
+What 0.3.0 (now on main) adds that matters:
 
-- **Phone notifications.** `addPending()` notifies (`notifyOwner()`, type `waiting`), so anything that waits reaches your phone when you've set an ntfy topic: `notifySend()` posts to it with a `Title` and `Priority: high`, and says only who and what kind unless you choose the full text. The topic's address is a secret in `settings.json`, never sent to the Sphere and masked in the console. Slack gets a one-way message through your own incoming webhook.
-- **More things wait for you:** a GitHub action your Oby wants to take as you (approve, request changes, merge), and someone you don't trust using one of your `command` instruments.
+- **Phone notifications.** `addPending()` notifies (`notifyOwner()`, type `waiting`), so anything that waits reaches your phone when you've set an ntfy topic (`notify.phone.url`): `notifySend()` posts to it with a `Title` and `Priority: high`, and says only who and what kind unless you choose the full text. What waits comes through in quiet hours too. The topic's address is a secret in `settings.json`, never sent to the Sphere and masked in the console; `validateNotify()` refuses one with a user name or password in it. Slack gets a one-way message through your own incoming webhook.
+- **More things wait for you:** a GitHub action your Oby wants to take as you (comment, request changes, approve, merge), with its own decisions (`act`, `comment` or `decline`; `kind: "github"` in its pending file), and a use of one of your `command` instruments by an Oby you don't trust, or by anyone when the instrument says `askFirst` (its pending file names the instrument and its kind).
 - **Your Oby keeps running while you're away** (`obysphere start`), which is exactly when you'd decide from your phone.
 
 So in 0.3.0 a decision can approve a pull request as you, or run a program. Deciding from the phone needs care.
@@ -84,19 +84,93 @@ Cost: about 250 lines in rep.mjs (a Socket Mode client, the messages and the mod
 
 **A first, off by default; B next, if people want to write answers from the phone; C only for teams that live in Slack.** A uses what 0.3.0 already sends, needs no relay change and no new host, and covers the common case: yes or no, on the train. Its risk is bounded: whoever can read your topic can press, for one ask, for an hour, and only *answer* or *decline*; the same secret already guards the notification itself. B is the complete answer, writing included, and the only one where a key that only your own devices hold (the passkey) signs each decision; it's also the most work, and it needs a page host.
 
-**The first step: ntfy buttons for *answer* and *decline*.** One PR, on top of 0.3.0's notifications:
+**The first step: ntfy buttons for *answer* and *decline*.** It's step 1 of the plan below.
 
-- rep.mjs, a new `// ===== phone decisions` section, with one-line hooks in `notifyNote()` (keep the pending id on a note for one ask), `notifySend()` (the `Actions` header on such a `waiting` note) and `addPending()` (start listening to the reply topic).
-- Settings: `notify.phone.decide`, `false` by default, checked like the rest. The reply topic and `k` live in the profile, 0600.
-- Docs: SETTINGS.md (notifications), SECURITY.md (who can press), README.
-- Tests, in `test/phone-decisions.test.mjs`, with a fake ntfy server on 127.0.0.1 that records posts and streams a topic, and `test/fake-runtimes.mjs` first on PATH:
-  - a waiting ask's notification carries two `http` actions to the reply topic, and no words of the ask when the content is `summary`;
-  - posting the *answer* code makes the Oby answer; the *decline* code declines;
-  - a code with a wrong `mac`, another ask's id, a changed decision or a past `exp` does nothing;
-  - a second press after a decision does nothing, and the console's later decision is refused (409, or 404 once the ask no longer waits);
-  - two asks that wait within the same few seconds get one notification, with no buttons;
-  - no `trust` or `write` code is ever made, and GitHub actions and command instruments get no buttons;
-  - with `decide` off, there are no buttons and no listening; listening stops when nothing waits.
+## The plan
+
+Steps 1 to 3 are option A. Steps 4 to 7 are option B, which completes the feature (writing an answer from the phone); they wait on questions 4 and 5. Step 8 is option C, for later. Each step is one pull request on main, with its entry in CHANGELOG.md, and leaves main working. Nothing changes for anyone who doesn't turn it on.
+
+1. **ntfy buttons for *answer* and *decline*.** Waits on question 1: if the answer is no, A is skipped, and the plan starts at step 4. Question 2 decides whether a summary gets buttons. Depends on: nothing beyond 0.3.0.
+   - rep.mjs, a new `// ===== phone decisions` section, with one-line hooks in `notifyNote()` (keep the pending id on a note for one ask), `notifySend()` (the buttons on such a `waiting` note) and `addPending()` (start listening to the reply topic).
+   - Which asks get buttons: only an ask, alone in its notification, with `notify.phone.decide` on. Not a GitHub item (`kind: "github"`), and not a use of a `command` instrument.
+   - The buttons: two `http` actions, `POST` to the reply topic, with `clear=true`. With buttons, `notifySend()` publishes in ntfy's JSON form (a `POST` to the server's root, with `{ topic, title, message, priority, actions }`), so each code goes in an action's `body` as it is. Without, it posts as now.
+   - The reply topic and `k` live in `notify/phone.json` (0600), made the first time `decide` is on: a topic of 32 random letters and digits, on the server that `notify.phone.url` names, and 32 random bytes.
+   - The listener: while this process holds an ask with buttons, `GET <server>/<reply topic>/json`, from the time the first one was made, reconnecting with `since=` the last message id it read. It reads lines of at most 1 KB, and at most 60 a minute. For each one it checks the code: the shape, `d` is `answer` or `decline`, `exp` hasn't passed, the `mac` (`timingSafeEqual`), and that the pending file still waits, is an ask, and has that `expiresAt`. Then `decidePending()`, and the log says "decided on your phone". It stops when nothing it holds waits.
+   - Settings: `notify.phone.decide`, `false` by default, checked in `validateNotify()`, and only with a phone address. A page that sends `notify.phone` without it keeps the stored value, as a masked address keeps the stored one. Settings › Notifications: **Decide from your phone** under the phone's address, saying who can press.
+   - Docs: SETTINGS.md (Notifications › The ways: the phone's buttons), SECURITY.md (On members' machines: who can press; What it doesn't protect: the topic is the key), README (Notifications).
+   - Tests, in `test/phone-decisions.test.mjs`, with a fake ntfy server on 127.0.0.1 that records posts and streams a topic, and `test/fake-runtimes.mjs` first on PATH:
+     - a waiting ask's notification carries two `http` actions to the reply topic, and no words of the ask when the content is `summary`;
+     - posting the *answer* code makes the Oby answer; the *decline* code declines;
+     - a code with a wrong `mac`, another ask's id, a changed decision or a past `exp` does nothing;
+     - a second press after a decision does nothing, and the console's later decision is refused (409, or 404 once the ask no longer waits);
+     - two asks that wait within the same few seconds get one notification, with no buttons;
+     - no `trust` or `write` code is ever made, and GitHub actions and command instruments get no buttons;
+     - with `decide` off, there are no buttons and no listening; listening stops when nothing waits;
+     - a line over 1 KB, or one that isn't JSON, is skipped;
+     - a page that sends `notify.phone` without `decide` keeps it on.
+   - If question 2's answer is "only with the full text", `decide` needs `notify.phone.content` to be `full`, and the check says so.
+
+2. **Reset the buttons, and an ntfy access token.** Optional. Depends on: step 1.
+   - rep.mjs: `rep.mjs notify reset-buttons`, and **Reset** beside **Decide from your phone**, make a new reply topic and `k`, so every button already sent does nothing. That's what to do when a phone is lost.
+   - `notify.phone.token`: an access token for an ntfy server with access control, sent as `Authorization: Bearer` on posts and on the reply topic's stream. It's kept and masked as the addresses are, and never logged.
+   - Docs: SETTINGS.md (the phone's settings), SECURITY.md (a lost phone; a self-hosted ntfy server with access control narrows who can press to you).
+   - Tests: after a reset, an old code does nothing and a new one works; the token goes in the header, and the page sees it masked; a stream refused with 401 or 403 stops listening, and `notify test` says why.
+
+3. **A longer wait when your phone can decide.** Optional, and waits on question 7. Depends on: step 1.
+   - rep.mjs: `access.waitForYouMin` (60 by default, from 5 to 1,440) sets how long an ask waits for you, read when it starts waiting. `OBYSPHERE_APPROVE_WAIT_SEC` stays, for tests. A code's `exp` follows the ask's `expiresAt`.
+   - public/index.html: Settings › "Who can ask your Oby, and what" has the field, and Waiting for you says when each ask will be declined.
+   - Docs: SETTINGS.md (access › Waiting for you).
+   - Tests: at 120, the pending file's `expiresAt` and the code's `exp` are two hours out; the ask is declined at its deadline; a value out of range is refused, with its field.
+
+Steps 4 to 7, option B, wait on questions 4 (where the phone page lives) and 5 (passkeys). Each depends on the one before.
+
+4. **The owner mailbox on the relay.**
+   - server.mjs, a new `// ===== owner mailbox` section:
+     - Pairing. `POST /api/owner/pairings { id, exp }` (agent token) opens one for 10 minutes; `id` is the pairing code's SHA-256, never the code. `POST /api/owner/pairings/:id/phone { keys, mac }` (no token) takes the phone's public keys once, answers a new device token (kept as a hash, not yet usable), and sends an `owner` event (`{ kind: "pairing", … }`) to that agent's representative streams only. `POST /api/owner/devices/:id/confirm` (agent token) makes the token usable. `GET /api/owner/devices` lists the phones, and `DELETE /api/owner/devices/:id` unpairs one; removing the agent unpairs them all.
+     - Items. `POST /api/owner/items { sealed, exp }` (agent token), up to 64 KB, kept until `exp` (at most 24 hours), then dropped. `GET /api/owner/items` (device token) lists the live ones. `DELETE /api/owner/items/:id` (agent token) once an item no longer waits.
+     - Decisions. `POST /api/owner/decisions { item, decision }` (device token), kept until the item's `exp`, and sent to the agent's representative streams only, as an `owner` event. `GET /api/owner/decisions?since=` (agent token), for a representative that was offline.
+     - A device token opens these routes and nothing else. CORS on `/api/owner/*` only, for one origin: the phone page's (`SPHERE_PHONE_ORIGIN`, the project's address by default).
+     - Rate limits per device and per agent. Both stores, through `apply()`. Audit: `owner` events for pairing and unpairing, with no keys and no contents.
+   - Docs: API.md (Who can call what: device tokens; Endpoints: the owner mailbox; Live events: `owner`), SECURITY.md (On the relay: what the mailbox holds).
+   - Tests, in `test/owner-mailbox.test.mjs`, with the files store and `test/fake-upstash.mjs`:
+     - a device token opens only its mailbox, and gets 401 everywhere else; another agent's token can't read your items;
+     - a pairing past 10 minutes, or used once, is refused; a token isn't usable before it's confirmed, and stops at once when unpaired;
+     - an item past its `exp` is gone, after a restart too;
+     - the `owner` event reaches only your representative's streams, not consoles or other agents;
+     - CORS headers come only for the configured origin, and only on these routes.
+
+5. **Pairing a phone, and sealing for it, in rep.mjs.** Depends on: step 4.
+   - rep.mjs, a new `// ===== your phone` section:
+     - Pairing. `POST /local/phone/pair` makes a pairing code (128 random bits, once, for 10 minutes), opens it on the relay, and answers the address for the QR code: the phone page, with a fragment that holds the code, your Oby's public keys, the Sphere's address and your agent id. On the `owner` pairing event, it checks the `mac` under the code, pins the phone's passkey public key and X25519 key in `notify/paired-phones.json` (0600), and confirms the device. `GET /local/phone` lists the phones, and `DELETE /local/phone/:id` unpairs one, on the relay and here.
+     - Items. When an ask waits (a hook in `addPending()`) and a phone is paired, the item (the pending id, the ask's id, who asked, the channel, the words, the files' names, a fresh nonce and `exp`) is sealed for the phone's key with the envelope messages use, signed with your Oby's key, and posted to the mailbox. It's removed once the ask is decided or expires. The ntfy notification says "Open it on your phone".
+     - Decisions. On an `owner` decision event (and, after a reconnect, `GET /api/owner/decisions`), it checks the passkey's signature against the pinned key (P-256 or Ed25519, with Node's `crypto`), and that the signed client data holds the decision's hash as its challenge, `webauthn.get`, and the phone page's origin. It checks that the authenticator data has the page's RP id hash and says the user was verified. Then the nonce is new, `exp` hasn't passed, and the ask still waits. A written answer is opened with your Oby's key and must match `textHash`. Then `decidePending()`.
+   - public/index.html: Settings › Notifications › **Your phone**: **Add your phone** with the QR code, drawn by the page (a small encoder, since the project takes no dependencies), the paired phones, and **Unpair**.
+   - Docs: SETTINGS.md (the local API table: `/local/phone`; Notifications: your phone), SECURITY.md (On members' machines: a paired phone).
+   - Tests, in `test/phone-page.test.mjs`, with a software passkey (a P-256 key that signs WebAuthn-shaped assertions) and the phone's side in Node's WebCrypto:
+     - pairing with the right code pins the phone; a wrong `mac`, a used or late code, or keys the relay swapped are refused;
+     - an item opens only with the phone's key, and what the relay stores holds no words;
+     - *answer*, *decline* and *write* from the phone each work;
+     - a bad signature, no user verification, another origin, a nonce used before, a past `exp`, another ask's id, or written text that doesn't match its hash does nothing;
+     - after unpairing, no items are posted.
+   - Question 5 decides whether a phone without passkeys may pair, with a WebCrypto signing key instead. As written, it may not.
+
+6. **The phone page.** Depends on: step 5. Waits on question 4.
+   - `phone/index.html`, a new static page: one file, no dependencies, with its own CSP (`default-src 'none'`, inline script and style only, `connect-src https:`, since every Sphere has its own address, and `frame-ancestors 'none'`). It reads the fragment and takes it out of the address bar at once. It makes the passkey (`navigator.credentials.create()`, user verification required) and the X25519 key (WebCrypto, not extractable, kept in IndexedDB), and registers them. Then it lists the items, opens one, shows who asked and the words, and asks the passkey to sign the decision you chose. For *write*, a text box; the text is sealed for your Oby's key.
+   - `.github/workflows/phone-page.yml` publishes `phone/` to the address the owner chooses, on a push to main that changes it.
+   - Docs: README (Notifications: answer from your phone), SECURITY.md (where the phone page comes from, and why).
+   - Tests: `test/phone-page.test.mjs` runs the page's script against a relay, with WebCrypto and a fake `navigator.credentials`; the page has its CSP and loads nothing from elsewhere. Tests in a real browser wait for #136.
+
+7. **Phone decisions beyond *answer*, *decline* and *write*.** Optional, and waits on question 3. Depends on: step 5, never on step 1's buttons.
+   - rep.mjs: an item may carry what Waiting for you shows for a GitHub item (the action, the commit your Oby read) or a command instrument's use, and *trust* for an ask, when your settings allow the risky reach. A phone's decision on one is checked as the console's is (`githubDecide()` for a GitHub item).
+   - The phone page shows them as the console does.
+   - Docs: SETTINGS.md, SECURITY.md (what a phone can decide).
+   - Tests: each kind decided on the phone works; a GitHub item whose pull request moved on since is refused, as in the console.
+
+8. **Buttons in Slack, through your own Slack app (option C).** Optional, and waits on question 6. Depends on: nothing beyond 0.3.0.
+   - rep.mjs, a new `// ===== slack decisions` section: `notify.slack.app { botToken, appToken, userId }`, kept and masked as the webhook is. While something waits, a Socket Mode connection (`apps.connections.open`, and Node 22's `WebSocket`); the direct message with **Let it answer**, **Decline** and **Write an answer** (a modal). Each envelope is acknowledged and checked: your user id, the pending id, and that the ask still waits. Then `decidePending()`. The same asks get buttons as in step 1.
+   - `examples/slack-app/manifest.json`: the app's manifest, with Socket Mode on and only the scopes it needs.
+   - Docs: SETTINGS.md (Notifications: your Slack app), SECURITY.md (the tokens, and who clicked), README.
+   - Tests, with a fake Slack on 127.0.0.1 (its HTTP API, and a small WebSocket server in the test): a click decides; a click by another user, or on an ask that no longer waits, does nothing; a written answer from the modal is sent; GitHub items and command instruments get no buttons; the tokens never reach the log or the page unmasked.
 
 ## Questions for the owner
 
