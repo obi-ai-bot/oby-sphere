@@ -149,6 +149,8 @@ const SAMPLES = [
   ['/home/sam/app/config/credentials.yml', SECRET],
   ['/home/sam/.claude/.credentials.json', SECRET],
   ['/home/sam/work/credentials-service/src/index.ts', SECRET], // as before #125: a folder named credentials* hides what's inside
+  ['/home/sam/app/docs/credentials.md', SECRET], // as before #125: a name that starts with credentials, in any format
+  ['/home/sam/app/src/credentials.go', SECRET],
   // folders, as settings check them (with a separator at the end)
   ['/home/sam/work/.azure/', SECRET],
   ['/home/sam/work/.config/gcloud/', SECRET],
@@ -348,7 +350,8 @@ describe('end to end: an answer, sphere_attach and settings', () => {
   });
 
   test('settings refuse a folder of credentials', async () => {
-    for (const d of ['.azure', '.config/gcloud', 'deploy.env']) {
+    // a folder on the list, or inside one
+    for (const d of ['.azure', '.config/gcloud', 'deploy.env', '.secrets/prod']) {
       const folder = path.join(tmp, 'creds', d);
       fs.mkdirSync(folder, { recursive: true });
       writeSettings([work, folder]);

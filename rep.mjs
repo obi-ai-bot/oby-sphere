@@ -56,8 +56,9 @@ const RISKY = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch']
 // name anywhere under a folder: `*` is any run of characters inside one name, a `/` joins
 // names, and a trailing `/` is a folder and everything in it. A name that matches a folder
 // hides what's inside it too. SECRETISH ignores case; the rules and globs are spelled as
-// these files usually are. "secret" and "credential" in a name count only for config
-// formats, so secret_test.go and secrets.md stay readable. test/deny-list.test.mjs checks
+// these files usually are. "secret" and "credential" inside a name count only for config
+// formats, so secret_test.go and secrets.md stay readable (a name that starts with
+// credentials counts in any format, as before). test/deny-list.test.mjs checks
 // that the three lists agree.
 const SECRET_CONFIG = ['json', 'yaml', 'yml', 'toml', 'ini', 'properties', 'xml', 'conf', 'cfg'];
 const SECRET_FILES = [
