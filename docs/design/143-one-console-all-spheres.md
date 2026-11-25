@@ -27,7 +27,7 @@ So each Sphere is a separate origin and a separate process. That's the separatio
 What 0.3.0 adds that matters (from `plans/wave3.md` and the `wave3/*-r` branches):
 
 - `obysphere start` installs one background service per profile (a LaunchAgent `com.obysphere.<profile>`, or a `systemd --user` unit), each running `rep.mjs ui --serve` on a port of its own, from 4851 up, kept in `<profile>/service.json` (`consolePort()` in `obysphere.mjs`). `obysphere profiles` lists them with their addresses (`publicProfile()`: no token), and `obysphere open --profile <name>` opens one.
-- Notifications are per profile, each with its own settings: desktop, the console's tab, Claude Code, phone (ntfy) and Slack. Titles say who and what (`NOTIFY_TITLE`: "@bob asks your Oby"), not which Sphere. A notification's link opens that profile's console (`consoleLink()`). `inbox --hook` already covers every profile and names each Sphere.
+- Notifications are per profile, each with its own settings: desktop, the console's tab, Claude Code, phone (ntfy) and Slack. Titles say who and what (`NOTIFY_TITLE`: `@bob asks your Oby`), not which Sphere. A notification's link opens that profile's console (`consoleLink()`). `inbox --hook` already covers every profile and names each Sphere.
 - Admins are members: admin power comes with the token the console already holds, so no admin key in the browser.
 - `join` keeps the invite link, join key included, in `profile.json`.
 
@@ -87,7 +87,7 @@ Browsers separate by origin, not by path. Every Sphere would share `localStorage
   - the page's HTML holds nothing about the other profile before the call;
   - a console run from a copy of `rep.mjs` alone in a temp folder (so it serves the relay's page) answers 404.
 
-Then a second step, for notifications across Spheres: when you have more than one profile, notification titles name the Sphere ("In Acme: @bob asks your Oby"), if the owner agrees (question 1).
+Then a second step, for notifications across Spheres: when you have more than one profile, notification titles name the Sphere (`In Acme: @bob asks your Oby`), if the owner agrees (question 1).
 
 Related, and out of scope:
 - `mcpAddCommand()` names every profile's MCP server `obysphere`, so a second profile can't sit beside the first in Claude Code under that name.
