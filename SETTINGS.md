@@ -222,6 +222,8 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
 | `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** |
 | `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
+| `GET /local/invite` | `{ invite, current }`, for **Invite member**: the invite link this profile keeps in `profile.json` (from `join`, a paste, or a key rotated through this console), or `null` for an older profile. `current`: whether the Sphere still takes its key (`false` once it was rotated elsewhere), or `null` when it couldn't be asked |
+| `PUT /local/invite` `{ invite }` | The invite link (or just its key), checked with the Sphere (the key goes to it in `x-sphere-key`, as a viewer's would), then kept: `{ invite, current: true }`. 400 `{ error, field: "invite" }` when it has no key or the Sphere doesn't take it; 502 when the Sphere can't be asked |
 
 **Runtime**
 

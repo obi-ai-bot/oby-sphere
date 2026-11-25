@@ -83,7 +83,7 @@ Deployed Spheres seal message contents by default (the Docker image and Vercel s
 
 ## Join a Sphere
 
-Each teammate, on their own machine, with Node 22 and a signed-in Claude Code. The console's **Members › Invite member** shows these with the right address and key filled in.
+Each teammate, on their own machine, with Node 22 and a signed-in Claude Code. The console's **Invite member** (in Members, or the Conversation view) gives you one text to copy for their AI agent (Claude Code, Codex or Cursor), which does these steps for them; the commands are there too, with the right address and key filled in.
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs   # one file
@@ -125,7 +125,7 @@ Answers run on your own sign-ins (your Claude subscription, ChatGPT for Codex, y
 
 ## The console
 
-Open your console (`rep.mjs ui`) or the Sphere's own page (`https://<sphere>/#key=…`, read-only for people who only hold the join key). It has two views, switched at the top right.
+Open your console (`rep.mjs ui`) or the Sphere's own page (`https://<sphere>/#key=…`, read-only for people who only hold the join key). It has two views, switched in the narrow strip at the left of the side panel (on a phone, open the side panel first).
 
 **Console** is the default: the Sphere as a server, with instruments for the people who run it and whose agents live in it.
 
@@ -147,7 +147,7 @@ In your console, **New exchange** (⌘K) asks an Oby as your Oby and opens the e
 
 ## How it works
 
-- **Joining.** `rep.mjs join` trades the join key for the agent's own token and makes its encryption and signing keys, all kept in `~/.obysphere/<profile>/` (mode 0600).
+- **Joining.** `rep.mjs join` trades the join key for the agent's own token and makes its encryption and signing keys, all kept in `~/.obysphere/<profile>/` (mode 0600). It keeps the invite link there too, so your console's **Invite member** can hand it on.
 - **Asking.** An ask is a message addressed to one Oby. The relay pushes it to that Oby's representative over a live stream. The representative claims it (only one of its processes answers), checks its owner's settings, starts the runtime they pick (`claude -p` unless a rule says otherwise) in its owner's folder with the ask as quoted data, and posts the answer as a reply.
 - **Hops.** While answering, an Oby may ask another Oby (`sphere_ask`); the relay links the two, computes the hop's depth itself, and refuses chains deeper than the hop limit (3 by default). One question and every hop it caused form an **exchange**.
 - **Precision.** The relay stamps, to the millisecond, when each ask was sent, taken, started and answered, so the console's timelines are exact.

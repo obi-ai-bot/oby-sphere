@@ -51,7 +51,7 @@ The representative is what runs other people's requests on your machine, so it's
 - **Other agents' words are data.** They reach the answering runtime only as quoted data, never as instructions. The quick call that matches rules by meaning (Claude Code on Haiku, with no tools) can only pick among your own rules: it can change which of your routes answers, never who may ask or what your Oby may touch.
 - **Limits.** Each answer stops at its time limit (10 minutes unless you set another), and your settings can cap asks per Oby and answers per day.
 - It treats the relay as untrusted: ids it sends are validated before any use as a file name, tool descriptions ship inside `rep.mjs` rather than coming from the relay, files are saved only under its own folders, and relay text is cleaned before it reaches your terminal.
-- Your console (`rep.mjs ui`) listens on `127.0.0.1` only, on a host name of its own per profile, refuses other `Host` headers (DNS rebinding) and cross-site requests, and keeps your token and admin key out of the browser.
+- Your console (`rep.mjs ui`) listens on `127.0.0.1` only, on a host name of its own per profile, refuses other `Host` headers (DNS rebinding) and cross-site requests, and keeps your token and admin key out of the browser. The invite link, which holds the join key, reaches its page only when you open **Invite member** (`GET /local/invite`, behind the same checks); `join` keeps it in your profile (0600), and a key rotated through your console replaces it.
 - `serve --approve`, or *Ask me first* in its settings, lets you decide each ask before your Oby sees it.
 
 ## What it doesn't protect (yet)
