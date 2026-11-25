@@ -36,7 +36,7 @@ const SELF = fileURLToPath(import.meta.url);
 // profiles: ~/.obysphere (or OBYSPHERE_HOME); profiles made before the rename stay in ~/.obysphere-mvp
 const HOME = path.resolve(process.env.OBYSPHERE_HOME || (!fs.existsSync(path.join(os.homedir(), '.obysphere')) && fs.existsSync(path.join(os.homedir(), '.obysphere-mvp')) ? path.join(os.homedir(), '.obysphere-mvp') : path.join(os.homedir(), '.obysphere')));
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
-const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json']);
+const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot']);
 // What an answering session may do. Reading, searching and listing files works
 // inside the owner's chosen folder only, with no rule needed (in dontAsk mode
 // anything outside it is denied). A bare "Read" rule would open every file on
@@ -136,6 +136,7 @@ function help() {
                     [--about "what your agent knows"] [--cwd <folder it may read>]
                     [--runtime claude|codex|cursor] [--model sonnet] [--rules "<your rules>"]
                     [--allow Read,Glob,Grep] [--profile <name>] [--insecure]
+                    [--bot]   an Oby with no person behind it (a team's reviewer, say)
   node rep.mjs serve   [--profile <name>] [--approve] [--notify]   answer asks on this machine
   node rep.mjs mcp     [--profile <name>] [--serve]                MCP server for Claude Code / Cursor
   node rep.mjs ui      [--profile <name>] [--port 4849] [--serve] [--open] [--admin-key <key>]
@@ -182,7 +183,7 @@ async function join() {
   const res = await fetch(sphere + '/api/join', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-sphere-key': key },
-    body: JSON.stringify({ name, owner, about: opt.about || '', runtime: runtimeLabel({ runtime, model: opt.model }), keys: { seal: keys.seal.x, sign: keys.sign.x } }),
+    body: JSON.stringify({ name, owner, about: opt.about || '', runtime: runtimeLabel({ runtime, model: opt.model }), keys: { seal: keys.seal.x, sign: keys.sign.x }, ...(opt.bot ? { bot: true } : {}) }),
     redirect: 'error',
   });
   const data = await res.json().catch(() => ({}));
@@ -203,6 +204,7 @@ async function join() {
     allow: opt.allow ? split(opt.allow) : DEFAULT_ALLOW,
     approve: !!opt.approve,
     insecure: u.protocol === 'http:' && !isLoopback(u.hostname),
+    ...(opt.bot ? { bot: true } : {}),
     joinedAt: new Date().toISOString(),
   };
   saveProfile(p);
@@ -212,7 +214,7 @@ async function join() {
   if (!fs.existsSync(settingsFile(p))) firstSettings(p);
 
   console.log(`
-${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as ${printable(p.agent.owner)}'s representative.
+${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as ${p.bot ? `a bot for ${printable(p.agent.owner)} (no person behind it)` : `${printable(p.agent.owner)}'s representative`}.
   Sphere:   ${sphere}${data.sphere?.policy?.sealed ? "  (sealed: the relay can't read what you send)" : ''}${p.insecure ? yellow('  (http on a network: --insecure)') : ''}
   Access:   ${accessLabel(p)}  ·  runtime: ${runtimeLabel(p)}
   Profile:  ${path.join(dir, 'profile.json')}  (your token and keys: never share them)
@@ -268,7 +270,7 @@ async function whoami() {
     settings = `  ${red('settings need fixing:')} ${printable(e.message)}`;
   }
   out(`${p.agent.name} — representative of ${p.agent.owner} in ${cleanLine(sphere?.name, 80)} (${p.sphere})
-  online: ${me?.online ? 'yes' : 'no, run `serve`'} · runtime: ${cleanLine(me?.runtime, 40)}${me?.suspended ? ' · SUSPENDED by the operator' : ''}
+  online: ${me?.online ? 'yes' : 'no, run `serve`'} · runtime: ${cleanLine(me?.runtime, 40)}${me?.bot ? ' · a bot' : ''}${me?.suspended ? ' · SUSPENDED by the operator' : ''}
   sealing: ${sphere?.policy?.sealed ? 'on' : 'off'} on this Sphere · your keys ${published ? 'published' : 'not published yet (run serve, mcp or ui once)'}
   settings: ${settingsFile(p)}
 ${settings}`);
@@ -1633,11 +1635,11 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   const target = resolveAgent(here, p, a.agent);
   if (target.id === p.agent.id) throw new Error('that is you');
   if (!allowFiles && a.files && [].concat(a.files).length) throw new Error('While answering, attach files with sphere_attach (from your working folder), not here.');
-  const channel = slug(a.channel || process.env.SPHERE_CHANNEL || 'general') || 'general';
+  const channel = await askChannel(api, a.channel, target);
   const cause = process.env.SPHERE_CAUSE && ID.m.test(process.env.SPHERE_CAUSE) ? process.env.SPHERE_CAUSE : null;
   const msg = await sendMessage(api, p, { channel, text: String(a.message || ''), to: [target], depth, cause, files: allowFiles ? readLocalFiles(a.files) : [], agents: here });
   if (!target.online) {
-    return `@${slug(target.name)} is offline: its representative isn't running right now. Your message is posted in #${channel} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
+    return `@${slug(target.name)} is offline: its representative isn't running right now. Your message is posted in ${channel.startsWith('dm-') ? `your direct conversation with it` : `#${channel}`} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
   }
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
@@ -1859,7 +1861,8 @@ async function sendMessage(api, p, { channel, text, to = [], replyTo = null, rep
   } else {
     const sec = getSec(p);
     let readers;
-    if (everyone) readers = agents.filter((a) => validAgent(a) && !a.removed && a.keys && a.id !== p.agent.id && sec.trust(a).ok);
+    const only = everyone ? await closedMembers(api, channel) : null; // a private or direct channel: its members only
+    if (everyone) readers = agents.filter((a) => validAgent(a) && !a.removed && a.keys && a.id !== p.agent.id && (!only || only.includes(a.id)) && sec.trust(a).ok);
     else readers = [...to, ...(replyToFrom && replyToFrom.id !== p.agent.id && !to.some((a) => a.id === replyToFrom.id) ? [replyToFrom] : [])];
     for (const a of readers) {
       if (!a.keys) throw new Error(`@${slug(a.name)} has no published keys (its representative is an older rep.mjs), so it can't receive a sealed message.`);
@@ -1901,6 +1904,36 @@ function validMessage(m) {
 }
 function validAgent(a) {
   return !!a && typeof a === 'object' && ID.a.test(a.id) && typeof a.name === 'string';
+}
+
+// ================================================================ conversations: private channels and direct messages
+//
+// A private channel or a direct conversation is for its members: what this representative says
+// there is sealed for them only, and an ask there goes only to them. The relay checks both; these
+// keep what's sent inside them in the first place.
+
+// the members of a private or direct channel; null for a public one (or a relay without kinds)
+async function closedMembers(api, name) {
+  const { channels } = await api.get('/api/channels');
+  const ch = (Array.isArray(channels) ? channels : []).find((c) => c && c.name === name);
+  if (!ch || (ch.kind !== 'private' && ch.kind !== 'dm') || !Array.isArray(ch.members)) return null;
+  return ch.members.filter((id) => ID.a.test(String(id)));
+}
+
+// Where an ask goes: the channel named, else the one being answered in (SPHERE_CHANNEL), else
+// #general. While answering in a private conversation, an ask to someone outside it goes to the
+// direct conversation between this Oby and them, so nothing said there lands where others read.
+async function askChannel(api, named, target) {
+  const given = slug(named || '');
+  const channel = given || slug(process.env.SPHERE_CHANNEL || '') || 'general';
+  if (channel === 'general') return channel;
+  const only = await closedMembers(api, channel);
+  if (!only || only.includes(target.id)) return channel;
+  if (given) throw new Error(`@${slug(target.name)} isn't in #${channel}: ask only its members there.`);
+  const { channel: dm } = await api.post('/api/dm', { with: target.id });
+  const name = String(dm?.name || '');
+  if (!/^dm-[a-z0-9-]{1,29}$/.test(name)) throw new Error('The Sphere answered with something that is not a direct conversation.');
+  return name;
 }
 
 // ================================================================ sealing: keys, pins, envelopes

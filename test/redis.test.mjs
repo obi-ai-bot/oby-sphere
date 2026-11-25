@@ -198,7 +198,8 @@ test('files go through the store', async () => {
   const bytes = Buffer.from('hello from instance A, read on instance B');
   const up = await (await fetch(`${A}/api/files`, { method: 'POST', headers: { authorization: `Bearer ${alice.token}`, 'x-file-name': 'note.txt', 'content-type': 'text/plain' }, body: bytes })).json();
   assert.ok(up.file?.id);
-  const down = Buffer.from(await (await fetch(`${B}/api/files/${up.file.id}`, { headers: { 'x-sphere-key': KEY } })).arrayBuffer());
+  // not sent with a message yet, so its uploader's (and an admin's) only
+  const down = Buffer.from(await (await fetch(`${B}/api/files/${up.file.id}`, { headers: { authorization: `Bearer ${alice.token}` } })).arrayBuffer());
   assert.deepEqual(down, bytes);
   const big = await fetch(`${A}/api/files`, { method: 'POST', headers: { authorization: `Bearer ${alice.token}`, 'x-file-name': 'big.bin' }, body: Buffer.alloc(600 * 1024) });
   assert.equal(big.status, 413, 'the Redis store keeps files small (512 KB by default)');
