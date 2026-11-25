@@ -259,6 +259,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .watch-foot { flex: none; padding: 10px var(--gutter) 16px; text-align: center; color: var(--muted); font-size: var(--text-sm); }
 .watch-foot button { color: var(--text); transition: color var(--fade); }
 .watch-foot button:hover { color: var(--ink); }
+.update-line { flex: none; margin: 0; padding: 6px var(--gutter); display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 1px solid var(--divider); color: var(--text); font-size: var(--text-sm); line-height: 17px; text-align: center; }
+.update-line button { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--muted); transition: color var(--fade), background-color var(--fade); }
+.update-line button:hover { color: var(--ink); background: var(--hover); }
 
 /* ---------- Console: the Sphere as a server, its instruments */
 .console { flex: 1; min-height: 0; position: relative; }
@@ -610,6 +613,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
           </div>
         </div>
       </header>
+      <p class="update-line" id="update-line" hidden></p>
 
       <div class="conv" id="conv" hidden>
         <div class="chat-scroll">
@@ -651,16 +655,17 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <h2 id="inv-title">Invite member</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
       </header>
-      <p class="modal-line">Their Oby runs on their own machine and answers with their files and their rules; only its answers come here. They need Node 22 or later and Claude Code (or Cursor).</p>
-      <span class="modal-label">1. Get the representative: one file, nothing to install</span>
+      <p class="modal-line">Their Oby runs on their own machine and answers with their files and their rules; only its answers come here. They need Node 22 or later and Claude Code (or Codex, or Cursor).</p>
+      <span class="modal-label">1. Install the obysphere command: no sudo, it stays in their home folder</span>
       <div class="code-row" data-cmd="get"></div>
       <span class="modal-label">2. Join, choosing the folder their Oby may read</span>
       <div class="code-row" data-cmd="join"></div>
-      <span class="modal-label">3. Go online, so others can ask them</span>
-      <div class="code-row" data-cmd="serve"></div>
+      <span class="modal-label">3. Go online: it runs in the background and starts again at login</span>
+      <div class="code-row" data-cmd="start"></div>
       <span class="modal-label">4. See the Sphere, signed in as them</span>
-      <div class="code-row" data-cmd="ui"></div>
-      <p class="modal-note">For Claude Code, <code class="tok-code">node rep.mjs mcp-config</code> prints the one line to add; then “Who's in the Sphere?”</p>
+      <div class="code-row" data-cmd="open"></div>
+      <p class="modal-note">For Claude Code, <code class="tok-code">obysphere mcp-config</code> prints the one line to add; then “Who's in the Sphere?”</p>
+      <p class="modal-note">Without installing: get one file with <code class="tok-code">curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs</code>, join with <code class="tok-code">node rep.mjs join …</code> (the same flags), and go online with <code class="tok-code">node rep.mjs serve</code>.</p>
     </div>
   </div>
 
@@ -801,6 +806,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
     if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
+    if (CONSOLE) checkVersion();
   }
 
   function wire() {
@@ -3032,10 +3038,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const key = CONSOLE ? '<the Sphere key>' : S.key;
     const insecure = /^http:\/\//.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(origin) ? ' --insecure' : '';
     const cmds = {
-      get: `curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs`,
-      join: `node rep.mjs join "${origin}/#key=${key}"${insecure} --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <folder it may read>`,
-      serve: `node rep.mjs serve`,
-      ui: `node rep.mjs ui --open`,
+      get: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh`,
+      join: `obysphere join "${origin}/#key=${key}"${insecure} --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <folder it may read>`,
+      start: `obysphere start`,
+      open: `obysphere open`,
     };
     document.querySelectorAll('[data-cmd]').forEach((el) => {
       const text = cmds[el.dataset.cmd];
@@ -3046,6 +3052,27 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       };
     });
     $('#invite-modal').hidden = false;
+  }
+
+  // ---------------------------------------------------------------- a newer Oby (GET /local/version; rep.mjs checks once a day)
+  function newerVersion(a, b) {
+    const p = (v) => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-([^+]*))?/.exec(String(v || '')); return m ? [+m[1], +m[2], +m[3], m[4] || ''] : null; };
+    const x = p(a), y = p(b);
+    if (!x || !y) return false;
+    for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+    return !x[3] && !!y[3]; // a release is newer than its pre-releases
+  }
+  async function checkVersion(again = true) {
+    let v = null;
+    try { v = await api('/local/version'); } catch {}
+    // the first look starts the day's check, whose answer is there a little later; a console
+    // left open looks again every few hours (rep.mjs still asks GitHub at most once a day)
+    if (again) { setTimeout(() => checkVersion(false), 20000); setInterval(() => checkVersion(false), 6 * 3600e3); }
+    const el = $('#update-line');
+    if (!v || !el || !newerVersion(v.latest, v.current) || store.get('obysphere.update.dismissed') === v.latest) return;
+    el.innerHTML = `A newer Oby is out (${esc(v.latest)}): run <code class="tok-code">obysphere update</code><button type="button" aria-label="Dismiss"><svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>`;
+    el.hidden = false;
+    $('button', el).onclick = () => { store.set('obysphere.update.dismissed', v.latest); el.hidden = true; };
   }
 
   // ---------------------------------------------------------------- their words: a little Markdown, escaped first

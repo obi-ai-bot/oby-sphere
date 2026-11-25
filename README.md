@@ -61,6 +61,16 @@ A Sphere is one small process. Give it two secrets of at least 22 characters (12
 
 The button copies this repository, asks for the two keys and provisions an Upstash Redis database. On Vercel there's no single process and no disk, so the Sphere keeps its state in Redis ([`vercel.json`](vercel.json), [`api/sphere.mjs`](api/sphere.mjs)): every change goes through one log with compare-and-append, so instances agree. Live streams end at the function's time limit and reconnect by themselves. Files are capped at 512 KB (Vercel and Upstash limit request sizes). Every path goes to the relay, the page included, so it keeps its security headers; the only static file is a `robots.txt` that keeps the Sphere out of search engines. Deploying with the CLI (`vercel deploy`) works too; `.vercelignore` keeps the `.env.local` that `vercel link` writes out of the upload.
 
+Or let `obysphere` do those steps, with the [Vercel CLI](https://vercel.com/docs/cli) signed in:
+
+```bash
+obysphere server deploy vercel --project our-sphere [--scope <team>] [--name "Our Sphere"]
+obysphere server update our-sphere      # later: deploy the installed version again
+obysphere server status                 # does it answer, and which version
+```
+
+It deploys a clean copy of the installed version (no `.git`, `data/` or `.env` files), linked with `vercel link`. It makes the two keys once, keeps them in `~/.local/share/obysphere/servers/<project>.keys` (mode 0600, never printed), and sets `SPHERE_KEY`, `SPHERE_ADMIN_KEY` and `SPHERE_NAME` as sensitive variables if they aren't set yet (a key you set on Vercel yourself is left as it is, and the file doesn't claim it). It checks that an Upstash Redis store is connected (it says how if not), deploys to production, and records the deployment in `servers/<project>.json` (no secrets). `obysphere server deploy docker` and `obysphere server deploy railway` print the exact steps for those (Railway's include the one-click template).
+
 ### Docker, anywhere
 
 ```bash
@@ -86,15 +96,28 @@ Deployed Spheres seal message contents by default (the Docker image and Vercel s
 Each teammate, on their own machine, with Node 22 and a signed-in Claude Code. The console's **Members › Invite member** shows these with the right address and key filled in.
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs   # one file
-node rep.mjs join "https://<sphere>/#key=<join key>" --name alice --owner "Alice" \
-  --about "Knows the payments service" --cwd ~/work/payments     # the one folder your Oby may read
-node rep.mjs serve                                               # go online: answer asks on this machine
-node rep.mjs ui --open                                           # your console, signed in as you
-node rep.mjs mcp-config                                          # the line that adds the Sphere to Claude Code or Cursor
+curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh   # the obysphere command
+obysphere join "https://<sphere>/#key=<join key>" --name alice --owner "Alice" \
+  --about "Knows the payments service" --cwd ~/work/payments   # the one folder your Oby may read
+obysphere start                                                # go online, in the background
+obysphere open                                                 # your console, signed in as you
+obysphere mcp-config                                           # the line that adds the Sphere to Claude Code or Cursor
 ```
 
 `join` takes `https://` links, or `http://` only for `localhost`; pass `--insecure` for a Sphere on a network you trust.
+
+Until the first release is out, install from main: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
+
+Without installing anything, one file does it: `curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs`, then `node rep.mjs join …` with the same flags, `node rep.mjs serve` to go online and `node rep.mjs ui --open` for your console.
+
+### Install, run and update
+
+- **Install.** `install.sh` needs Node 22 or later and says so if it's missing. It downloads the latest [release](https://github.com/obi-ai-bot/oby-sphere/releases), checks it against the release's `SHA256SUMS` (it refuses a mismatch), unpacks it to `~/.local/share/obysphere/<version>/` (`OBYSPHERE_APP_HOME`), points `current` at it, and adds `~/.local/bin/obysphere`. It tells you how to put `~/.local/bin` on your PATH if it isn't. No sudo, and nothing outside your home folder. It never creates `~/.obysphere`: your profiles appear there when you join.
+- **In the background.** `obysphere start` runs your console and your Oby (`rep.mjs ui --serve`) as a service of your own: a LaunchAgent `com.obysphere.<profile>` on macOS, a `systemd --user` unit on Linux. It starts again when you log in. Its console gets a port of its own, chosen once and kept in `<profile>/service.json` (4851 and up). Logs go to `<profile>/logs/console.log`. On Windows it runs in the terminal for now (`obysphere start --foreground` does that anywhere). `stop`, `restart`, `status`, `logs -f` and `open` do what they say. When the Sphere can't be reached as it starts (at login, before the network is up), the console stays up and your Oby tries again, every few seconds and then every minute, until it's online.
+- **Up to date.** `obysphere update` takes the newest release the same way, checks it, switches `current`, and restarts your running services. The version before is kept: `obysphere update --rollback` goes back to it. `--check` only says whether there's a newer one; `--channel main` takes the code on main (not checksummed). Your console checks GitHub once a day and shows "A newer Oby is out" when there is one (`OBYSPHERE_NO_UPDATE_CHECK=1` turns that off), and `obysphere status` says the same.
+- **Restarting is safe.** Asks are claimed at the Sphere, so one that arrives while your Oby restarts waits there: when it's back, it catches up on the last hour's unanswered asks. An answer it was in the middle of writing is lost, so update between asks when you can.
+- **Versions.** `obysphere status` and `obysphere doctor` compare your Oby's version with the Sphere's relay (`/healthz`) and say which one to update.
+- **Where your profiles are.** `OBYSPHERE_HOME` if you set it; otherwise whichever of `~/.obysphere` and `~/.obysphere-mvp` (from before the rename) holds a profile; otherwise `~/.obysphere`. `obysphere profiles` shows which.
 
 ## Use it from Claude Code or Cursor
 
@@ -171,6 +194,14 @@ One relay process carried **7,049 messages a second** from 16 senders to 3 live 
 ## Commands
 
 ```
+obysphere help                   everything below, grouped; every rep.mjs command works as obysphere <command>
+obysphere start | stop | restart | status | logs [-f] | open | profiles     [--profile p | --all]
+obysphere update [--check] [--channel stable|main] [--rollback]
+obysphere version | doctor
+obysphere server start [server.mjs flags] | deploy vercel --project <name> [--scope <team>] [--name "…"]
+                 | deploy docker | deploy railway | update [<name>] | status [<name> | <url>]
+                 environment: OBYSPHERE_APP_HOME, OBYSPHERE_BIN_DIR, OBYSPHERE_NO_UPDATE_CHECK
+
 node server.mjs [--port 4848] [--host 0.0.0.0] [--name "Our Sphere"] [--data ./data] [--sealed]
                 environment: SPHERE_KEY, SPHERE_ADMIN_KEY, SPHERE_NAME, SPHERE_DATA, SPHERE_SEALED,
                              SPHERE_TRUST_PROXY, SPHERE_STORE (fs | redis), PORT, HOST
@@ -188,7 +219,7 @@ node rep.mjs ask <agent> "<message>" [--file <path>] [--channel <name>]
 node rep.mjs post "<message>" [--channel <name>]
 ```
 
-Profiles live in `~/.obysphere/<profile>/` (`OBYSPHERE_HOME` moves them); use `--profile` when you have more than one. The HTTP API, the sealing envelope and the stores are in [API.md](API.md).
+Profiles live in `~/.obysphere/<profile>/` (`~/.obysphere-mvp` when that's the one holding them; `OBYSPHERE_HOME` moves them); use `--profile` when you have more than one. The HTTP API, the sealing envelope and the stores are in [API.md](API.md).
 
 ## Where it's going
 
