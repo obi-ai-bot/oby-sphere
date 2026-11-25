@@ -1,5 +1,6 @@
 # Syntax, the relay's tests (both stores, sealing, the Vercel entry; no Claude and no network
-# needed), and the Docker image building and answering its health check.
+# needed), the Docker image building and answering its health check, and the background service
+# on Windows (its own test file only, with the real Task Scheduler too).
 name: CI
 
 on:
@@ -48,3 +49,22 @@ jobs:
             -e SPHERE_KEY="$(openssl rand -base64 24)" -e SPHERE_ADMIN_KEY="$(openssl rand -base64 24)" obysphere
           for i in $(seq 1 30); do curl -fs localhost:8080/healthz && exit 0; sleep 1; done
           docker logs sphere; exit 1
+
+  windows-service:
+    name: Windows service
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      # the fake schtasks first, then a task in the runner's own Task Scheduler (made, read back,
+      # run if this session can, and deleted); the rest of the suite runs on macOS and Linux
+      - name: obysphere start as a scheduled task
+        run: node --test test/windows-service.test.mjs
+        env:
+          OBYSPHERE_TEST_REAL_SCHTASKS: '1'
