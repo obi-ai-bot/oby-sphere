@@ -37,7 +37,15 @@ obysphere server update <name>
 
 It redeploys to a deployment recorded by `obysphere server deploy vercel`. With one recorded, the name can be left out. The records (in `~/.local/share/obysphere/servers/`) hold no secrets. Then `obysphere server status` checks it. Ask before running it: the Sphere restarts.
 
-For Railway, redeploy from the repository in Railway. For Docker, rebuild the image from an updated checkout and start it again with the same volume.
+For a Sphere in Docker on this computer, name its container the first time:
+
+```bash
+obysphere server update --docker obysphere
+```
+
+It pulls `ghcr.io/obi-ai-bot/oby-sphere:<the CLI's version>` (`--tag <version>` picks another), runs it as that container again with the same ports, volume, variables and other settings, and puts the old one back if the new one doesn't answer. It never prints the container's variables (they hold the keys). Then it's recorded, so `obysphere server update` finds it like a Vercel deployment. It refuses, changing nothing, a container that Docker Compose runs (update it in Compose) or one it can't carry over; then update by hand: pull the new image and run it again the same way. Ask before running it: the Sphere restarts.
+
+For Railway, redeploy from the repository in Railway.
 
 ## This plugin
 

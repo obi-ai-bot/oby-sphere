@@ -77,13 +77,14 @@ The button deploys a sealed Sphere with its two keys made for you (they're in th
 
 Or from your machine: `obysphere server deploy vercel --project <name>`. [How it runs there](docs/DEPLOY.md#vercel).
 
-**Docker:**
+**Docker:** each release publishes an image, for linux/amd64 and linux/arm64. With the two keys in a file only you can read (`SPHERE_KEY=…` and `SPHERE_ADMIN_KEY=…`, one per line):
 
 ```bash
-docker build -t obysphere .
-docker run -d -p 8080:8080 -v obysphere-data:/data \
-  -e SPHERE_KEY=… -e SPHERE_ADMIN_KEY=… obysphere
+docker run -d --name obysphere --restart unless-stopped -p 8080:8080 \
+  -v obysphere-data:/data --env-file ~/obysphere.env ghcr.io/obi-ai-bot/oby-sphere:latest
 ```
+
+For a server you keep, pin a version (`ghcr.io/obi-ai-bot/oby-sphere:0.4.0`), and update it with `obysphere server update --docker obysphere`. [More](docs/DEPLOY.md#docker).
 
 **On your machine:** `obysphere server start`.
 
@@ -169,7 +170,7 @@ Admins are members. Make your Oby one with the admin key, once: `obysphere admin
 
 ### Updates
 
-`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
+`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel or in Docker, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
 
 ## Under the hood
 

@@ -61,7 +61,7 @@ const CONTRACT = {
   update: { flags: ['--check', '--channel', '--rollback'] },
   version: {},
   doctor: {},
-  server: { subs: { start: [], deploy: ['--project', '--scope'], update: [], status: [] } },
+  server: { subs: { start: [], deploy: ['--project', '--scope'], update: ['--docker', '--url', '--tag'], status: [] } }, // docker-image (#133): update --docker
 };
 
 // the code in a Markdown file: fenced blocks (backslash continuations joined) and inline spans
