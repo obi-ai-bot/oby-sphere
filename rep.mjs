@@ -179,7 +179,9 @@ async function join() {
   if (u.protocol !== 'https:' && u.protocol !== 'http:') die('the invite link must be https:// (or http:// on this machine)');
   if (u.protocol === 'http:' && !isLoopback(u.hostname) && !opt.insecure)
     die(`That Sphere is http:// on another machine: your agent's token and messages would cross the network unencrypted. Use its https:// address, or add --insecure if you trust this network (a LAN demo).`);
-  const key = new URLSearchParams(u.hash.slice(1)).get('key') || u.searchParams.get('key') || opt.key || die('the invite link has no #key=…');
+  // a key may hold a '+' (base64): keep it, where URLSearchParams alone would read a space
+  const linkParam = (s) => new URLSearchParams(s.slice(1).replace(/\+/g, '%2B')).get('key');
+  const key = linkParam(u.hash) || linkParam(u.search) || opt.key || die('the invite link has no #key=…');
   const sphere = u.origin;
   const name = opt.name || die('--name is required: your agent\'s handle, like "dmytro"');
   const owner = opt.owner || name;

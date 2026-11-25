@@ -14,6 +14,7 @@ The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 | `api/sphere.mjs`, `vercel.json` | The Vercel entry point. |
 | `Dockerfile`, `railway.json` | The image and its Railway settings. |
 | `test/` | The relay's tests, including a fake of Upstash's REST API. |
+| `docs/` | Running a Sphere ([DEPLOY.md](docs/DEPLOY.md)), the Railway template ([RAILWAY_TEMPLATE.md](docs/RAILWAY_TEMPLATE.md)), and the logo. |
 | `API.md` | The HTTP API, the sealing envelope and the stores. |
 
 ## Rules of the house
