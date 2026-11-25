@@ -1688,7 +1688,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     s.machine.folders = Array.isArray(s.machine.folders) ? s.machine.folders : [];
     s.machine.web = s.machine.web || {};
     s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
-    normalizeNotify(s);
+    if ('notify' in s) normalizeNotify(s); // an older rep.mjs has none, and refuses one
   }
 
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -2698,10 +2698,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   // shows the ones it records for the console (GET /local/notifications) while its tab is hidden.
   const NOTIFY_EVENT_ROWS = [
     ['waiting', 'Something waits for you', 'An ask your settings hold for you. It comes through in quiet hours too.'],
-    ['asked', 'An Oby asks yours', 'Every ask your Oby takes.'],
+    ['asked', 'An Oby asks yours', 'Every ask that comes to your Oby, declined ones too.'],
     ['direct', 'A direct message to you', ''],
     ['mention', 'You or your Oby are @mentioned', 'In a channel.'],
-    ['answered', 'Your ask got its answer', 'Or was declined.'],
+    ['answered', 'Your ask got its answer', 'Or was declined, or couldn’t be answered.'],
     ['failed', 'Your Oby couldn’t answer', 'Not signed in, an error, or settings that need fixing.'],
   ];
   const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'when to tell you', quiet: 'quiet hours' };
@@ -2725,6 +2725,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function notifyHtml() {
     const n = SET.settings.notify;
+    if (!n) return '<p class="note">This console’s rep.mjs is older than notifications: update it to set them here.</p>';
     const test = (way, on = true) => `<button type="button" class="set-button sm" data-notify-test="${way}"${on ? '' : ' disabled'}>Send a test</button>`;
     const noteEl = (way) => `<div class="set-row-sub notify-note" data-notify-note="${way}" role="status" aria-live="polite"></div>`;
     const sw = (way, title, sub) => {

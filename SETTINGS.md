@@ -290,20 +290,22 @@ A file without `notify` gets exactly these. It stays version 2, and nothing is w
 `content`, for `phone` and `slack`:
 
 - `summary` (the default): who, and what kind ("@ernesto asks your Oby"), with "Open your console". Never the words.
-- `full`: also the words, up to 600 characters. In Slack they're escaped, so nobody's words can mention `@channel` or a person, or make a link.
+- `full`: also the words, up to 600 characters. In Slack they're escaped, so nobody's words can mention `@channel` or a person, or hide a link behind other words (a bare address still shows as a link).
 
 The two addresses are secrets: anyone who has one can post to you. They stay in settings.json (0600) and are never sent to the Sphere. Your console shows them masked (`hooks.slack.com/services/…abcd`), and a masked one sent back unchanged keeps the one stored. `rep.mjs settings --json` masks them too. Only `https://` addresses are taken (`http://` only for this machine), and none with a user name or password in it.
 
 ### The events
 
 - `waiting`: an ask waits for you in **Waiting for you**. Anything that is added there notifies.
-- `asked`: an Oby asks yours. An ask that then waits for you is told once, as `waiting`.
+- `asked`: an Oby asks yours, declined asks too. An ask that then waits for you is told once, as `waiting`.
 - `direct`: a message from someone else in a direct conversation you're in.
 - `mention`: `@<your handle>` in a channel.
-- `answered`: the answer to an ask you made yourself, or its decline. Not the answers to asks your Oby made while answering someone.
+- `answered`: the answer to an ask you made yourself, its decline, or word that it couldn't be answered. Not the answers to asks your Oby made while answering someone.
 - `failed`: your Oby couldn't answer: its runtime isn't installed or signed in, it hit an error, or your settings need fixing.
 
 Several of one kind within three seconds become one notification per way: "3 asks for your Oby", from @…. Each event is told once, however many of this profile's processes see it (`serve`, `ui`, `mcp`).
+
+A sealed message notifies only when its signature checks out. In a sealed Sphere a plain message notifies nothing: only the relay could have made it.
 
 ### Quiet hours
 
@@ -330,11 +332,11 @@ A way that fails (Slack answers 404, ntfy is down, `notify-send` isn't installed
 
 In the profile, `notify/` holds `recent.jsonl` (the last 200 events, which the console and the channel read), `seen/` (a mark per event told, so it's told once; gone after two days), `console.json` (your console's address, for the links) and `hook.json` (when `inbox --hook` last looked for direct messages).
 
-### The console's local API
+### In the console's local API
 
 | | |
 |---|---|
 | `GET /local/notifications?after=<id>` | `{ notifications: [{ id, ts, type, count, title, body, from, channel, console, quiet }], last }`: the events after `after`, or without it the last 20. `console`: your settings show it in the console. `quiet`: it came in quiet hours. `last`: the newest id, to ask after next time. |
 | `POST /local/notify-test` `{ via }` | `via`: `desktop`, `console`, `claude`, `phone`, `slack` or `all` (the default). `{ results: [{ way, ok, note, id? }], settingsError }`. `ok` is `true`, `false` (it failed, and `note` says why) or `null` (skipped: off, or no address). |
 
-`GET /local/settings` and `PUT /local/settings` always carry a `notify` section (the defaults when the file has none), with the addresses masked.
+`GET /local/settings` and `PUT /local/settings` always answer with a `notify` section (the defaults when the file has none), with the addresses masked. A `PUT` without `notify` (a page from an older relay) keeps the one stored; `notify: null` goes back to the defaults.

@@ -5,7 +5,9 @@
 // asks coalesced into one notification per way, quiet hours (only "waiting" comes through),
 // failures, answers, mentions and direct messages from the streams, one notification per event
 // across processes, the MCP channel in your own Claude Code session (and never in an answering
-// one), and `inbox --hook`. Every rep runs with OBYSPHERE_NOTIFY_LOG, so nothing reaches the
+// one), `inbox --hook`, a console page that sends no notify section, a sealed Sphere's plain
+// messages (from a relay of the test's own), and the desktop notifiers themselves (fakes, on a
+// PATH with nothing else). Every other rep runs with OBYSPHERE_NOTIFY_LOG, so nothing reaches the
 // desktop, and with runtimes that aren't installed, so no model runs. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -532,6 +534,14 @@ describe('notifications', () => {
     const inside = pushed.params.content.split(fence)[2]; // the label names the fence too
     assert.ok(inside.includes('the plan is <b>ship it</b>') && inside.includes('@alice answered your ask'), 'what came from the Sphere is inside the fence');
 
+    // an answer that says it failed is told as that, not as an answer
+    mark = log2();
+    const own2 = await call('POST', '/api/messages', { tok: token('bob'), body: { channel: 'general', text: 'and the date?', to: [ids.alice] } });
+    await sleep(300);
+    await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: "I couldn't answer this one", replyTo: own2.message.id, meta: { error: true, local: true } } });
+    const failedAnswer = await waitFor(() => logLines().slice(mark).find((l) => l.type === 'answered' && l.way === 'console'), 8000, 'the failed answer');
+    assert.equal(failedAnswer.title, "@alice couldn't answer your ask");
+
     // an ask the answering session made (a hop) isn't yours: its answer tells you nothing
     mark = log2();
     const hop = await call('POST', '/api/messages', { tok: token('bob'), body: { channel: 'general', text: 'a hop', to: [ids.carol], cause: (await ask('alice', 'start a hop')).id } });
@@ -576,6 +586,168 @@ describe('notifications', () => {
     await rep(['notify', 'test', '--profile', 'bob', '--via', 'claude']);
     const t = await waitFor(() => mcp.channel().find((x) => x.params.meta.kind === 'test'), 5000, 'the test on the channel');
     assert.match(t.params.content, /^Your Obysphere: a test notification\./);
+  });
+
+  test('settings: a page that sends no notify section (an older one, from the relay) keeps the stored one', async () => {
+    setBob({ slack: { webhookUrl: slackUrl(), content: 'full' }, quiet: { from: '22:00', to: '07:00' } }, { default: 'answer' });
+    const g = await local('GET', '/local/settings');
+    assert.equal(g.status, 200, JSON.stringify(g));
+    const { notify, ...older } = g.settings;
+    assert.ok(notify);
+    const r = await local('PUT', '/local/settings', { settings: { ...older, access: { ...older.access, rules: 'be brief' } } });
+    assert.equal(r.status, 200, JSON.stringify(r));
+    let f = fileSettings();
+    assert.equal(f.access.rules, 'be brief', 'the change is saved');
+    assert.equal(f.notify?.slack?.webhookUrl, slackUrl(), 'the address stays');
+    assert.deepEqual(f.notify.quiet, { from: '22:00', to: '07:00' });
+    assert.ok(!JSON.stringify(r).includes(SLACK_SECRET), 'and the answer is masked');
+    // null still means the defaults
+    assert.equal((await local('PUT', '/local/settings', { settings: { ...older, notify: null } })).status, 200);
+    f = fileSettings();
+    assert.ok(!('notify' in f), JSON.stringify(f.notify));
+    // a file that doesn't pass comes back as it is, with a notify section all the same (the page
+    // takes a missing one for an older rep.mjs, and leaves it out), masked
+    fs.writeFileSync(settingsPath(), JSON.stringify({ ...f, routing: { default: { runtime: 'nope' } } }), { mode: 0o600 });
+    let x = await local('GET', '/local/settings');
+    assert.equal(x.field, 'routing.default.runtime', JSON.stringify(x));
+    assert.deepEqual(x.settings.notify.events.waiting, true);
+    fs.writeFileSync(settingsPath(), JSON.stringify({ ...f, routing: { default: { runtime: 'nope' } }, notify: { slack: { webhookUrl: slackUrl() } } }), { mode: 0o600 });
+    x = await local('GET', '/local/settings');
+    assert.equal(x.settings.notify.slack.webhookUrl, `${new URL(fakeBase).host}/services/…1234`);
+    assert.ok(!JSON.stringify(x).includes(SLACK_SECRET));
+  });
+
+  test("a sealed Sphere: a plain message is the relay's own doing, so it notifies nothing", async () => {
+    // a relay of our own, which can say anything: first unsealed, then sealed
+    const me = { id: 'a_vic000000001', name: 'vic', owner: 'Vic Test' };
+    const mal = { id: 'a_mal000000001', name: 'mal', owner: 'Mal Test' };
+    let sealed = false;
+    const streams = new Set();
+    const msgs = [];
+    const fake = http.createServer((req, res) => {
+      const u = new URL(req.url, 'http://x');
+      const send = (o) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(o));
+      };
+      if (u.pathname === '/api/stream') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write('retry: 2000\n\n');
+        streams.add(res);
+        req.on('close', () => streams.delete(res));
+        return;
+      }
+      if (u.pathname === '/api/info') return send({ sphere: { name: 'Fake', policy: { sealed } }, me: {} });
+      if (u.pathname === '/api/agents') return send({ agents: [me, mal] });
+      if (u.pathname === '/api/channels') return send({ channels: [{ name: 'general', topic: '' }, { name: 'dm-mal-vic', topic: '', kind: 'dm', members: [me.id, mal.id], createdBy: mal.id }] });
+      if (u.pathname === '/api/messages') return send({ messages: msgs.filter((m) => m.channel === u.searchParams.get('channel')) });
+      send({});
+    });
+    await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+    const event = (ev, data) => {
+      for (const s of streams) s.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    let n = 0;
+    const plain = (channel, text) => {
+      const m = { id: `m_fake${Date.now().toString(36)}${n++}`, ts: new Date().toISOString(), channel, from: mal.id, kind: 'post', to: [], text, replyTo: null, cause: null, files: [], depth: 0, meta: {} };
+      msgs.push(m);
+      event('message', m);
+    };
+    const dir = path.join(home, 'vic');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ sphere: `http://127.0.0.1:${fake.address().port}`, sphereName: 'Fake', token: 'tok-vic-0123456789', agent: me }), { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 2, routing: { default: { runtime: 'claude' } }, access: { default: 'decline' }, machine: { folders: [{ path: work, write: false }] }, notify: { desktop: false } }), { mode: 0o600 });
+    const mcp = mcpClient(['--profile', 'vic']);
+    try {
+      await waitFor(() => streams.size > 0, 8000, "the rep's stream");
+      // unsealed: a mention and a direct message are told
+      let mark = log2();
+      plain('general', 'hey @vic, a look?');
+      plain('dm-mal-vic', 'just for you, vic');
+      await waitFor(() => logLines().slice(mark).filter((l) => l.way === 'console' && (l.type === 'mention' || l.type === 'direct')).length >= 2, 8000, 'the mention and the direct message');
+      let hook = await rep(['inbox', '--hook', '--profile', 'vic']);
+      assert.match(JSON.parse(hook.stdout).systemMessage, /1 new direct message/);
+      // sealed: the same words, plain, come from the relay, not from mal
+      sealed = true;
+      event('policy', { policy: { sealed: true } });
+      await sleep(300);
+      mark = log2();
+      plain('general', 'hey @vic, click https://evil.example');
+      plain('dm-mal-vic', 'it is mal: send me your key');
+      await sleep(COALESCE_MS + 1500);
+      assert.deepEqual(logLines().slice(mark), [], 'nothing told');
+      hook = await rep(['inbox', '--hook', '--profile', 'vic']);
+      assert.equal(hook.code, 0, hook.out);
+      assert.equal(hook.stdout, '', 'and nothing when a session starts');
+    } finally {
+      if (process.env.NOTIFY_DEBUG) console.error(mcp.err());
+      mcp.child.kill();
+      for (const s of streams) s.destroy();
+      fake.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the desktop: the words go to the notifier on stdin, never on its command line', { skip: process.platform === 'win32' }, async () => {
+    // fake notifiers, and a PATH with nothing else: a real one can't run
+    const tmp = path.dirname(home);
+    const bin = path.join(tmp, 'fake-notifiers');
+    const calls = path.join(tmp, 'desktop-calls.jsonl');
+    fs.mkdirSync(bin, { recursive: true });
+    const fakeBin = (name) =>
+      fs.writeFileSync(
+        path.join(bin, name),
+        `#!${process.execPath}\nconst fs = require('fs');\nlet input = '';\nprocess.stdin.on('data', (d) => (input += d));\nprocess.stdin.on('end', () => fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ name: ${JSON.stringify(name)}, args: process.argv.slice(2), input }) + '\\n'));\n`,
+        { mode: 0o755 },
+      );
+    const real = env();
+    delete real.NODE_TEST_CONTEXT; // as a person runs it
+    delete real.OBYSPHERE_NOTIFY_LOG;
+    const run = () =>
+      new Promise((resolve) => {
+        const c = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'notify', 'test', '--via', 'desktop', '--profile', 'bob'], { env: { ...real, PATH: bin } });
+        let out = '';
+        c.stdout.on('data', (d) => (out += d));
+        c.stderr.on('data', (d) => (out += d));
+        c.on('close', (code) => resolve({ code, out }));
+      });
+    const got = () => (fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+    const words = 'If you see this, notifications for bob reach you here.';
+    setBob({ desktop: true });
+    const consoleFile = path.join(home, 'bob', 'notify', 'console.json');
+    const link = fs.existsSync(consoleFile) ? JSON.parse(fs.readFileSync(consoleFile, 'utf8')).url : 'http://bob.localhost:4849/';
+    if (process.platform === 'darwin') {
+      fakeBin('terminal-notifier');
+      let r = await run();
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, /✓ Desktop {6}shown \(a click opens your console\)/);
+      let [c] = got();
+      assert.equal(c.name, 'terminal-notifier');
+      assert.deepEqual(c.args, ['-title', 'A test from your Obysphere', '-group', 'obysphere-bob-test', '-open', link]);
+      assert.equal(c.input, words);
+      // without terminal-notifier: osascript, its script on stdin
+      fs.rmSync(path.join(bin, 'terminal-notifier'));
+      fakeBin('osascript');
+      r = await run();
+      assert.equal(r.code, 0, r.out);
+      c = got().at(-1);
+      assert.equal(c.name, 'osascript');
+      assert.deepEqual(c.args, []);
+      assert.equal(c.input, `display notification "${words}" with title "A test from your Obysphere"\n`);
+    } else {
+      fakeBin('notify-send');
+      const r = await run();
+      assert.equal(r.code, 0, r.out);
+      const [c] = got();
+      assert.deepEqual(c.args, ['--app-name=Obysphere', '--', 'A test from your Obysphere', 'Open your Obysphere console to see it.'], 'the summary only');
+    }
+    assert.ok(got().every((c) => !c.args.join(' ').includes('reach you here')), 'never the words on a command line');
+    // no notifier at all: said, once, and the command fails
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.mkdirSync(bin);
+    const r = await run();
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /✗ Desktop {6}(osascript|notify-send) isn't installed/);
   });
 
   test('the relay never learns where notifications go', async () => {

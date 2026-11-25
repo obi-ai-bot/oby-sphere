@@ -584,7 +584,7 @@ async function localApi(req, res, url, p) {
         return sendJson(res, 200, { settings: settingsForConsole(loadSettings(p)), path: settingsFile(p) });
       } catch (e) {
         // the file as it is, so the owner can see what to fix
-        return sendJson(res, 200, { settings: maskSettings(readJsonFile(settingsFile(p), null)), path: settingsFile(p), error: printable(e.message), field: e.field || null });
+        return sendJson(res, 200, { settings: settingsAsFile(readJsonFile(settingsFile(p), null)), path: settingsFile(p), error: printable(e.message), field: e.field || null });
       }
     }
     if (route === '/local/settings' && m === 'PUT') {
@@ -3532,11 +3532,21 @@ function maskSettings(s) {
 function settingsForConsole(s) {
   return maskSettings({ ...s, notify: notifyOf(s) });
 }
+// the file as it is, when it doesn't pass: also with a notify section (the page takes one as
+// "this rep.mjs knows notifications"), masked
+function settingsAsFile(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  return maskSettings(raw.notify === undefined ? { ...raw, notify: notifyDefaults() } : raw);
+}
 function unmaskSettings(p, input) {
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-  const n = isObj(input) ? input.notify : null;
+  if (!isObj(input)) return input;
+  const was = readJsonFile(settingsFile(p), {})?.notify;
+  // a page that knows no notify section (an older one, from the relay) keeps the one stored
+  if (input.notify === undefined) return was === undefined || was === null ? input : { ...input, notify: was };
+  const n = input.notify;
   if (!isObj(n)) return input; // validation says what's wrong with it
-  const stored = readJsonFile(settingsFile(p), {})?.notify || {};
+  const stored = isObj(was) ? was : {};
   const keep = (given, was) => (typeof given === 'string' && typeof was === 'string' && was && given === maskUrl(was) ? was : given);
   const out = { ...n };
   if (isObj(out.phone)) out.phone = { ...out.phone, url: keep(out.phone.url, stored.phone?.url) };
@@ -3669,7 +3679,7 @@ async function notifySend(p, way, note, n, link) {
     notifyLogLine('desktop', note, body);
     if (NOTIFY_LOG) return 'recorded in the notification log (OBYSPHERE_NOTIFY_LOG)';
     if (NOTIFY_DRY) return 'not shown (running under node --test)';
-    return desktopNotify(p, note.title, body, link);
+    return desktopNotify(p, note.title, body, link, note.type);
   }
   const { url, content } = way === 'slack' ? { url: n.slack.webhookUrl, content: n.slack.content } : n.phone;
   const here = isLoopback(new URL(url).hostname);
@@ -3716,7 +3726,7 @@ function notifyLogLine(way, note, body) {
   } catch {}
 }
 
-function desktopNotify(p, title, body, link) {
+function desktopNotify(p, title, body, link, type = 'test') {
   return new Promise((resolve, reject) => {
     let bin;
     let args = [];
@@ -3725,8 +3735,9 @@ function desktopNotify(p, title, body, link) {
     if (process.platform === 'darwin') {
       const tn = onPath('terminal-notifier');
       if (tn) {
-        // the words on stdin, not the command line; a click opens your console
-        [bin, args, input, how] = [tn, ['-title', title, '-group', `obysphere-${p.profile}`, '-open', link], body, 'shown (a click opens your console)'];
+        // the words on stdin, not the command line; a click opens your console. One group per
+        // kind: a newer one of that kind replaces the last, and never removes another kind (what waits)
+        [bin, args, input, how] = [tn, ['-title', title, '-group', `obysphere-${p.profile}-${type}`, '-open', link], body, 'shown (a click opens your console)'];
       } else {
         const as = (s) => `"${String(s).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`;
         [bin, input] = ['osascript', `display notification ${as(body)} with title ${as(title)}\n`];
@@ -3741,7 +3752,8 @@ function desktopNotify(p, title, body, link) {
         '$t = $x.GetElementsByTagName("text")',
         `$t.Item(0).AppendChild($x.CreateTextNode(${q(title)})) > $null`,
         `$t.Item(1).AppendChild($x.CreateTextNode(${q(body)})) > $null`,
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Obysphere').Show([Windows.UI.Notifications.ToastNotification]::new($x))",
+        // shown as PowerShell's: Windows drops a toast from an app id it doesn't know, without an error
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))",
         '',
       ].join('\n');
     } else [bin, args] = ['notify-send', ['--app-name=Obysphere', '--', title, body]];
@@ -3868,7 +3880,7 @@ function notifyConsoleUrl(p, url) {
 // A direct message: in a channel of kind "dm" you're a member of (no kind: public). A mention:
 // @<your handle> in the words, elsewhere. An answer: a reply to an ask you made yourself (not
 // one your Oby made while answering). Asks to your Oby are its representative's (asked, waiting).
-const noticed = { mine: new Map(), channels: new Map(), channelsAt: 0, agents: new Map(), agentsAt: 0 };
+const noticed = { mine: new Map(), channels: new Map(), channelsAt: 0, channelsP: null, agents: new Map(), agentsAt: 0, agentsP: null };
 async function noticeMessage(p, m) {
   try {
     if (!validMessage(m) || !m.from || m.kind === 'system') return;
@@ -3889,40 +3901,64 @@ async function noticeMessage(p, m) {
     const agents = await agentsFor(api, m.from);
     const o = getSec(p).open(m, agents);
     if (!o.readable || (o.sealed && !o.verified)) return;
+    // a sealed Sphere carries only sealed messages: a plain one is the relay's own doing
+    if (!o.sealed && (await sphereSealed(api).catch(() => policyCache.sealed))) return;
     if (!type && new RegExp(`(^|[^\\w@-])@${p.agent.name}(?![\\w-])`, 'i').test(o.text)) type = 'mention';
     if (!type) return;
     const from = slug(agents.get(m.from)?.name) || 'unknown';
-    notifyOwner(p, { type, from, channel: m.channel, body: o.text, ref: m.id, ...(type === 'answered' && m.meta?.declined ? { title: `@${from} declined your ask` } : {}) });
+    const title = type !== 'answered' ? null : m.meta?.declined ? `@${from} declined your ask` : m.meta?.error ? `@${from} couldn't answer your ask` : null;
+    notifyOwner(p, { type, from, channel: m.channel, body: o.text, ref: m.id, ...(title ? { title } : {}) });
   } catch {}
 }
 async function myAsk(api, p, id) {
   if (noticed.mine.has(id)) return noticed.mine.get(id);
-  let yes = false;
+  let x;
   try {
-    const { message: x } = await api.get(`/api/messages/${id}`);
-    yes = validMessage(x) && x.id === id && x.from === p.agent.id && x.kind === 'ask' && !x.cause && !x.depth;
-  } catch {}
+    ({ message: x } = await api.get(`/api/messages/${id}`));
+  } catch {
+    return false; // not known now: nothing kept, so the next reply asks again
+  }
+  const yes = validMessage(x) && x.id === id && x.from === p.agent.id && x.kind === 'ask' && !x.cause && !x.depth;
   if (noticed.mine.size > 500) noticed.mine.delete(noticed.mine.keys().next().value);
   noticed.mine.set(id, yes);
   return yes;
 }
+// One look at the channels at a time, shared by every message that needs it, and at most one
+// every 2 seconds. A channel that's new since the last look waits for the next one (the first
+// message in a new direct conversation, or several messages at once), rather than passing for
+// a public one.
 async function channelOf(api, name) {
-  if (!noticed.channels.has(name) && Date.now() - noticed.channelsAt > 2000) {
-    noticed.channelsAt = Date.now();
-    const { channels } = await api.get('/api/channels');
-    noticed.channels = new Map(
-      (Array.isArray(channels) ? channels : [])
-        .filter((c) => c && typeof c.name === 'string')
-        .map((c) => [c.name, { kind: ['public', 'private', 'dm'].includes(c.kind) ? c.kind : 'public', members: Array.isArray(c.members) ? c.members.filter((x) => ID.a.test(String(x))) : [] }]),
-    );
+  for (let i = 0; i < 2 && !noticed.channels.has(name); i++) {
+    if (!noticed.channelsP) {
+      const wait = Math.max(0, noticed.channelsAt + 2000 - Date.now());
+      noticed.channelsP = new Promise((r) => setTimeout(r, wait))
+        .then(() => {
+          noticed.channelsAt = Date.now();
+          return api.get('/api/channels');
+        })
+        .then(({ channels }) => {
+          noticed.channels = new Map(
+            (Array.isArray(channels) ? channels : [])
+              .filter((c) => c && typeof c.name === 'string')
+              .map((c) => [c.name, { kind: ['public', 'private', 'dm'].includes(c.kind) ? c.kind : 'public', members: Array.isArray(c.members) ? c.members.filter((x) => ID.a.test(String(x))) : [] }]),
+          );
+        })
+        .finally(() => (noticed.channelsP = null));
+    }
+    await noticed.channelsP;
   }
   return noticed.channels.get(name) || null;
 }
 async function agentsFor(api, id) {
   if (!noticed.agents.has(id) || Date.now() - noticed.agentsAt > 60e3) {
-    const { agents } = await api.get('/api/agents');
-    noticed.agents = new Map((agents || []).filter(validAgent).map((a) => [a.id, a]));
-    noticed.agentsAt = Date.now();
+    noticed.agentsP ||= api
+      .get('/api/agents')
+      .then(({ agents }) => {
+        noticed.agents = new Map((agents || []).filter(validAgent).map((a) => [a.id, a]));
+        noticed.agentsAt = Date.now();
+      })
+      .finally(() => (noticed.agentsP = null));
+    await noticed.agentsP;
   }
   return noticed.agents;
 }
@@ -4093,7 +4129,8 @@ async function hookDirect(p, deadline) {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   };
-  const [{ channels }, { agents }] = await Promise.all([get('/api/channels'), get('/api/agents')]);
+  const [{ channels }, { agents }, info] = await Promise.all([get('/api/channels'), get('/api/agents'), get('/api/info')]);
+  const sealed = !!info?.sphere?.policy?.sealed;
   const names = (Array.isArray(channels) ? channels : [])
     .filter((c) => c && c.kind === 'dm' && Array.isArray(c.members) && c.members.includes(p.agent.id) && typeof c.name === 'string' && /^[a-z0-9_-]{1,80}$/.test(c.name))
     .slice(0, 10)
@@ -4104,8 +4141,10 @@ async function hookDirect(p, deadline) {
   for (const { messages } of lists) {
     for (const m of messages || []) {
       if (!validMessage(m) || !m.from || m.from === p.agent.id || m.kind === 'system' || !(Date.parse(m.ts) > since)) continue;
+      if (m.kind === 'ask' && m.to.includes(p.agent.id)) continue; // an ask to your Oby: it answers, or it waits for you (above)
       const o = openFor(p, m, amap);
       if (!o.readable || (o.sealed && !o.verified)) continue;
+      if (!o.sealed && sealed) continue; // in a sealed Sphere, a plain message is the relay's own doing
       out.push({ from: `@${slug(amap.get(m.from)?.name) || 'unknown'}`, channel: `#${m.channel}`, at: m.ts, words: o.text });
     }
   }
