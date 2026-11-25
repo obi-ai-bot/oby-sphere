@@ -16,7 +16,8 @@ On main:
   - a `Service-Worker` header gets 403;
   - `/api/*` and `/local/*` refuse a [`Sec-Fetch-Site`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Site) other than `same-origin` or `none`;
   - writes, and every `/local/*` call, need `x-obysphere-console: 1` from one of its own origins;
-  - the page has the Sphere's own CSP (`PAGE_HEADERS`: `connect-src 'self'`, `worker-src 'none'`, `frame-ancestors 'none'`).
+  - the page has the Sphere's own CSP (`PAGE_HEADERS`: `connect-src 'self'`, `worker-src 'none'`, `frame-ancestors 'none'`). It allows inline scripts (`script-src 'self' 'unsafe-inline'`), so it's the page's escaping, not the CSP, that keeps other members' words from running as script.
+- **Where the page comes from.** `ui()` serves the `public/index.html` beside `rep.mjs` when there is one. When `rep.mjs` runs alone, as the README's one-file install does, it serves the relay's page instead. That page runs at the console's origin, with the whole local API: it can read and change your settings (`/local/settings`) and decide what waits for you (`/local/pending`). So with a one-file install, a malicious relay reaches what `/local/*` gives. That's a gap today, apart from this issue.
 - **Tokens stay out of the browser.** The console adds `Authorization` itself when it passes `/api/*` to the relay, opens sealed messages on the way (`openForPage()`, `openBlock()`), and decrypts files. The page gets only `window.OBYSPHERE_CONSOLE`: handle, owner, the Sphere's address and name.
 - **The browser keeps storage per origin** ([same-origin policy](https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy)): host and port both count. The page keeps its view in `localStorage`. The first time a profile and Sphere pair loads at an origin, the console sends [`Clear-Site-Data`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Clear-Site-Data) `"cache", "storage"` (the pairs are kept in the profile's `console.json`), so a port that served another profile starts clean.
 - `*.localhost` names reach this machine without any DNS setup ([RFC 6761, 6.3](https://www.rfc-editor.org/rfc/rfc6761#section-6.3)), which is what gives each profile a host name of its own.
@@ -41,9 +42,9 @@ One process per profile, as in 0.3.0.
 Security and privacy:
 
 - Origins, storage, guards and tokens stay as they are. Sphere A's page still can't call Sphere B's console: its CSP allows only its own origin (`connect-src 'self'`), and B takes only same-origin requests.
-- New: Sphere A's page learns the names of your other Spheres and their counts. If another member's words ever got a script into A's page (the CSP and the page's escaping are there to stop that), it would learn that you're in B, not what's said there.
-- No relay learns anything: the list is answered on your machine. A malicious relay for Sphere A can't reach B.
-- A stolen machine: no change.
+- New: Sphere A's page learns the names of your other Spheres and their counts. If another member's words ever got a script into A's page (the page's escaping is what stops that), it would learn that you're in B, not what's said there.
+- The list is answered on your machine, so no relay is sent it. But a console that serves the relay's page (a one-file install) would hand the list to that relay's page. So `/local/profiles` answers only when the console serves its own `public/index.html`; with the relay's page it answers 404. A malicious relay for Sphere A still can't reach B.
+- The links are plain addresses, with no key or token in them. A stolen machine or someone with a join key gets nothing new.
 
 Cost: about 80 lines in rep.mjs and 80 in the page. No hosting. Each profile still runs its own Node process (tens of MB each) and service.
 
@@ -52,14 +53,14 @@ Cost: about 80 lines in rep.mjs and 80 in the page. No hosting. Each profile sti
 - `obysphere console` (or `rep.mjs ui --all`) listens on one port and serves every profile: `sam.localhost:4851` is profile `sam`, `sam-oss.localhost:4851` is profile `sam-oss`. The `Host` header picks the profile, once per request, from a fixed table. There's no profile parameter anywhere.
 - Inside, today's `ui()` becomes `consoleFor(p)`, which returns a handler with its own state (file keys, uploads waiting for their message, the agents), and one server dispatches by `Host`. `startRep()` runs once per profile in the same process. One background service instead of one per profile.
 - The switcher is A's. The counts come from memory.
-- What is global today must become per profile first. `policyCache` (whether the Sphere is sealed) is one object for the whole process: with two Spheres it would mix them up, and `handle()` relies on it to refuse a plain ask in a sealed Sphere (one the relay may have made up). `secs` and the environment caches are already keyed by profile.
+- What is global today must become per profile first. `policyCache` (whether the Sphere is sealed) is one object for the whole process: with two Spheres it would mix them up, and `handle()` relies on it to refuse a plain ask in a sealed Sphere (one the relay may have made up). In 0.3.0 the notifications section adds more: `noticed` keeps one Sphere's channels and agents. `loadProfile()` and `ui()` read the profile and port from the command line (`opt`). `secs` and the environment caches are already keyed by profile.
 
 Security and privacy:
 
 - Origins and storage stay apart, as in A.
 - One process holds every profile's token, keys and (0.3.0) join key in memory. The same user can already read them all from disk, so this changes little against malware. But a bug that picks the wrong profile now leaks across Spheres: a request at A's origin served with B's token. So the profile is tied to the `Host` in one place, and tests check that every route answers for that profile only.
 - A crash or a hang stops every Sphere's Oby at once.
-- Relays: no change.
+- Relays, members and join-key holders: no change. The relay's page (a one-file install) would need the same rule as in A, per profile.
 
 Cost: about 200 lines in rep.mjs (`ui()` split, per-profile caches, the host table), changes to `obysphere.mjs`'s services (one unit, and moving people off the per-profile ones), and A's page work.
 
@@ -83,11 +84,14 @@ Browsers separate by origin, not by path. Every Sphere would share `localStorage
   - the answer holds no token, no path and no words of an ask;
   - it needs the console's header, and refuses another `Origin` or `Sec-Fetch-Site: cross-site`;
   - a profile with a bad `service.json` port, or a folder name that isn't a handle, is left out or has no address;
-  - the page's HTML holds nothing about the other profile before the call.
+  - the page's HTML holds nothing about the other profile before the call;
+  - a console run from a copy of `rep.mjs` alone in a temp folder (so it serves the relay's page) answers 404.
 
 Then a second step, for notifications across Spheres: when you have more than one profile, notification titles name the Sphere ("In Acme: @bob asks your Oby"), if the owner agrees (question 1).
 
-Related, and out of scope: `mcpAddCommand()` names every profile's MCP server `obysphere`, so adding a second profile to Claude Code replaces the first.
+Related, and out of scope:
+- `mcpAddCommand()` names every profile's MCP server `obysphere`, so a second profile can't sit beside the first in Claude Code under that name.
+- The relay's page with the local API, above. The console could refuse `/local/*` writes when it serves the relay's page, or refuse to serve it at all.
 
 ## Questions for the owner
 
