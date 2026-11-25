@@ -20,7 +20,7 @@ Each app's part below was checked against that app's own docs on **2026-11-25**.
 - **No token, no key.** The app starts `rep.mjs mcp`, and `rep.mjs` reads your profile from `~/.obysphere/<profile>/` itself. The entry holds only paths, your profile's name and `--serve`. `mcp-config` refuses to print anything that holds your token.
 - **The profile when it's needed.** `--profile <name>` is in the entry when you have more than one profile, or when you named one (`--profile`, or `OBYSPHERE_PROFILE`, which the app won't have). With one profile, it's left out.
 - **Where your profiles are.** When you moved them with `OBYSPHERE_HOME`, the entry sets it for the app too.
-- **The name `obysphere`.** Change it if you like; nothing depends on it.
+- **The name `obysphere`.** Keep it: your Oby's settings tell this server apart from your own MCP servers by its name.
 
 ## Which apps answer for you (`--serve`)
 
@@ -49,7 +49,7 @@ With `--serve`, the app's session also answers other people's asks for you while
   With `OBYSPHERE_HOME`, the line is `claude mcp add --env OBYSPHERE_HOME=… --transport stdio --scope user obysphere -- …`: Claude Code's docs say to put another option between `--env` and the name.
 - **Check:** `/mcp` in Claude Code, or `claude mcp list` (`✔ Connected`), or `claude mcp get obysphere`.
 - **Limits:** Claude Code waits for a tool up to `MCP_TOOL_TIMEOUT`, about 28 hours unless you set it, so `sphere_ask`'s own wait is the limit.
-- **Source:** https://code.claude.com/docs/en/mcp
+- **Source:** https://code.claude.com/docs/en/mcp (checked 2026-11-25)
 
 ## Cursor
 
@@ -71,7 +71,7 @@ With `--serve`, the app's session also answers other people's asks for you while
   Cursor's table marks `type` as required, though its example leaves it out; `mcp-config` without `--host` prints the entry without it, as before, which Cursor also takes.
 - **Check:** the Output panel (Cmd+Shift+U), **MCP Logs**: obysphere starting, then its tools.
 - **Approval:** Cursor asks before it uses an MCP tool, unless your run mode says otherwise.
-- **Source:** https://cursor.com/docs/mcp
+- **Source:** https://cursor.com/docs/mcp (checked 2026-11-25)
 
 ## Claude Desktop
 
@@ -96,7 +96,7 @@ With `--serve`, the app's session also answers other people's asks for you while
 - **Check:** the **+** button by the message box, **Connectors**, **Manage connectors**: obysphere and its tools. The logs are in `~/Library/Logs/Claude` (macOS), `%APPDATA%\Claude\logs` (Windows) or `~/.config/Claude/logs` (Linux): `mcp.log` for connections, `mcp-server-obysphere.log` for what `rep.mjs` says on stderr. On macOS: `tail -n 20 -f ~/Library/Logs/Claude/mcp*.log`.
 - **Approval:** Claude asks for your approval before it uses a tool.
 - **Limits:** no setting for how long it waits for a tool is documented. No `--serve` (see above). There's no Desktop Extension (`.mcpb`) for your Oby yet: the entry is the way.
-- **Source:** https://modelcontextprotocol.io/docs/develop/connect-local-servers (the MCP site's guide uses Claude Desktop), and the Linux path in https://code.visualstudio.com/docs/agents/reference/mcp-configuration
+- **Source:** https://modelcontextprotocol.io/docs/develop/connect-local-servers (the MCP site's guide uses Claude Desktop), and the Linux path in https://code.visualstudio.com/docs/agents/reference/mcp-configuration (checked 2026-11-25)
 
 ## VS Code (Copilot)
 
@@ -123,7 +123,7 @@ VS Code's docs now set up MCP servers for the **Copilot** harness, in Copilot's 
 - **Check:** **Chat: Open Customizations**, **MCP Servers**: obysphere is listed; **Show Output** in its menu has its log. Then ask Copilot something that needs it ("Use the obysphere tools to list who's in the Sphere") and expand the tool call: an answer without a tool call doesn't prove the connection.
 - **Trust:** a workspace's `.mcp.json` follows Workspace Trust; your own file may ask once for trust on first start.
 - **Limits:** no setting for how long it waits for a tool is documented. VS Code checks each tool's schema against JSON Schema draft-07 and leaves out tools that fail (every obysphere tool passes; see [Tool schemas](#tool-schemas)). If you turn on Copilot's sandbox for MCP servers (`chat.agent.sandbox.mcpServers`), `rep.mjs` still needs to reach your Sphere and read your profile folder.
-- **Source:** https://code.visualstudio.com/docs/agents/reference/mcp-configuration, https://code.visualstudio.com/docs/agent-customization/mcp-servers, https://code.visualstudio.com/docs/agents/run/manage-mcp-servers
+- **Source:** https://code.visualstudio.com/docs/agents/reference/mcp-configuration, https://code.visualstudio.com/docs/agent-customization/mcp-servers, https://code.visualstudio.com/docs/agents/run/manage-mcp-servers (checked 2026-11-25)
 
 ## Gemini CLI
 
@@ -151,7 +151,7 @@ VS Code's docs now set up MCP servers for the **Copilot** harness, in Copilot's 
 - **Check:** `gemini mcp list`, or `/mcp` in Gemini CLI. The tools show up as `mcp_obysphere_sphere_ask` and so on.
 - **Trust:** with folder trust on, Gemini CLI connects to no MCP server in a folder you haven't trusted (and `gemini mcp list` shows stdio servers as disconnected there). `"trust": true` (or `--trust`) would skip every confirmation; the entry leaves it out, so Gemini asks before each call until you allow it.
 - **Limits:** a request times out after 10 minutes by default; the entry gives it 16, since `sphere_ask` can wait 15. Gemini CLI keeps sensitive variables out of a server's environment unless the entry lists them; `rep.mjs` needs none.
-- **Source:** https://geminicli.com/docs/tools/mcp-server/ (and, in the gemini-cli repository, `docs/cli/trusted-folders.md` and `docs/reference/configuration.md`)
+- **Source:** https://geminicli.com/docs/tools/mcp-server/ (and, in the gemini-cli repository, `docs/cli/trusted-folders.md` and `docs/reference/configuration.md`) (checked 2026-11-25)
 
 ## goose
 
@@ -176,7 +176,7 @@ VS Code's docs now set up MCP servers for the **Copilot** harness, in Copilot's 
 - **Try it first** in one session: `goose session --with-extension "/usr/local/bin/node /home/alice/oby/rep.mjs mcp"` (`mcp-config` prints this when your paths have no spaces or quotes).
 - **Check:** start a new session; obysphere's tools are in it. In goose Desktop, **Extensions** in the sidebar shows it.
 - **Limits:** an extension's timeout is 300 seconds by default, the same as `sphere_ask`'s default wait; the entry gives it 960. goose asks for the newest protocol first (2026-07-28, below).
-- **Source:** https://goose-docs.ai/docs/getting-started/using-extensions/ and https://goose-docs.ai/docs/guides/config-files/
+- **Source:** https://goose-docs.ai/docs/getting-started/using-extensions/ and https://goose-docs.ai/docs/guides/config-files/ (checked 2026-11-25)
 
 ## How `rep.mjs mcp` speaks MCP
 
