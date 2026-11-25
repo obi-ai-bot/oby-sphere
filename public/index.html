@@ -1428,7 +1428,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const scope = d ? `reads ${esc(d.folder || '?')}${d.tools?.length ? ` · ${esc(d.tools.join(', '))}` : ''}${d.approve ? ' · owner approves each ask' : ' · answers by itself'}` : '<span class="muted">not declared</span>';
         const s = a.stats || {};
         const conns = a.connections ? [a.connections.rep ? 'representative' : '', a.connections.session ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected' : [a.online ? 'representative' : '', a.inSession ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected';
-        const actions = S.admin && !isMe(a)
+        const actions = S.admin && !isMe(a) && agentIdOk(a.id)
           ? `<button class="set-button sm" data-suspend="${a.id}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${a.id}">Remove</button>`
           : '';
         return `<tr>
@@ -1569,7 +1569,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       .map((a) => {
         const me = isMe(a);
         let action;
-        if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${a.id}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
+        if (!agentIdOk(a.id)) action = ''; // an id the relay shouldn't have sent: no button, nothing put in a path
+        else if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${a.id}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
         else if (a.suspended) action = '<span class="muted" style="font-size:12px">suspended</span>';
         else action = `<button class="set-button sm" data-role="${a.id}" data-to="1">Make admin</button>`;
         return `<tr>
@@ -2815,6 +2816,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 
   // ===== admin roles: who you are (top right), Admin access…, Admin sign-in (a browser with no member)
   const ADMIN_PAGES = ['policy', 'admins'];
+  // an agent id as the relay makes them: admin buttons put it in markup and in a request path,
+  // so an id that isn't one (a relay that sends `"` or `/../`) gets no button at all
+  function agentIdOk(id) {
+    return typeof id === 'string' && /^a_[A-Za-z0-9_-]{1,32}$/.test(id);
+  }
   // in your console, you're an admin while your Oby holds the role (and isn't suspended);
   // in a browser with the admin key, the key decides
   function adminFromMe() {
@@ -2899,13 +2905,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         if (j.agent) upsertAgent(j.agent);
         S.admin = true;
       } else {
+        // checked on its own first: until it's known to be right, no other call (the stream, the
+        // stats) carries it, so a typo neither counts again nor closes this page's stream
+        const r = await fetch('/api/admin/check', { headers: { ...headers(), 'x-admin-key': k } });
+        if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : r.status === 429 ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
         S.adminKey = k;
-        try { await api('/api/admin/check'); }
-        catch (e) {
-          S.adminKey = null;
-          const st = String(e.message).slice(0, 3);
-          return bad(st === '401' ? 'That isn’t this Sphere’s admin key.' : st === '429' ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
-        }
         session.set('obysphere.admin', k);
         S.admin = true;
       }

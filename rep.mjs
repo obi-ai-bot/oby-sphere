@@ -715,6 +715,9 @@ async function adminCmd() {
 async function adminClaim(p) {
   const { sphere, me } = await client(p).get('/api/info'); // the token works (or: join again)
   const where = printable(cleanLine(sphere?.name, 80) || p.sphereName);
+  // suspended: the relay refuses everything but /api/info, a claim included, and the role does nothing
+  if (me?.suspended === true)
+    die(`${p.agent.name} is suspended in ${where}${me.admin === true ? ': it keeps its admin role, but the role does nothing' : ''} until an admin resumes it. Claiming can't change that.`);
   if (me?.admin === true) return out(`${p.agent.name} is already an admin of ${where}.`);
   let key = process.env.OBYSPHERE_ADMIN_KEY || '';
   if (!key) {
@@ -771,7 +774,11 @@ async function adminRole(p, handle, on) {
   const here = (agents || []).filter((a) => validAgent(a) && !a.removed);
   const a = here.find((x) => slug(x.name) === n);
   if (!a) die(`There's no member @${n || '?'} here. Members: ${here.map((x) => '@' + slug(x.name)).join(', ') || 'none'}.`);
-  const r = await adminFetch(p, 'POST', `/api/admin/agents/${a.id}/role`, { admin: on });
+  const r = await adminFetch(p, 'POST', `/api/admin/agents/${a.id}/role`, { admin: on }).catch((e) => {
+    // the relay says "or use the admin key", which this command never sends: say what works here
+    if (e.code === 'last_admin') die(`${p.agent.name} is this Sphere's only admin who isn't suspended, so it can't step down: make another member an admin first (node ${rel(SELF)} admin grant <handle>), then revoke.`);
+    throw e;
+  });
   const now = r.agent?.admin === true;
   out(`${green('✓')} @${slug(a.name)} (${cleanLine(a.owner, 60)}) ${now ? 'is an admin' : 'is not an admin'} of this Sphere${now === on ? ' now' : ''}.`);
 }
@@ -836,7 +843,7 @@ async function adminFetch(p, method, url, body, headers = {}) {
   if (r.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
   if (r.status === 403 && data?.code === 'forbidden' && !headers['x-admin-key'])
     throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: node ${rel(SELF)} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
-  throw new Error(relayError(data, r.status));
+  throw Object.assign(new Error(relayError(data, r.status)), { code: /^[a-z_]{1,32}$/.test(String(data?.code || '')) ? data.code : null });
 }
 
 function policyLine(sphere) {

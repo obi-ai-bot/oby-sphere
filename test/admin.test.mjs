@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
 
@@ -428,6 +429,9 @@ describe('the admin command and the console', () => {
     r = await rep(['admin', 'revoke', 'alice', '--profile', 'alice']);
     assert.equal(r.code, 1);
     assert.match(r.out, /only admin/);
+    // the relay's "or use the admin key" isn't something this command can do: it says what works here
+    assert.match(r.out, /admin grant <handle>/);
+    assert.doesNotMatch(r.out, /use the admin key/);
   });
 
   test('admin policy: anyone reads it; only an admin changes it', async () => {
@@ -505,5 +509,76 @@ describe('the admin command and the console', () => {
     assert.equal((await call('GET', '/api/admin/check', { at: ui.base, headers: h })).via, 'member', 'with its token, not the key');
     const page = await (await fetch(ui.base + '/')).text();
     assert.ok(!page.includes(ADMIN));
+  });
+
+  test("admin claim on a suspended Oby says it's suspended, not that it's already an admin", async () => {
+    const carol = JSON.parse(fs.readFileSync(path.join(home, 'carol', 'profile.json'), 'utf8')).agent.id;
+    assert.equal((await call('POST', `/api/admin/agents/${carol}/suspend`, { admin: ADMIN, body: { suspended: true } })).agent.suspended, true);
+    try {
+      const r = await rep(['admin', 'claim', '--profile', 'carol'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /carol is suspended in .*: it keeps its admin role, but the role does nothing until an admin resumes it/);
+      assert.doesNotMatch(r.out, /already an admin/);
+    } finally {
+      await call('POST', `/api/admin/agents/${carol}/suspend`, { admin: ADMIN, body: { suspended: false } });
+    }
+  });
+});
+
+// The console page's admin markup, run on its own: an agent id comes from the relay, which the
+// console doesn't trust, and it goes into a button's attribute and then into a request path.
+describe("the console page's admin markup", () => {
+  const page = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  // a function declaration out of the page's script, by its braces
+  const fnSource = (name) => {
+    const start = page.indexOf(`function ${name}(`);
+    assert.ok(start >= 0, `${name} is in the page`);
+    let depth = 0;
+    for (let i = page.indexOf('{', start); i < page.length; i++) {
+      if (page[i] === '{') depth++;
+      else if (page[i] === '}' && --depth === 0) return page.slice(start, i + 1);
+    }
+    throw new Error(`${name} has no end`);
+  };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const HOSTILE = 'a_x" autofocus onfocus="alert(1)';
+  const render = (fn, agents, S) => {
+    const ctx = {
+      S: { me: { id: 'a_me' }, admin: true, adminKey: null, sphere: { policy: {} }, ...S },
+      members: () => agents.slice(),
+      isMe: (a) => a.id === 'a_me',
+      ownerName: (a) => a.owner,
+      picture: () => '',
+      obyOf: (a) => a.owner,
+      stateOf: () => 'online',
+      stateHtml: (s) => s,
+      ago: () => 'now',
+      fmtMs: (n) => `${n} ms`,
+      head: (t, sub, right = '') => `<h1>${t}</h1>${sub}${right}`,
+      esc,
+    };
+    vm.createContext(ctx);
+    return vm.runInContext(`${fnSource('agentIdOk')}; ${fnSource(fn)}; ${fn}()`, ctx);
+  };
+  const agents = [
+    { id: 'a_me', name: 'alice', owner: 'Alice', admin: true },
+    { id: 'a_bob', name: 'bob', owner: 'Bob', admin: false },
+    { id: HOSTILE, name: 'mallory', owner: 'Mallory', admin: false },
+  ];
+
+  test('Admins: a button for each real member, none for an id the relay should never send', () => {
+    const html = render('pageAdmins', agents);
+    assert.match(html, /data-role="a_bob" data-to="1">Make admin/);
+    assert.ok(!html.includes('onfocus'), 'the id never reaches the markup');
+    assert.equal((html.match(/data-role=/g) || []).length, 1, 'only bob gets a button (alice is the only admin)');
+  });
+
+  test('Members: suspend and remove for real members only', () => {
+    const html = render('pageMembers', agents);
+    assert.match(html, /data-suspend="a_bob"/);
+    assert.match(html, /data-remove="a_bob"/);
+    assert.ok(!html.includes('onfocus'), 'the id never reaches the markup');
+    assert.equal((html.match(/data-remove=/g) || []).length, 1);
+    assert.ok(!render('pageMembers', agents, { admin: false }).includes('data-remove'), 'no actions for a member who is not an admin');
   });
 });
