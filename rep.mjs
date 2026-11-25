@@ -713,7 +713,8 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       log(red('  ✗ your settings: ') + printable(e.message) + dim(' (asks are declined until you fix them)'));
       return null;
     }
-    const d = { ...declaredSummary(s, { approveAll }), ...offerFor(p, s) }; // instruments: the valid ones you made
+    const sum = declaredSummary(s, { approveAll });
+    const d = { ...sum, ...offerFor(p, s, sum) }; // instruments: the valid ones you made, in the room the request leaves
     const key = JSON.stringify(d);
     if (key !== declaredNow) {
       await api.post('/api/me', { runtime: runtimeLabel(s.routing.default), declared: d });
@@ -1856,7 +1857,8 @@ const INSTRUMENT_TYPES = ['string', 'number', 'integer', 'boolean'];
 const INSTRUMENT_KEYS = ['name', 'description', 'kind', 'input', 'run', 'folder', 'timeLimitSec', 'askFirst'];
 const FIELD_KEYS = ['type', 'description', 'required', 'enum', 'default'];
 const INSTRUMENT_MAX = 12; // offered per member (the relay keeps no more)
-const INSTRUMENT_DECLARED_BYTES = 12 * 1024; // their declared JSON, all together
+const INSTRUMENT_DECLARED_BYTES = 12 * 1024; // their declared JSON, all together, in UTF-8 bytes
+const DECLARE_BYTES = 15 * 1024; // all of POST /api/me (the relay takes 16 KB)
 const INSTRUMENT_FILE_BYTES = 32 * 1024;
 const INSTRUMENT_BODY_MAX = 8000;
 const INPUT_STRING_MAX = 4000;
@@ -2116,12 +2118,13 @@ function commandFolder(inst, s) {
   throw settingsError('folder', hit.length ? `more than one of your Oby's folders is called ${want}: give its full path` : `${cleanLine(inst.folder, 80)} isn't one of your Oby's folders (${folders.map((x) => path.basename(x.path)).join(', ')}): pick one, or add it in Settings`);
 }
 
-// why a value doesn't fit a field, or null
-function valueProblem(f, v) {
+// why a value doesn't fit a field, or null. theirs: the field is another member's (relay
+// data), so its choices aren't repeated here: they're shown fenced, with the rest of its inputs
+function valueProblem(f, v, { theirs = false } = {}) {
   if (f.type === 'string') {
     if (typeof v !== 'string') return 'is text';
     if (v.length > INPUT_STRING_MAX) return `is at most ${INPUT_STRING_MAX.toLocaleString('en-US')} characters`;
-    if (f.enum && !f.enum.includes(v)) return `is one of ${f.enum.join(', ')}`;
+    if (f.enum && !f.enum.includes(v)) return theirs ? 'is one of the values listed for it' : `is one of ${f.enum.join(', ')}`;
     return null;
   }
   if (f.type === 'boolean') return typeof v === 'boolean' ? null : 'is true or false';
@@ -2130,8 +2133,9 @@ function valueProblem(f, v) {
   return null;
 }
 
-// an input, checked against the fields (defaults filled in when given); throws in words
-function checkInput(fields, input) {
+// an input, checked against the fields (defaults filled in when given); throws in words.
+// theirs: another member's fields, whose choices the words don't repeat (valueProblem)
+function checkInput(fields, input, { theirs = false } = {}) {
   let v = input ?? {};
   if (typeof v === 'string') {
     try {
@@ -2145,7 +2149,7 @@ function checkInput(fields, input) {
   const out = {};
   for (const [k, x] of Object.entries(v)) {
     if (!Object.hasOwn(fields, k)) throw new Error(`${cleanLine(k, 40)} isn't one of its inputs (${names.join(', ') || 'it takes none'})`);
-    const why = valueProblem(fields[k], x);
+    const why = valueProblem(fields[k], x, { theirs });
     if (why) throw new Error(`${k} ${why}`);
     out[k] = x;
   }
@@ -2175,7 +2179,8 @@ function fieldsOf(schema) {
 // what you declare of one of yours: name, description, kind and inputs (never the body, the program or the folder)
 function declaredOf(inst) {
   const properties = {};
-  for (const [k, f] of Object.entries(inst.fields)) properties[k] = { type: f.type, description: f.description, ...(f.enum ? { enum: f.enum } : {}), ...(f.default !== undefined ? { default: f.default } : {}) };
+  // a text default is shown cut to 200 characters, as the relay keeps it; your file's whole default is the one used
+  for (const [k, f] of Object.entries(inst.fields)) properties[k] = { type: f.type, description: f.description, ...(f.enum ? { enum: f.enum } : {}), ...(f.default !== undefined ? { default: typeof f.default === 'string' ? cleanLine(f.default, 200) : f.default } : {}) };
   return { name: inst.name, description: inst.description, kind: inst.kind, inputSchema: { type: 'object', properties, required: Object.keys(inst.fields).filter((k) => inst.fields[k].required) } };
 }
 
@@ -2215,10 +2220,12 @@ function loadInstruments(p, { settings = null } = {}) {
   });
 }
 
-// what your representative offers: the valid ones, up to what the Sphere keeps
+// what your representative offers: the valid ones, up to what the Sphere keeps. Sizes are
+// UTF-8 bytes, as the relay counts its body limit; summary: the rest of what's declared
 const instrumentNotes = new Set();
-function offerFor(p, s) {
+function offerFor(p, s, summary = {}) {
   const list = [];
+  const room = Math.min(INSTRUMENT_DECLARED_BYTES, DECLARE_BYTES - Buffer.byteLength(JSON.stringify({ runtime: 'x'.repeat(40), declared: summary })));
   for (const x of loadInstruments(p, { settings: s })) {
     if (!x.inst) {
       const note = `${x.name}: ${x.problem}`;
@@ -2227,7 +2234,7 @@ function offerFor(p, s) {
       continue;
     }
     const d = declaredOf(x.inst);
-    if (list.length >= INSTRUMENT_MAX || JSON.stringify([...list, d]).length > INSTRUMENT_DECLARED_BYTES) {
+    if (list.length >= INSTRUMENT_MAX || Buffer.byteLength(JSON.stringify([...list, d])) > room) {
       const note = `${x.name}: over the limit`;
       if (!instrumentNotes.has(note)) log(yellow('  instrument not offered: ') + dim(`${x.name}: a Sphere keeps ${INSTRUMENT_MAX} instruments per member, ${INSTRUMENT_DECLARED_BYTES / 1024} KB in all`));
       instrumentNotes.add(note);
@@ -2238,10 +2245,11 @@ function offerFor(p, s) {
   return list.length ? { instruments: list } : {};
 }
 
+// every file in the folder, the programs beside the .md files too (one gone makes its instrument invalid)
 function instrumentsStamp(p) {
   const dir = instrumentsDir(p);
   try {
-    return fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort().map((n) => `${n}:${fileStamp(path.join(dir, n))}`).join('|');
+    return fs.readdirSync(dir).filter((n) => !n.startsWith('.')).sort().slice(0, 300).map((n) => `${n}:${fileStamp(path.join(dir, n))}`).join('|');
   } catch {
     return '';
   }
@@ -2256,7 +2264,7 @@ function watchInstruments(p, declare) {
     stamp = now;
     try {
       const s = await declare();
-      if (s) log(dim(`  instruments changed: offering ${offerFor(p, s).instruments?.map((i) => i.name).join(', ') || 'none'}`));
+      if (s) log(dim(`  instruments changed: offering ${offerFor(p, s, declaredSummary(s)).instruments?.map((i) => i.name).join(', ') || 'none'}`));
     } catch (e) {
       log(yellow("  couldn't update the instruments you offer: ") + printable(e.message));
     }
@@ -2381,6 +2389,9 @@ function runCommand(bin, args, { cwd, env, timeoutMs, stdin }) {
         else child.kill(sig);
       } catch {}
     };
+    // decoded as a stream, so a character split across two reads stays whole
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (d) => {
       if (out.length < 256 * 1024) out += d;
       else cut = true;
@@ -2471,7 +2482,7 @@ async function toolUse(api, p, a, depth, progress, { pairs = [] } = {}) {
   }
   let input;
   try {
-    input = checkInput(fields, given);
+    input = checkInput(fields, given, { theirs: true });
   } catch (e) {
     throw new Error(`${e.message}. ${quoted(`The inputs of @${slug(target.name)}'s ${name}`, listingOf(target, inst).input)}`);
   }

@@ -84,7 +84,7 @@ The body is your instructions for a prompt instrument (required, up to 8,000 cha
 
 The frontmatter is a small part of YAML: `key: value` lines, fields indented with spaces under `input:`, lists as `[a, b]` or as `- a` lines, values plain or in quotes, `true`, `false`, numbers, and `#` comments. A `#` after a space starts a comment, so put a value that has one in quotes. Multi-line values and `{ }` maps aren't supported: long text goes in the body.
 
-Limits: 12 instruments per member are offered, their declared JSON 12 KB in all; a file is at most 32 KB; an input's strings at most 4,000 characters, the input at most 8 KB.
+Limits: 12 instruments per member are offered, their declared JSON 12 KB in all (in UTF-8, so text in other alphabets takes more room); a file is at most 32 KB; an input's strings at most 4,000 characters, the input at most 8 KB.
 
 ## Prompt instruments
 
@@ -121,7 +121,7 @@ input:
 - **What it prints is the answer**, up to 16,000 characters; your folders' paths in it are shortened to their names and your home folder to `~`. A non-zero exit code marks the answer as an error. At its time limit the program, and anything it started, is stopped, and the answer says so. It gets no files the ask carried.
 - **A plain environment:** what a shell needs (`PATH`, `HOME`, `USER`, `SHELL`, the temporary folder, locale, time zone, certificates and proxy settings) and nothing else: no API keys or tokens, no `OBYSPHERE_*` or `SPHERE_*`.
 - **It runs as you.** Your settings' read-only folders, shell and web choices limit your Oby, not this program: it can do whatever you can.
-- **Who can run it.** Your settings decide first, as for any ask: an Oby you decline stays declined, and topics and limits apply. Then it runs at once only for an Oby you **trust**, asking for itself (not passing on someone else's ask), and whose identity is sure. Anyone else's use waits for you in **Waiting for you**: **Run it**, answer it yourself, or decline it. With `askFirst: true`, every use waits.
+- **Who can run it.** Your settings decide first, as for any ask: an Oby you decline stays declined, and topics and limits apply. Then it runs at once only for an Oby you **trust**, asking for itself (not passing on someone else's ask), and whose identity is sure. Anyone else's use waits for you in **Waiting for you**: **Run it**, answer it yourself, or decline it. With `askFirst: true`, every use waits. In a Sphere that doesn't seal, the relay could put a trusted Oby's name on a use it made up, so there give a command instrument `askFirst: true`, or seal the Sphere.
 
 ## How others use them
 
@@ -135,7 +135,7 @@ input:
 - **Another member's words are data.** An instrument's name, description and inputs are what its member's representative says. The relay checks their shape and size and keeps nothing else. Your representative shows them to your agent only inside a fenced block of data, never as a tool description: `sphere_use` is one fixed tool whose words ship in `rep.mjs` ([SECURITY.md](SECURITY.md), finding F-07).
 - **The Sphere sees** each instrument's name, description, kind and inputs; never its body, its program, its folder or any path. When a use is sealed, the relay sees which instrument was used, and not the input or the answer.
 - **Your representative checks every use** against the file as it is now: an instrument you removed or broke is declined ("it doesn't offer that instrument"), and an input that doesn't fit is declined before any model or program runs. Declines use the same neutral words as every other decline.
-- **Your instruments stay yours.** They live in your profile, which your Oby can't read while answering.
+- **Your instruments stay yours.** They live in your profile, which can't be one of your Oby's folders, and the Sphere never gets their files. An Oby that answers with the risky reach (a full shell, Codex or Cursor) can still read what you can, so keep secrets out of them.
 - **A command instrument runs your program as you.** Keep it narrow, give it a time limit, and keep its input out of shells, SQL and paths.
 
 ## Ideas

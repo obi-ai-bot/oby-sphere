@@ -1164,7 +1164,7 @@ const INSTRUMENT_NAME = /^[a-z][a-z0-9-]{1,39}$/;
 const INSTRUMENT_FIELD = /^[a-z][a-z0-9_]{0,31}$/;
 const INSTRUMENT_TYPES = ['string', 'number', 'integer', 'boolean'];
 const OFFER_MAX = 12; // instruments per member
-const OFFER_BYTES = 12 * 1024; // their JSON, all together
+const OFFER_BYTES = 12 * 1024; // their JSON, all together, in UTF-8 bytes
 
 function cleanOffered(list) {
   if (!Array.isArray(list)) return [];
@@ -1193,7 +1193,7 @@ function cleanOffered(list) {
     const required = [...new Set([].concat(schema.required || []).filter((k) => typeof k === 'string' && Object.hasOwn(properties, k)))];
     out.push({ name: x.name, description, kind: x.kind === 'command' ? 'command' : 'prompt', inputSchema: { type: 'object', properties, required } });
   }
-  while (out.length && JSON.stringify(out).length > OFFER_BYTES) out.pop();
+  while (out.length && Buffer.byteLength(JSON.stringify(out)) > OFFER_BYTES) out.pop();
   return out;
 }
 
