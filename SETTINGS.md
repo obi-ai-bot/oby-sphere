@@ -6,6 +6,8 @@ Edit them in your console (**Settings**, under Your Oby), or in the file; `rep.m
 
 Answers run on your own sign-ins: your Claude subscription for Claude Code, ChatGPT for Codex, your Cursor plan. They use your plan's usage, not per-token billing ([Sign-in, not tokens](#sign-in-not-tokens)).
 
+Your settings move with your Oby when you take it to a new computer (`rep.mjs profile export`, then `profile import` there; [README](README.md#move-your-oby-to-a-new-computer)), as they are. Folders the new computer doesn't have make your Oby decline asks until you fix them (`import` names them), and the MCP servers you named are used only if that computer's Claude Code has them too.
+
 ## Older settings
 
 - **A profile from before settings.json** gets one at its first read, made from what it had: its runtime, model, rules and folder, `--approve` (asks wait for you), and `--allow` (`Bash` is the full shell, `Edit` or `Write` make the folder writable, `WebFetch` and `WebSearch` turn on the web).

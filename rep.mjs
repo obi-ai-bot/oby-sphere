@@ -142,6 +142,7 @@ function help() {
                                          your console: the Sphere in a browser, signed in as you
   node rep.mjs mcp-config [--profile <name>]                       how to add it to Claude Code / Cursor
   node rep.mjs settings [--profile <name>] [--json]                where your Oby's settings are, and what they say
+  node rep.mjs profile export [--out <file>] | import <file>        move your Oby to a new computer (node rep.mjs profile)
   node rep.mjs agents | whoami | inbox | read [channel]
   node rep.mjs ask <agent> "<message>" [--channel general] [--file <path>]
   node rep.mjs post "<message>" [--channel general] [--file <path>]
@@ -3675,9 +3676,540 @@ function die2(status, message) {
   throw e;
 }
 
+// ===== profile: export and import
+//
+// `profile export` writes this profile as one file, sealed with a passphrase; `profile import`
+// makes a profile from that file on another computer (or brings a backup back). What moves is
+// the Oby itself: its token and the Sphere's address (profile.json), its private keys
+// (keys.json), the keys of other Obys it pinned on first sight (peers.json) and its settings
+// (settings.json). What stays is this computer's own: usage counts (usage/), asks waiting for
+// the owner (pending/), local conversations (sessions.json), ask folders (asks/), what the
+// console remembers (console.json), runtime checks (runtimes.json), the copy of a version 1
+// settings file, and downloads. The same keys move, so the pins peers keep still match.
+//
+// The file is two lines: a header, as JSON (format, version, scrypt's N, r, p and salt, the
+// cipher and its 12-byte nonce), then the ciphertext and its GCM tag in base64url. The key is
+// scrypt(passphrase, salt), the cipher AES-256-GCM, with the header line's exact bytes as
+// additional data: a wrong passphrase or any changed byte fails, and nothing is written. The
+// passphrase comes from OBYSPHERE_PASSPHRASE or the terminal, never argv. Opened, the contents
+// are still untrusted: file names from a fixed list, the profile's name a handle, every field's
+// type and size checked, private keys matched to their public halves, and profile fields this
+// code doesn't know (such as paths to runtimes on the old computer) left behind.
+
+const PROFILE_FORMAT = 'obysphere-profile';
+const PROFILE_VERSION = 1;
+const PROFILE_KDF = { N: 2 ** 17, r: 8, p: 1 }; // 128 MiB of memory and about half a second, each time
+const PROFILE_PASSPHRASE_MIN = 12; // characters
+const PROFILE_MAX_BYTES = 4 * 1024 * 1024; // the whole file
+const PROFILE_EXT = '.obyprofile';
+// the files an export holds, in words; a file naming any other is refused
+const PROFILE_HOLDS = { 'profile.json': "your token and the Sphere's address", 'keys.json': 'your private keys', 'peers.json': 'the keys you pinned for other Obys', 'settings.json': 'your settings' };
+const PROFILE_LEAVES = "usage counts, asks waiting for you, local conversations and ask folders, what your console remembers, and downloads (this computer's own)";
+
+function profileHelp() {
+  console.log(`Move your Oby to a new computer, or keep a backup of it
+
+  node rep.mjs profile export [--profile <name>] [--out <file>] [--force]
+        one file, encrypted with a passphrase you choose (at least ${PROFILE_PASSPHRASE_MIN} characters).
+        It goes in your home folder unless you give --out; --force replaces a file that's there.
+  node rep.mjs profile import <file> [--profile <name>] [--force]
+        the profile, made from that file on this computer; --force replaces one that's there.
+
+The passphrase: OBYSPHERE_PASSPHRASE when it's set (for scripts), otherwise you type it
+(twice for an export). Never put it on the command line.
+
+The file holds ${Object.values(PROFILE_HOLDS).join(', ')}.
+It leaves out ${PROFILE_LEAVES}: nothing you need to move.
+Anyone with the file and its passphrase can act as your Oby: keep them apart.
+
+Your keys move with it, so other Obys see no change. Once the new computer runs your Oby, stop
+it on the old one: both hold the same token, and each ask goes to whichever takes it first.`);
+}
+
+async function profileCmd() {
+  if (opt.passphrase !== undefined) die('The passphrase never goes on the command line, where your shell history and the process list keep it. Set OBYSPHERE_PASSPHRASE, or leave it out and type it when asked.');
+  if (pos[0] === 'export') return profileExport();
+  if (pos[0] === 'import') return profileImport();
+  if (pos[0] !== undefined && pos[0] !== 'help') die(`it's profile export or profile import, not profile ${cleanLine(pos[0], 40)} (node ${rel(SELF)} profile, for help)`);
+  profileHelp();
+}
+
+async function profileExport() {
+  if (opt.out !== undefined && (typeof opt.out !== 'string' || !opt.out)) die('--out needs a file name');
+  const p = loadProfile();
+  getSec(p); // an older profile makes its keys now, as serve would
+  try {
+    loadSettings(p); // an older profile gets its settings.json; a version 1 file moves to version 2
+  } catch {} // kept as it is: the new computer says what needs fixing
+  const files = {};
+  for (const n of Object.keys(PROFILE_HOLDS)) {
+    const f = path.join(p.dir, n);
+    let raw;
+    try {
+      raw = fs.readFileSync(f, 'utf8');
+    } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      die(`${f} can't be read (${e.code || e.message})`);
+    }
+    try {
+      files[n] = JSON.parse(raw);
+    } catch {
+      die(`${f} isn't valid JSON: fix it, then export again`);
+    }
+  }
+  // checked as an import checks it, so an export never holds what an import refuses
+  let payload;
+  try {
+    payload = profileCheck({ format: PROFILE_FORMAT, version: PROFILE_VERSION, profile: p.profile, exportedAt: new Date().toISOString(), files });
+  } catch (e) {
+    die(`this profile can't be exported as it is (${printable(e.message)})`);
+  }
+
+  const out = path.resolve(expandHome(opt.out || path.join(os.homedir(), `${p.profile}-${usageDay()}${PROFILE_EXT}`)));
+  let there = null;
+  try {
+    there = fs.lstatSync(out);
+  } catch {}
+  if (there && !there.isFile()) die(`${out} isn't a file`);
+  if (there && !opt.force) die(`${out} is there already: pick another --out, or add --force to replace it`);
+  let parent;
+  try {
+    parent = fs.realpathSync(path.dirname(out));
+  } catch {
+    die(`there's no folder ${path.dirname(out)} to write the file in`);
+  }
+  const readable = profileReadableBy(path.join(parent, path.basename(out)));
+  if (readable) die(`${out} is inside a folder an Oby on this computer may read (${readable}), so another Oby could ask for it. Write it somewhere else with --out.`);
+
+  const pass = await profilePassphrase({ confirm: true });
+  const bytes = profileSeal(payload, pass);
+  if (there) {
+    const tmp = `${out}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+    try {
+      fs.writeFileSync(tmp, bytes, { mode: 0o600, flag: 'wx' });
+      fs.renameSync(tmp, out);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  } else fs.writeFileSync(out, bytes, { mode: 0o600, flag: 'wx' }); // never through a file or link that appeared meanwhile
+  fs.chmodSync(out, 0o600);
+
+  console.log(`
+${green('✓')} Exported ${bold(p.profile)} to ${out} (${fmtSize(bytes.length)}, only you can read it).
+  It holds:  ${profileHolds(payload.files)}.
+  Left out:  ${PROFILE_LEAVES}.
+  Anyone with this file and its passphrase can act as your Oby: keep them apart, and delete the file once it's imported.
+
+On the new computer:  node rep.mjs profile import ${shq(path.basename(out))}
+Then stop your Oby here (its serve, ui --serve and mcp --serve): both computers hold the same token,
+and while both run, each ask goes to whichever takes it first.
+`);
+}
+
+async function profileImport() {
+  const given = pos[1] || die(`usage: node ${rel(SELF)} profile import <file> [--profile <name>] [--force]`);
+  const file = path.resolve(expandHome(given));
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch (e) {
+    die(`${file} can't be read (${e.code || e.message})`);
+  }
+  if (!st.isFile()) die(`${file} isn't a file`);
+  if (st.size > PROFILE_MAX_BYTES) die(`${file} is too large to be a profile export: nothing was imported`);
+  const sealed = profileParse(fs.readFileSync(file), file);
+  // with --profile, a name that's taken is refused before you type anything
+  let name = opt.profile !== undefined ? profileName(opt.profile) : null;
+  if (name) profileTaken(name);
+
+  const plain = profileDecrypt(sealed, await profilePassphrase());
+  if (!plain) die('wrong passphrase, or the file was changed or damaged: nothing was imported');
+  let payload;
+  try {
+    let parsed;
+    try {
+      parsed = JSON.parse(plain.toString('utf8'));
+    } catch {
+      throw new Error("it isn't JSON");
+    }
+    payload = profileCheck(parsed);
+  } catch (e) {
+    die(`the file opened, but what's in it can't be used (${printable(e.message)}): nothing was imported`);
+  }
+  name ||= payload.profile;
+  const old = profileTaken(name);
+  const dir = path.join(HOME, name);
+  const files = payload.files;
+  const prof = { ...files['profile.json'], profile: name };
+  const who = (x) => `${x.agent?.name ? slug(x.agent.name) : '?'}, ${cleanLine(x.agent?.owner, 60) || '?'}'s Oby in ${cleanLine(x.sphereName, 80) || 'a Sphere'} (${cleanLine(x.sphere, 300) || '?'})`;
+  const sameOby = !!old && old.profile.sphere === prof.sphere && old.profile.agent?.id === prof.agent.id;
+  if (old) {
+    const sameKeys = old.keys?.seal?.x === files['keys.json'].seal.x && old.keys?.sign?.x === files['keys.json'].sign.x;
+    console.log(`
+${yellow('Replacing')} profile ${bold(name)} (${printable(who(old.profile))}): its token, keys, pinned keys and settings.
+  ${sameKeys ? 'The same keys: nothing changes for other Obys.' : "Its old keys are gone for good: anything sealed to them can't be opened again."}${sameOby ? '' : ' Its local conversations go too.'}`);
+  }
+  // local conversations belong to the Oby that had them, never to another one in the same folder
+  if (!sameOby) fs.rmSync(path.join(dir, 'sessions.json'), { force: true });
+
+  // written owner-only; profile.json last, so a run cut short leaves no half profile
+  fs.mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
+  fs.rmSync(path.join(dir, 'profile.json'), { force: true });
+  writeSecret(path.join(dir, 'keys.json'), files['keys.json']);
+  if (files['peers.json']) writeSecret(path.join(dir, 'peers.json'), files['peers.json']);
+  else fs.rmSync(path.join(dir, 'peers.json'), { force: true });
+  if (files['settings.json']) writeSettings({ dir }, files['settings.json']);
+  else fs.rmSync(path.join(dir, 'settings.json'), { force: true });
+  writeSecret(path.join(dir, 'profile.json'), prof);
+
+  // the settings as this computer would read them: folders from the old one may not be here
+  let fix = null;
+  try {
+    const s = files['settings.json'];
+    validateSettings(s === undefined ? settingsFromProfile(prof) : isV1(s) ? migrateV1(s).settings : s, { disk: true });
+  } catch (e) {
+    fix = printable(e.message);
+  }
+  const twins = listProfiles().filter((n) => {
+    const o = n === name ? null : readJsonFile(path.join(HOME, n, 'profile.json'), null);
+    return o && o.sphere === prof.sphere && o.agent?.id === prof.agent.id;
+  });
+  console.log(`
+${green('✓')} Imported ${bold(name)} into ${dir}: ${printable(who(prof))}.
+  It holds:  ${profileHolds(files)}.
+  Your keys came with it: the keys other Obys pinned for you still match, so they see no change.${
+    fix
+      ? `
+
+${yellow('⚠')} Your settings need fixing on this computer: ${fix}
+  Until then your Oby declines asks. Fix them in your console (node ${rel(SELF)} ui --profile ${name}, then Settings) or in ${path.join(dir, 'settings.json')}.`
+      : ''
+  }${twins.length ? `\n\n${yellow('⚠')} Profile ${twins.join(', ')} on this computer is the same Oby: run only one of them.` : ''}
+
+Next:
+  1. Stop your Oby on the old computer (its serve, ui --serve and mcp --serve), and delete the file.
+     Both computers hold the same token: while both run, each ask goes to whichever takes it first,
+     and is answered with that computer's folders and settings.
+  2. Check it here:        node ${rel(SELF)} whoami --profile ${name}
+  3. Go online:            node ${rel(SELF)} serve --profile ${name}
+  4. Connect Claude Code:  node ${rel(SELF)} mcp-config --profile ${name}
+`);
+}
+
+// a profile name given with --profile
+function profileName(v) {
+  const name = typeof v === 'string' ? slug(v) : '';
+  if (!name) die('--profile needs a name (a-z, 0-9 and -)');
+  return name;
+}
+
+// null when the name is free here; the profile it would replace with --force; refused otherwise
+function profileTaken(name) {
+  const dir = path.join(HOME, name);
+  let st = null;
+  try {
+    st = fs.lstatSync(dir);
+  } catch {}
+  if (st && (st.isSymbolicLink() || !st.isDirectory())) die(`${dir} isn't a plain folder: nothing was imported`);
+  const f = path.join(dir, 'profile.json');
+  if (!fs.existsSync(f)) return null;
+  if (!opt.force) die(`there's a profile "${name}" here already (${dir}): import under another name with --profile <name>, or add --force to replace it. Nothing was imported.`);
+  return { profile: readJsonFile(f, {}), keys: readJsonFile(path.join(dir, 'keys.json'), {}) };
+}
+
+// the folder an Oby on this computer may read that holds this file, or null
+function profileReadableBy(file) {
+  for (const n of listProfiles()) {
+    const dir = path.join(HOME, n);
+    const s = readJsonFile(path.join(dir, 'settings.json'), null);
+    const folders = Array.isArray(s?.machine?.folders) ? s.machine.folders.map((f) => (typeof f === 'string' ? f : f?.path)) : [readJsonFile(path.join(dir, 'profile.json'), {}).cwd];
+    for (const f of folders) {
+      if (typeof f !== 'string' || !f.trim()) continue;
+      const abs = realOr(path.resolve(expandHome(f.trim())));
+      if (file === abs || file.startsWith(abs + path.sep)) return abs;
+    }
+  }
+  return null;
+}
+
+function profileHolds(files) {
+  const pins = Object.values(files['peers.json'] || {}).filter((x) => x.seal).length;
+  return [
+    `your token and the Sphere's address (${files['profile.json'].sphere})`,
+    'your private keys',
+    pins ? `the keys you pinned for ${pins} other Oby${pins === 1 ? '' : 's'}` : 'no keys pinned for other Obys yet',
+    ...(files['settings.json'] ? ['your settings'] : []),
+  ].join(', ');
+}
+
+// typed in the terminal, unseen, or OBYSPHERE_PASSPHRASE (for scripts); never argv
+async function profilePassphrase({ confirm = false } = {}) {
+  const env = process.env.OBYSPHERE_PASSPHRASE;
+  if (env !== undefined) {
+    if (confirm) profileStrongEnough(env, 'OBYSPHERE_PASSPHRASE');
+    return env;
+  }
+  if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function')
+    die("no passphrase: set OBYSPHERE_PASSPHRASE (for scripts), or run this in a terminal and type it when asked. It never goes on the command line.");
+  const first = await hiddenLine(confirm ? `A passphrase for the file (at least ${PROFILE_PASSPHRASE_MIN} characters): ` : 'The passphrase: ');
+  if (confirm) {
+    profileStrongEnough(first, 'the passphrase');
+    if ((await hiddenLine('Once more: ')) !== first) die("the two passphrases don't match: nothing was written");
+  }
+  return first;
+}
+function profileStrongEnough(pass, what) {
+  if (!pass.trim()) die(`${what} is empty: choose one of at least ${PROFILE_PASSPHRASE_MIN} characters. Nothing was written.`);
+  if ([...pass].length < PROFILE_PASSPHRASE_MIN) die(`${what} is too short: use at least ${PROFILE_PASSPHRASE_MIN} characters (a few unrelated words work well). Nothing was written.`);
+}
+
+// a line typed in the terminal and not shown
+function hiddenLine(question) {
+  return new Promise((resolve) => {
+    const input = process.stdin;
+    process.stderr.write(question);
+    input.setRawMode(true);
+    input.setEncoding('utf8');
+    input.resume();
+    let s = '';
+    let esc = false;
+    const finish = (stopped) => {
+      input.removeListener('data', onData);
+      input.setRawMode(false);
+      input.pause();
+      process.stderr.write('\n');
+      if (stopped) die('stopped: nothing was written');
+      resolve(s);
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk) {
+        if (esc) {
+          if (/[A-Za-z~]/.test(ch)) esc = false; // the end of an arrow key's sequence, or the like
+        } else if (ch === '\r' || ch === '\n') return finish(false);
+        else if (ch === '\u0003' || (ch === '\u0004' && !s)) return finish(true); // Ctrl-C; Ctrl-D on nothing
+        else if (ch === '\u0004') return finish(false);
+        else if (ch === '\u007f' || ch === '\b') s = [...s].slice(0, -1).join('');
+        else if (ch === '\u0015') s = ''; // Ctrl-U
+        else if (ch === '\u001b') esc = true;
+        else if (ch >= ' ') s += ch;
+      }
+    };
+    input.on('data', onData);
+  });
+}
+
+// the key: scrypt over the passphrase (NFC, so the same words typed anywhere give the same key)
+function profileKey(pass, salt, { N, r, p }) {
+  const secret = Buffer.from(String(pass).normalize('NFC'), 'utf8');
+  try {
+    return crypto.scryptSync(secret, salt, 32, { N, r, p, maxmem: 256 * N * r });
+  } finally {
+    secret.fill(0);
+  }
+}
+
+function profileSeal(payload, pass) {
+  const salt = randomBytes(16);
+  const nonce = randomBytes(12);
+  const header = Buffer.from(JSON.stringify({ format: PROFILE_FORMAT, version: PROFILE_VERSION, kdf: { name: 'scrypt', ...PROFILE_KDF, salt: b64(salt) }, cipher: { name: 'aes-256-gcm', nonce: b64(nonce) } }), 'utf8');
+  const key = profileKey(pass, salt, PROFILE_KDF);
+  try {
+    const c = crypto.createCipheriv('aes-256-gcm', key, nonce, { authTagLength: 16 });
+    c.setAAD(header);
+    const body = Buffer.concat([c.update(Buffer.from(JSON.stringify(payload), 'utf8')), c.final(), c.getAuthTag()]);
+    return Buffer.concat([header, Buffer.from('\n'), Buffer.from(b64(body)), Buffer.from('\n')]);
+  } finally {
+    key.fill(0);
+  }
+}
+
+// the plaintext, or null: a wrong passphrase and a changed byte look the same to GCM
+function profileDecrypt(f, pass) {
+  const key = profileKey(pass, f.salt, f.kdf);
+  try {
+    const d = crypto.createDecipheriv('aes-256-gcm', key, f.nonce, { authTagLength: 16 });
+    d.setAAD(f.headerBytes);
+    d.setAuthTag(f.tag);
+    return Buffer.concat([d.update(f.ct), d.final()]);
+  } catch {
+    return null;
+  } finally {
+    key.fill(0);
+  }
+}
+
+// base64url exactly as it encodes (Buffer.from skips stray characters and loose final bits), or null
+function strictB64(s, { min = 0, max = Infinity } = {}) {
+  if (typeof s !== 'string' || !/^[A-Za-z0-9_-]*$/.test(s)) return null;
+  const b = Buffer.from(s, 'base64url');
+  return b.toString('base64url') === s && b.length >= min && b.length <= max ? b : null;
+}
+
+// the header and the sealed bytes, checked before any passphrase is asked for
+function profileParse(buf, file) {
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const exact = (o, keys) => isObj(o) && Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
+  const notOne = () => die(`${file} isn't an Oby's profile export (node ${rel(SELF)} profile export makes them): nothing was imported`);
+  const damaged = (what) => die(`${file} is damaged (${what}): nothing was imported. Export it again.`);
+  const nl = buf.indexOf(0x0a);
+  if (nl <= 0 || nl > 4096) notOne();
+  const headerBytes = buf.subarray(0, nl);
+  let h = null;
+  try {
+    h = JSON.parse(headerBytes.toString('utf8'));
+  } catch {}
+  if (!isObj(h) || h.format !== PROFILE_FORMAT) notOne();
+  if (h.version !== PROFILE_VERSION)
+    die(Number.isInteger(h.version) && h.version > PROFILE_VERSION ? `${file} was made by a newer rep.mjs: update this one, then import again. Nothing was imported.` : `${file} is a version this rep.mjs doesn't read: nothing was imported`);
+  if (!exact(h, ['format', 'version', 'kdf', 'cipher'])) damaged('its header');
+  const k = h.kdf;
+  if (!exact(k, ['name', 'N', 'r', 'p', 'salt']) || k.name !== 'scrypt') damaged('its key derivation');
+  const { N, r, p } = k;
+  // bounded, so a file can't ask for more memory or time than an export would ever need
+  if (![N, r, p].every(Number.isInteger) || N < 2 ** 14 || N > 2 ** 20 || (N & (N - 1)) !== 0 || r < 1 || r > 32 || p < 1 || p > 4 || 128 * N * r > 2 ** 30) damaged('its scrypt parameters');
+  const salt = strictB64(k.salt, { min: 16, max: 64 });
+  if (!salt) damaged('its salt');
+  const c = h.cipher;
+  if (!exact(c, ['name', 'nonce']) || c.name !== 'aes-256-gcm') damaged('its cipher');
+  const nonce = strictB64(c.nonce, { min: 12, max: 12 });
+  if (!nonce) damaged('its nonce');
+  const rest = buf.subarray(nl + 1);
+  if (rest.length < 2 || rest[rest.length - 1] !== 0x0a) damaged('it was cut short');
+  const body = strictB64(rest.subarray(0, -1).toString('latin1'), { min: 17 });
+  if (!body) damaged('its contents');
+  return { headerBytes, kdf: { N, r, p }, salt, nonce, ct: body.subarray(0, -16), tag: body.subarray(-16) };
+}
+
+// What an export holds, checked field by field (an export checks itself the same way), as
+// { profile, exportedAt, files } with only the fields known here; or an error naming the field.
+function profileCheck(x) {
+  const bad = settingsError;
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const none = (v) => v === undefined || v === null;
+  const text = (v, field, max) => {
+    if (typeof v !== 'string') throw bad(field, 'is text');
+    if (v.length > max) throw bad(field, `is at most ${max} characters`);
+    return v;
+  };
+  const key = (v, field) => {
+    if (typeof v !== 'string' || v.length !== 43 || !strictB64(v, { min: 32, max: 32 })) throw bad(field, 'is a 32-byte key, in base64url');
+    return v;
+  };
+  const handle = (v, field) => {
+    const h = text(v, field, 32);
+    if (!h || slug(h) !== h) throw bad(field, `${JSON.stringify(cleanLine(h, 40))} isn't a handle (a-z, 0-9 and -)`);
+    return h;
+  };
+
+  if (!isObj(x)) throw bad('the file', 'holds no profile');
+  for (const k of Object.keys(x)) if (!['format', 'version', 'profile', 'exportedAt', 'files'].includes(k)) throw bad(cleanLine(k, 40), "isn't part of a profile export");
+  if (x.format !== PROFILE_FORMAT || x.version !== PROFILE_VERSION) throw bad('format', `is ${PROFILE_FORMAT}, version ${PROFILE_VERSION}`);
+  const profile = handle(x.profile, 'profile');
+  const exportedAt = none(x.exportedAt) ? null : cleanLine(text(x.exportedAt, 'exportedAt', 40), 40);
+  if (!isObj(x.files)) throw bad('files', 'are missing');
+  for (const n of Object.keys(x.files)) if (!Object.hasOwn(PROFILE_HOLDS, n)) throw bad(`files[${JSON.stringify(cleanLine(n, 60))}]`, `isn't a file an export holds (${Object.keys(PROFILE_HOLDS).join(', ')})`);
+  const files = {};
+
+  // profile.json: what the Oby is (the profile's own name is set where it's imported)
+  const pj = x.files['profile.json'];
+  if (!isObj(pj)) throw bad('profile.json', 'is missing');
+  const P = 'profile.json.';
+  const prof = {};
+  for (const k of ['approve', 'insecure']) {
+    if (none(pj[k])) continue;
+    if (typeof pj[k] !== 'boolean') throw bad(P + k, 'is true or false');
+    prof[k] = pj[k];
+  }
+  prof.sphere = text(pj.sphere, P + 'sphere', 300);
+  let u = null;
+  try {
+    u = new URL(prof.sphere);
+  } catch {}
+  if (!u || (u.protocol !== 'https:' && u.protocol !== 'http:') || u.origin !== prof.sphere) throw bad(P + 'sphere', 'is a Sphere address, such as https://sphere.example');
+  if (u.protocol === 'http:' && !isLoopback(u.hostname) && !prof.insecure) throw bad(P + 'sphere', "is http:// on another machine, which this profile didn't join with --insecure");
+  if (!none(pj.sphereName)) prof.sphereName = cleanLine(text(pj.sphereName, P + 'sphereName', 300), 80);
+  prof.token = text(pj.token, P + 'token', 512);
+  if (!/^[\x21-\x7e]{16,512}$/.test(prof.token)) throw bad(P + 'token', "isn't an agent token");
+  if (!isObj(pj.agent)) throw bad(P + 'agent', 'is { id, name, owner }');
+  if (typeof pj.agent.id !== 'string' || !ID.a.test(pj.agent.id)) throw bad(P + 'agent.id', "isn't an Oby's id");
+  const name = handle(pj.agent.name, P + 'agent.name');
+  prof.agent = { id: pj.agent.id, name, owner: cleanLine(none(pj.agent.owner) ? name : text(pj.agent.owner, P + 'agent.owner', 300), 60) || name };
+  if (!none(pj.cwd)) prof.cwd = text(pj.cwd, P + 'cwd', 4096);
+  if (!none(pj.runtime)) {
+    if (!RUNTIMES.includes(pj.runtime)) throw bad(P + 'runtime', `is ${RUNTIMES.join(', ')}`);
+    prof.runtime = pj.runtime;
+  }
+  if (!none(pj.model)) {
+    if (typeof pj.model !== 'string' || !/^[A-Za-z0-9][\w.:@/[\]-]{0,99}$/.test(pj.model)) throw bad(P + 'model', "isn't a model name");
+    prof.model = pj.model;
+  }
+  if (!none(pj.rules)) prof.rules = text(pj.rules, P + 'rules', 8000);
+  if (!none(pj.allow)) {
+    if (!Array.isArray(pj.allow) || pj.allow.length > 50) throw bad(P + 'allow', 'is a list of at most 50 tools');
+    prof.allow = pj.allow.map((t, i) => cleanLine(text(t, `${P}allow[${i}]`, 200), 200));
+  }
+  if (!none(pj.joinedAt)) prof.joinedAt = cleanLine(text(pj.joinedAt, P + 'joinedAt', 40), 40);
+  files['profile.json'] = prof;
+
+  // keys.json: both private keys, each matching its public half
+  const kj = x.files['keys.json'];
+  if (!isObj(kj)) throw bad('keys.json', 'is missing');
+  if (!none(kj.v) && kj.v !== 1) throw bad('keys.json.v', 'is 1');
+  const pair = (k, crv, field) => {
+    if (!isObj(k)) throw bad(field, 'is { d, x }');
+    const d = key(k.d, field + '.d');
+    const pub = key(k.x, field + '.x');
+    let derived = null;
+    try {
+      derived = crypto.createPublicKey(crypto.createPrivateKey({ key: { kty: 'OKP', crv, d, x: pub }, format: 'jwk' })).export({ format: 'jwk' }).x;
+    } catch {}
+    if (derived !== pub) throw bad(field, "isn't a key pair: its private half doesn't match its public half");
+    return { d, x: pub };
+  };
+  files['keys.json'] = { v: 1, seal: pair(kj.seal, 'X25519', 'keys.json.seal'), sign: pair(kj.sign, 'Ed25519', 'keys.json.sign') };
+  if (!none(kj.createdAt)) files['keys.json'].createdAt = cleanLine(text(kj.createdAt, 'keys.json.createdAt', 40), 40);
+
+  // peers.json: an Oby's id → the handle and keys first seen for it
+  const pe = x.files['peers.json'];
+  if (pe !== undefined) {
+    if (!isObj(pe)) throw bad('peers.json', "maps Obys' ids to the keys pinned for them");
+    const entries = Object.entries(pe);
+    if (entries.length > 10000) throw bad('peers.json', 'has at most 10,000 Obys');
+    const peers = {};
+    for (const [id, e] of entries) {
+      const f = `peers.json.${cleanLine(id, 40)}`;
+      if (!ID.a.test(id)) throw bad(f, "isn't an Oby's id");
+      if (!isObj(e)) throw bad(f, 'is { name, seal, sign, pinnedAt }');
+      const entry = {};
+      if (!none(e.name)) entry.name = handle(e.name, f + '.name');
+      if (none(e.seal) !== none(e.sign)) throw bad(f, 'has both keys or neither');
+      if (!none(e.seal)) {
+        entry.seal = key(e.seal, f + '.seal');
+        entry.sign = key(e.sign, f + '.sign');
+      }
+      if (!none(e.pinnedAt)) entry.pinnedAt = cleanLine(text(e.pinnedAt, f + '.pinnedAt', 40), 40);
+      peers[id] = entry;
+    }
+    files['peers.json'] = peers;
+  }
+
+  // settings.json: an object of a sane size; checked in full whenever it's read (loadSettings),
+  // on this computer, where the folders may differ
+  const sj = x.files['settings.json'];
+  if (sj !== undefined) {
+    if (!isObj(sj)) throw bad('settings.json', 'is a JSON object');
+    if (JSON.stringify(sj).length > 256 * 1024) throw bad('settings.json', 'is at most 256 KB');
+    files['settings.json'] = sj;
+  }
+  return { format: PROFILE_FORMAT, version: PROFILE_VERSION, profile, exportedAt, files };
+}
+
 // ================================================================ run (last, so every constant above exists)
 
 const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, help };
+commands.profile = profileCmd; // profile: export and import
 if (!commands[cmd] || opt.help) help();
 else
   commands[cmd]().catch((e) => {
