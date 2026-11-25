@@ -26,12 +26,14 @@
 //   fs     one process, a data folder: sphere.json + messages.jsonl + audit.jsonl + files/.
 //   redis  Upstash REST (Vercel): one Redis list is the log, appended with a
 //          compare-and-append script, so writes from many instances are
-//          linearizable; each instance replays the log into its own maps.
+//          linearizable; each instance replays the log into its own maps. Now
+//          and then the log's head is folded into a snapshot (compaction).
 //
 // The API is in API.md. Zero dependencies. Node 22+.
 //   node server.mjs [--port 4848] [--host 0.0.0.0] [--name …] [--key <join key>] [--admin-key <key>]
 //                   [--data ./data] [--store fs|redis] [--sealed] [--trust-proxy]
 //                   [--asks-per-min 30] [--writes-per-min 120] [--max-file-bytes N]
+//   node server.mjs [--data ./data] [--store fs|redis] --export <file> | --import <file>   (a backup)
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -67,6 +69,8 @@ const CFG = {
   asksPerMin: Number(args['asks-per-min'] ?? env.SPHERE_ASKS_PER_MIN) || null,
   writesPerMin: Number(args['writes-per-min'] ?? env.SPHERE_WRITES_PER_MIN) || null,
   pollMs: Number(env.SPHERE_POLL_MS) || 1000,
+  compactEvery: Math.max(1, Number(env.SPHERE_COMPACT_EVERY) || 5000), // redis: log entries in the tail before a compaction
+  backup: args.export !== undefined ? 'export' : args.import !== undefined ? 'import' : null, // node server.mjs --export | --import <file>
   streamMaxMs: Number(env.SPHERE_STREAM_MAX_MS) || (ON_VERCEL ? 280000 : 0),
   redisUrl: (env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || '').replace(/\/+$/, ''),
   redisToken: env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || '',
@@ -154,8 +158,12 @@ const NOT_REPS = (st) => st.role !== 'rep';
 // others apply it when they sync the log (redis), so every instance's maps,
 // counts, audit chain and live events are the same.
 function apply(op, liveEvents = true) {
+  if (opTap) opTap(op); // backup: an export records what the store replays
   const ev = [];
   switch (op.t) {
+    case 'tally': // backup: the counts as they were where a snapshot or backup was taken
+      setTally(op);
+      break;
     case 'init':
       S.sphere = sphereRecord(op.sphere);
       S.policy = mergePolicy(op.policy);
@@ -453,6 +461,8 @@ function fsStore() {
   let msgLines = 0;
   let snapTimer = null;
   let snapDirty = false;
+  let importing = false;
+  const RO = CFG.backup === 'export'; // an export reads the folder and writes nothing to it
   const buckets = new Map();
 
   // small and rarely written: files and messages are in the log, not here
@@ -467,18 +477,20 @@ function fsStore() {
   }
   function save(urgent = false) {
     snapDirty = true;
+    if (importing) return; // written once, at the end
     if (urgent) return saveNow();
     if (!snapTimer) snapTimer = setTimeout(saveNow, 1000);
   }
   function appendLog(o) {
     msgOut.write(JSON.stringify(o) + '\n');
     msgLines++;
-    if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
+    if (!importing && msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
   }
-  // keep the newest `retainMessages` in memory and in the log (and every file record)
+  // keep the newest `retainMessages` in memory and in the log (and every file record), then
+  // the counts as they are (a tally: messages dropped here still count after a restart)
   function compact() {
     trimMemory();
-    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m))];
+    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m)), JSON.stringify({ tally: tallyOp() })];
     fs.writeFileSync(MSGS + '.tmp', lines.join('\n') + (lines.length ? '\n' : ''), { mode: 0o600 });
     msgOut?.end();
     fs.renameSync(MSGS + '.tmp', MSGS);
@@ -493,6 +505,8 @@ function fsStore() {
         return appendLog({ p: op.id, ...op.fields });
       case 'file':
         return appendLog({ f: op.f });
+      case 'tally':
+        return appendLog({ tally: op });
       case 'audit':
         return auditOut.write(JSON.stringify(op.e) + '\n');
       case 'init':
@@ -522,6 +536,7 @@ function fsStore() {
         JSON.parse(last);
         lines.push(last);
       } catch {
+        if (RO) return lines.filter((l) => l.trim()); // a running Sphere may be writing it: left as it is
         fs.truncateSync(file, Buffer.byteLength(text) - Buffer.byteLength(last));
         console.log(`  dropped a torn last line in ${path.basename(file)}`);
       }
@@ -532,7 +547,7 @@ function fsStore() {
   return {
     kind: 'fs',
     async init() {
-      fs.mkdirSync(FILES, { recursive: true, mode: 0o700 });
+      if (!RO) fs.mkdirSync(FILES, { recursive: true, mode: 0o700 });
       let snap = readFileJson(SNAP);
       let legacy = null;
       if (snap && Array.isArray(snap.messages)) {
@@ -542,6 +557,8 @@ function fsStore() {
       }
       const created = !snap;
       const legacyKeys = !!(snap?.sphere?.key || snap?.sphere?.adminKey); // plaintext keys from an older version
+      if (RO && !snap) throw new Error(`There's no Sphere in ${CFG.data} (no sphere.json).`);
+      if (RO && (legacy || legacyKeys)) throw new Error(`${CFG.data} is from an older version: start the Sphere once with this version, so it upgrades the folder, then export.`);
       let generated = null;
       if (!snap) {
         const key = CFG.key || token(16);
@@ -590,6 +607,7 @@ function fsStore() {
           const m = byId.get(o.p);
           if (m) for (const k of ['claimedAt', 'startedAt']) if (o[k]) m[k] = o[k];
         } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
+        else if (o.tally) apply({ ...o.tally, t: 'tally' }, false);
         else if (o.id) apply({ t: 'msg', m: o }, false);
       }
       const auditLines = readLog(AUDIT);
@@ -618,6 +636,7 @@ function fsStore() {
         if (e) apply({ t: 'audit', e }, false);
         else auditEvents.push(null);
       }
+      if (RO) return { created: false, generated: false, keysFile: null };
 
       msgOut = fs.createWriteStream(MSGS, { flags: 'a', mode: 0o600 });
       auditOut = fs.createWriteStream(AUDIT, { flags: 'a', mode: 0o600 });
@@ -716,22 +735,93 @@ function fsStore() {
       msgOut.end(one);
       auditOut.end(one);
     },
+    // for an export: the folder read as it is now, nothing written to it
+    load() {
+      return this.init();
+    },
+    holdsSphere() {
+      return [SNAP, MSGS, AUDIT].some((f) => fs.existsSync(f));
+    },
+    // an import: the state is in memory already (the import applied and checked it); each
+    // operation is written the way this store keeps it: the files, the two logs whole, then
+    // sphere.json last (the first start compacts the logs)
+    async importOps(ops, files) {
+      fs.mkdirSync(FILES, { recursive: true, mode: 0o700 });
+      for await (const { id, buf } of files) fs.writeFileSync(path.join(FILES, id), buf, { mode: 0o600 });
+      const lines = { msgs: [], audit: [] };
+      msgOut = { write: (s) => lines.msgs.push(s) };
+      auditOut = { write: (s) => lines.audit.push(s) };
+      importing = true;
+      for (const op of ops) persist(op);
+      importing = false;
+      fs.writeFileSync(MSGS, lines.msgs.join(''), { mode: 0o600, flag: 'wx' });
+      fs.writeFileSync(AUDIT, lines.audit.join(''), { mode: 0o600, flag: 'wx' });
+      snapDirty = true;
+      saveNow();
+    },
   };
 }
 
 // ================================================================ store: redis (Upstash REST, for Vercel)
 
-// Appends ARGV[2..] to the log only if its length is still ARGV[1], the length
-// this instance has applied; otherwise -1, and the caller syncs and retries.
+// Positions in the log are absolute: <prefix>base operations were folded into a
+// snapshot and trimmed from the list's head, so the log holds base + LLEN.
+//
+// Appends ARGV[2..] to the log only if base + its length is still ARGV[1], the
+// position this instance has applied; otherwise -1, and the caller syncs and retries.
 const APPEND_LUA = `-- obysphere:append
-local n = redis.call('LLEN', KEYS[1])
+local n = tonumber(redis.call('GET', KEYS[2]) or '0') + redis.call('LLEN', KEYS[1])
 if n ~= tonumber(ARGV[1]) then return -1 end
 for i = 2, #ARGV do redis.call('RPUSH', KEYS[1], ARGV[i]) end
 return n + #ARGV - 1`;
+// {base, entries from position ARGV[1], at most ARGV[2]}, or {base} when that position was compacted away
+const READ_LUA = `-- obysphere:read
+local base = tonumber(redis.call('GET', KEYS[2]) or '0')
+local from = tonumber(ARGV[1]) - base
+if from < 0 then return {base} end
+return {base, redis.call('LRANGE', KEYS[1], from, from + tonumber(ARGV[2]) - 1)}`;
+// Compaction (see "redis: compaction" below). Swaps in the snapshot list KEYS[5]
+// (ARGV[4] entries, the state folded from positions 0 to ARGV[2]) only if the
+// snapshot pointer KEYS[3] is still ARGV[1] (so base hasn't moved), the position is
+// still in the log, and the new list is whole; then trims those entries from the
+// log's head, keeps the new list and lets the old one (KEYS[4]) expire.
+const COMPACT_LUA = `-- obysphere:compact
+if (redis.call('GET', KEYS[3]) or '') ~= ARGV[1] then return -1 end
+local base = tonumber(redis.call('GET', KEYS[2]) or '0')
+local pos = tonumber(ARGV[2])
+if pos < base or pos > base + redis.call('LLEN', KEYS[1]) then return -2 end
+if redis.call('LLEN', KEYS[5]) ~= tonumber(ARGV[4]) then return -3 end
+redis.call('LTRIM', KEYS[1], pos - base, -1)
+redis.call('SET', KEYS[2], tostring(pos))
+redis.call('SET', KEYS[3], ARGV[3])
+redis.call('PERSIST', KEYS[5])
+if KEYS[4] ~= KEYS[5] then redis.call('EXPIRE', KEYS[4], 900) end
+return pos`;
+// An import: installs the snapshot list KEYS[4] (ARGV[3] entries, position ARGV[1])
+// only if the store holds nothing yet.
+const INSTALL_LUA = `-- obysphere:install
+if redis.call('EXISTS', KEYS[3]) == 1 or redis.call('LLEN', KEYS[1]) > 0 or tonumber(redis.call('GET', KEYS[2]) or '0') > 0 then return -1 end
+if redis.call('LLEN', KEYS[4]) ~= tonumber(ARGV[3]) then return -3 end
+redis.call('SET', KEYS[2], ARGV[1])
+redis.call('SET', KEYS[3], ARGV[2])
+redis.call('PERSIST', KEYS[4])
+return 1`;
 
 function redisStore() {
-  const K = { log: CFG.prefix + 'log', pres: CFG.prefix + 'presence', rl: CFG.prefix + 'rl:', file: CFG.prefix + 'file:' };
-  let applied = 0; // log entries applied to memory
+  const K = {
+    log: CFG.prefix + 'log',
+    base: CFG.prefix + 'base',
+    snap: CFG.prefix + 'snap',
+    snapList: (id) => CFG.prefix + 'snap:' + id,
+    pres: CFG.prefix + 'presence',
+    rl: CFG.prefix + 'rl:',
+    file: CFG.prefix + 'file:',
+  };
+  let applied = 0; // log position applied to memory (absolute: snapshot included)
+  let base = 0; // the log's base, as last read
+  let snapCount = 0; // entries in the snapshot, as last read
+  let compacting = false;
+  let compactAfter = 0; // after a failed compaction, wait before the next try
   let logBytes = 0;
   let pres = { at: 0, map: new Map() };
   let lastSweep = 0;
@@ -757,8 +847,8 @@ function redisStore() {
       }
     }
   }
-  async function call(cmd) {
-    const r = await redisFetch(CFG.redisUrl, JSON.stringify(cmd), RETRY_SAFE.has(cmd[0]));
+  async function call(cmd, retry = RETRY_SAFE.has(cmd[0])) {
+    const r = await redisFetch(CFG.redisUrl, JSON.stringify(cmd), retry);
     const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     if (j.error) throw new Error(`redis ${cmd[0]}: ${j.error}`);
     return j.result;
@@ -773,8 +863,14 @@ function redisStore() {
 
   async function syncLocked() {
     for (;;) {
-      const items = await call(['LRANGE', K.log, String(applied), String(applied + 199)]);
-      for (const s of items || []) {
+      const r = await call(['EVAL', READ_LUA, '2', K.log, K.base, String(applied), '200'], true);
+      base = Number(r[0]);
+      if (r.length < 2) {
+        await loadSnapshot(); // behind the compacted part: the snapshot, then the tail
+        continue;
+      }
+      const items = r[1] || [];
+      for (const s of items) {
         logBytes += s.length;
         try {
           apply(JSON.parse(s));
@@ -783,8 +879,9 @@ function redisStore() {
         }
         applied++;
       }
-      if (!items || items.length < 200) return;
+      if (items.length < 200) break;
     }
+    maybeCompact();
   }
 
   async function commitLocked(build) {
@@ -808,7 +905,7 @@ function redisStore() {
   }
   async function tryAppend(b) {
     const entries = b.ops.map((o) => JSON.stringify(o));
-    const n = await call(['EVAL', APPEND_LUA, '1', K.log, String(applied), ...entries]);
+    const n = await call(['EVAL', APPEND_LUA, '2', K.log, K.base, String(applied), ...entries]);
     if (Number(n) < 0) return false;
     for (let i = 0; i < b.ops.length; i++) {
       logBytes += entries[i].length;
@@ -827,6 +924,129 @@ function redisStore() {
       b = again;
     }
   }
+
+  // ---- redis: compaction. A snapshot is a Redis list of [position, operation]:
+  // the state folded from the log's first `pos` operations (foldOps: the newest
+  // retainMessages messages, every audit event, each record as it is now). The
+  // pointer <prefix>snap names the list ({id, pos, count}), and <prefix>base is
+  // its position: the log holds what came after.
+  const parsePtr = (s) => {
+    let p = null;
+    try {
+      p = JSON.parse(s);
+    } catch {}
+    if (typeof p?.id !== 'string' || !Number.isInteger(p.pos) || !Number.isInteger(p.count)) throw new Error('the snapshot pointer is damaged');
+    return p;
+  };
+  // a whole list, in pages; null when it isn't `count` long (replaced and expired while we read)
+  async function readList(key, count) {
+    const out = [];
+    while (out.length < count) {
+      const items = await call(['LRANGE', key, String(out.length), String(out.length + 199)]);
+      if (!items?.length) break;
+      out.push(...items);
+    }
+    return out.length === count ? out : null;
+  }
+  async function writeList(key, items) {
+    let bytes = 0;
+    for (let i = 0; i < items.length; ) {
+      const batch = [];
+      let size = 0;
+      while (i < items.length && batch.length < 500 && (!batch.length || size + items[i].length < 256 * 1024)) {
+        size += items[i].length;
+        batch.push(items[i++]);
+      }
+      await call(['RPUSH', key, ...batch]);
+      // until it's swapped in, the list expires: a compaction or import that dies leaves nothing for long
+      if (i === batch.length) await call(['EXPIRE', key, '3600']);
+      bytes += size;
+    }
+    return bytes;
+  }
+  // An instance behind the snapshot's position (a cold start, or one that slept
+  // through a compaction) applies the entries it hasn't applied yet, then the tail.
+  async function loadSnapshot() {
+    for (let tries = 0; tries < 5; tries++) {
+      const raw = await call(['GET', K.snap]);
+      if (!raw) throw new Error('the log was compacted, but its snapshot is missing');
+      const ptr = parsePtr(raw);
+      if (ptr.pos <= applied) throw new Error('the snapshot is behind the log');
+      const items = await readList(K.snapList(ptr.id), ptr.count);
+      if (!items) continue;
+      for (const s of items) {
+        logBytes += s.length;
+        try {
+          const [p, op] = JSON.parse(s);
+          if (p >= applied || op.t === 'tally') apply(op);
+        } catch (e) {
+          console.error('a snapshot entry failed to apply:', e.message);
+        }
+      }
+      applied = ptr.pos;
+      snapCount = ptr.count;
+      return;
+    }
+    throw err(503, 'busy', 'The Sphere is busy; try again in a moment.');
+  }
+  // the log's operations from position 0 to `pos`, as [position, operation]: the snapshot, then the tail
+  async function readOps(pos) {
+    const raw = await call(['GET', K.snap]);
+    const ptr = raw ? parsePtr(raw) : { pos: 0, count: 0 };
+    const entries = [];
+    if (raw) {
+      const items = await readList(K.snapList(ptr.id), ptr.count);
+      if (!items) return null;
+      for (const s of items) entries.push(JSON.parse(s));
+    }
+    for (let a = ptr.pos; a < pos; ) {
+      const r = await call(['EVAL', READ_LUA, '2', K.log, K.base, String(a), String(Math.min(200, pos - a))], true);
+      if (r.length < 2 || Number(r[0]) !== ptr.pos || !r[1]?.length) return null; // compacted meanwhile
+      r[1].forEach((s, i) => entries.push([a + i, JSON.parse(s)]));
+      a += r[1].length;
+    }
+    return { raw: raw || '', ptr, entries };
+  }
+  // rarely: when the tail is longer than both SPHERE_COMPACT_EVERY and the snapshot
+  function maybeCompact() {
+    if (compacting || CFG.backup || Date.now() < compactAfter || applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    compacting = true;
+    compact()
+      .catch((e) => {
+        compactAfter = Date.now() + 30000;
+        console.error('compaction:', e.message);
+      })
+      .finally(() => {
+        compacting = false;
+      });
+  }
+  async function compact() {
+    // the position, and the counts there (messages folded away still count), taken together
+    const at = await lock(async () => ({ pos: applied, tally: tallyOp(), retain: S.policy.retainMessages }));
+    const read = await readOps(at.pos);
+    if (!read) return false;
+    snapCount = read.ptr.count;
+    if (at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
+    const folded = foldOps(read.entries, at.retain);
+    folded.push([at.pos - 1, at.tally]);
+    const id = token(9);
+    const key = K.snapList(id);
+    const bytes = await writeList(key, folded.map((e) => JSON.stringify(e)));
+    const ptr = JSON.stringify({ id, pos: at.pos, count: folded.length, at: now() });
+    const old = read.raw ? K.snapList(read.ptr.id) : key;
+    const r = Number(await call(['EVAL', COMPACT_LUA, '5', K.log, K.base, K.snap, old, key, read.raw, String(at.pos), ptr, String(folded.length)]));
+    if (r < 0) {
+      await call(['DEL', key]).catch(() => {}); // another instance compacted first: its snapshot stands
+      return false;
+    }
+    base = Math.max(base, at.pos);
+    snapCount = folded.length;
+    logBytes = bytes;
+    return true;
+  }
+  const needRedis = () => {
+    if (!CFG.redisUrl || !CFG.redisToken) throw new Error('SPHERE_STORE=redis needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL and KV_REST_API_TOKEN).');
+  };
 
   async function refreshPresence(force = false) {
     const t = Date.now();
@@ -877,7 +1097,7 @@ function redisStore() {
   return {
     kind: 'redis',
     async init() {
-      if (!CFG.redisUrl || !CFG.redisToken) throw new Error('SPHERE_STORE=redis needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL and KV_REST_API_TOKEN).');
+      needRedis();
       if (!CFG.key || !CFG.adminKey)
         throw new Error(`On the Redis store (Vercel), set SPHERE_KEY and SPHERE_ADMIN_KEY: each at least ${KEY_MIN} random characters (openssl rand -base64 18). The relay keeps only their hashes, and needs the admin key at every start.`);
       await lock(syncLocked);
@@ -950,10 +1170,327 @@ function redisStore() {
     shutdown(done) {
       done();
     },
+    // for an export: the log read to one position (whatever is appended after isn't in it)
+    async load() {
+      needRedis();
+      await lock(syncLocked);
+    },
+    async holdsSphere() {
+      needRedis();
+      const [b, n, s] = await pipeline([['GET', K.base], ['LLEN', K.log], ['EXISTS', K.snap]]);
+      return Number(b || 0) > 0 || Number(n) > 0 || Number(s) > 0;
+    },
+    // an import: the files, then the operations as one snapshot, installed only if the store is still empty
+    async importOps(ops, files) {
+      for await (const { id, buf } of files) await call(['SET', K.file + id, buf.toString('base64')]);
+      const id = token(9);
+      const key = K.snapList(id);
+      const entries = ops.map((op, i) => JSON.stringify([i, op]));
+      await writeList(key, entries);
+      const ptr = JSON.stringify({ id, pos: entries.length, count: entries.length, at: now() });
+      const r = Number(await call(['EVAL', INSTALL_LUA, '4', K.log, K.base, K.snap, key, String(entries.length), ptr, String(entries.length)]));
+      if (r < 0) {
+        await call(['DEL', key]).catch(() => {});
+        throw new Error(r === -1 ? 'This Redis store got a Sphere while the import ran: nothing was imported.' : 'The import was cut short: nothing was imported.');
+      }
+    },
   };
 }
 
 const store = CFG.store === 'redis' ? redisStore() : fsStore();
+
+// ================================================================ backup: state as operations (compaction, export, import)
+//
+// One function, foldOps(), folds a log of operations into the fewest that leave
+// the same state. The Redis store's snapshot is that fold. A backup is that fold
+// too, of everything a store replays at start, plus the file bytes:
+//   node server.mjs --export <file>    the configured store's Sphere, to a file (mode 0600)
+//   node server.mjs --import <file>    a file, into the configured store, if it holds no Sphere yet
+// The admin key comes from SPHERE_ADMIN_KEY or the data folder's keys.txt, never the command line.
+//
+// The file is JSON Lines: {"format":"obysphere-backup","version":1,…}, then {"op": …} for
+// each operation, then {"file": id, "size", "sha256", "data": base64} for each file, then
+// {"end": true, "ops", "files", "mac"}: an HMAC-SHA256 of every line before it, keyed
+// from the admin key, so a changed or cut-short file is refused.
+
+let opTap = null; // set by an export: every operation the store replays at start goes through it
+const BACKUP = { format: 'obysphere-backup', version: 1 };
+const FILE_ID = /^f_[A-Za-z0-9_-]{1,64}$/;
+
+// The counts the console shows, carried across what a fold drops (messages past
+// retainMessages still count). Applied after the messages, it sets them as they were.
+// Denials aren't in it: they're counted from the audit chain, which is never folded.
+function tallyOp() {
+  const { denials, ...kept } = counts;
+  return { t: 'tally', counts: kept, days: [...exchangesByDay], agents: [...agentStats].map(([id, s]) => [id, { ...s, samples: s.samples.slice() }]) };
+}
+function setTally(op) {
+  for (const k of Object.keys(counts)) if (Number.isFinite(op.counts?.[k])) counts[k] = op.counts[k];
+  exchangesByDay.clear();
+  for (const [d, n] of op.days || []) exchangesByDay.set(d, n);
+  agentStats.clear();
+  for (const [id, s] of op.agents || []) agentStats.set(id, { asksIn: 0, asksOut: 0, answered: 0, errors: 0, declined: 0, ...s, samples: [...(s.samples || [])] });
+}
+
+// the record an operation replaces: only the last one for each key matters
+function recordKey(op) {
+  switch (op.t) {
+    case 'agent':
+      return 'a:' + op.a?.id;
+    case 'channel':
+      return 'c:' + op.ch?.name;
+    case 'file':
+      return 'f:' + op.f?.id;
+    case 'claim':
+      return 'k:' + op.key;
+    case 'status':
+      return 's:' + op.agent;
+    case 'presence':
+      return 'p:' + op.agent + ':' + op.role;
+    default:
+      return null;
+  }
+}
+
+// a key in plain text (an older version's records) leaves only as its hash
+function withoutKeys(op) {
+  if (op.t === 'init' && op.sphere) return { ...op, sphere: sphereRecord(op.sphere) };
+  if (op.t === 'sphere' && op.fields && ('key' in op.fields || 'adminKey' in op.fields)) {
+    const { key, adminKey, ...fields } = op.fields;
+    if (key) fields.keyHash = sha(String(key));
+    if (adminKey) fields.adminKeyHash = sha(String(adminKey));
+    return { ...op, fields };
+  }
+  return op;
+}
+
+// Folds [position, operation] pairs, in log order, into the fewest that leave the
+// same state: each record once, where it first appeared, as it was last (with that
+// last position, so an instance that applied the log up to some position applies
+// only what is newer); the newest `retain` messages, with their patches and claims;
+// every audit event, so the chain stays whole; and every other operation as it was,
+// ones this version doesn't know included. Counts are left to a tally the caller adds.
+function foldOps(entries, retain = Infinity) {
+  const ids = [];
+  const last = new Map();
+  const seen = new Set();
+  entries.forEach(([, op], i) => {
+    if (op.t === 'msg' && !seen.has(op.m.id)) {
+      seen.add(op.m.id);
+      ids.push(op.m.id);
+    }
+    const k = recordKey(op);
+    if (k) last.set(k, i);
+  });
+  const kept = new Set(ids.slice(Math.max(0, ids.length - retain)));
+  const out = [];
+  const done = new Set();
+  const once = (k) => !done.has(k) && done.add(k);
+  for (const [p, op] of entries) {
+    if (op.t === 'tally') continue;
+    if (op.t === 'msg') {
+      if (kept.has(op.m.id) && once('m:' + op.m.id)) out.push([p, op]);
+    } else if (op.t === 'audit') {
+      if (once('e:' + op.e.seq)) out.push([p, op]);
+    } else if (op.t === 'patch') {
+      if (kept.has(op.id)) out.push([p, op]);
+    } else if (recordKey(op)) {
+      if (op.t === 'claim' && op.ask && !kept.has(op.ask)) continue;
+      if (once(recordKey(op))) out.push(entries[last.get(recordKey(op))]);
+    } else out.push([p, withoutKeys(op)]);
+  }
+  return out;
+}
+
+function backupAdminKey() {
+  if (args['admin-key'] !== undefined) throw new Error("With --export or --import, give the admin key in SPHERE_ADMIN_KEY (or the data folder's keys.txt), not on the command line.");
+  const k = env.SPHERE_ADMIN_KEY || readKeysFile(path.join(CFG.data, 'keys.txt')).SPHERE_ADMIN_KEY;
+  if (!k) throw new Error("The admin key is needed: set SPHERE_ADMIN_KEY (or keep it in the data folder's keys.txt).");
+  return String(k);
+}
+const backupMac = (adminKey) => createHmac('sha256', createHmac('sha256', adminKey).update('obysphere/backup/v1').digest());
+const storeName = () => (store.kind === 'redis' ? `the Redis store (prefix ${CFG.prefix})` : CFG.data);
+
+async function backupMain() {
+  let code = 0;
+  try {
+    if (args.export !== undefined && args.import !== undefined) throw new Error('Export or import, one at a time.');
+    const arg = args[CFG.backup];
+    if (typeof arg !== 'string' || !arg) throw new Error(`Say which file: node server.mjs --${CFG.backup} <file>`);
+    const adminKey = backupAdminKey();
+    if (CFG.backup === 'export') await exportSphere(path.resolve(arg), adminKey);
+    else await importSphere(path.resolve(arg), adminKey);
+  } catch (e) {
+    console.error(`\n  ${e.message}\n`);
+    code = 1;
+  }
+  await new Promise((r) => process.stdout.write('', r));
+  await new Promise((r) => process.stderr.write('', r));
+  process.exit(code);
+}
+
+async function exportSphere(file, adminKey) {
+  if (fs.existsSync(file)) throw new Error(`${file} already exists: pick another name, or move it away first.`);
+  const replayed = [];
+  opTap = (op) => replayed.push(op);
+  try {
+    await store.load();
+  } finally {
+    opTap = null;
+  }
+  if (!S.sphere) throw new Error(`There's no Sphere in ${storeName()}.`);
+  useAdminKey(adminKey);
+  const verified = verifyChain();
+  const ops = foldOps(replayed.map((op, i) => [i, op])).map(([, op]) => op);
+  ops.push(tallyOp());
+
+  const fd = fs.openSync(file, 'wx', 0o600);
+  let nFiles = 0;
+  const missing = [];
+  try {
+    fs.fchmodSync(fd, 0o600);
+    const mac = backupMac(adminKey);
+    const write = (s) => {
+      const buf = Buffer.from(s);
+      for (let off = 0; off < buf.length; ) off += fs.writeSync(fd, buf, off);
+    };
+    const line = (o) => {
+      const s = JSON.stringify(o) + '\n';
+      mac.update(s);
+      write(s);
+    };
+    line({ ...BACKUP, createdAt: now(), relay: VERSION, store: store.kind, sphere: S.sphere.name });
+    for (const op of ops) line({ op });
+    for (const id of Object.keys(S.files)) {
+      const x = FILE_ID.test(id) ? await store.readFile(id) : null;
+      const buf = !x || Buffer.isBuffer(x) ? x : Buffer.concat(await x.toArray());
+      if (!buf) {
+        missing.push(id);
+        continue;
+      }
+      line({ file: id, size: buf.length, sha256: sha(buf), data: buf.toString('base64') });
+      nFiles++;
+    }
+    write(JSON.stringify({ end: true, ops: ops.length, files: nFiles, mac: mac.digest('hex') }) + '\n');
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+  } catch (e) {
+    fs.closeSync(fd);
+    fs.rmSync(file, { force: true });
+    throw e;
+  }
+  const members = Object.values(S.agents).filter((a) => !a.removed).length;
+  console.log(`\n  Exported ${S.sphere.name} from ${storeName()} to ${file} (only you can read it).`);
+  console.log(`  ${members} members, ${ops.filter((o) => o.t === 'msg').length} messages, ${auditEvents.length} audit events (chain ${verified ? 'verified' : 'BROKEN: an import will refuse this file'}), ${nFiles} files.`);
+  if (missing.length) console.log(`  ${missing.length} file record${missing.length > 1 ? 's have' : ' has'} no bytes in the store, so the backup has none either: ${missing.join(', ')}.`);
+  console.log(`  It holds token and key hashes, and every message as stored (in plain text where it wasn't sealed):`);
+  console.log(`  keep it as safe as the data folder.\n`);
+}
+
+// the lines of a file, without their newline; a last line without one is yielded too (and is refused)
+async function* backupLines(file) {
+  let rest = '';
+  for await (const chunk of fs.createReadStream(file, { encoding: 'utf8', highWaterMark: 1 << 20 })) {
+    rest += chunk;
+    let i;
+    while ((i = rest.indexOf('\n')) >= 0) {
+      yield rest.slice(0, i);
+      rest = rest.slice(i + 1);
+    }
+  }
+  if (rest) yield rest;
+}
+
+async function importSphere(file, adminKey) {
+  const bad = (why) => new Error(`${file} can't be imported: ${why}. Nothing was imported.`);
+  if (!fs.existsSync(file)) throw new Error(`There's no file ${file}.`);
+  if (await store.holdsSphere()) throw new Error(`${storeName()} already holds a Sphere: import into an empty one. Nothing was imported.`);
+
+  // everything is read and checked before anything is written
+  const mac = backupMac(adminKey);
+  const ops = [];
+  const files = new Map(); // id -> sha256
+  let header = null;
+  let end = null;
+  let n = 0;
+  for await (const text of backupLines(file)) {
+    n++;
+    let o = null;
+    try {
+      o = JSON.parse(text);
+    } catch {}
+    if (!o || typeof o !== 'object' || end) throw bad(end ? 'it goes on after its end' : `line ${n} isn't JSON`);
+    if (n === 1) {
+      if (o.format !== BACKUP.format) throw new Error(`${file} isn't an Obysphere backup. Nothing was imported.`);
+      if (o.version !== BACKUP.version) throw new Error(`${file} is a version ${o.version} backup, and this relay reads version ${BACKUP.version}. Nothing was imported.`);
+      header = o;
+    } else if (o.end === true) {
+      end = o;
+      continue;
+    } else if (o.op && typeof o.op.t === 'string') ops.push(o.op);
+    else if (typeof o.file === 'string' && typeof o.data === 'string') {
+      if (!FILE_ID.test(o.file) || files.has(o.file)) throw bad(`line ${n} names a file it can't take`);
+      const buf = Buffer.from(o.data, 'base64');
+      if (sha(buf) !== o.sha256) throw bad(`the bytes of file ${o.file} don't match their SHA-256`);
+      files.set(o.file, o.sha256);
+    } else throw bad(`line ${n} is neither an operation nor a file`);
+    mac.update(text + '\n');
+  }
+  if (!header) throw bad('it is empty');
+  if (!end || end.ops !== ops.length || end.files !== files.size) throw bad('it was cut short');
+  if (ops[0]?.t !== 'init') throw bad("it doesn't start with the Sphere's record");
+
+  // the state, in memory: the admin key must be its own, the seal whole, the chain and messages as recorded
+  for (const op of ops) apply(op, false);
+  try {
+    useAdminKey(adminKey);
+  } catch {
+    throw new Error(`That admin key isn't the one of the Sphere in ${file}. Nothing was imported.`);
+  }
+  const want = Buffer.from(mac.digest('hex'));
+  const got = Buffer.from(String(end.mac ?? ''));
+  if (want.length !== got.length || !timingSafeEqual(want, got)) throw bad('it was changed after it was written (its seal, keyed by the admin key, does not match)');
+  const recorded = new Map();
+  for (const op of ops) if (op.t === 'audit' && op.e.content && op.e.ref) recorded.set(op.e.ref, op.e.content);
+  for (const op of ops) if (op.t === 'msg' && recorded.has(op.m.id) && contentHash(op.m) !== recorded.get(op.m.id)) throw bad(`message ${op.m.id} doesn't match its audit event`);
+  if (!verifyChain()) throw bad("its audit chain doesn't verify");
+
+  // limits the Redis store can't carry (a file store's 5 MB files) come down to its own, on the record
+  if (store.kind === 'redis') {
+    const pol = {};
+    if (S.policy.maxFileBytes > 1024 * 1024) pol.maxFileBytes = 512 * 1024;
+    if (S.policy.maxAgentBytes > 10 * 1024 * 1024) pol.maxAgentBytes = 10 * 1024 * 1024;
+    if (Object.keys(pol).length) {
+      const b = builder();
+      b.push({ t: 'policy', policy: pol });
+      b.audit('policy', { actor: 'operator', detail: `moved to the Redis store: file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(pol.maxFileBytes ?? S.policy.maxFileBytes)}, files per member ${fmtBytes(S.policy.maxAgentBytes)} → ${fmtBytes(pol.maxAgentBytes ?? S.policy.maxAgentBytes)}` });
+      for (const op of b.ops) {
+        apply(op, false);
+        ops.push(op);
+      }
+    }
+  }
+
+  // the bytes again, each checked against what the first read found
+  async function* fileBytes() {
+    let count = 0;
+    for await (const text of backupLines(file)) {
+      if (!text.startsWith('{"file":')) continue;
+      const o = JSON.parse(text);
+      const buf = Buffer.from(o.data, 'base64');
+      if (files.get(o.file) !== sha(buf)) throw bad(`file ${o.file} changed while it was imported`);
+      count++;
+      yield { id: o.file, buf };
+    }
+    if (count !== files.size) throw bad('it changed while it was imported');
+  }
+  await store.importOps(ops, fileBytes());
+
+  const members = Object.values(S.agents).filter((a) => !a.removed).length;
+  console.log(`\n  Imported ${S.sphere.name} into ${storeName()}, from a backup of its ${header.store === 'redis' ? 'Redis' : 'file'} store made ${header.createdAt}.`);
+  console.log(`  ${members} members, ${ops.filter((o) => o.t === 'msg').length} messages, ${auditEvents.length} audit events (chain verified), ${files.size} files.`);
+  console.log(`  Start it with the same admin key. Members' tokens still work, and so does the old join key${store.kind === 'redis' ? ' (set it as SPHERE_KEY)' : ''}.\n`);
+}
 
 // ================================================================ presence
 
@@ -1364,7 +1901,7 @@ const start = () => {
     },
   );
 };
-let ready = start();
+let ready = CFG.backup ? backupMain() : start();
 const RESTART_MS = 2000;
 
 // The request handler: `node server.mjs` serves it; on Vercel, api/sphere.mjs exports it.

@@ -189,6 +189,8 @@ A comment line (`: ping`) every 20 s keeps the stream open. A viewer stream open
 
 `node server.mjs [--port 4848] [--host 0.0.0.0] [--name …] [--key <join key>] [--admin-key <key>] [--data ./data] [--store fs|redis] [--sealed] [--trust-proxy] [--asks-per-min 30] [--writes-per-min 120] [--max-file-bytes N]`
 
+`node server.mjs [--store fs|redis] [--data ./data] --export <file>` and `… --import <file>` back a Sphere up and load it back, then exit: see [Backups](#backups).
+
 Every flag has an environment variable, for Docker, Railway and Vercel:
 
 | Variable | Default | |
@@ -206,6 +208,7 @@ Every flag has an environment variable, for Docker, Railway and Vercel:
 | `SPHERE_MAX_FILE_BYTES` | 5 MB (fs), 512 KB (redis) | Also `POST /api/admin/policy {maxFileBytes}` (at most 1 MB on Redis). |
 | `SPHERE_ASKS_PER_MIN`, `SPHERE_WRITES_PER_MIN` | 30, 120 | |
 | `SPHERE_POLL_MS` | 1000 | Redis: how often an instance with open streams or long-polls reads the log. |
+| `SPHERE_COMPACT_EVERY` | 5000 | Redis: the log's tail is compacted when it holds more operations than this and than the snapshot. |
 | `SPHERE_STREAM_MAX_MS` | 0 (280000 with `VERCEL=1`) | End streams before a function's time limit. |
 
 Over HTTPS (the socket, or `X-Forwarded-Proto: https` from a trusted proxy) every response carries `Strict-Transport-Security`. The page's CSP has `worker-src 'none'` and allows `blob:` images (for blob downloads).
@@ -214,8 +217,47 @@ The start banner never prints a key: it says where the keys are (the environment
 
 **The owner's console** (`rep.mjs ui`, on the owner's machine) serves at its own origin, `http://<profile>.localhost:<port>/` (also `localhost`, `127.0.0.1` and `[::1]` on that port), answers no other `Host` (`421`, against DNS rebinding), refuses any request with a `Service-Worker` header (`403`), and passes to the relay only `/` (as HTML, or `502`) and `/api/*`; its favicon is its own. On `/api/*` it refuses `Sec-Fetch-Site` other than `same-origin` or `none` (`403`), and writes need `x-obysphere-console: 1` from its own origin. The first time a profile and Sphere pair loads at that origin it sends `Clear-Site-Data: "cache", "storage"`. It also answers its own `/local/*` API (your Oby's settings, this machine's runtimes and how they're signed in, route preview, asks waiting for you, today's usage), which never reaches the relay: see [SETTINGS.md](SETTINGS.md#the-consoles-local-api).
 
-**The fs store** (one process): `sphere.json` (keys, policy, agents, channels, file records; written atomically, mode 0600), `messages.jsonl` (messages, and `{"p": id, claimedAt|startedAt}` patches; compacted to `retainMessages`), `audit.jsonl` (the chain), `files/`. The first version's `sphere.json` (messages inside it) is migrated on start, the old file kept as `sphere.json.v0.bak`.
+**The fs store** (one process): `sphere.json` (keys, policy, agents, channels, file records; written atomically, mode 0600), `messages.jsonl` (messages, and `{"p": id, claimedAt|startedAt}` patches; compacted to `retainMessages`, then a `{"tally": …}` line with the counts, so messages dropped still count after a restart), `audit.jsonl` (the chain), `files/`. The first version's `sphere.json` (messages inside it) is migrated on start, the old file kept as `sphere.json.v0.bak`.
 
-**The Redis store** (Vercel: many short-lived instances, no disk). Every change is one operation appended to one Redis list (`<prefix>log`) by a compare-and-append script: it appends only if the list's length is still the length this instance has applied, otherwise the instance reads what it missed and tries again. So writes from all instances are linearizable: a claim is first-wins everywhere and the audit chain has one order. Each instance replays the log at start and reads new entries before every request, and about once a second while it holds streams or long-polls. Presence is a sorted set of stream ids with expiry times, refreshed every 5 s by open streams; rate limits are per-minute counters (sliding); files are Redis values (base64). Limits: the log is kept whole (no compaction yet), so a cold start reads it all, in pages of 200, which is fine for thousands of messages; an instance with open streams makes about one Redis request a second.
+**The Redis store** (Vercel: many short-lived instances, no disk). Every change is one operation appended to one Redis list (`<prefix>log`) by a compare-and-append script. Positions in the log are absolute: `<prefix>base` operations have been folded into a snapshot and trimmed from the list's head, so the log holds `base + LLEN`. The script appends only if `base + LLEN` is still the position this instance has applied, otherwise the instance reads what it missed and tries again. So writes from all instances are linearizable: a claim is first-wins everywhere and the audit chain has one order. Each instance replays the snapshot and the log at start and reads new entries before every request (a script returns `base` and the entries together, so a read never straddles a compaction), and about once a second while it holds streams or long-polls. Presence is a sorted set of stream ids with expiry times, refreshed every 5 s by open streams; rate limits are per-minute counters (sliding); files are Redis values (base64). An instance with open streams makes about one Redis request a second.
+
+*Compaction.* When the log's tail holds more operations than `SPHERE_COMPACT_EVERY` (5000) and than the snapshot, the instance that notices folds everything before its position into a new snapshot, in the background:
+
+- The snapshot is a Redis list (`<prefix>snap:<id>`) of `[position, operation]`, and `<prefix>snap` points to it: `{"id", "pos", "count", "at"}`. It holds the state the first `pos` operations leave: each agent, channel, file record, claim and status once, as it is now; the newest `policy.retainMessages` messages, with their patches and claims; every audit event, from the first, so the chain stays whole and checks the `content` of every message still held; any other operation as it was; and last, a tally of the counts (messages folded away still count). File records, and the files' bytes, are all kept, as on the fs store.
+- It is swapped in by one script, a compare-and-swap: only if the pointer is still the one the snapshot was built from (so nobody compacted meanwhile), the position is still in the log, and the new list is whole. Then it trims those operations from the log's head, sets `base` to the position, and lets the old snapshot expire 15 minutes later. Of two instances compacting at once, one wins; the other drops its list. A list that is never swapped in expires after an hour.
+- An instance whose position is inside the compacted part (a cold start, or one that slept through a compaction) loads the snapshot and applies only the entries from its own position on (each entry carries the position of the operation it stands for), then the tail: it never applies an operation twice or skips one.
+
+So a cold start reads the snapshot and a tail of at most about the snapshot's size, in pages of 200. The audit chain is never folded, so it keeps growing with the Sphere's history.
+
+Upgrading from 0.2: the first instance of this version starts compacting once the log is long enough. An instance of an older version still running then (an open stream keeps one for up to 5 minutes on Vercel) would misread a compacted log, since it counts positions from the list's head; for the first deploy of this version, set `SPHERE_COMPACT_EVERY` above the log's length, and lower it once the old instances are gone.
 
 **Vercel**: `vercel.json` sends every path to `api/sphere.mjs` (the relay's handler) with `maxDuration` 300 and the page, `rep.mjs` and this file included. Set `SPHERE_KEY` and `SPHERE_ADMIN_KEY` (each at least 22 random characters: `openssl rand -base64 18`): the Redis store won't start without them, and nothing prints them.
+
+## Backups
+
+`node server.mjs --export <file>` writes the whole Sphere from the configured store (`--store fs|redis`, `--data`, the Upstash variables) to a new file, and exits. `node server.mjs --import <file>` loads such a file into the configured store, and exits. Both take the admin key from `SPHERE_ADMIN_KEY` or the data folder's `keys.txt`, never from the command line (`--admin-key` is refused). So a Sphere moves between the file store and Redis, either way, and between hosts.
+
+```bash
+SPHERE_ADMIN_KEY=… node server.mjs --data ./data --export sphere.backup
+SPHERE_ADMIN_KEY=… SPHERE_STORE=redis UPSTASH_REDIS_REST_URL=… UPSTASH_REDIS_REST_TOKEN=… node server.mjs --import sphere.backup
+```
+
+**The file** is JSON Lines, mode 0600, never overwritten:
+
+```
+{"format": "obysphere-backup", "version": 1, "createdAt": "…", "relay": "obysphere/0.2", "store": "fs", "sphere": "Our Sphere"}
+{"op": {"t": "init", "sphere": {…}, "policy": {…}, "paused": false}}
+{"op": {"t": "agent", "a": {…}}}                       … one line per operation
+{"file": "f_x", "size": 312, "sha256": "…", "data": "<base64>"}   … one line per file
+{"end": true, "ops": 214, "files": 2, "mac": "…"}
+```
+
+The operations are the ones the store replays at start (through the relay's `apply()`), folded as for a Redis snapshot but keeping every message the store holds: the Sphere's record (key hashes only), policy, agents (token hashes only), channels, file records, messages and their timings, claims and status, every audit event, any operation kinds a later version adds, and a tally of the counts. `mac` is an HMAC-SHA256 over every line before it, under a key derived from the admin key (`HMAC-SHA256(admin key, "obysphere/backup/v1")`).
+
+**Export.** From Redis, the log is read to one position: whatever is appended after isn't in the file. From the file store, the export only reads the data folder, so it is safe while the Sphere runs; but stop the Sphere first for an exact copy, since a change in the last second (`sphere.json` is written within a second) may be missing. A data folder from an older version is refused: start it once with this version first. The export says whether the audit chain verifies; an import refuses a file whose chain doesn't.
+
+**Import.** Refused, with nothing written, when the store already holds a Sphere (the data folder has `sphere.json`, `messages.jsonl` or `audit.jsonl`; the Redis prefix has a log, a base or a snapshot): no merge, no overwrite. Before writing anything it checks that the admin key is the Sphere's, that the file is whole and its `mac` matches (a changed or cut-short file is refused), that every file's bytes match their SHA-256, that every message matches the `content` hash of its audit event, and that the audit chain verifies. Then it writes the store the way that store keeps it: the data folder's files (the first start compacts them), or one Redis snapshot, installed by a script only if the prefix is still empty. Moving to Redis, a file limit over 1 MB comes down to 512 KB and the storage per member to 10 MB, recorded as a `policy` audit event.
+
+The imported Sphere starts with the same admin key. Members' tokens, the join key (on Redis, set it as `SPHERE_KEY`; a different one replaces it, as at any start), handles and the audit chain carry over. The console's numbers carry over too (on the file store, through the tally line).
+
+**Keep it safe.** A backup is as sensitive as the data folder: it holds token and key hashes, members' public keys, and every message as stored, in plain text where it wasn't sealed. No key is in it in plain text.

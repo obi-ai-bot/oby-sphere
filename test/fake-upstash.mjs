@@ -1,6 +1,7 @@
 // A small stand-in for Upstash's Redis REST API, for tests: the commands the
 // relay uses, single (POST /) and pipelined (POST /pipeline), with bearer auth.
-// EVAL runs the relay's own scripts, recognised by their first line, in JS.
+// EVAL runs the relay's own scripts, recognised by their first line, in JS: each
+// runs to its end before the next command, so they're atomic here as in Redis.
 //   node test/fake-upstash.mjs [port] [token]     (or import { startFakeUpstash })
 import http from 'node:http';
 
@@ -33,8 +34,8 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
   const score = (s) => (s === '+inf' ? Infinity : s === '-inf' ? -Infinity : Number(s));
   let commands = 0;
 
-  const run = (cmd) => {
-    commands++;
+  const run = (cmd, inner = false) => {
+    if (!inner) commands++; // a script's own calls are part of the one EVAL
     const [name, ...a] = cmd.map(String);
     switch (name.toUpperCase()) {
       case 'PING':
@@ -50,6 +51,14 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
       }
       case 'DEL':
         return a.reduce((n, k) => n + (kv.delete(k) ? 1 : 0), 0);
+      case 'EXISTS':
+        return a.reduce((n, k) => n + (live(k) ? 1 : 0), 0);
+      case 'PERSIST': {
+        const e = live(a[0]);
+        if (!e || !e.exp) return 0;
+        e.exp = 0;
+        return 1;
+      }
       case 'INCR': {
         const e = get(a[0], 'string');
         const n = Number(e?.v ?? 0) + 1;
@@ -74,6 +83,14 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
         const l = list(a[0]);
         const [s, e] = range(l.length, a[1], a[2]);
         return s > e ? [] : l.slice(s, e + 1);
+      }
+      case 'LTRIM': {
+        const e0 = get(a[0], 'list');
+        if (!e0) return 'OK';
+        const [s, e] = range(e0.v.length, a[1], a[2]);
+        e0.v = s > e ? [] : e0.v.slice(s, e + 1);
+        if (!e0.v.length) kv.delete(a[0]); // Redis drops an empty list
+        return 'OK';
       }
       case 'ZADD': {
         const z = zset(a[0]);
@@ -106,13 +123,44 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
         const [script, numkeys, ...rest] = a;
         const keys = rest.slice(0, Number(numkeys));
         const argv = rest.slice(Number(numkeys));
+        const base = () => Number(get(keys[1], 'string')?.v ?? 0);
         if (script.startsWith('-- obysphere:append')) {
-          // compare-and-append: the relay's log
+          // compare-and-append: the relay's log, at base + its length
           const l = list(keys[0]);
-          if (l.length !== Number(argv[0])) return -1;
+          const n = (keys[1] ? base() : 0) + l.length;
+          if (n !== Number(argv[0])) return -1;
           l.push(...argv.slice(1));
           kv.set(keys[0], { type: 'list', v: l, exp: 0 });
-          return l.length;
+          return n + argv.length - 1;
+        }
+        if (script.startsWith('-- obysphere:read')) {
+          const b = base();
+          const from = Number(argv[0]) - b;
+          if (from < 0) return [b];
+          return [b, run(['LRANGE', keys[0], from, from + Number(argv[1]) - 1], true)];
+        }
+        if (script.startsWith('-- obysphere:compact')) {
+          // KEYS log, base, pointer, old snapshot list, new snapshot list; ARGV pointer expected, position, new pointer, new count
+          if ((get(keys[2], 'string')?.v ?? '') !== argv[0]) return -1;
+          const b = base();
+          const pos = Number(argv[1]);
+          if (pos < b || pos > b + list(keys[0]).length) return -2;
+          if (list(keys[4]).length !== Number(argv[3])) return -3;
+          run(['LTRIM', keys[0], pos - b, -1], true);
+          run(['SET', keys[1], String(pos)], true);
+          run(['SET', keys[2], argv[2]], true);
+          run(['PERSIST', keys[4]], true);
+          if (keys[3] !== keys[4]) run(['EXPIRE', keys[3], 900], true);
+          return pos;
+        }
+        if (script.startsWith('-- obysphere:install')) {
+          // KEYS log, base, pointer, snapshot list; ARGV position, pointer, count
+          if (live(keys[2]) || list(keys[0]).length > 0 || base() > 0) return -1;
+          if (list(keys[3]).length !== Number(argv[2])) return -3;
+          run(['SET', keys[1], argv[0]], true);
+          run(['SET', keys[2], argv[1]], true);
+          run(['PERSIST', keys[3]], true);
+          return 1;
         }
         throw new Error('ERR this fake runs only the relay\'s own scripts');
       }
