@@ -33,8 +33,8 @@ import { fileURLToPath } from 'node:url';
 
 const { randomBytes, createHash } = crypto;
 const SELF = fileURLToPath(import.meta.url);
-// profiles: ~/.obysphere (or OBYSPHERE_HOME); profiles made before the rename stay in ~/.obysphere-mvp
-const HOME = path.resolve(process.env.OBYSPHERE_HOME || (!fs.existsSync(path.join(os.homedir(), '.obysphere')) && fs.existsSync(path.join(os.homedir(), '.obysphere-mvp')) ? path.join(os.homedir(), '.obysphere-mvp') : path.join(os.homedir(), '.obysphere')));
+// profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
+const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
 const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json']);
 // What an answering session may do. Reading, searching and listing files works
@@ -219,7 +219,7 @@ ${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as
   Settings: ${settingsFile(p)}  (what your Oby may do: node ${rel(SELF)} settings --profile ${profile})
 
 Next:
-  1. Go online, so others can ask you:   node ${rel(SELF)} serve --profile ${profile}
+  1. ${goOnline(profile)}
   2. Talk to the others from Claude Code:
      ${mcpAddCommand(p)}
 `);
@@ -585,6 +585,7 @@ async function localApi(req, res, url, p) {
       return sendJson(res, 200, { settings: saveSettings(p, b.settings) });
     }
     if (route === '/local/environment' && m === 'GET') return sendJson(res, 200, await localEnvironment(p, { stale: true }));
+    if (route === '/local/version' && m === 'GET') return sendJson(res, 200, localVersion());
     if (route === '/local/pending' && m === 'GET') {
       let risky = false;
       try {
@@ -3673,6 +3674,58 @@ function die2(status, message) {
   e.status = status;
   e.code = 'bad_request';
   throw e;
+}
+
+// ================================================================ the obysphere CLI: profiles home, version check
+// (obysphere.mjs keeps its own copy of profilesHome: this file runs its command when loaded)
+
+// OBYSPHERE_HOME; else whichever of ~/.obysphere and ~/.obysphere-mvp holds a profile (a folder
+// with profile.json); else ~/.obysphere. Nothing creates that folder until you join.
+function profilesHome() {
+  if (process.env.OBYSPHERE_HOME) return path.resolve(process.env.OBYSPHERE_HOME);
+  const home = os.homedir();
+  for (const d of ['.obysphere', '.obysphere-mvp']) {
+    try {
+      if (fs.readdirSync(path.join(home, d)).some((n) => fs.existsSync(path.join(home, d, n, 'profile.json')))) return path.join(home, d);
+    } catch {}
+  }
+  return path.join(home, '.obysphere');
+}
+
+// what `join` says to do next: `obysphere start` when it came through the CLI
+function goOnline(profile) {
+  return process.env.OBYSPHERE_CLI ? `Go online, in the background:          obysphere start --profile ${profile}` : `Go online, so others can ask you:   node ${rel(SELF)} serve --profile ${profile}`;
+}
+
+// GET /local/version: { current, latest, checkedAt }. GitHub's latest release, checked at
+// most once a day and never while you wait: the answer is what was known; a check runs after
+// it. Cached in the app home (~/.local/share/obysphere) when there is one. Off with
+// OBYSPHERE_NO_UPDATE_CHECK=1.
+const VERSION_RE = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?(?:\+[0-9A-Za-z.-]{1,40})?$/;
+let versionKnown = null; // when there's no app home to keep it in
+let versionChecking = null;
+function localVersion() {
+  const current = readJsonFile(path.join(path.dirname(SELF), 'package.json'), {}).version;
+  const appHome = path.resolve(process.env.OBYSPHERE_APP_HOME || path.join(os.homedir(), '.local', 'share', 'obysphere'));
+  const file = path.join(appHome, 'update-check.json');
+  const known = readJsonFile(file, null) || versionKnown || {};
+  const checkedAt = typeof known.checkedAt === 'string' ? known.checkedAt : null;
+  if (!truthyEnv(process.env.OBYSPHERE_NO_UPDATE_CHECK) && !versionChecking && !(checkedAt && Date.now() - Date.parse(checkedAt) < 24 * 3600e3))
+    versionChecking = checkLatestVersion(appHome, file).finally(() => (versionChecking = null));
+  return { current: VERSION_RE.test(String(current)) ? current : null, latest: VERSION_RE.test(String(known.latest)) ? known.latest : null, checkedAt };
+}
+async function checkLatestVersion(appHome, file) {
+  try {
+    const api = String(process.env.OBYSPHERE_RELEASES_API || 'https://api.github.com/repos/obi-ai-bot/oby-sphere').replace(/\/+$/, '');
+    const u = new URL(api + '/releases/latest');
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopback(u.hostname))) return;
+    const r = await fetch(u, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'obysphere' }, signal: AbortSignal.timeout(10e3) });
+    if (!r.ok && r.status !== 404) return; // try again at the next look
+    const tag = r.ok ? String((await r.json().catch(() => ({}))).tag_name || '') : '';
+    const rec = { latest: VERSION_RE.test(tag.replace(/^v/, '')) ? tag.replace(/^v/, '') : null, checkedAt: new Date().toISOString() };
+    versionKnown = rec;
+    if (fs.existsSync(appHome)) writeSecret(file, rec);
+  } catch {}
 }
 
 // ================================================================ run (last, so every constant above exists)

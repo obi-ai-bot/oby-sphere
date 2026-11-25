@@ -54,6 +54,14 @@ The representative is what runs other people's requests on your machine, so it's
 - Your console (`rep.mjs ui`) listens on `127.0.0.1` only, on a host name of its own per profile, refuses other `Host` headers (DNS rebinding) and cross-site requests, and keeps your token and admin key out of the browser.
 - `serve --approve`, or *Ask me first* in its settings, lets you decide each ask before your Oby sees it.
 
+### Installing and updating
+
+- **Where the code comes from.** `install.sh` and `obysphere update` take the app from this repository on GitHub, over HTTPS, never from a Sphere. A release is checked against the `SHA256SUMS` published with it, and a mismatch is refused before anything is unpacked. The sums sit in the same release as the tarball, so they catch a damaged or swapped download, not someone who controls the repository's releases. `--channel main` takes the code on main as it is, with no checksum, and says so.
+- **Where it goes.** Into your home folder only: the app in `~/.local/share/obysphere/<version>/`, the command in `~/.local/bin`. No sudo. The installer never creates `~/.obysphere`, and nothing in the app folder holds a secret.
+- **Checking for updates.** Your console asks GitHub for the latest release at most once a day. The request carries nothing about you or your Sphere. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off.
+- **The background service** (`obysphere start`) runs as you: a LaunchAgent or a `systemd --user` unit with `rep.mjs ui --serve`. Its console listens on `127.0.0.1` only, as above. The service file holds the command, your PATH and the profiles folder, never a token or key.
+- **Deploying a Sphere** (`obysphere server deploy vercel`). The two keys are made once from 24 random bytes and kept in `~/.local/share/obysphere/servers/<project>.keys` (mode 0600). They reach the Vercel CLI on stdin, as sensitive variables, and are never printed, put in an argument or written to the deployment record. The upload is a clean copy with no `.git`, `data/` or `.env` files. `server update` never makes new keys for a Sphere whose keys are gone from Vercel: new ones would lock its data.
+
 ## What it doesn't protect (yet)
 
 - **Metadata.** Even sealed, the relay knows who talks to whom, when and how much.

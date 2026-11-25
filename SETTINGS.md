@@ -222,6 +222,7 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
 | `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** |
 | `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
+| `GET /local/version` | `{ current, latest, checkedAt }`: this Oby's version, the newest release on GitHub as last checked (or `null`), and when (ISO time, or `null`). It never waits for GitHub: it answers with what it knows and, when that's more than a day old, checks after. The check is kept in `~/.local/share/obysphere/update-check.json` (`OBYSPHERE_APP_HOME`) when the app is installed. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off |
 
 **Runtime**
 
