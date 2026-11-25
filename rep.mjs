@@ -556,7 +556,7 @@ async function ui() {
     log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${adminKey ? ', with the admin key' : ''}; only this machine can open it (also at http://localhost:${port}/)`));
     if (opt.open && process.platform === 'darwin') spawn('open', [link], { stdio: 'ignore' }).on('error', () => {});
   });
-  if (opt.serve) startRep(p, { deferMs: 2000 }).catch((e) => log('representative stopped: ' + e.message));
+  if (opt.serve) serveWhenReachable(p);
 }
 
 // /local/*: what only this machine knows. Errors keep to { error, field? }.
@@ -3690,6 +3690,17 @@ function profilesHome() {
     } catch {}
   }
   return path.join(home, '.obysphere');
+}
+
+// `ui --serve` (what `obysphere start` runs at login): when the Sphere can't be reached yet (no
+// network so soon after login, the Sphere restarting), the console stays up and your Oby tries
+// again, every few seconds and then every minute, until it's online. Before, it stopped for good
+// and the service manager never knew, since the process was still running.
+function serveWhenReachable(p, waitMs = 2000) {
+  startRep(p, { deferMs: 2000 }).catch((e) => {
+    log(yellow(`  your Oby isn't online yet (${printable(e.message)}): trying again in ${Math.round(waitMs / 1000)}s`));
+    setTimeout(() => serveWhenReachable(p, Math.min(waitMs * 2, 60e3)), waitMs);
+  });
 }
 
 // what `join` says to do next: `obysphere start` when it came through the CLI

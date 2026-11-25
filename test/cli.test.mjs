@@ -129,7 +129,7 @@ describe('the obysphere command', () => {
     assert.equal(r.code, 0);
     for (const w of ['obysphere join', 'obysphere start', 'stop | restart', 'obysphere status', 'obysphere open', 'obysphere logs', '-f', 'obysphere profiles', 'obysphere settings',
       'obysphere ask', 'obysphere mcp-config', 'inbox --hook', 'notify test', 'admin claim', 'admin status | grant <handle> | revoke <handle> | rotate-key', 'admin policy', 'github status',
-      'update [--check] [--channel stable|main] [--rollback]', 'version | doctor', 'server start', 'server deploy vercel --project <name> [--scope <team>]', 'server deploy docker | railway', 'server update', 'server status'])
+      'instruments new | list | check | remove', 'update [--check] [--channel stable|main] [--rollback]', 'version | doctor', 'server start', 'server deploy vercel --project <name> [--scope <team>]', 'server deploy docker | railway', 'server update', 'server status'])
       assert.ok(r.stdout.includes(w), `help mentions ${w}`);
     for (const head of ['Join and run your Oby', 'Ask and read', 'Claude Code and Cursor', 'Notifications', 'GitHub', 'Admins', 'Keep it up to date', 'Run a Sphere']) assert.match(r.stdout, new RegExp(`^${head}$`, 'm'));
     assert.equal((await cli(['--help'], envFor(h))).stdout, r.stdout);
@@ -233,6 +233,11 @@ describe('the obysphere command', () => {
     const several = await cli(['start'], env);
     assert.equal(several.code, 1);
     assert.match(several.stderr, /several profiles here \(alice, bob, carol\): pass --profile <name>, or --all/);
+    // logs and open take one profile: --all isn't offered to them
+    const logsMany = await cli(['logs'], env);
+    assert.equal(logsMany.code, 1);
+    assert.match(logsMany.stderr, /several profiles here \(alice, bob, carol\): pass --profile <name>\n/);
+    assert.doesNotMatch(logsMany.stderr, /--all/);
     assert.equal((await cli(['start', '--all'], env)).code, 0);
     assert.match(fs.readFileSync(path.join(h, 'services', 'com.obysphere.bob.plist'), 'utf8'), new RegExp(`<string>--port</string>\\s*<string>${bobPort}</string>`));
     const carol = readJson(path.join(profiles, 'carol', 'service.json')).port;
@@ -250,7 +255,8 @@ describe('the obysphere command', () => {
     const h = tmp('linux');
     const profiles = path.join(h, 'profiles');
     fakeProfile(profiles, 'alice');
-    const env = envFor(h, { OBYSPHERE_HOME: profiles, OBYSPHERE_SERVICE_PLATFORM: 'linux' });
+    // a PATH with $ and % in it: systemd reads $ literally in Environment= and % everywhere as a specifier
+    const env = envFor(h, { OBYSPHERE_HOME: profiles, OBYSPHERE_SERVICE_PLATFORM: 'linux', PATH: `${process.env.PATH}:/opt/odd$dir%x` });
     const r = await cli(['start'], env);
     assert.equal(r.code, 0, r.out);
     assert.match(r.stdout, /loginctl enable-linger/);
@@ -263,6 +269,7 @@ describe('the obysphere command', () => {
     assert.match(unit, /^WantedBy=default\.target$/m);
     assert.ok(unit.includes(`StandardOutput=append:${path.join(profiles, 'alice', 'logs', 'console.log')}`));
     assert.ok(unit.includes(`Environment="OBYSPHERE_HOME=${profiles}"`));
+    assert.ok(unit.includes(`Environment="PATH=${process.env.PATH.replace(/%/g, '%%')}:/opt/odd$dir%%x"`), 'one $ in Environment=, and %% for %');
     assert.ok(!unit.includes('tok_'));
     assert.deepEqual(dryrun(h), [
       { cmd: 'systemctl', args: ['--user', 'daemon-reload'] },
@@ -428,6 +435,22 @@ describe('update and install.sh, from a fake GitHub', () => {
     assert.match(main.stdout, /main isn't checksummed/);
     assert.equal(linkOf(path.join(h3, '.local', 'share', 'obysphere', 'current')), `9.9.3+main.${sha256(apps.main).slice(0, 8)}`);
 
+    // a version that isn't a folder name (a / or ..) is refused before anything moves, by both
+    try {
+      gh.main = buildApp(work, '9.9.4/../../escaped', { prefix: 'oby-sphere-main' });
+      const h4 = tmp('install-bad-version');
+      const odd = await sh(['--channel', 'main'], shEnv(h4));
+      assert.equal(odd.code, 1);
+      assert.match(odd.stderr, /no usable version: '9\.9\.4\/\.\.\/\.\.\/escaped'/);
+      assert.deepEqual(fs.readdirSync(h4).filter((n) => n !== '.local'), [], 'nothing outside the app home');
+      assert.ok(!fs.existsSync(path.join(h4, '.local', 'bin', 'obysphere')));
+      const upd = await cli(['update', '--channel', 'main'], envFor(h4, ghEnv()));
+      assert.equal(upd.code, 1);
+      assert.match(upd.stderr, /no usable version/);
+    } finally {
+      gh.main = apps.main;
+    }
+
     // Node older than 22: said plainly
     const old = tmp('install-old-node');
     fs.mkdirSync(path.join(old, 'fakebin'));
@@ -535,7 +558,9 @@ describe('server deploy vercel, with a fake vercel', () => {
     assert.match(down.stdout, /doesn't answer/);
 
     assert.match((await cli(['server', 'deploy', 'docker'], env)).stdout, /docker build -t obysphere[\s\S]*--env-file ~\/obysphere\.env/);
-    assert.match((await cli(['server', 'deploy', 'railway'], env)).stdout, /mounted at \/data/);
+    const railway = (await cli(['server', 'deploy', 'railway'], env)).stdout;
+    assert.match(railway, /mounted at \/data/);
+    assert.ok(railway.includes('https://railway.com/deploy/oby-sphere'), 'the one-click template');
   });
 
   test('server update never makes new keys for a Sphere that has data', async () => {
@@ -547,6 +572,32 @@ describe('server deploy vercel, with a fake vercel', () => {
     assert.equal(r.code, 1);
     assert.match(r.stderr, /SPHERE_ADMIN_KEY isn't set on Vercel any more.*new keys would lock its data/s);
     assert.ok(!fs.existsSync(keysFile()));
+  });
+
+  test('a key set on Vercel by hand is left alone, and the keys file never claims it', async () => {
+    const byHand = 'set-by-hand-on-vercel-0123456789';
+    const v2 = makeFakeVercel(path.join(h, 'fakebin2'), { url: relayBase, deployment: 'https://by-hand-abc123.vercel.app', redis: true, env: { SPHERE_KEY: byHand } });
+    const env2 = { ...env, PATH: `${v2.dir}:${process.env.PATH}` };
+    const file = path.join(app, 'servers', 'by-hand.keys');
+    const r = await cli(['server', 'deploy', 'vercel', '--project', 'by-hand'], env2);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(v2.calls().filter((c) => c.argv[0] === 'env' && c.argv[1] === 'add').map((c) => c.argv[2]), ['SPHERE_ADMIN_KEY'], 'only the missing key is set');
+    const keys = readJson(file);
+    assert.equal(keys.SPHERE_KEY, undefined, 'no made-up join key in the file');
+    assert.equal(keys.SPHERE_ADMIN_KEY, v2.state().env.SPHERE_ADMIN_KEY);
+    assert.equal(v2.state().env.SPHERE_KEY, byHand, 'the join key on Vercel is untouched');
+    assert.ok(r.stdout.includes(`${relayBase}/#key=<the join key set on Vercel>`), r.stdout);
+    assert.ok(r.stdout.includes('OBYSPHERE_ADMIN_KEY=<SPHERE_ADMIN_KEY from that file>'));
+    assert.ok(!r.out.includes(keys.SPHERE_ADMIN_KEY) && !r.out.includes(byHand), 'no key printed');
+
+    // later, with SPHERE_KEY gone from Vercel: the file doesn't have it, so no new one is made up
+    const s = v2.state();
+    delete s.env.SPHERE_KEY;
+    v2.set({ env: s.env });
+    const up = await cli(['server', 'update', 'by-hand'], env2);
+    assert.equal(up.code, 1);
+    assert.match(up.stderr, /SPHERE_KEY isn't set on Vercel any more, and it isn't in the keys for by-hand here/);
+    assert.deepEqual(readJson(file), keys, 'the keys file is unchanged');
   });
 });
 
@@ -589,6 +640,12 @@ describe('status, open and the version check, against a local relay', () => {
     const open = await cli(['open'], env);
     assert.equal(open.code, 0, open.out);
     assert.deepEqual(dryrun(h).at(-1), { cmd: 'open', args: [`http://alice.localhost:${port}/`] });
+
+    // restart doesn't put a service on the port a console in a terminal holds (it would only fail to listen)
+    const again = await cli(['restart'], env);
+    assert.equal(again.code, 1);
+    assert.match(again.stderr, /alice's console runs at http:\/\/alice\.localhost:\d+\/, in a terminal: stop it there/);
+    assert.ok(!fs.existsSync(path.join(h, 'services', 'com.obysphere.alice.plist')), 'no service written');
 
     // a Sphere that doesn't answer
     fakeProfile(profiles, 'bob');
@@ -641,5 +698,45 @@ describe('status, open and the version check, against a local relay', () => {
     } finally {
       gh.close();
     }
+  });
+});
+
+describe('the background service when the Sphere is away as it starts', () => {
+  test('ui --serve keeps the console up and brings your Oby online once the Sphere answers', async () => {
+    const h = tmp('offline');
+    const data = path.join(h, 'data');
+    const rport = await freePort();
+    const base = `http://127.0.0.1:${rport}`;
+    const startRelay = () => {
+      const r = spawn(process.execPath, [path.join(ROOT, 'server.mjs'), '--port', String(rport), '--host', '127.0.0.1', '--data', data], {
+        env: { ...process.env, SPHERE_KEY: KEY, SPHERE_ADMIN_KEY: ADMIN, SPHERE_SEALED: '0', SPHERE_STORE: 'fs' },
+        stdio: 'ignore',
+      });
+      procs.push(r);
+      return r;
+    };
+    const first = startRelay();
+    await waitFor(async () => (await fetch(base + '/healthz')).ok);
+    fs.mkdirSync(path.join(h, 'work'));
+    const env = envFor(h, { OBYSPHERE_HOME: path.join(h, 'profiles') });
+    const j = await cli(['join', `${base}/#key=${KEY}`, '--name', 'dora', '--owner', 'Dora', '--cwd', path.join(h, 'work')], env);
+    assert.equal(j.code, 0, j.out);
+    first.kill();
+    await waitFor(async () => !(await fetch(base + '/healthz').then((x) => x.ok, () => false)));
+
+    // as the service runs it, with no Sphere to reach (at login, before the network is up)
+    const cport = await freePort();
+    let log = '';
+    const ui = spawn(process.execPath, [REP, 'ui', '--serve', '--profile', 'dora', '--port', String(cport)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    procs.push(ui);
+    ui.stdout.on('data', (d) => (log += d));
+    ui.stderr.on('data', (d) => (log += d));
+    await waitFor(() => /your Oby isn't online yet .*trying again in \d+s/.test(log));
+    assert.ok((await fetch(`http://127.0.0.1:${cport}/favicon.svg`)).ok, 'the console is up');
+
+    startRelay();
+    await waitFor(() => /dora is online/.test(log), 30000);
+    const { agents } = await (await fetch(base + '/api/agents', { headers: { 'x-sphere-key': KEY } })).json();
+    assert.equal(agents.find((a) => a.name === 'dora')?.online, true, 'the Sphere sees it online');
   });
 });

@@ -90,6 +90,9 @@ Notifications
 GitHub
   obysphere github status          how gh is signed in, and what your Oby may do on GitHub
 
+Instruments
+  obysphere instruments new | list | check | remove   what your Oby offers the Sphere (INSTRUMENTS.md)
+
 Admins
   obysphere admin claim            make your Oby an admin (the key from a prompt or OBYSPHERE_ADMIN_KEY, never an argument)
   obysphere admin status | grant <handle> | revoke <handle> | rotate-key
@@ -172,8 +175,9 @@ function notJoined() {
   obysphere join "<invite link>" --name <handle> --owner "<Your Name>" --cwd <the folder your Oby may read>`;
 }
 
-// --profile (or OBYSPHERE_PROFILE), --all, or the only profile there is
-function targets({ all = !!opt.all } = {}) {
+// --profile (or OBYSPHERE_PROFILE), --all, or the only profile there is. `one`: a command
+// that takes one profile (logs, open), so --all isn't offered
+function targets({ one = false, all = !one && !!opt.all } = {}) {
   const names = listProfiles();
   const want = typeof opt.profile === 'string' ? opt.profile : process.env.OBYSPHERE_PROFILE;
   if (want) {
@@ -183,7 +187,7 @@ function targets({ all = !!opt.all } = {}) {
   }
   if (!names.length) die(notJoined());
   if (all || names.length === 1) return names;
-  die(`several profiles here (${names.join(', ')}): pass --profile <name>${opt.all === undefined ? ', or --all' : ''}`);
+  die(`several profiles here (${names.join(', ')}): pass --profile <name>${!one && opt.all === undefined ? ', or --all' : ''}`);
 }
 
 function profiles() {
@@ -324,20 +328,24 @@ ${Object.entries(s.env).map(([k, v]) => `    <key>${x(k)}</key>${str(v)}`).join(
 }
 
 function unit(s) {
-  const q = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%').replace(/\$/g, '$$$$')}"`;
+  // quoted for systemd: % is a specifier everywhere; $ is expanded in ExecStart only ($$ is a
+  // plain $ there), while in Environment= it means nothing and $$ would stay two
+  const pct = (v) => String(v).replace(/%/g, '%%');
+  const q = (v) => `"${pct(String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"'))}"`;
+  const qExec = (v) => q(v).replace(/\$/g, '$$$$');
   return `# Obysphere: a console and Oby, written by obysphere start. obysphere stop removes it.
 [Unit]
 Description=Obysphere: ${s.profile}'s console and Oby
 
 [Service]
 Type=simple
-ExecStart=${s.args.map(q).join(' ')}
+ExecStart=${s.args.map(qExec).join(' ')}
 ${Object.entries(s.env).map(([k, v]) => `Environment=${q(`${k}=${v}`)}`).join('\n')}
-WorkingDirectory=${s.cwd}
+WorkingDirectory=${pct(s.cwd)}
 Restart=always
 RestartSec=5
-StandardOutput=append:${s.log}
-StandardError=append:${s.log}
+StandardOutput=append:${pct(s.log)}
+StandardError=append:${pct(s.log)}
 
 [Install]
 WantedBy=default.target
@@ -463,6 +471,12 @@ async function restart() {
   if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') die('Here your console runs in a terminal: stop it there with Ctrl+C, then obysphere start.');
   for (const n of targets()) {
     const port = await consolePort(n);
+    // a console in a terminal holds the port: a service started now would only fail to listen, again and again
+    if (!serviceInstalled(n) && (await consoleAnswers(port))) {
+      warn(`${yellow('!')} ${n}'s console runs at ${consoleUrl(n, port)}, in a terminal: stop it there (Ctrl+C), then obysphere start.`);
+      process.exitCode = 1;
+      continue;
+    }
     await installService(n, port);
     await announce(n, port);
   }
@@ -478,7 +492,7 @@ async function restartServices() {
 }
 
 async function logs() {
-  const [name] = targets();
+  const [name] = targets({ one: true });
   const file = logFile(name);
   const n = Math.max(1, Math.min(10000, Number(opt.n) || 50));
   if (fs.existsSync(file)) process.stdout.write(lastLines(file, n));
@@ -518,7 +532,7 @@ function lastLines(file, n) {
 }
 
 async function openCmd() {
-  const [name] = targets();
+  const [name] = targets({ one: true });
   const port = savedPort(name);
   if (!port || !(await consoleAnswers(port))) die(`${name}'s console isn't running: obysphere start${listProfiles().length > 1 ? ` --profile ${name}` : ''}`);
   const url = consoleUrl(name, port);
@@ -890,6 +904,7 @@ async function server() {
 // server.mjs beside this file, in this terminal, with its own flags
 function serverStart() {
   const child = spawn(process.execPath, [path.join(APP_DIR, 'server.mjs'), ...argv.slice(2)], { stdio: 'inherit' });
+  child.on('error', (e) => die(`couldn't run server.mjs: ${e.message}`));
   process.on('SIGINT', () => {});
   for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => child.kill(sig));
   child.on('exit', (code, signal) => process.exit(code ?? 128 + (os.constants.signals[signal] || 1)));
@@ -949,12 +964,15 @@ function exportApp(src, dest) {
   walk('');
 }
 
-// a Sphere's keys: made once, 22+ random characters, kept in a file only you can read
-function ensureKeys(file) {
-  const have = readJson(file, null);
-  if (have && String(have.SPHERE_KEY || '').length >= 22 && String(have.SPHERE_ADMIN_KEY || '').length >= 22) return have;
-  const keys = { SPHERE_KEY: randomBytes(24).toString('base64url'), SPHERE_ADMIN_KEY: randomBytes(24).toString('base64url'), createdAt: new Date().toISOString() };
-  writeSecret(file, keys);
+// a Sphere's keys: made once, 24 random bytes each, kept in a file only you can read. The file
+// holds only the keys this command sets on Vercel: never a new one for a key Vercel already has
+// (one set by hand), which would only send you to the wrong key.
+const goodKey = (keys, n) => String(keys?.[n] || '').length >= 22;
+function ensureKeys(file, names) {
+  const have = readJson(file, {});
+  const keys = { ...have };
+  for (const n of names) if (!goodKey(keys, n)) keys[n] = randomBytes(24).toString('base64url');
+  if (names.some((n) => !goodKey(have, n))) writeSecret(file, { ...keys, createdAt: have.createdAt || new Date().toISOString() });
   return keys;
 }
 
@@ -1000,12 +1018,11 @@ async function deployVercel({ project = opt.project, scope = opt.scope, sphereNa
     const listed = (await vercel(bin, tmp, ['env', 'ls', 'production', ...scopeArgs])).stdout;
     const has = (n) => new RegExp(`(^|\\s)${n}(\\s|$)`, 'm').test(listed);
     const missing = ['SPHERE_KEY', 'SPHERE_ADMIN_KEY'].filter((n) => !has(n));
-    let madeKeys = fs.existsSync(keysFile);
     if (missing.length) {
-      if (isUpdate && !fs.existsSync(keysFile))
-        throw new Error(`${missing.join(' and ')} ${missing.length > 1 ? "aren't" : "isn't"} set on Vercel any more, and there are no keys for ${project} here. Set ${missing.length > 1 ? 'them' : 'it'} again with the value${missing.length > 1 ? 's' : ''} the Sphere had (vercel env add <NAME> production --sensitive): new keys would lock its data.`);
-      const keys = ensureKeys(keysFile);
-      madeKeys = true;
+      const lost = missing.filter((n) => !goodKey(readJson(keysFile, {}), n));
+      if (isUpdate && lost.length)
+        throw new Error(`${lost.join(' and ')} ${lost.length > 1 ? "aren't" : "isn't"} set on Vercel any more, and ${lost.length > 1 ? "they aren't" : "it isn't"} in the keys for ${project} here. Set ${lost.length > 1 ? 'them' : 'it'} again with the value${lost.length > 1 ? 's' : ''} the Sphere had (vercel env add <NAME> production --sensitive): new keys would lock its data.`);
+      const keys = ensureKeys(keysFile, missing);
       for (const n of missing) await vercel(bin, tmp, ['env', 'add', n, 'production', '--sensitive', ...scopeArgs], { input: keys[n] });
       say(`${green('✓')} set ${missing.join(' and ')} on Vercel ${dim('(sensitive)')}`);
     }
@@ -1037,11 +1054,11 @@ async function deployVercel({ project = opt.project, scope = opt.scope, sphereNa
     }
     say(`\n${green('✓')} ${bold(project)} is deployed: ${cyan(url)} ${dim(`(${version})`)}`);
     say(h.ok ? `  It answers: relay ${h.version || '?'}, ${h.store || '?'} store${h.sealed ? ', sealed' : ''}.` : `  It doesn't answer at ${url}/healthz yet: give it a minute, then obysphere server status ${project}.`);
-    if (madeKeys) {
-      say(`  Keys:    ${keysFile} ${dim('(only you can read it; never printed)')}`);
-      say(`  Invite:  ${url}/#key=<SPHERE_KEY from that file>`);
-      say(`  Admin:   OBYSPHERE_ADMIN_KEY=<SPHERE_ADMIN_KEY from that file> obysphere admin claim, once you've joined`);
-    } else say(`  Invite:  ${url}/#key=<the join key set on Vercel>`);
+    // which key is where: the file has the ones this command set; the others were set on Vercel by hand
+    const known = readJson(keysFile, {});
+    if (goodKey(known, 'SPHERE_KEY') || goodKey(known, 'SPHERE_ADMIN_KEY')) say(`  Keys:    ${keysFile} ${dim('(only you can read it; never printed)')}`);
+    say(`  Invite:  ${url}/#key=${goodKey(known, 'SPHERE_KEY') ? '<SPHERE_KEY from that file>' : '<the join key set on Vercel>'}`);
+    say(`  Admin:   OBYSPHERE_ADMIN_KEY=${goodKey(known, 'SPHERE_ADMIN_KEY') ? '<SPHERE_ADMIN_KEY from that file>' : '<the admin key set on Vercel>'} obysphere admin claim, once you've joined`);
     say(dim(`  Later:   obysphere server update ${project} deploys the installed version again`));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -1096,6 +1113,10 @@ To update: build the new version the same way, then docker rm -f obysphere and r
 function railwaySteps() {
   return `A Sphere on Railway (one process, a disk, always on):
 
+In one click, from the template: https://railway.com/deploy/oby-sphere
+Then check it: obysphere server status https://<its domain>
+
+Or by hand:
   1. Railway › New project › Deploy from GitHub repo › ${REPO} (or your fork).
      Railway builds the Dockerfile and reads railway.json: one replica, health check on /healthz.
   2. Variables: SPHERE_KEY and SPHERE_ADMIN_KEY (each from: openssl rand -base64 24; keep them

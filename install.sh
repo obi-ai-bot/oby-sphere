@@ -135,7 +135,9 @@ if [ "$channel" = stable ]; then
 else
   version="$pkg_version+main.$(sha256 "$tarball" | cut -c 1-8)"
 fi
+# a folder name: digits first, then letters, digits, . + and - only (never a / or ..)
 case "$version" in
+  *[!0-9A-Za-z.+-]*|*..*) fail "its package.json has no usable version: '$pkg_version'" ;;
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) fail "its package.json has no usable version: '$pkg_version'" ;;
 esac
