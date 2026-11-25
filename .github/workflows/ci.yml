@@ -1,5 +1,6 @@
 # Syntax, the relay's tests (both stores, sealing, the Vercel entry; no Claude and no network
-# needed), and the Docker image building and answering its health check.
+# needed), the Docker image building and answering its health check, and the console in a
+# real browser (Playwright and Chromium, installed in that job only).
 name: CI
 
 on:
@@ -48,3 +49,38 @@ jobs:
             -e SPHERE_KEY="$(openssl rand -base64 24)" -e SPHERE_ADMIN_KEY="$(openssl rand -base64 24)" obysphere
           for i in $(seq 1 30); do curl -fs localhost:8080/healthz && exit 0; sleep 1; done
           docker logs sphere; exit 1
+
+  browser:
+    name: Console in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_VERSION: '1.64.1' # the same as test/browser-helpers.mjs
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # for this job only: package.json keeps no dependencies, and no lockfile is written
+      - run: npm install --no-save playwright@"$PLAYWRIGHT_VERSION"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+      # Chromium comes from the cache when it's there; its system libraries are installed each time
+      - run: npx playwright install --with-deps chromium
+      - name: The console at desktop and phone width
+        run: node --test test/browser-tests.test.mjs
+        env:
+          OBYSPHERE_BROWSER_TESTS: '1'
+          OBYSPHERE_BROWSER_ARTIFACTS: ${{ runner.temp }}/browser-artifacts
+      - name: Screenshots and traces of what failed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-tests
+          path: ${{ runner.temp }}/browser-artifacts
+          if-no-files-found: ignore
+          retention-days: 14

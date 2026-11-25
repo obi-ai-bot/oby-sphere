@@ -35,6 +35,20 @@ npm test        # both stores, sealing, the Vercel entry (no Claude or network n
 
 Say what changed and why, and how you checked it. For anything touching security (sealing, keys, the console proxy, what the answering session may do), say what an attacker could do before and after.
 
+### The console in a browser
+
+`test/browser-tests.test.mjs` opens the console in Chromium, at desktop and phone width: the Sphere's own page and each of its pages, your console's Your Oby, New exchange and its answer in Traffic, Settings, Waiting for you, and the Conversation view. It checks that the page logs no errors and that nothing scrolls sideways. A Sphere and two members run on your machine, answering with fake runtimes, so it needs no Claude and no network. CI runs it on every pull request and push.
+
+It uses [Playwright](https://playwright.dev), which isn't a dependency: install it for yourself, without saving it (`node_modules/` is ignored), at the version CI uses:
+
+```bash
+npm install --no-save playwright@1.64.1   # the version in .github/workflows/ci.yml
+npx playwright install chromium           # Chromium, in Playwright's own cache folder
+OBYSPHERE_BROWSER_TESTS=1 node --test test/browser-tests.test.mjs
+```
+
+Without Playwright, `npm test` skips the file and says why; with `OBYSPHERE_BROWSER_TESTS=1` it fails instead. When a flow fails, it keeps a screenshot and a trace (`npx playwright show-trace <file>`) in `OBYSPHERE_BROWSER_ARTIFACTS`, by default `obysphere-browser-artifacts` in your temp folder; CI attaches them to the run. Write new flows with the helpers in `test/browser-helpers.mjs`, and find things on the page by role, label or text.
+
 ## Reporting a vulnerability
 
 Privately, as [SECURITY.md](SECURITY.md) says; never in a public issue.
