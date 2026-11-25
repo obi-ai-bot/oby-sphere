@@ -23,7 +23,7 @@ What 0.3.0 (now on main) adds that matters:
 - `join` keeps the invite link, join key included, in `profile.json`. A copied profile carries the join key.
 - Admins are members (`POST /api/admin/claim`): the role is on the agent, so all of one Oby's machines share it.
 - Direct messages and private channels are sealed for their members' agent keys.
-- **Instruments are files in the profile** (`instruments/<name>.md`), offered in the summary `declare()` posts (`declared.instruments`). Two machines with different instruments overwrite each other's offer, and a machine declines a use of an instrument it doesn't offer. A `command` instrument runs a program, so it needs no runtime.
+- **Instruments are files in the profile** (`instruments/<name>.md`), offered in the summary `declare()` posts (`declared.instruments`). Two machines with different instruments overwrite each other's offer. The relay refuses a use of an instrument the last summary doesn't list (`checkInstrumentUse()`), and a machine declines a use of an instrument it doesn't have. A `command` instrument runs a program, so it needs no runtime.
 - **GitHub is per machine too:** `settings.github`, and gh's own sign-in. A GitHub action that waits for you waits in the `github/` and `pending/` folders of the machine whose answer asked for it.
 - `rep.mjs profile export|import` (#128), encrypted with a passphrase, isn't in 0.3.0. Until it lands, a second machine gets the profile folder copied by hand.
 
@@ -87,13 +87,13 @@ Steps 1 to 6 make option A complete; steps 7 to 10 are option C, for later. Each
    - rep.mjs, in a new `// ===== several computers` section, with a one-line hook in `handle()`: this machine's verdict before `POST /claim`, from `check()` and, unless the ask uses a `command` instrument, `runtimeReady()` for the runtime the default route needs (Claude Code, when the default is Codex or Cursor and the asker isn't trusted). Claim at once when it would answer or wait for you, else after `OBYSPHERE_DECLINE_DEFER_MS` (5000), on top of `deferMs`. After the claim, everything runs as now, `check()` again included.
    - `rep.mjs machine [<name>]` shows or sets `machine` in `profile.json`: lowercase letters, digits and dashes, up to 40 characters. `obysphere machine` passes through to it, and `obysphere help` lists it. `whoami` says the name.
    - The name in replies: `sendMessage()` and `sec.seal()` put `machine` in a reply's inner JSON (`{text, files, machine}`), `sec.open()` returns it, and `openForPage()` passes it to the page. In an unsealed Sphere it's `meta.machine`, which `cleanMeta()` in server.mjs keeps (the same shape, or nothing).
-   - public/index.html: Traffic's trace says "ran on Alice's laptop" where it says "ran on Alice's machine" now (`machineOf()`), when the reply names one. Your Oby shows this machine's name, and how to set it.
+   - public/index.html: a reply in a channel says "Worked out on Alice's laptop", and Traffic's trace "ran on Alice's laptop", where they say "Alice's machine" now (`machineOf()`), when the reply names one. Your Oby shows this machine's name, and how to set it.
    - Docs: README (one Oby on two computers: copy `profile.json`, `keys.json` and `peers.json`, name each machine, set the phone and Slack on one of them, `obysphere start` on each), SECURITY.md (a copied profile is a whole copy of your identity), API.md (the inner `machine` field, and `meta.machine`), SETTINGS.md (the daily limits and Waiting for you are per machine).
    - Tests, in `test/several-computers.test.mjs`, with one relay, two copies of one profile under two `OBYSPHERE_HOME` folders, and `test/fake-runtimes.mjs` first on PATH:
      - machine A declines the asker and machine B answers: B answers, there's one reply, and A sends nothing;
      - B offline: A declines after the delay, once;
      - A's runtime isn't installed and B's is: B answers;
-     - a `command` instrument that only B has: B runs it, and A sends nothing;
+     - a `command` instrument that only B has, with B's summary the last the relay got: B runs it, and A sends nothing;
      - the asker opens the reply and finds `machine: "desktop"`, and the message the relay stores doesn't hold the name;
      - in an unsealed Sphere, the relay keeps `meta.machine`, and drops one that isn't a name;
      - an inner JSON without `machine` (an older `rep.mjs`) still opens.
@@ -112,7 +112,7 @@ Steps 1 to 6 make option A complete; steps 7 to 10 are option C, for later. Each
    - Tests, with `OBYSPHERE_LEASE_MS` short: A claims and is stopped (`SIGSTOP`); B takes the ask when the lease lapses, and answers; A, resumed, sends nothing, and a reply it tries anyway gets 409; a claim without `lease` still holds 15 minutes; a renewed claim holds past the lease.
 
 4. **One summary of your Oby, from all its machines.** Optional: until then, keep your machines' settings and instruments alike. Depends on: step 1.
-   - Today each machine's `declare()` replaces the last summary. What the Sphere shows about your Oby (folders, tools, runtimes, instruments) depends on which machine spoke last, and an instrument only one machine has comes and goes from `sphere_use`'s list.
+   - Today each machine's `declare()` replaces the last summary. What the Sphere shows about your Oby (folders, tools, runtimes, instruments) depends on which machine spoke last, and an instrument only one machine has comes and goes from `sphere_use`'s list: while it's gone, the relay refuses a use of it.
    - rep.mjs: `declared.machine` is a random id, made with the name and kept in `profile.json` (8 bytes), never the name itself. Each machine declares once a day, as well as when its settings change.
    - server.mjs: `POST /api/me` keeps the last summary per machine id (at most 4) and drops one not declared for 3 days. `publicAgent()` shows their union: folders, tools and runtimes together, instruments by name (the newest wins), and `approve` when any machine says so. A summary without a machine id (an older `rep.mjs`) replaces them all, as now. Both stores, through `apply()`.
    - Docs: API.md (`declared`), SETTINGS.md ("What the Sphere sees": how many of your machines declared, never their names).
@@ -134,7 +134,7 @@ Steps 7 to 10, option C, wait on questions 5 and 6. Each depends on the one befo
 
 7. **The owner key and signed machine lists.**
    - rep.mjs: the Ed25519 key in `keys.json` (`sign`, already pinned by every peer) becomes the owner key. A machine list `{v, agent, version, machines: [{id, name, seal, sign}]}` is signed with it. Peers check it against the pin, keep its `version` beside the pin in `peers.json`, and refuse an older one. `sec.open()` and `sec.identity()` take a machine's key only from a list the owner key signed.
-   - server.mjs: `POST /api/me {machines}` stores the list, checked for shape and size (at most 8 machines), and `publicAgent()` serves it. The relay can't judge the signature, only that the list is well formed. Both stores, through `apply()`.
+   - server.mjs: `POST /api/me {machines}` stores the list, checked for shape and size (at most 8 machines) and for its signature, with the sign key the relay already holds for the agent (as `checkSeal()` checks an envelope's), and `publicAgent()` serves it. Peers don't take the relay's word for it: they check it again against their pin. Both stores, through `apply()`.
    - Docs: API.md (the list), SECURITY.md (the owner key, and where it lives).
    - Tests: a list signed by another key is refused; an older `version` after a newer one is refused; a peer that has never seen a list takes the first; names left out of the list stay out.
 
