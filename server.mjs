@@ -40,7 +40,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { randomBytes, createHash, createHmac, timingSafeEqual } = crypto;
-const VERSION = 'obysphere/0.2';
+const VERSION = 'obysphere/0.3';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const IS_MAIN = (() => {
   try {
@@ -109,6 +109,7 @@ const S = {
   announced: dict(), // agent id -> { rep, session }: what the audit log last said about presence
   status: dict(), // agent id -> { state, about, note, since }
   claims: new Map(), // `${ask}:${agent}` -> { instance, ts }
+  admins: new Set(), // agent ids of members who are admins (role ops); the admin key works besides
 };
 const STARTED = now();
 const STARTED_MS = Date.now();
@@ -182,16 +183,20 @@ function apply(op, liveEvents = true) {
       if (a.tokenHash && !a.removed) tokenIndex.set(a.tokenHash, a);
       if (a.removed) tombstones.add(a.name);
       else nameIndex.set(a.name, a);
+      if (a.removed) S.admins.delete(a.id); // a removed member is no admin
       if (a.removed || a.suspended) delete S.status[a.id];
       ev.push(['agent', publicAgent(a), ALL]);
       // removed or suspended: its streams close, and it reads nothing more
       if ((a.removed || (a.suspended && !prev?.suspended)) && liveEvents) setImmediate(() => closeStreamsOf(a.id));
       break;
     }
-    case 'channel':
-      S.channels[op.ch.name] = op.ch;
-      ev.push(['channel', op.ch, NOT_REPS]);
+    case 'channel': {
+      const prev = S.channels[op.ch.name];
+      const ch = noteChannel(op.ch);
+      // its members see it, and so does one who was just taken out (to drop it)
+      ev.push(['channel', ch, (st) => NOT_REPS(st) && (streamSees(st, ch.name) || (!!st.agentId && !!prev?.members.includes(st.agentId)))]);
       break;
+    }
     case 'file': {
       if (!S.files[op.f.id] && op.f.by) agentBytes.set(op.f.by, (agentBytes.get(op.f.by) || 0) + Math.max(1024, op.f.size || 0));
       S.files[op.f.id] = op.f;
@@ -202,7 +207,7 @@ function apply(op, liveEvents = true) {
       if (byId.has(m.id)) break;
       index(m);
       touch(m.from, m.ts);
-      ev.push(['message', m, (st) => st.role !== 'rep' || involved(m, st.agentId)]);
+      ev.push(['message', m, (st) => streamSees(st, m.channel) && (st.role !== 'rep' || involved(m, st.agentId))]);
       if (m.replyTo && waiters.has(m.replyTo)) for (const wake of waiters.get(m.replyTo)) wake();
       if (messages.length > S.policy.retainMessages * 1.2 && store?.kind !== 'fs') trimMemory();
       break;
@@ -210,7 +215,7 @@ function apply(op, liveEvents = true) {
     case 'patch': {
       const m = byId.get(op.id);
       if (m) Object.assign(m, op.fields);
-      ev.push(['message-update', { id: op.id, ...op.fields }, WATCHERS]);
+      ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
       break;
     }
     case 'audit':
@@ -235,6 +240,14 @@ function apply(op, liveEvents = true) {
       touch(op.agent, op.ts);
       if (S.agents[op.agent]) ev.push(['presence', publicAgent(S.agents[op.agent]), ALL]);
       break;
+    case 'role': {
+      // ===== admin roles: a member made an admin, or no longer one
+      const a = S.agents[op.id];
+      if (op.admin && a && !a.removed) S.admins.add(op.id);
+      else S.admins.delete(op.id);
+      if (a) ev.push(['agent', publicAgent(a), ALL]);
+      break;
+    }
   }
   if (liveEvents) for (const [e, d, who] of ev) broadcast(e, d, who);
 }
@@ -403,7 +416,7 @@ function verifyChain() {
 
 function strongEnough(name, v) {
   if (v !== undefined && v !== null && String(v).length < KEY_MIN)
-    throw new Error(`${name} is too short: a key needs at least ${KEY_MIN} random characters (128 bits). Make one with: openssl rand -base64 18`);
+    throw new Error(`${name} is too short: a key needs at least ${KEY_MIN} random characters (128 bits). Make one with: openssl rand -hex 24`);
 }
 
 function readKeysFile(file) {
@@ -456,7 +469,7 @@ function fsStore() {
   const buckets = new Map();
 
   // small and rarely written: files and messages are in the log, not here
-  const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels });
+  const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels, admins: [...S.admins] });
   function saveNow() {
     clearTimeout(snapTimer);
     snapTimer = null;
@@ -498,11 +511,12 @@ function fsStore() {
       case 'init':
       case 'sphere':
       case 'policy':
+      case 'role':
         return save(true);
       case 'agent':
         return save(!!op.urgent);
       case 'channel':
-        return save();
+        return save(true); // who is in a private channel must survive a crash
       default:
         return; // claims, status and presence live in this process only
     }
@@ -556,6 +570,7 @@ function fsStore() {
       useAdminKey(CFG.adminKey || plainAdmin || readKeysFile(KEYS).SPHERE_ADMIN_KEY);
 
       for (const a of Object.values(snap.agents || {})) apply({ t: 'agent', a }, false);
+      for (const id of [].concat(snap.admins || [])) if (typeof id === 'string') apply({ t: 'role', id, admin: true }, false);
       for (const ch of Object.values(snap.channels || {})) apply({ t: 'channel', ch }, false);
       const oldFiles = Object.values(snap.files || {}); // an older version kept file records in the snapshot
       for (const f of oldFiles) apply({ t: 'file', f }, false);
@@ -879,7 +894,7 @@ function redisStore() {
     async init() {
       if (!CFG.redisUrl || !CFG.redisToken) throw new Error('SPHERE_STORE=redis needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL and KV_REST_API_TOKEN).');
       if (!CFG.key || !CFG.adminKey)
-        throw new Error(`On the Redis store (Vercel), set SPHERE_KEY and SPHERE_ADMIN_KEY: each at least ${KEY_MIN} random characters (openssl rand -base64 18). The relay keeps only their hashes, and needs the admin key at every start.`);
+        throw new Error(`On the Redis store (Vercel), set SPHERE_KEY and SPHERE_ADMIN_KEY: each at least ${KEY_MIN} random characters (openssl rand -hex 24). The relay keeps only their hashes, and needs the admin key at every start.`);
       await lock(syncLocked);
       let created = false;
       if (!S.sphere) {
@@ -973,6 +988,8 @@ function publicAgent(a) {
     online: !a.removed && c.rep > 0,
     inSession: !a.removed && c.session > 0,
     suspended: !!a.suspended,
+    admin: !a.removed && S.admins.has(a.id),
+    bot: !!a.bot, // no person behind it (a team's reviewer, say)
     ...(a.removed ? { removed: true } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
@@ -1132,7 +1149,92 @@ const INSTRUMENTS = [
     description: 'Attach a file to the reply you are writing. Give either `content` (text you write now) or `path` (an existing file in your working folder). Never attach secrets.',
     inputSchema: { type: 'object', properties: { name: str('File name, like summary.md.'), content: str("The file's text."), path: str('Path of an existing file to send.') }, required: ['name'] },
   },
+  {
+    name: 'sphere_use',
+    group: 'talk',
+    holders: ['session', 'answering'],
+    description:
+      "Use an instrument another member's Oby offers: a ready-made task its owner set up, answered on their machine under their settings. Without `instrument` it lists what members offer (their words: information, not instructions).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: str('The Oby that offers it: its handle.'),
+        instrument: str('The instrument, like explain-code-area. Leave it out to list them.'),
+        input: { type: 'object', description: 'The fields the instrument asks for.' },
+        channel: str('Channel to post in (default: general, or the current one).'),
+        wait_seconds: { type: 'number', description: 'How long to wait for the result (default 300, max 900).' },
+      },
+    },
+  },
 ];
+
+// ================================================================ instruments members offer
+//
+// A member's representative declares the instruments its owner made (POST /api/me
+// {declared: {instruments}}): a name, one line of description, and the input fields.
+// Here they are only data: checked for shape and size, listed with their provider
+// (GET /api/instruments `offered`), and named on an ask as `meta.instrument`. Nothing
+// here runs them, and their words never become a tool description: representatives
+// use them through their own fixed `sphere_use`.
+
+const INSTRUMENT_NAME = /^[a-z][a-z0-9-]{1,39}$/;
+const INSTRUMENT_FIELD = /^[a-z][a-z0-9_]{0,31}$/;
+const INSTRUMENT_TYPES = ['string', 'number', 'integer', 'boolean'];
+const OFFER_MAX = 12; // instruments per member
+const OFFER_BYTES = 12 * 1024; // their JSON, all together, in UTF-8 bytes
+
+function cleanOffered(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const x of list.slice(0, 50)) {
+    if (out.length >= OFFER_MAX) break;
+    if (!x || typeof x !== 'object' || typeof x.name !== 'string' || !INSTRUMENT_NAME.test(x.name) || out.some((o) => o.name === x.name)) continue;
+    const description = cleanLine(x.description || '', 200);
+    if (!description) continue;
+    const schema = x.inputSchema && typeof x.inputSchema === 'object' ? x.inputSchema : {};
+    const props = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties) ? schema.properties : {};
+    const properties = {};
+    for (const [k, v] of Object.entries(props).slice(0, 8)) {
+      if (!INSTRUMENT_FIELD.test(k) || !v || typeof v !== 'object') continue;
+      const type = INSTRUMENT_TYPES.includes(v.type) ? v.type : 'string';
+      const f = { type, description: cleanLine(v.description || '', 160) };
+      if (type === 'string' && Array.isArray(v.enum)) {
+        const e = [...new Set(v.enum.filter((s) => typeof s === 'string').map((s) => cleanLine(s, 40)).filter(Boolean))].slice(0, 20);
+        if (e.length) f.enum = e;
+      }
+      const d = v.default;
+      if (type === 'string' && typeof d === 'string') f.default = cleanLine(d, 200);
+      else if ((type === 'number' && Number.isFinite(d)) || (type === 'integer' && Number.isInteger(d)) || (type === 'boolean' && typeof d === 'boolean')) f.default = d;
+      properties[k] = f;
+    }
+    const required = [...new Set([].concat(schema.required || []).filter((k) => typeof k === 'string' && Object.hasOwn(properties, k)))];
+    out.push({ name: x.name, description, kind: x.kind === 'command' ? 'command' : 'prompt', inputSchema: { type: 'object', properties, required } });
+  }
+  while (out.length && Buffer.byteLength(JSON.stringify(out)) > OFFER_BYTES) out.pop();
+  return out;
+}
+
+// every instrument members offer, with who offers it (GET /api/instruments)
+function offeredInstruments() {
+  const out = [];
+  for (const a of Object.values(S.agents)) {
+    if (a.removed || !a.declared?.instruments?.length) continue;
+    const by = { id: a.id, name: a.name, owner: a.owner };
+    const online = store.counts(a.id).rep > 0;
+    for (const i of a.declared.instruments) out.push({ ...i, agent: by, online, suspended: !!a.suspended });
+  }
+  return out.sort((x, y) => x.agent.name.localeCompare(y.agent.name) || x.name.localeCompare(y.name));
+}
+
+// meta.instrument names an instrument its one asked agent offers; on anything but an ask it's dropped
+function checkInstrumentUse(m) {
+  const name = m.meta.instrument;
+  if (!name) return;
+  if (m.kind !== 'ask') return void delete m.meta.instrument;
+  if (m.to.length !== 1) throw err(400, 'bad_request', 'An instrument is used with one agent at a time.');
+  const t = S.agents[m.to[0]];
+  if (!(t?.declared?.instruments || []).some((i) => i.name === name)) throw err(404, 'not_found', `${t?.name || 'That agent'} doesn't offer an instrument named ${name} (GET /api/instruments lists what members offer).`);
+}
 
 // ================================================================ sealing: envelopes the relay checks but can't open
 
@@ -1212,8 +1314,10 @@ function systemMsg(text, channel = 'general') {
   return { id: 'm_' + token(6), ts: now(), channel, from: null, kind: 'system', to: [], text, replyTo: null, cause: null, files: [], depth: 0, meta: {} };
 }
 
-function ensureChannelOp(b, name, topic = '') {
-  if (!S.channels[name] && !b.ops.some((o) => o.t === 'channel' && o.ch.name === name)) b.push({ t: 'channel', ch: { name, topic: cleanLine(topic, 200), createdAt: now() } });
+// a public channel, made on its first post (its poster is its creator and first member)
+function ensureChannelOp(b, name, topic = '', by = null) {
+  if (!S.channels[name] && !b.ops.some((o) => o.t === 'channel' && o.ch.name === name))
+    b.push({ t: 'channel', ch: { name, kind: 'public', topic: cleanLine(topic, 200), createdBy: by, createdAt: now(), members: by ? [by] : [] } });
 }
 
 // Builds the operations for one message. Inline (base64) files must have been
@@ -1245,6 +1349,7 @@ function buildMessage(b, me, body, pre) {
     if (parent.kind !== 'ask' || !parent.to.includes(me.id)) throw err(400, 'bad_request', 'replyTo must be an ask addressed to you.');
     replyTo = parent.id;
   }
+  const room = channelAccess(me, channel, to, replyTo); // a private or direct channel: its members only
   // depth and cause are the relay's, not the sender's: an ask made while answering
   // another ask (its cause, addressed to this sender) is one hop deeper than it
   let cause = null;
@@ -1262,15 +1367,17 @@ function buildMessage(b, me, body, pre) {
   for (const f of [].concat(body.files || [])) {
     const id = f && typeof f.id === 'string' ? f.id : null;
     const meta = id ? (Object.hasOwn(S.files, id) ? S.files[id] : null) : f && f.data !== undefined ? pre[inline++] : null;
-    if (!meta) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
+    if (!meta || !fileSeen({ id: me.id, all: false }, meta)) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
     files.push({ id: meta.id, name: meta.name, mime: meta.mime, size: meta.size, sha256: meta.sha256 });
   }
 
   const m = { id: 'm_' + token(6), ts: now(), channel, from: me.id, kind: to.length ? 'ask' : replyTo ? 'reply' : 'post', to, text, replyTo, cause, files, depth, meta: cleanMeta(body.meta) };
+  checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
     const parent = replyTo ? byId.get(replyTo) : null;
     m.sealed = checkSeal(me, sealedIn, m, [me.id, ...to, parent?.from]);
+    if (room && room.kind !== 'public') readersIn(room, m.sealed);
     // what's inside a sealed message is nobody's business here: not even file names
     for (const f of m.files) {
       f.name = 'sealed';
@@ -1282,11 +1389,11 @@ function buildMessage(b, me, body, pre) {
     if (!text.trim() && !files.length) throw err(400, 'bad_request', 'An empty message: give it text or a file.');
   }
 
-  ensureChannelOp(b, channel, body.topic || '');
+  ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
   for (const f of m.files) {
     const meta = (Object.hasOwn(S.files, f.id) && S.files[f.id]) || pre.find((x) => x.id === f.id);
-    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
+    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, channel: meta.messageId ? meta.channel : channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
   }
 
   const bytes = fmtBytes(sizeOf(m)) + (m.sealed ? ' sealed' : '');
@@ -1333,12 +1440,220 @@ function cleanMeta(meta) {
   if (num(meta.turns, 1e5, true)) out.turns = meta.turns;
   for (const k of ['local', 'error', 'declined']) if (typeof meta[k] === 'boolean') out[k] = meta[k];
   if (meta.answeredBy === 'agent' || meta.answeredBy === 'owner') out.answeredBy = meta.answeredBy;
+  if (typeof meta.instrument === 'string' && INSTRUMENT_NAME.test(meta.instrument)) out.instrument = meta.instrument; // instruments
   if (meta.tools && typeof meta.tools === 'object' && !Array.isArray(meta.tools)) {
     const tools = {};
     for (const [k, v] of Object.entries(meta.tools).slice(0, 40)) if (/^[\w.-]{1,64}$/.test(k) && k !== '__proto__' && num(v, 1e6, true)) tools[k] = v;
     out.tools = tools;
   }
   return out;
+}
+
+// ================================================================ conversations: channels, members, direct messages
+//
+// A channel is public (anyone reads and posts in it; its `members` are the agents who joined),
+// private (only its members read it, post in it and are asked in it) or a direct conversation
+// (`dm`: two agents, one channel per pair, its members never change). Who sees what: an agent,
+// the public channels and the closed ones it's in; a viewer with only the Sphere key, the
+// public ones; an admin, every channel (sealed words stay sealed). Every change is a `channel`
+// operation carrying the whole record, built from current state, so both stores keep it.
+
+const MAX_MEMBERS = 256; // as many as a sealed message has readers
+const closedChannels = new Set(); // names of the private and direct channels
+
+// a channel as it's kept: older records (name, topic, createdAt) are public
+function noteChannel(c) {
+  const ch = {
+    name: c.name,
+    kind: c.kind === 'private' || c.kind === 'dm' ? c.kind : 'public',
+    topic: typeof c.topic === 'string' ? c.topic : '',
+    createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
+    createdAt: c.createdAt || null,
+    members: [...new Set([].concat(c.members || []).filter((id) => typeof id === 'string'))],
+  };
+  S.channels[ch.name] = ch;
+  if (ch.kind === 'public') closedChannels.delete(ch.name);
+  else closedChannels.add(ch.name);
+  return ch;
+}
+
+// an admin: the admin key in x-admin-key (the place to add admins who are members)
+// an admin: the admin key, or a member who is an admin (see admin roles)
+function isAdminRequest(req, me = null) {
+  const k = req.headers['x-admin-key'];
+  return (!!k && secretOk(k, S.sphere.adminKeyHash)) || isAdmin(me);
+}
+// who is looking: an agent (by id) or not, and whether they see every channel
+function viewOf(req, me) {
+  return { id: me?.id ?? null, all: isAdminRequest(req, me) };
+}
+function sees(v, name) {
+  if (!closedChannels.has(name)) return true;
+  return v.all || (!!v.id && S.channels[name].members.includes(v.id));
+}
+function streamSees(st, name) {
+  return sees({ id: st.agentId ?? null, all: !!st.all }, name);
+}
+// a list (of messages, or anything in a channel) as this viewer may see it
+function visible(v, list, channelOf = (m) => m.channel) {
+  if (v.all || !closedChannels.size) return list;
+  return list.filter((x) => sees(v, channelOf(x)));
+}
+// a file goes with its message's channel; one not sent with a message yet, with whoever uploaded it
+function fileSeen(v, f) {
+  if (!f.messageId) return v.all || (!!v.id && v.id === f.by);
+  return sees(v, f.channel ?? byId.get(f.messageId)?.channel ?? null);
+}
+function visibleFiles(v, list) {
+  return v.all ? list : list.filter((x) => fileSeen(v, (Object.hasOwn(S.files, x.id) && S.files[x.id]) || x));
+}
+
+// May this agent post here, and ask these agents here? A closed channel is for its members.
+// Returns the channel, or null when the post makes a new public one.
+function channelAccess(me, name, to, replyTo) {
+  const parent = replyTo ? byId.get(replyTo) : null;
+  // a reply where the asker can't read it, or out of a closed channel, is refused
+  if (parent && parent.channel !== name && (closedChannels.has(parent.channel) || closedChannels.has(name))) throw err(400, 'bad_request', `A reply goes in its ask's channel, #${parent.channel}.`);
+  const ch = S.channels[name] || null;
+  if (!ch) {
+    if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations: open one with POST /api/dm.');
+    return null;
+  }
+  if (ch.kind === 'public') return ch;
+  if (!ch.members.includes(me.id))
+    throw denyErr('not_member', 403, ch.kind === 'dm' ? "That's a direct conversation between two other Obys." : `You aren't in #${name}: one of its members can add you.`, me.id);
+  for (const id of to)
+    if (!ch.members.includes(id))
+      throw denyErr('not_member', 403, ch.kind === 'dm' ? `Only the two Obys in a direct conversation talk there, and ${S.agents[id].name} isn't one of them.` : `${S.agents[id].name} isn't in #${name}: add it first, then ask.`, me.id, id);
+  return ch;
+}
+// a sealed message in a closed channel is for its members, no one else
+function readersIn(ch, sealed) {
+  for (const id of Object.keys(sealed.to))
+    if (!ch.members.includes(id)) throw err(400, 'bad_envelope', `That sealed message is malformed: ${S.agents[id]?.name ?? id} isn't in ${ch.kind === 'dm' ? 'this direct conversation' : `#${ch.name}`}, so it can't be a reader.`);
+}
+
+// one per pair, whoever opens it: named from both ids (names starting with dm- are kept for these)
+function dmName(a, b) {
+  return 'dm-' + sha([a, b].sort().join('|')).slice(0, 24);
+}
+
+function namedAgents(list) {
+  const ids = [];
+  for (const n of [].concat(list ?? []).slice(0, MAX_MEMBERS)) {
+    const a = agentByName(n);
+    if (!a) throw err(404, 'not_found', `There's no agent named ${JSON.stringify(String(n).slice(0, 40))} in this Sphere.`);
+    if (!ids.includes(a.id)) ids.push(a.id);
+  }
+  return ids;
+}
+
+// a change to channels: not while paused, and counted as a write
+async function channelGate(me) {
+  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null); });
+  if (me && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
+    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id); });
+}
+
+const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const bolded = (ids) => andList(ids.map((id) => `**${S.agents[id]?.name ?? '?'}**`));
+
+// POST /api/channels, /api/channels/:name/members|join|leave and /api/dm. True when it answered.
+async function channelRoute(req, res, url, me) {
+  const p = url.pathname;
+  const v = viewOf(req, me);
+  let mm;
+
+  if (p === '/api/channels') {
+    if (!me) throw err(403, 'forbidden', 'Making a channel needs an agent token: viewers can only watch.');
+    const body = await readJson(req);
+    const name = slug(body.name);
+    if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
+    if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations.');
+    if (body.private !== undefined && typeof body.private !== 'boolean') throw err(400, 'bad_request', 'private is true or false.');
+    const want = namedAgents(body.members).filter((id) => id !== me.id);
+    if (want.length + 1 > MAX_MEMBERS) throw err(400, 'bad_request', `A channel has at most ${MAX_MEMBERS} members.`);
+    await channelGate(me);
+    await store.commit((b) => {
+      if (S.channels[name]) throw err(409, 'name_taken', `There's already a channel named #${name}.`);
+      const kind = body.private ? 'private' : 'public';
+      const members = [me.id, ...want];
+      b.push({ t: 'channel', ch: { name, kind, topic: cleanLine(body.topic || '', 200), createdBy: me.id, createdAt: now(), members } });
+      b.audit('channel', { actor: me.id, detail: `${me.name} made #${name} (${kind}, ${members.length} member${members.length === 1 ? '' : 's'})` });
+      b.push({ t: 'msg', m: systemMsg(`**${me.name}** made #${name}${want.length ? ` and added ${bolded(want)}` : ''}.`, name) });
+    });
+    send(res, 200, { channel: S.channels[name] });
+    return true;
+  }
+
+  if ((mm = p.match(/^\/api\/channels\/([a-z0-9-]{1,32})\/(members|join|leave)$/))) {
+    const [, name, what] = mm;
+    const ch0 = S.channels[name];
+    if (!ch0 || !sees(v, name)) throw err(404, 'not_found', 'There is no such channel.');
+    if (ch0.kind === 'dm') throw err(403, 'forbidden', 'No one changes who is in a direct conversation.');
+    if (!me && (what !== 'members' || !v.all)) throw err(403, 'forbidden', 'Viewers can only watch.');
+    if (what === 'join' && ch0.kind !== 'public') throw err(403, 'forbidden', `#${name} is private: one of its members can add you.`);
+    const body = what === 'members' ? await readJson(req) : {};
+    const add = what === 'join' ? [me.id] : what === 'members' ? namedAgents(body.add) : [];
+    const remove = what === 'leave' ? [me.id] : what === 'members' ? namedAgents(body.remove) : [];
+    await channelGate(me);
+    const who = me ? `**${me.name}**` : "The Sphere's operator";
+    const actor = me ? me.id : 'operator';
+    await store.commit((b) => {
+      const ch = S.channels[name];
+      const others = remove.filter((id) => id !== me?.id);
+      // a private channel: its members change who is in it; a public one: anyone adds, its creator takes others out
+      if (!v.all && ch.kind === 'private' && (add.length || others.length) && !ch.members.includes(me.id))
+        throw denyErr('not_member', 403, `Only the members of #${name} (or an admin) change who is in it.`, actor);
+      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor);
+      const added = add.filter((id) => !ch.members.includes(id) && !remove.includes(id));
+      const removed = remove.filter((id) => ch.members.includes(id));
+      if (!added.length && !removed.length) return;
+      const members = ch.members.filter((id) => !removed.includes(id)).concat(added);
+      if (members.length > MAX_MEMBERS) throw err(400, 'bad_request', `A channel has at most ${MAX_MEMBERS} members.`);
+      b.push({ t: 'channel', ch: { ...ch, members } });
+      const names = (ids) => ids.map((id) => S.agents[id]?.name ?? '?').join(', ');
+      const out = removed.filter((id) => id !== me?.id);
+      const self = removed.length > out.length;
+      const words = [];
+      if (what === 'join') words.push(`joined #${name}`);
+      else {
+        if (added.length) words.push(`added ${names(added)} to #${name}`);
+        if (out.length) words.push(`took ${names(out)} out of #${name}`);
+        if (self) words.push(`left #${name}`);
+      }
+      b.audit('channel', { actor, target: added[0] ?? out[0] ?? null, detail: `${me ? me.name : 'the operator'} ${words.join('; ')}` });
+      // said in the channel too, but for joining and leaving a public one
+      const said = [];
+      if (added.length && what !== 'join') said.push(`added ${bolded(added)}`);
+      if (out.length) said.push(`took ${bolded(out)} out`);
+      if (self && ch.kind === 'private') said.push('left');
+      if (said.length) b.push({ t: 'msg', m: systemMsg(`${who} ${andList(said)}.`, name) });
+    });
+    send(res, 200, { channel: sees(v, name) ? S.channels[name] : null });
+    return true;
+  }
+
+  if (p === '/api/dm') {
+    if (!me) throw err(403, 'forbidden', 'A direct conversation needs an agent token: viewers can only watch.');
+    const body = await readJson(req);
+    const other = agentByName(body.with);
+    if (!other) throw err(404, 'not_found', `There's no agent named ${JSON.stringify(String(body.with ?? '').slice(0, 40))} in this Sphere.`);
+    if (other.id === me.id) throw err(400, 'bad_request', 'A direct conversation is between two Obys: pick someone else.');
+    const name = dmName(me.id, other.id);
+    if (S.channels[name] && S.channels[name].kind !== 'dm') throw err(409, 'name_taken', `#${name} isn't a direct conversation.`);
+    if (!S.channels[name]) {
+      await channelGate(me);
+      await store.commit((b) => {
+        if (S.channels[name]) return;
+        b.push({ t: 'channel', ch: { name, kind: 'dm', topic: '', createdBy: me.id, createdAt: now(), members: [me.id, other.id].sort() } });
+        b.audit('channel', { actor: me.id, target: other.id, detail: `${me.name} opened a direct conversation with ${other.name}` });
+      });
+    }
+    send(res, 200, { channel: S.channels[name] });
+    return true;
+  }
+  return false;
 }
 
 // ================================================================ http
@@ -1450,6 +1765,7 @@ async function route(req, res, url) {
     };
     const keys = cleanKeys(body.keys);
     if (keys) agent.keys = keys;
+    if (body.bot === true) agent.bot = true; // an Oby with no person behind it
     await store.commit((b) => {
       if (nameIndex.has(name)) throw err(409, 'name_taken', `The handle "${name}" is taken in this Sphere.`);
       if (tombstones.has(name)) throw err(409, 'name_taken', `The handle "${name}" belonged to a removed agent, and isn't given out again. Pick another.`);
@@ -1466,12 +1782,15 @@ async function route(req, res, url) {
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
   if (bearer && !me) await authFailed(req, 'an unknown agent token');
   const adminHdr = req.headers['x-admin-key'];
-  const admin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
-  if (adminHdr && !admin) await authFailed(req, 'a wrong admin key');
+  const keyAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
+  if (adminHdr && !keyAdmin) await authFailed(req, 'a wrong admin key');
   const keyHdr = req.headers['x-sphere-key'];
-  const viewer = admin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
+  const viewer = keyAdmin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
   if (keyHdr && !viewer && !me) await authFailed(req, 'a wrong Sphere key');
   if (!me && !viewer) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  // an admin: whoever holds the admin key, or a member made an admin (never while suspended)
+  const memberAdmin = isAdmin(me);
+  const admin = keyAdmin || memberAdmin;
   if (me) {
     // a suspended agent sees only its own state
     if (me.suspended && !(m === 'GET' && p === '/api/info')) throw err(403, 'suspended', "The Sphere's operator suspended this agent: it can't read or write until they resume it.");
@@ -1482,10 +1801,10 @@ async function route(req, res, url) {
 
   if (m === 'GET' && p === '/api/info') return send(res, 200, { sphere: sphereInfo(), me: me ? publicAgent(me) : null, admin });
   if (m === 'GET' && p === '/api/agents') return send(res, 200, { agents: Object.values(S.agents).map(publicAgent) });
-  if (m === 'GET' && p === '/api/channels') return send(res, 200, { channels: Object.values(S.channels) });
+  if (m === 'GET' && p === '/api/channels') return send(res, 200, { channels: visible(viewOf(req, me), Object.values(S.channels), (c) => c.name) });
   if (m === 'GET' && p === '/api/stats') return send(res, 200, stats());
-  if (m === 'GET' && p === '/api/instruments') return send(res, 200, { instruments: INSTRUMENTS, rules: { ...S.policy, paused: S.paused } });
-  if (m === 'GET' && p === '/api/files') return send(res, 200, { files: listFiles() });
+  if (m === 'GET' && p === '/api/instruments') return send(res, 200, { instruments: INSTRUMENTS, offered: offeredInstruments(), rules: { ...S.policy, paused: S.paused } });
+  if (m === 'GET' && p === '/api/files') return send(res, 200, { files: visibleFiles(viewOf(req, me), listFiles()) });
   if (m === 'GET' && p === '/api/audit') return send(res, 200, auditPage(url));
 
   if (m === 'GET' && p === '/api/messages') {
@@ -1497,22 +1816,25 @@ async function route(req, res, url) {
       const t = agentByName(toName) || [...Object.values(S.agents)].find((a) => a.name === toName);
       list = t ? asksTo.get(t.id) || [] : [];
     }
+    list = visible(viewOf(req, me), list);
     return send(res, 200, { messages: slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100)) });
   }
 
   let mm;
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const msg = byId.get(mm[1]);
-    if (!msg) throw err(404, 'not_found', 'There is no such message.');
-    return send(res, 200, { message: msg, replies: repliesOf.get(msg.id) || [] });
+    const v = viewOf(req, me);
+    if (!msg || !sees(v, msg.channel)) throw err(404, 'not_found', 'There is no such message.');
+    return send(res, 200, { message: msg, replies: visible(v, repliesOf.get(msg.id) || []) });
   }
 
   // long-poll: wait up to ?wait= seconds for replies to a message
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/replies$/))) {
     const id = mm[1];
-    if (!byId.has(id)) throw err(404, 'not_found', 'There is no such message.');
+    const v = viewOf(req, me);
+    if (!byId.has(id) || !sees(v, byId.get(id).channel)) throw err(404, 'not_found', 'There is no such message.');
     const wait = Math.min(55, Math.max(0, Number(url.searchParams.get('wait')) || 0));
-    const have = repliesOf.get(id) || [];
+    const have = visible(v, repliesOf.get(id) || []);
     if (have.length || !wait) return send(res, 200, { replies: have });
     return new Promise((resolve) => {
       let done = false;
@@ -1522,7 +1844,7 @@ async function route(req, res, url) {
         clearTimeout(timer);
         waiters.get(id)?.delete(finish);
         if (waiters.get(id)?.size === 0) waiters.delete(id);
-        if (!res.writableEnded) send(res, 200, { replies: repliesOf.get(id) || [] });
+        if (!res.writableEnded) send(res, 200, { replies: visible(v, repliesOf.get(id) || []) });
         resolve();
       };
       const timer = setTimeout(finish, wait * 1000);
@@ -1534,7 +1856,8 @@ async function route(req, res, url) {
   }
 
   if (m === 'GET' && (mm = p.match(/^\/api\/files\/(f_[\w-]{1,32})$/))) {
-    const f = Object.hasOwn(S.files, mm[1]) ? S.files[mm[1]] : null;
+    let f = Object.hasOwn(S.files, mm[1]) ? S.files[mm[1]] : null;
+    if (f && !fileSeen(viewOf(req, me), f)) f = null; // a private channel's file, or one not sent yet
     const body = f && (await store.readFile(f.id));
     if (!body) throw err(404, 'not_found', 'There is no such file.');
     res.writeHead(200, {
@@ -1569,7 +1892,7 @@ async function route(req, res, url) {
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !admin ? sha(String(keyHdr)) : null, admin: !me && admin, planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, all: isAdminRequest(req, me), planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
@@ -1604,10 +1927,50 @@ async function route(req, res, url) {
     return;
   }
 
-  // ---- the operator: governance with the admin key
+  // ---- channels, their members, direct conversations (an admin may change members)
+  if (m === 'POST' && (p.startsWith('/api/channels') || p === '/api/dm') && (await channelRoute(req, res, url, me))) return;
+
+  // ---- admins: governance, with the admin key or an admin member's token
   if (p.startsWith('/api/admin/')) {
-    if (!admin) throw err(403, 'forbidden', 'This needs the admin key.');
-    if (m === 'GET' && p === '/api/admin/check') return send(res, 200, { ok: true });
+    // ===== admin roles: a member trades the admin key, once, for the admin role (both are needed)
+    if (m === 'POST' && p === '/api/admin/claim') {
+      if (!me) throw err(403, 'forbidden', "Claiming admin needs your Oby's token (Authorization: Bearer) as well as the admin key: it makes that member an admin.");
+      if (!keyAdmin) throw err(403, 'forbidden', 'Claiming admin needs the admin key (x-admin-key) as well as your token.');
+      await store.commit((b) => {
+        const a = S.agents[me.id];
+        if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        if (S.admins.has(a.id)) return;
+        b.push({ t: 'role', id: a.id, admin: true });
+        b.audit('role', { actor: a.id, target: a.id, detail: `${a.name} is an admin now: claimed with the admin key` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
+    }
+    if (!admin) throw err(403, 'forbidden', 'This needs an admin: the admin key, or the token of a member who is an admin.');
+    // who did it: the member when a token came, else whoever holds the key ("operator")
+    const actor = me ? me.id : 'operator';
+    const by = me ? ` · by ${me.name}${memberAdmin ? '' : ' with the admin key'}` : '';
+    const notSelf = (id, what) => {
+      if (me && id === me.id && !keyAdmin) throw err(400, 'bad_request', `An admin can't ${what} its own Oby: ask another admin, or use the admin key.`);
+    };
+    if (m === 'GET' && p === '/api/admin/check') return send(res, 200, { ok: true, via: keyAdmin ? 'key' : 'member' });
+    if (m === 'POST' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})\/role$/))) {
+      const body = await readJson(req);
+      if (typeof body.admin !== 'boolean') throw err(400, 'bad_request', 'admin is true or false.');
+      const id = mm[1];
+      await store.commit((b) => {
+        const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
+        if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        if (S.admins.has(id) === body.admin) return;
+        if (body.admin && a.suspended) throw err(403, 'target_suspended', `${a.name} is suspended: resume it before making it an admin.`);
+        // the admin key always works, so the last admin may go; but not by its own token alone,
+        // or nobody could govern without digging out the key
+        if (!body.admin && me && id === me.id && !keyAdmin && activeAdmins().length <= 1)
+          throw err(409, 'last_admin', "Your Oby is this Sphere's only admin: make another member an admin first, or use the admin key.");
+        b.push({ t: 'role', id, admin: body.admin });
+        b.audit('role', { actor, target: id, detail: body.admin ? `${a.name} is an admin now${by}` : `${a.name} is no longer an admin${by}` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[id]) });
+    }
     if (m === 'POST' && p === '/api/admin/policy') {
       const body = await readJson(req);
       const set = {};
@@ -1627,19 +1990,19 @@ async function route(req, res, url) {
         const pol = {};
         if (typeof body.paused === 'boolean' && body.paused !== S.paused) {
           b.push({ t: 'policy', paused: body.paused });
-          b.audit(body.paused ? 'pause' : 'unpause', { actor: 'operator', detail: body.paused ? 'the relay is paused: no new messages' : 'the relay is running again' });
+          b.audit(body.paused ? 'pause' : 'unpause', { actor, detail: (body.paused ? 'the relay is paused: no new messages' : 'the relay is running again') + by });
         }
         if (set.maxDepth !== undefined && set.maxDepth !== S.policy.maxDepth) {
           pol.maxDepth = set.maxDepth;
-          b.audit('policy', { actor: 'operator', detail: `hop limit ${S.policy.maxDepth} → ${set.maxDepth}` });
+          b.audit('policy', { actor, detail: `hop limit ${S.policy.maxDepth} → ${set.maxDepth}${by}` });
         }
         if (set.maxFileBytes !== undefined && set.maxFileBytes !== S.policy.maxFileBytes) {
           pol.maxFileBytes = set.maxFileBytes;
-          b.audit('policy', { actor: 'operator', detail: `file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(set.maxFileBytes)}` });
+          b.audit('policy', { actor, detail: `file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(set.maxFileBytes)}${by}` });
         }
         if (typeof body.sealed === 'boolean' && body.sealed !== !!S.policy.sealed) {
           pol.sealed = body.sealed;
-          b.audit('policy', { actor: 'operator', detail: body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again' });
+          b.audit('policy', { actor, detail: (body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again') + by });
         }
         if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
       });
@@ -1649,24 +2012,31 @@ async function route(req, res, url) {
       const body = await readJson(req);
       const on = body.suspended !== false;
       const id = mm[1];
+      notSelf(id, on ? 'suspend' : 'resume');
       await store.commit((b) => {
         const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
         if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
         if (!!a.suspended === on) return;
         b.push({ t: 'agent', a: { ...a, suspended: on }, urgent: true });
         if (on) b.push({ t: 'status', agent: a.id, status: null });
-        b.audit(on ? 'suspend' : 'resume', { actor: 'operator', target: a.id, detail: on ? `${a.name} suspended: it can't read, post or be asked` : `${a.name} resumed` });
+        b.audit(on ? 'suspend' : 'resume', { actor, target: a.id, detail: (on ? `${a.name} suspended: it can't read, post or be asked` : `${a.name} resumed`) + by });
       });
       return send(res, 200, { agent: publicAgent(S.agents[id]) });
     }
     if (m === 'DELETE' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})$/))) {
       const id = mm[1];
+      notSelf(id, 'remove');
       await store.commit((b) => {
         const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
         if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        // a removed member is no admin, and the audit log says so
+        if (S.admins.has(id)) {
+          b.push({ t: 'role', id, admin: false });
+          b.audit('role', { actor, target: id, detail: `${a.name} is no longer an admin: removed${by}` });
+        }
         const { tokenHash, ...rest } = a;
         b.push({ t: 'agent', a: { ...rest, removed: true }, urgent: true });
-        b.audit('remove', { actor: 'operator', target: a.id, detail: `${a.name} removed: its token no longer works, and its handle isn't given out again` });
+        b.audit('remove', { actor, target: a.id, detail: `${a.name} removed: its token no longer works, and its handle isn't given out again${by}` });
       });
       return send(res, 200, { ok: true });
     }
@@ -1674,7 +2044,7 @@ async function route(req, res, url) {
       const key = token(16);
       await store.commit((b) => {
         b.push({ t: 'sphere', fields: { keyHash: sha(key) } });
-        b.audit('rotate', { actor: 'operator', detail: 'the join key was rotated: old invite links and viewers on the old key are out; members keep their tokens' });
+        b.audit('rotate', { actor, detail: 'the join key was rotated: old invite links and viewers on the old key are out; members keep their tokens' + by });
       });
       return send(res, 200, { key });
     }
@@ -1746,14 +2116,6 @@ async function route(req, res, url) {
     return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
   }
 
-  if (m === 'POST' && p === '/api/channels') {
-    const body = await readJson(req);
-    const name = slug(body.name);
-    if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
-    await store.commit((b) => ensureChannelOp(b, name, String(body.topic || '')));
-    return send(res, 200, { channel: S.channels[name] });
-  }
-
   // only one of an agent's representative processes answers a given ask (first wins, everywhere)
   if (m === 'POST' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/claim$/))) {
     const body = await readJson(req);
@@ -1823,6 +2185,8 @@ async function route(req, res, url) {
           runtimes: [...new Set([].concat(d.runtimes || []).filter((r) => r === 'claude' || r === 'codex' || r === 'cursor'))].slice(0, 3),
           model: d.model ? cleanLine(d.model, 80) : null,
         };
+        const offered = cleanOffered(d.instruments); // instruments: names, descriptions and inputs, as data
+        if (offered.length) a.declared.instruments = offered;
       }
       if (keys && (keys.seal !== a.keys?.seal || keys.sign !== a.keys?.sign)) {
         b.audit('keys', { actor: me.id, detail: a.keys ? `${a.name} published new keys: peers that pinned the old ones will warn` : `${a.name} published its keys` });
@@ -1847,6 +2211,14 @@ async function joinRefused(ip) {
 function liveOf(id) {
   if (!live.has(id)) live.set(id, { rep: new Set(), client: new Set() });
   return live.get(id);
+}
+
+// ===== admin roles: a member is an admin while it holds the role and isn't suspended or removed
+function isAdmin(a) {
+  return !!a && !a.removed && !a.suspended && S.admins.has(a.id);
+}
+function activeAdmins() {
+  return [...S.admins].filter((id) => isAdmin(S.agents[id]));
 }
 
 function cleanKeys(k) {

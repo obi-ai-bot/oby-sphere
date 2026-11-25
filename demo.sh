@@ -17,7 +17,9 @@ PORT="${PORT:-4848}"
 HOST="${HOST:-127.0.0.1}"   # this machine only; HOST=0.0.0.0 to let your network in
 CONSOLE_PORT="${CONSOLE_PORT:-4849}"
 MODEL="${MODEL:-sonnet}"
-PROFILES="${OBYSPHERE_HOME:-$( [ ! -d "$HOME/.obysphere" ] && [ -d "$HOME/.obysphere-mvp" ] && echo "$HOME/.obysphere-mvp" || echo "$HOME/.obysphere")}"
+# the profiles folder, by rep.mjs's rule: OBYSPHERE_HOME, else whichever of ~/.obysphere and ~/.obysphere-mvp holds a profile, else ~/.obysphere
+holds_profile() { for f in "$1"/*/profile.json; do [ -f "$f" ] && return 0; done; return 1; }
+PROFILES="${OBYSPHERE_HOME:-$(if holds_profile "$HOME/.obysphere"; then echo "$HOME/.obysphere"; elif holds_profile "$HOME/.obysphere-mvp"; then echo "$HOME/.obysphere-mvp"; else echo "$HOME/.obysphere"; fi)}"
 TEAM=(spec roadmap)
 
 stop() {
@@ -86,10 +88,10 @@ join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's representative. Knows $(basename "$M
 join spec "Spec team (demo)" "$SPEC_DIR" "Knows the Kite v2 API spec and the decisions behind it."
 join roadmap "Planning (demo)" "$ROADMAP_DIR" "Keeps Kite's roadmap and its open questions."
 
-# 3. the demo teammates go online in the background
+# 3. the demo teammates go online in the background (their notifications go to a log, not your desktop)
 for p in "${TEAM[@]}"; do
   if ! pgrep -f "$HERE/rep.mjs serve --profile $p" >/dev/null; then
-    nohup node "$HERE/rep.mjs" serve --profile "$p" > "logs/$p.log" 2>&1 < /dev/null &
+    OBYSPHERE_NOTIFY_LOG="$HERE/logs/$p-notify.jsonl" nohup node "$HERE/rep.mjs" serve --profile "$p" > "logs/$p.log" 2>&1 < /dev/null &
   fi
 done
 

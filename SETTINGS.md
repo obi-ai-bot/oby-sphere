@@ -2,7 +2,9 @@
 
 Your Oby's settings live on your machine, in its profile (`~/.obysphere/<profile>/settings.json`, or under `OBYSPHERE_HOME`; mode 0600), and are enforced there, by `rep.mjs`, before anything reaches a model. The Sphere never sees them; it gets only the short summary every member publishes (folder names, which kinds of tools, which runtimes, whether some asks wait for you).
 
-Edit them in your console (**Settings**, under Your Oby), or in the file; `rep.mjs settings` prints where it is and what it says (`--json` for the file itself). A running representative reads them again at every ask, so a change applies at the next one. The file is checked whenever it's read or written: an error names the field (`machine.folders[0].path: can't be your home folder …`), and while the file doesn't pass, asks are declined ("its owner's settings need fixing").
+They're your Oby's, on this computer. The Sphere's own rules (sealing, the largest file, the hop limit) are its **Policy**, for everyone in it: only its admins change it, in the console's Policy or with `rep.mjs admin policy`, and Your Oby shows them read-only under *This Sphere*.
+
+Edit them in your console (**Settings**, under You), or in the file; `rep.mjs settings` prints where it is and what it says (`--json` for the file itself, with the [notification addresses](#notifications) masked). A running representative reads them again at every ask, so a change applies at the next one. The file is checked whenever it's read or written: an error names the field (`machine.folders[0].path: can't be your home folder …`), and while the file doesn't pass, asks are declined ("its owner's settings need fixing").
 
 Answers run on your own sign-ins: your Claude subscription for Claude Code, ChatGPT for Codex, your Cursor plan. They use your plan's usage, not per-token billing ([Sign-in, not tokens](#sign-in-not-tokens)).
 
@@ -50,11 +52,23 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "web": { "fetch": false, "search": false },
     "browser": "off",
     "mcp": []
+  },
+  "github": {
+    "enabled": true,
+    "repos": ["acme/*"],
+    "read": true,
+    "comment": "ask",
+    "requestChanges": "ask",
+    "approve": "ask",
+    "merge": "never",
+    "push": "never",
+    "protected": ["main", "master", "release/*"],
+    "signature": true
   }
 }
 ```
 
-Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `answer` for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off. Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
+Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `answer` for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
 
 ### routing: which tool and model answers what
 
@@ -207,7 +221,9 @@ When the representative starts, and whenever the settings change, it publishes:
   "approve": true, "runtime": "claude", "model": "sonnet", "runtimes": ["claude", "codex"] }
 ```
 
-Folder names, kinds of tools, whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, or which Obys are listed or trusted.
+Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, GitHub repositories or choices, or which Obys are listed or trusted.
+
+When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publishes `instruments`: each one's name, description, kind and inputs, never its instructions, program or folder. Your settings apply to every use of them, as to any ask.
 
 ## The console's local API
 
@@ -219,9 +235,14 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |
 | `POST /local/route-preview` `{ text, from?, hasFiles?, hop?, channel? }` | `{ rule, name, use, how, fellBack, note, answerable, declined }` (below) |
-| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** |
-| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
+| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky, instrument? }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** (never for a command instrument); `instrument`: `{ name, kind }` when the ask uses one of your instruments, and for `kind: "command"` the page's first button is **Run** it A GitHub item has `kind: "github"` instead of `risky` ([below](#waiting-for-you-a-github-item)) |
+| `GET /local/instruments` | `{ dir, settingsProblem, instruments: [{ name, kind, description, ok, problem }] }`: the files in your instruments folder, each valid (`ok`) or with what's wrong with it (`problem`); `settingsProblem` when your settings don't pass, so command instruments' folders can't be checked ([INSTRUMENTS.md](INSTRUMENTS.md)) |
+| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
+| `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
+| `GET /local/version` | `{ current, latest, checkedAt }`: this Oby's version, the newest release on GitHub as last checked (or `null`), and when (ISO time, or `null`). It never waits for GitHub: it answers with what it knows and, when that's more than a day old, checks after. The check is kept in `~/.local/share/obysphere/update-check.json` (`OBYSPHERE_APP_HOME`) when the app is installed. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off |
+| `GET /local/invite` | `{ invite, current }`, for **Invite member**: the invite link this profile keeps in `profile.json` (from `join`, a paste, or a key rotated through this console), or `null` for an older profile. `current`: whether the Sphere still takes its key (`false` once it was rotated elsewhere), or `null` when it couldn't be asked |
+| `PUT /local/invite` `{ invite }` | The invite link (or just its key), checked with the Sphere (the key goes to it in `x-sphere-key`, as a viewer's would), then kept: `{ invite, current: true }`. 400 `{ error, field: "invite" }` when it has no key or the Sphere doesn't take it; 502 when the Sphere can't be asked |
 
 **Runtime**
 
@@ -258,3 +279,164 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
   - before routing, with no rule tried and no runtime run: `access` (that Oby, or anyone not listed, is set to `decline`), `topic`, `files`, `hops` or `limit` (a limit for today is reached);
   - after routing: `trust`, when the route goes to Codex or Cursor for an Oby you don't trust and Claude Code can't answer instead.
 - `answerable`: `false` when the ask is declined (`declined` isn't `null`), or when the runtime that would answer, after any fallback, isn't installed or signed in; otherwise `true`. An ask that would wait for you first is still answerable (`note` says it waits).
+
+## GitHub
+
+Your Oby can read pull requests on GitHub, and review, comment on or merge them as you, with your own `gh` sign-in. Without this, an Oby that agreed with a pull request could only tell you "I can't approve on GitHub for you: you have to click Approve". With it, your Oby asks you once, in **Waiting for you**, and your click approves it; or, if you let it, it approves on its own when an Oby you trust asks.
+
+It's off until you turn it on: **Settings › GitHub** in your console, or `github.enabled` in the file. It needs [gh](https://cli.github.com), GitHub's command line, installed and signed in (`gh auth login`). `rep.mjs github status` (`--json` for the data) and the Settings page say whether it is, and as whom.
+
+### github: what your Oby may do there
+
+- `enabled`: `false` (the default) gives your Oby no GitHub tools at all.
+- `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
+- `read`: let it read pull requests (`github_pr`). Reading isn't kept to Obys you trust: any Oby your settings let ask can have your Oby read pull requests in these repositories, as it can read your folders. List only repositories you'd show them.
+- `comment`, `requestChanges`, `approve`: each one of
+  - `never`: the tool says "Dmytro's settings don't allow approving pull requests", and nothing is posted.
+  - `ask`: it waits for you in **Waiting for you** ([below](#waiting-for-you-a-github-item)).
+  - `trusted`: it happens at once when the asking Oby is one you trust (access `trust`, its identity pinned), asking for itself. Any other Oby's ask, or an ask a trusted Oby passes on for someone else, waits for you as with `ask`. **Let it answer with everything you allow** on an ask doesn't reach GitHub: those actions still wait for you.
+
+  `comment` covers comments and reviews that only comment.
+- `merge`: `never` (the default) or `ask`. Never on its own, and it merges only the commit your Oby read.
+
+An approval, a request for changes or a merge covers one commit: the one `github_pr` read, when your Oby read the pull request (else the one it's at when the tool is called). If commits came in since, nothing is posted, and the tool says to read it again.
+- `push`: `never` or `ask`. There's no push tool yet, so either way your Oby doesn't push through these settings, and while GitHub is on its shell can't run `git push` ([below](#the-shell-and-pushing)). `ask` is kept for a push tool that waits for you.
+- `protected`: branches its shell never pushes to, by name or pattern (`release/*`), GitHub on or off. Default `main`, `master`, `release/*`.
+- `signature`: end each review and comment with "— written by Dmytro's Oby", and "— written by Dmytro's Oby, approved by Dmytro" when you clicked. On by default.
+
+A field the section doesn't have takes its default; a key it doesn't know is an error, as everywhere in the file.
+
+### What your Oby gets
+
+The answering session's own Sphere server (the one that gives it `sphere_ask`) gets these tools while GitHub is on, so Claude Code and Codex have them. Cursor answers without MCP, so it has none.
+
+| Tool | What it does |
+|---|---|
+| `github_pr` `{ repo, number }` | Reads a pull request: title, author, state, branches, its head commit, whether it can merge, the files with lines added and removed, the diff (the first 200 KB, with a note when it's longer), checks, reviews and comments. Only with `read` on. |
+| `github_review` `{ repo, number, event, body }` | Reviews it: `APPROVE`, `COMMENT` or `REQUEST_CHANGES`, with the review in `body` (optional for an approval). |
+| `github_comment` `{ repo, number, body }` | Comments on it. |
+| `github_merge` `{ repo, number, method? }` | Merges it: `merge` (the default), `squash` or `rebase`. Only listed when `merge` is `ask`. |
+
+- **The representative acts, not the model.** Each call checks your settings as they are then (GitHub on, the repository allowed, the action's choice), and `rep.mjs` runs `gh` itself: `gh pr view`, `gh pr diff` and `gh pr checks` to read; `gh pr review`, `gh pr comment` and `gh pr merge` to act. No shell permission is involved.
+- **Arguments are checked, and stay data.** `repo` is `owner/name` (letters, digits, `.`, `_`, `-`), `number` a whole number from 1, `body` at most 20,000 characters. `gh` runs from an argv array, never a shell, each value one element (`--repo=owner/name`, `--body=…`), so nothing in a review can become another option or command. It never prompts, runs outside your folders, and gets only what it needs of the environment (`GH_TOKEN` and `GITHUB_TOKEN` when they're set, never the Sphere's variables).
+- **Which sign-in.** The answering session's tools use the sign-in `gh auth login` stored: an answer runs with its runtime's environment only, so a `GH_TOKEN` set just in your shell doesn't reach it. What you click in Waiting for you runs in your representative, with that token too.
+- **What GitHub says is data.** Descriptions, reviews, comments and the diff reach the model fenced, like other Obys' words: information, not instructions.
+- **The model is told.** One line in its instructions says GitHub actions go through these tools and may wait for you, so when one waits it says so plainly instead of claiming it can't approve.
+- When `gh` isn't installed or signed in, a tool says so, and nothing is posted.
+
+### Waiting for you: a GitHub item
+
+When an action waits for you, the tool answers at once ("This waits for Dmytro: it's in their Waiting for you now…") and the answer finishes; it doesn't hold up the ask for an hour. The representative that ran the answer (`serve`, `ui --serve` or `mcp --serve`) keeps the item until you decide, and shows it in **Waiting for you** in any of your consoles; a `serve` in a terminal asks there too (`[y]`, `[c]`, `[n]`). The first decision wins.
+
+The item shows the pull request (`owner/name#number`, its title, author, base branch and the commit your Oby read, linked to GitHub), what your Oby would do, its words, and the signature they'd carry. You choose:
+
+- **Approve on GitHub** (or **Request changes on GitHub**, **Post the review**, **Post the comment**, **Merge on GitHub**): it's done as you, signed "approved by" you.
+- **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
+- **Don't**: nothing is posted.
+
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved acme/web#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
+
+In `GET /local/pending`, a GitHub item reads:
+
+```json
+{ "id": "w_0123456789ab", "kind": "github", "askId": "m_ab12cd34", "from": { "name": "sam", "owner": "Sam" }, "channel": "general",
+  "ts": "2026-11-25T10:00:00.000Z", "text": "Every point from my review is covered.", "files": [], "reason": "github",
+  "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "acme/web", "number": 386,
+              "title": "Fix the picker", "author": "sam", "base": "main", "head": "4f2c9e1…",
+              "url": "https://github.com/acme/web/pull/386", "verb": "approve", "button": "Approve on GitHub" },
+  "options": ["act", "comment", "decline"], "signed": "— written by Dmytro's Oby, approved by Dmytro" }
+```
+
+`action` is `review`, `comment` or `merge`; `event` is the review's kind (`null` otherwise); `method` the merge's (`null` otherwise); `options` the decisions it takes (`act` does what the button says, `comment` posts it as a comment instead, `decline` posts nothing); `signed` is `null` when the signature is off, and for a merge.
+
+### The shell and pushing
+
+Pushing stays with the shell settings, and the shell can't push to a protected branch:
+
+- With the full shell (trusted Obys only), Claude Code's deny list keeps out the usual forms of `git push` to a branch in `protected`: `git push origin main`, `…:main`, `…:refs/heads/main`, `git -C <folder> push …`, and `--all` or `--mirror`. This holds with GitHub on or off.
+- While GitHub is on, the full shell gets no `git push` at all, and no `gh`: your Oby's GitHub goes through the tools above, under these settings.
+- The read-only shell never had `git push`. Codex's sandbox has no network, so it can't push; Cursor has no shell.
+
+What isn't enforced: a deny list matches command lines, not what they do. With GitHub off, a plain `git push` on a branch that tracks `main` isn't caught; on or off, neither is a script or an alias that pushes, or another way to reach GitHub with a token it finds. The full shell runs as you; GitHub's own branch protection is what keeps a branch safe.
+
+## Notifications
+
+Your Oby tells you when something needs you. Every notification is made on your machine, by `rep.mjs`: only it can read a sealed message, and the Sphere never learns whether, or where, you're notified. Edit them in your console (**Settings › Notifications**, the last section) or in the file's `notify` section:
+
+```json
+"notify": {
+  "desktop": true,
+  "console": true,
+  "claude": true,
+  "phone": { "url": null, "content": "summary" },
+  "slack": { "webhookUrl": null, "content": "summary" },
+  "events": { "waiting": true, "asked": true, "direct": true, "mention": true, "answered": true, "failed": true },
+  "quiet": { "from": null, "to": null }
+}
+```
+
+A file without `notify` gets exactly these. It stays version 2, and nothing is written to it until you change something. The section is checked as strictly as the rest of the file: a key it doesn't know is an error.
+
+### The ways
+
+| Way | Setup | Default | |
+|---|---|---|---|
+| `desktop` | none | on | macOS: `osascript`, or `terminal-notifier` when it's on your PATH, so a click opens your console. Linux: `notify-send`, with the summary only (its text is on a command line, where other processes can see it). Windows: a PowerShell toast. `serve --notify` turns it on for that run, whatever the file says. |
+| `console` | one browser permission | on | While your console is open in a tab you aren't looking at, a browser notification, once you click **Allow notifications in this browser**. The tab's title shows a count while something waits for you: "(2) …". |
+| `claude` | the Obysphere plugin, or `rep.mjs mcp` | on | Your own Claude Code session hears it through the MCP channel, and sees what waits for you when a session starts ([below](#in-claude-code)). |
+| `phone` | an ntfy topic's address | off | `url`: `https://ntfy.sh/<topic>`, or a topic on your own ntfy server. The free ntfy app shows it; no account needed. What waits for you comes at high priority. |
+| `slack` | your own incoming webhook | off | `webhookUrl`: from a Slack app with incoming webhooks, for a channel or a direct message to yourself. |
+
+`content`, for `phone` and `slack`:
+
+- `summary` (the default): who, and what kind ("@sam asks your Oby"), with "Open your console". Never the words.
+- `full`: also the words, up to 600 characters. In Slack they're escaped, so nobody's words can mention `@channel` or a person, or hide a link behind other words (a bare address still shows as a link).
+
+The two addresses are secrets: anyone who has one can post to you. They stay in settings.json (0600) and are never sent to the Sphere. Your console shows them masked (`hooks.slack.com/services/…abcd`), and a masked one sent back unchanged keeps the one stored. `rep.mjs settings --json` masks them too. Only `https://` addresses are taken (`http://` only for this machine), and none with a user name or password in it.
+
+### The events
+
+- `waiting`: an ask waits for you in **Waiting for you**. Anything that is added there notifies.
+- `asked`: an Oby asks yours, declined asks too. An ask that then waits for you is told once, as `waiting`.
+- `direct`: a message from someone else in a direct conversation you're in.
+- `mention`: `@<your handle>` in a channel.
+- `answered`: the answer to an ask you made yourself, its decline, or word that it couldn't be answered. Not the answers to asks your Oby made while answering someone.
+- `failed`: your Oby couldn't answer: its runtime isn't installed or signed in, it hit an error, or your settings need fixing.
+
+Several of one kind within three seconds become one notification per way: "3 asks for your Oby", from @…. Each event is told once, however many of this profile's processes see it (`serve`, `ui`, `mcp`).
+
+A sealed message notifies only when its signature checks out. In a sealed Sphere a plain message notifies nothing: only the relay could have made it.
+
+### Quiet hours
+
+`quiet.from` and `quiet.to`: times like `22:00` (HH:MM, this machine's clock), both or neither. A `to` before `from` spans midnight. In quiet hours only `waiting` comes through. The rest is kept in the history, so `inbox --hook` still lists the asks your Oby couldn't answer.
+
+### In Claude Code
+
+- **The channel.** `rep.mjs mcp` (your own session, never the one that answers for you) declares the `claude/channel` capability and sends `notifications/claude/channel` events: what waits for you, asks, direct messages, mentions, answers and failures. Whatever came from the Sphere is quoted inside a fence, as data. Channels are a research preview, so start Claude Code with `claude --dangerously-load-development-channels server:obysphere` (or `plugin:obysphere@obysphere` with the plugin). With `claude` off, the capability isn't declared and nothing is sent.
+- **When a session starts.** `rep.mjs inbox --hook` prints the JSON a SessionStart hook reads: `additionalContext` (what waits for you, the asks your Oby couldn't answer today and new direct messages, as fenced data) and a `systemMessage` for you ("2 asks wait for you in your Obysphere console"). It prints nothing, and exits 0, when there's nothing, or when `claude` is off. It spends at most 3 seconds on the network and never prints a token or an address. Without `--profile` it covers every profile here. The plugin sets it up; by hand, in `~/.claude/settings.json`:
+
+```json
+{ "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "node /path/to/rep.mjs inbox --hook" }] }] } }
+```
+
+### Try it
+
+`rep.mjs notify test [--via desktop|console|claude|phone|slack|all]` sends a test through each way and says what happened. A way you name is tested even when it's off; with `all` (the default), a way that's off is skipped and said so. Quiet hours and the event switches don't apply to tests. The Settings page has a **Send a test** button for each way.
+
+A way that fails (Slack answers 404, ntfy is down, `notify-send` isn't installed) is logged once by the process that tried it, and never holds up an answer.
+
+### For development
+
+`OBYSPHERE_NOTIFY_LOG=<file>`: every way appends one JSON line `{ way, type, title, body }` to that file instead of acting. Nothing reaches your desktop, and no Slack or ntfy address on another machine is called. The console and Claude Code still record (in the profile), and an address on this machine (`http://localhost…`, `http://127.0.0.1…`) is still called, so a test can check what it gets. Under `node --test` without it, nothing reaches the desktop or another machine either. `OBYSPHERE_NOTIFY_COALESCE_MS` sets the burst window (3000).
+
+In the profile, `notify/` holds `recent.jsonl` (the last 200 events, which the console and the channel read), `seen/` (a mark per event told, so it's told once; gone after two days), `console.json` (your console's address, for the links) and `hook.json` (when `inbox --hook` last looked for direct messages).
+
+### In the console's local API
+
+| | |
+|---|---|
+| `GET /local/notifications?after=<id>` | `{ notifications: [{ id, ts, type, count, title, body, from, channel, console, quiet }], last }`: the events after `after`, or without it the last 20. `console`: your settings show it in the console. `quiet`: it came in quiet hours. `last`: the newest id, to ask after next time. |
+| `POST /local/notify-test` `{ via }` | `via`: `desktop`, `console`, `claude`, `phone`, `slack` or `all` (the default). `{ results: [{ way, ok, note, id? }], settingsError }`. `ok` is `true`, `false` (it failed, and `note` says why) or `null` (skipped: off, or no address). |
+
+`GET /local/settings` and `PUT /local/settings` always answer with a `notify` section (the defaults when the file has none), with the addresses masked. A `PUT` without `notify` (a page from an older relay) keeps the one stored; `notify: null` goes back to the defaults.

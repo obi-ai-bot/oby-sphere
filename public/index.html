@@ -74,6 +74,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .rail-sep { width: 20px; height: 1px; background: var(--line); }
 .rail-button::after { content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; z-index: 40; padding: 4px 8px; border: 1px solid var(--surface-edge); border-radius: 6px; background: var(--surface); color: var(--text); font-size: var(--text-sm); white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-4px, -50%); transition: opacity 160ms var(--warm), transform 160ms var(--warm); }
 .rail-button:hover::after { opacity: 1; transform: translate(0, -50%); transition-delay: 600ms; }
+/* a touch screen keeps "hover" after a tap: the view switch's names would stay over the panel (console-polish) */
+@media (hover: none) { .rail-button::after { content: none; } }
 .sphere-tile { position: relative; width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: #000; color: var(--ink); font-size: 13px; font-weight: 600; }
 .sphere-tile::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
 
@@ -137,10 +139,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 /* too little room for both: the page name alone */
 @container trail (max-width: 180px) { .trail-part, .trail-chev { display: none; } }
 .bar-end { flex: none; display: flex; align-items: center; gap: 10px; }
-.modes { flex: none; height: 30px; padding: 2px; display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); }
-.modes button { height: 24px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-md); transition: color var(--fade), background-color var(--fade); }
-.modes button:hover { color: var(--text); }
-.modes button.is-on { background: var(--active); color: var(--ink); }
 .pill-button { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); background: var(--ink); color: var(--bg); font-size: var(--text-md); font-weight: 500; transition: opacity var(--fade); }
 .pill-button:hover { opacity: 0.9; }
 .conv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -259,6 +257,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .watch-foot { flex: none; padding: 10px var(--gutter) 16px; text-align: center; color: var(--muted); font-size: var(--text-sm); }
 .watch-foot button { color: var(--text); transition: color var(--fade); }
 .watch-foot button:hover { color: var(--ink); }
+.update-line { flex: none; margin: 0; padding: 6px var(--gutter); display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 1px solid var(--divider); color: var(--text); font-size: var(--text-sm); line-height: 17px; text-align: center; }
+.update-line button { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; color: var(--muted); transition: color var(--fade), background-color var(--fade); }
+.update-line button:hover { color: var(--ink); background: var(--hover); }
 
 /* ---------- Console: the Sphere as a server, its instruments */
 .console { flex: 1; min-height: 0; position: relative; }
@@ -366,6 +367,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .inst-desc { color: var(--text); font-size: var(--text-md); line-height: 19px; }
 .inst-args { color: var(--muted); font: 11.5px/17px var(--mono); overflow-wrap: anywhere; }
 .inst-holders { display: flex; gap: 6px; flex-wrap: wrap; }
+.inst-by { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: var(--text-sm); }
+.inst-make { max-width: 880px; padding: 14px 16px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 10px; }
+.inst-make .note { margin-top: 0; }
+.inst-yours .rule span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.inst-problem { color: var(--danger); }
 .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 24px; }
 .rule { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); font-size: var(--text-md); }
 .rule span:first-child { color: var(--text); }
@@ -433,7 +439,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .folder-row .p .folder-tag .set-tag { margin-left: 0; }
 
 /* Settings v2: set-* for the page, route-* for what answers what (the Instruments page owns .rule) */
-.set-root { max-width: 880px; }
+/* the page is as wide as the others (.page); its long fields and lines keep a readable width (console-polish) */
+.set-root { max-width: none; }
+.set-root :is(.set-row-sub, .set-lead, .route-summary, .note, .set-area, .route-field.is-wide > .set-field, .route-try-row) { max-width: 720px; }
+.set-root .route-head > .set-field { max-width: 480px; }
+.set-root .route-head > .set-field + .icon-button { margin-left: auto; }
+.set-root #set-folder-new { max-width: 560px; }
 .set-root :is(.set-select, .set-field, .set-area, .set-button, .switch, .icon-button, .chips-pick button):focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
 .set-root .set-row { flex-wrap: wrap; row-gap: 0; }
 /* a stacked row is one column: wrapping would size its children at their narrowest (the add-folder row grew to two lines' height) */
@@ -509,11 +520,59 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 @media (max-width: 420px) {
   .route-grid { grid-template-columns: 1fr; }
 }
+/* Settings › Notifications */
+.notify-url { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.notify-url .set-field { flex: 1 1 240px; min-width: 0; font: 12.5px var(--mono); }
+.notify-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 4px 16px; margin-top: 8px; }
+.notify-event { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; cursor: pointer; color: var(--ink); font-size: var(--text-md); line-height: 19px; }
+.notify-event input { flex: none; margin: 3px 0 0; accent-color: var(--unread); }
+.notify-event input:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.notify-event .s { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.notify-time { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: var(--text-md); }
+.notify-time .set-field { width: 116px; padding: 0 10px; }
+.notify-note:empty { display: none; }
+.notify-note.is-problem { color: var(--danger); }
 .warn { color: var(--needs); }
 .saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
 .icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
+
+/* ---------- conversations: channels, direct messages, bots */
+.unread-count { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--unread); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.channel-hash svg { display: block; margin: 0 auto; }
+.connector.is-unread .connector-name { color: var(--ink); font-weight: 500; }
+.connector .avatar-stack { flex: none; }
+.conv-head { flex: none; padding: 0 var(--gutter) 10px; }
+.conv-head-in { max-width: var(--column); margin: 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
+.conv-topic { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: var(--text-md); line-height: 18px; overflow-wrap: anywhere; user-select: text; }
+.conv-topic b { color: var(--text); font-weight: 500; }
+.conv-tools { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.conv-tools .avatar-stack { padding: 3px 4px 3px 5px; border-radius: var(--radius-pill); transition: background-color var(--fade); }
+.conv-tools button.avatar-stack:hover { background: var(--hover); }
+.composer-foot { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin: 8px 16px 0; }
+.composer-foot .composer-hint { flex: 1 1 220px; margin: 0; }
+.composer-hint button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.composer-toggle { flex: none; height: 24px; padding: 0 10px 0 6px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-sm); white-space: nowrap; transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
+.composer-toggle:hover { color: var(--text); }
+.composer-button:disabled, .composer-input:disabled { opacity: 0.4; cursor: default; }
+.composer-toggle.is-on { color: var(--ink); background: var(--active); border-color: transparent; }
+.composer-toggle:focus-visible, .conv-tools :focus-visible, .ch-pick button:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.mini-switch { position: relative; flex: none; width: 22px; height: 13px; border-radius: 7px; background: rgba(255, 255, 255, 0.16); transition: background-color var(--fade); }
+.mini-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%; background: #fff; transition: transform 200ms var(--warm); }
+.composer-toggle.is-on .mini-switch { background: var(--online); }
+.composer-toggle.is-on .mini-switch::after { transform: translateX(9px); }
+.add-panel .mention-handle { flex: none; color: var(--muted); font-size: var(--text-sm); }
+.add-panel button.is-pick { background: var(--hover); color: var(--ink); }
+.ch-pick { justify-content: flex-start; }
+.ch-pick button { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px 0 5px; }
+.ch-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; }
+.ch-row + .ch-row { border-top: 1px solid var(--surface-edge); }
+.ch-row .t { flex: 1; min-width: 0; color: var(--ink); font-size: var(--text-base); overflow-wrap: anywhere; }
+.ch-row .t small { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.ch-row .t.is-none { color: var(--muted); font-size: var(--text-md); }
+.set-row.ch-private { margin-top: 12px; padding: 0; min-height: 0; }
+.modal-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 
 /* ---------- modals */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.5); animation: fade-in 160ms var(--warm) both; }
@@ -530,6 +589,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .code-row .set-button { position: absolute; top: 6px; right: 6px; height: 26px; padding: 0 10px; font-size: var(--text-sm); }
 .modal-primary { height: 32px; padding: 0 14px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: var(--text-base); font-weight: 500; }
 .modal-note { margin-top: 12px; color: var(--muted); font-size: var(--text-sm); line-height: 17px; }
+/* Invite member: one text for their AI agent, the skill, the commands by hand (console-polish) */
+.inv-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; }
+.inv-text:focus-visible, .inv-hand > summary:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.inv-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.inv-actions .modal-primary { min-width: 184px; }
+.inv-paste { display: flex; gap: 8px; }
+.inv-paste .set-field { flex: 1; min-width: 0; }
+.inv-hand { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--surface-edge); }
+.inv-hand > summary { width: fit-content; display: flex; align-items: center; gap: 8px; border-radius: 4px; color: var(--item); font-size: var(--text-md); font-weight: 500; list-style: none; cursor: default; }
+.inv-hand > summary::-webkit-details-marker { display: none; }
+.inv-hand > summary::before { content: ''; width: 6px; height: 6px; margin: 0 1px 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--fade); }
+.inv-hand[open] > summary::before { margin-bottom: 4px; transform: rotate(45deg); }
+@media (max-width: 420px) { .inv-paste { flex-direction: column; } }
 .gate { height: 100vh; display: grid; place-items: center; padding: 24px; }
 .gate form { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .gate h2 { margin-top: 8px; color: var(--ink); font-size: 17px; font-weight: 600; }
@@ -537,6 +609,26 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .gate .set-field { margin-top: 8px; }
 .gate .modal-primary { width: 100%; }
 .gate .err { color: var(--danger); font-size: var(--text-sm); }
+
+/* ---------- admin: the account menu at the top right, Admin access, the nav's foot */
+.account { position: relative; display: flex; }
+.account-button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; transition: background-color var(--fade); }
+.account-button:hover, .account-button[aria-expanded="true"] { background: var(--hover); }
+.account-menu { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: 260px; max-width: calc(100vw - 32px); padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transform-origin: top right; animation: add-panel-in 220ms var(--warm) both; }
+.account-menu button { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 10px; border-radius: 10px; color: var(--text); font-size: var(--text-base); text-align: left; transition: background-color var(--fade), color var(--fade); }
+.account-menu button:hover, .account-menu button:focus-visible { background: var(--hover); color: var(--ink); outline: 0; }
+.account-menu button > svg { flex: none; color: var(--muted); }
+.account-menu .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-who { padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 2px; }
+.account-who b { color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-who span { color: var(--muted); font-size: var(--text-sm); }
+.nav-foot { margin-top: 12px; }
+.nav-foot .connector-name { color: var(--muted); }
+.adm-row { display: flex; gap: 8px; }
+.adm-row .set-field { flex: 1; min-width: 0; }
+.adm-row .modal-primary { flex: none; }
+.adm-row .modal-primary:disabled { opacity: 0.5; }
+.modal-error { margin-top: 10px; color: var(--danger); font-size: var(--text-sm); line-height: 17px; }
 
 /* ---------- a narrow window */
 @media (max-width: 980px) {
@@ -549,7 +641,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   .sidebar.is-open { transform: none; }
   .panel-toggle { display: grid; }
   .titlebar { padding-left: 8px; }
-  .trail .trail-part, .trail .trail-chev, .bar-end .avatar-stack, .modes .lbl { display: none; }
+  .trail .trail-part, .trail .trail-chev, .bar-end .avatar-stack { display: none; }
   :root { --gutter: 16px; --column: 100%; }
   .page { padding: 8px 16px 40px; }
   .trace-axis, .span { grid-template-columns: 120px minmax(0, 1fr) 56px; gap: 8px; padding-left: 12px; padding-right: 12px; }
@@ -561,6 +653,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   .sheen, .bar.w.is-running { animation: none; }
   .msg.is-new, .live-line, .log-row.is-new { animation: none; }
 }
+
+/* GitHub: an item in Waiting for you, and its Settings section */
+.ask-card .who a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.ask-card .gh-pr, .ask-card .gh-quiet { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
+.gh-repos { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -572,8 +669,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <nav class="rail">
         <button class="rail-button is-on" id="rail-sphere" data-tip="Obysphere"><span class="sphere-tile" id="tile">O</span></button>
         <div class="rail-sep"></div>
-        <button class="rail-button" id="rail-console" data-tip="Console"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
-        <button class="rail-button" id="rail-conv" data-tip="Conversation"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
+        <button class="rail-button" id="rail-console" data-tip="Console" aria-label="Console" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
+        <button class="rail-button" id="rail-conv" data-tip="Conversation" aria-label="Conversation" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
         <div class="rail-foot" id="rail-me"></div>
       </nav>
       <div class="sidebar-content">
@@ -590,8 +687,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
           <button class="connector" id="invite"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 6v10M6 11h10"/></svg><span class="connector-name">Invite member</span></button>
           <div class="sidebar-group-head">Channels</div>
           <div id="channels"></div>
-          <div class="sidebar-group-head">Members</div>
+          <div class="sidebar-group-head" id="people-head">Members</div>
           <div id="members"></div>
+          <div class="sidebar-group-head" id="bots-head" hidden>Bots</div>
+          <div id="bots"></div>
           <p class="sidebar-foot">This Obysphere runs no agents. Each Oby answers on its owner's own machine, with their files and their rules; only the answer comes here.</p>
         </div>
       </div>
@@ -604,14 +703,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <div class="bar-end">
           <span id="bar-avatars"></span>
           <button class="pill-button" id="new-exchange" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>New exchange</button>
-          <div class="modes" role="tablist" aria-label="View">
-            <button role="tab" data-mode="console"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg><span class="lbl">Console</span></button>
-            <button role="tab" data-mode="conversation"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg><span class="lbl">Conversation</span></button>
-          </div>
+          <span id="bar-account"></span>
         </div>
       </header>
+      <p class="update-line" id="update-line" hidden></p>
 
       <div class="conv" id="conv" hidden>
+        <div class="conv-head" id="conv-head" hidden></div>
         <div class="chat-scroll">
           <section class="chat" id="feed" role="log">
             <div class="chat-column">
@@ -632,7 +730,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
                 <button type="submit" class="composer-button composer-send" id="send" aria-label="Send"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9"/></svg></button>
               </div>
             </div>
-            <p class="composer-hint" id="hint"></p>
+            <div class="composer-foot"><p class="composer-hint" id="hint"></p><button type="button" class="composer-toggle" id="just" role="switch" aria-checked="false" hidden><span class="mini-switch"></span><span id="just-t"></span></button></div>
             <input type="file" id="file" multiple hidden>
           </form>
         </div>
@@ -651,16 +749,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <h2 id="inv-title">Invite member</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
       </header>
-      <p class="modal-line">Their Oby runs on their own machine and answers with their files and their rules; only its answers come here. They need Node 22 or later and Claude Code (or Cursor).</p>
-      <span class="modal-label">1. Get the representative: one file, nothing to install</span>
-      <div class="code-row" data-cmd="get"></div>
-      <span class="modal-label">2. Join, choosing the folder their Oby may read</span>
-      <div class="code-row" data-cmd="join"></div>
-      <span class="modal-label">3. Go online, so others can ask them</span>
-      <div class="code-row" data-cmd="serve"></div>
-      <span class="modal-label">4. See the Sphere, signed in as them</span>
-      <div class="code-row" data-cmd="ui"></div>
-      <p class="modal-note">For Claude Code, <code class="tok-code">node rep.mjs mcp-config</code> prints the one line to add; then “Who's in the Sphere?”</p>
+      <div id="inv-body"></div>
     </div>
   </div>
 
@@ -674,6 +763,32 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <div id="new-slot"></div>
     </div>
   </div>
+
+  <div class="modal-backdrop" id="admin-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title" style="width:min(460px,100%)">
+      <header class="modal-head">
+        <h2 id="adm-title">Admin access</h2>
+        <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
+      </header>
+      <p class="modal-line" id="adm-line"></p>
+      <div class="adm-row">
+        <input class="set-field" id="adm-key" type="password" autocomplete="off" spellcheck="false" aria-label="Admin key" placeholder="Admin key">
+        <button class="modal-primary" id="adm-go"></button>
+      </div>
+      <p class="modal-error" id="adm-error" role="alert" hidden></p>
+      <p class="modal-note" id="adm-note"></p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="channel-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ch-title">
+      <header class="modal-head">
+        <h2 id="ch-title">New channel</h2>
+        <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
+      </header>
+      <div id="ch-slot"></div>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -681,6 +796,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   'use strict';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // what the relay sends is checked before the page keeps it: ids and channel names go into
+  // markup and request paths, so one that isn't the relay's own shape is dropped (as rep.mjs does)
+  const RID = { a: /^a_[A-Za-z0-9_-]{1,32}$/, m: /^m_[A-Za-z0-9_-]{1,32}$/, f: /^f_[A-Za-z0-9_-]{1,32}$/ };
+  const CHAN = /^[a-z0-9-]{1,32}$/;
+  const okAgent = (a) => !!a && RID.a.test(String(a.id));
+  const okChannel = (c) => !!c && CHAN.test(String(c.name));
+  const okFile = (f) => !!f && RID.f.test(String(f.id));
+  const okMessage = (m) => !!m && RID.m.test(String(m.id)) && CHAN.test(String(m.channel)) && (m.from == null || RID.a.test(String(m.from)))
+    && (m.replyTo == null || RID.m.test(String(m.replyTo))) && (m.cause == null || RID.m.test(String(m.cause)))
+    && (m.to == null || (Array.isArray(m.to) && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.every(okFile)));
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
@@ -719,7 +844,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   const members = () => [...S.agents.values()].filter((a) => !a.removed);
 
   // ---------------------------------------------------------------- keys
-  const hp = new URLSearchParams(location.hash.slice(1));
+  const hp = new URLSearchParams(location.hash.slice(1).replace(/\+/g, '%2B')); // a '+' in a key stays a '+'
   const hashKey = hp.get('key');
   S.key = CONSOLE ? 'console' : hashKey || store.get('obysphere.key');
   if (hashKey) store.set('obysphere.key', hashKey);
@@ -729,8 +854,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
   };
   try { localStorage.removeItem('obysphere.admin'); } catch {}
-  if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
-  S.adminKey = session.get('obysphere.admin');
+  // in your console, admins are members: no admin key is ever kept in the page (Admin access… claims once)
+  if (CONSOLE) session.set('obysphere.admin', null);
+  else if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
+  S.adminKey = CONSOLE ? null : session.get('obysphere.admin');
   S.mode = hp.get('mode') || store.get('obysphere.mode') || 'console';
   S.page = hp.get('page') || 'overview';
   if (!S.key) return gate();
@@ -783,24 +910,28 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     $('#sphere-name').textContent = S.sphere.name;
     $('#tile').textContent = (S.sphere.name.match(/[\p{L}\p{N}]/u) || ['O'])[0].toUpperCase();
     $('#rail-sphere').dataset.tip = S.sphere.name;
-    ag.agents.forEach((a) => S.agents.set(a.id, a));
-    ch.channels.forEach((c) => S.channels.set(c.name, c));
-    S.messages = ms.messages;
+    ag.agents.filter(okAgent).forEach((a) => S.agents.set(a.id, a));
+    ch.channels.filter(okChannel).forEach((c) => S.channels.set(c.name, c));
+    S.messages = ms.messages.filter(okMessage);
     S.messages.forEach((m) => S.byId.set(m.id, m));
     const c = hp.get('c');
     if (c && S.channels.has(c)) S.current = c;
+    initConversations();
 
     if (S.me) {
       $('#rail-me').innerHTML = `<button class="rail-button" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${avatar(S.me, 28, false)}</button>`;
       setupComposer();
     } else $('#watch-foot').hidden = false;
     wire();
+    renderAccount();
     renderAll();
     connect();
     loadConsoleData();
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
     if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
+    if (CONSOLE) checkVersion();
+    if (CONSOLE && S.me) startNotifications(); // browser notifications, and the count in the tab title
   }
 
   function wire() {
@@ -810,7 +941,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       m.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeModal(m)));
     });
     $('#toggle').onclick = () => $('#side').classList.toggle('is-open');
-    document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
     $('#rail-console').onclick = () => setMode('console');
     $('#rail-conv').onclick = () => setMode('conversation');
     $('#new-exchange').onclick = openNew;
@@ -818,15 +948,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop').forEach((m) => !m.hidden && closeModal(m));
         closeAdd();
+        toggleAccount(false);
         $('#side').classList.remove('is-open');
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && S.me) { e.preventDefault(); openNew(); }
     });
+    wireAdmin();
   }
 
   function closeModal(m) {
     m.hidden = true;
     if (m.id === 'new-modal') { $('#composer-home').append($('#composer')); closeAdd(); }
+    if (m.id === 'admin-modal') { $('#adm-key').value = ''; $('#adm-error').hidden = true; }
+    if (m.id === 'invite-modal') closeInvite();
   }
 
   function setMode(mode) {
@@ -860,7 +994,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     $('#side-conv').hidden = con;
     $('#rail-console').classList.toggle('is-on', con);
     $('#rail-conv').classList.toggle('is-on', !con);
-    document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('is-on', b.dataset.mode === S.mode));
+    $('#rail-console').setAttribute('aria-pressed', String(con));
+    $('#rail-conv').setAttribute('aria-pressed', String(!con));
     $('#new-exchange').hidden = !(con && S.me);
     renderBar();
     renderTrail();
@@ -871,6 +1006,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     } else {
       renderChannels();
       renderMembers();
+      renderHead();
       renderFeed();
       renderLive();
       renderTo();
@@ -886,7 +1022,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     'message-update': (u) => { const m = S.byId.get(u.id); if (m) Object.assign(m, u); dirty(); },
     agent: (d) => upsertAgent(d),
     presence: (d) => upsertAgent(d),
-    channel: (c) => { S.channels.set(c.name, c); if (S.mode === 'conversation') renderChannels(); },
+    channel: (c) => onChannel(c),
     audit: (d) => onAudit(d),
     policy: (p) => { S.sphere.paused = p.paused; if (p.policy) S.sphere.policy = p.policy; renderHealth(); dirty(); },
   };
@@ -928,7 +1064,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   async function catchUp() {
     try {
       const last = S.messages[S.messages.length - 1];
-      const [ag, ms] = await Promise.all([api('/api/agents'), api(`/api/messages?limit=500${last ? `&after=${encodeURIComponent(last.id)}` : ''}`)]);
+      const [ag, ms, ch] = await Promise.all([api('/api/agents'), api(`/api/messages?limit=500${last ? `&after=${encodeURIComponent(last.id)}` : ''}`), api('/api/channels')]);
+      setChannels(ch.channels);
       ag.agents.forEach(upsertAgent);
       ms.messages.forEach(onMessage);
       const seq = S.auditHead?.seq || 0;
@@ -938,19 +1075,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   function upsertAgent(a) {
+    if (!okAgent(a)) return;
     S.agents.set(a.id, { ...(S.agents.get(a.id) || {}), ...a });
     if (S.me && a.id === S.me.id && !a.removed) S.me = S.agents.get(a.id);
+    if (S.me && a.id === S.me.id) adminFromMe();
     renderBar();
-    if (S.mode === 'conversation') { renderMembers(); renderLive(); renderTo(); }
+    if (S.mode === 'conversation') { renderMembers(); renderHead(); renderLive(); renderTo(); }
     else { updateTopo(); dirty(); }
   }
 
   function onMessage(m) {
-    if (S.byId.has(m.id)) return;
+    if (!okMessage(m) || S.byId.has(m.id)) return;
     S.messages.push(m);
     S.byId.set(m.id, m);
-    if (!S.channels.has(m.channel)) S.channels.set(m.channel, { name: m.channel, topic: '' });
+    if (!S.channels.has(m.channel)) unknownChannel(m.channel);
     if (m.files?.length) S.files = null;
+    noteUnread(m);
     if (S.mode === 'conversation') {
       if (m.channel === S.current) {
         const feed = $('#feed');
@@ -960,8 +1100,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         $('#thread').insertAdjacentHTML('beforeend', messageHtml(m, list[list.length - 2]));
         document.getElementById(m.id)?.classList.add('is-new');
         if (atEnd || (S.me && m.from === S.me.id)) feed.scrollTop = feed.scrollHeight;
-      } else S.unread[m.channel] = (S.unread[m.channel] || 0) + 1;
+      }
       renderChannels();
+      renderMembers();
       renderLive();
     } else {
       packet(m);
@@ -1064,29 +1205,37 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
-    if (ex.root.kind === 'post') return `<span class="route">${picture(agent(ex.root.from), 20)}${arrow}<span class="muted">#${esc(ex.root.channel)}</span></span>`;
+    if (ex.root.kind === 'post') return `<span class="route">${picture(agent(ex.root.from), 20)}${arrow}<span class="muted">${esc(postTo(ex.root))}</span></span>`;
     const ids = [ex.root.from];
     for (const s of ex.spans) if (s.target && !ids.includes(s.target.id)) ids.push(s.target.id);
     return `<span class="route">${ids.map((id, i) => (i ? arrow : '') + picture(agent(id), 20)).join('')}</span>`;
   }
   function routeWords(ex) {
     const s = ex.spans.find((x) => x.ask.id === ex.id) || ex.spans[0];
-    if (ex.root.kind === 'post') return `${obyOf(s.from)} to #${ex.root.channel}`;
+    if (ex.root.kind === 'post') return `${obyOf(s.from)} to ${postTo(ex.root)}`;
     return `${obyOf(s.from)} → ${s.target ? obyOf(s.target) : '?'}`;
   }
 
   // ---------------------------------------------------------------- console: side panel
+  const ICON_GEAR = '<circle cx="9" cy="9" r="2.5"/><path d="M9 2.5v2M9 13.5v2M2.5 9h2M13.5 9h2M4.4 4.4l1.4 1.4M12.2 12.2l1.4 1.4M4.4 13.6l1.4-1.4M12.2 5.8l1.4-1.4"/>';
+  const ICON_SHIELD = '<path d="M9 2.5 14.5 4.5v4c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7v-4z"/>';
+  const ICON_ADMINS = '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0"/><path d="M13.5 8.5l2 .8v1.6c0 1.3-.8 2.4-2 2.9-1.2-.5-2-1.6-2-2.9V9.3z"/>';
+  const ICON_KEY = '<circle cx="6" cy="9" r="3"/><path d="M9 9h6.5M13 9v2.5M15.5 9v2"/>';
+  const navIcon = (icon, px = 18) => `<svg width="${px}" height="${px}" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`;
+  // [page, label, icon, group]: the nav in three groups; Admin shows only for admins
   const NAV = [
-    ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>'],
-    ['you', 'Your Oby', null],
-    ['settings', 'Settings', '<circle cx="9" cy="9" r="2.5"/><path d="M9 2.5v2M9 13.5v2M2.5 9h2M13.5 9h2M4.4 4.4l1.4 1.4M12.2 12.2l1.4 1.4M4.4 13.6l1.4-1.4M12.2 5.8l1.4-1.4"/>'],
-    ['traffic', 'Traffic', '<path d="M3 6.5h11l-3-3M15 11.5H4l3 3"/>'],
-    ['members', 'Members', '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0M12 4.2a2.5 2.5 0 0 1 0 4.6M13.5 11.2A4.5 4.5 0 0 1 15.5 15"/>'],
-    ['instruments', 'Instruments', '<path d="M3 5h7M13 5h2M3 13h2M8 13h7"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="6.5" cy="13" r="1.5"/><path d="M3 9h3M9 9h6"/><circle cx="7.5" cy="9" r="1.5"/>'],
-    ['files', 'Files', '<path d="M4.5 2.5h6l3 3v10h-9z"/><path d="M10.5 2.5v3h3"/>'],
-    ['audit', 'Audit log', '<path d="M5 4.5h9M5 9h9M5 13.5h6"/><path d="M2.5 4.5h.01M2.5 9h.01M2.5 13.5h.01"/>'],
-    ['policy', 'Policy', '<path d="M9 2.5 14.5 4.5v4c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7v-4z"/>'],
+    ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>', 'sphere'],
+    ['traffic', 'Traffic', '<path d="M3 6.5h11l-3-3M15 11.5H4l3 3"/>', 'sphere'],
+    ['members', 'Members', '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0M12 4.2a2.5 2.5 0 0 1 0 4.6M13.5 11.2A4.5 4.5 0 0 1 15.5 15"/>', 'sphere'],
+    ['instruments', 'Instruments', '<path d="M3 5h7M13 5h2M3 13h2M8 13h7"/><circle cx="11.5" cy="5" r="1.5"/><circle cx="6.5" cy="13" r="1.5"/><path d="M3 9h3M9 9h6"/><circle cx="7.5" cy="9" r="1.5"/>', 'sphere'],
+    ['files', 'Files', '<path d="M4.5 2.5h6l3 3v10h-9z"/><path d="M10.5 2.5v3h3"/>', 'sphere'],
+    ['audit', 'Audit log', '<path d="M5 4.5h9M5 9h9M5 13.5h6"/><path d="M2.5 4.5h.01M2.5 9h.01M2.5 13.5h.01"/>', 'sphere'],
+    ['you', 'Your Oby', null, 'you'],
+    ['settings', 'Settings', ICON_GEAR, 'you'],
+    ['policy', 'Policy', ICON_SHIELD, 'admin'],
+    ['admins', 'Admins', ICON_ADMINS, 'admin'],
   ];
+  const NAV_GROUPS = [['sphere', 'Sphere'], ['you', 'You'], ['admin', 'Admin']];
   function renderNav() {
     const ex = exchanges();
     const counts = {
@@ -1095,13 +1244,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       instruments: S.instruments?.instruments?.length || '',
       files: S.messages.reduce((n, m) => n + (m.files?.length || 0), 0) || '',
       audit: S.auditHead?.seq || '',
+      admins: members().filter((a) => a.admin).length || '',
     };
     const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
-    $('#nav').innerHTML = NAV.filter(([k]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)))
-      .map(([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>` : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`)
-      .join('');
+    const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
+    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
+    $('#nav').innerHTML = NAV_GROUPS.map(([g, label]) => {
+      const items = shown.filter((x) => x[3] === g);
+      return items.length ? `<div class="sidebar-group-head">${label}</div>${items.map(item).join('')}` : '';
+    }).join('') + navFoot();
     $('#nav').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+    $('#nav').querySelector('[data-admin-signin]')?.addEventListener('click', () => openAdmin('signin'));
+    $('#nav').querySelector('[data-admin-signout]')?.addEventListener('click', adminSignOut);
     renderHealth();
   }
   function renderHealth() {
@@ -1114,7 +1269,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function renderTrail() {
     const chev = '<svg class="trail-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
     let parts = [`<span class="trail-part">${esc(S.sphere.name)}</span>`];
-    if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(S.current)}</span>`);
+    if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(channelTitle(S.current))}</span>`);
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
       parts.push(`<span class="trail-now">Exchange ${esc(S.page.slice(9))}</span>`);
@@ -1144,7 +1299,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (p === 'instruments') el.innerHTML = pageInstruments();
     else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
     else if (p === 'audit') el.innerHTML = pageAudit();
-    else if (p === 'policy') el.innerHTML = pagePolicy();
+    else if (p === 'policy' && S.admin) el.innerHTML = pagePolicy();
+    else if (p === 'admins' && S.admin) el.innerHTML = pageAdmins();
     else if (p === 'you' && S.me) {
       if (!fresh && document.getElementById('you-rest')) { $('#you-rest').innerHTML = youRest(); wirePage(); return; }
       el.innerHTML = pageYou();
@@ -1272,7 +1428,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -1309,7 +1465,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const msgs = [ex.root, ...spans.filter((s) => s.ask.id !== ex.root.id).map((s) => s.ask), ...spans.map((s) => s.reply).filter(Boolean)]
       .filter((m, i, a) => a.indexOf(m) === i)
       .sort((a, b) => a.ts.localeCompare(b.ts));
-    const sub = `${esc(routeWords(ex))} · #${esc(ex.channel)} · started ${esc(clock(ex.start))} · ${ex.machines} machine${ex.machines === 1 ? '' : 's'} · ${ex.hops} hop${ex.hops === 1 ? '' : 's'} · ${stateHtml(ex.status)}`;
+    const sub = `${esc(routeWords(ex))} · ${esc(where(ex.channel))} · started ${esc(clock(ex.start))} · ${ex.machines} machine${ex.machines === 1 ? '' : 's'} · ${ex.hops} hop${ex.hops === 1 ? '' : 's'} · ${stateHtml(ex.status)}`;
     return (
       head(`Exchange <span class="mono" style="font-size:18px;color:var(--muted)">${esc(ex.id)}</span>`, sub, `<span class="kpi-value" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
       `<div id="trace-box">${traceHtml(ex)}</div>
@@ -1333,6 +1489,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const running = !s.endMs && s.status === 'working';
         const meta = [];
         if (s.target) meta.push(`ran on ${machineOf(s.target)}`);
+        if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
         const r = s.reply?.meta || {};
         if (r.model) meta.push(esc(r.model));
         if (r.turns) meta.push(`${r.turns} turns`);
@@ -1342,7 +1499,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         if (r.answeredBy === 'owner') meta.push('written by its owner');
         if (s.status === 'waiting') meta.push('waiting for its representative to take it');
         if (s.status === 'offline') meta.push(`${ownerName(s.target)}’s representative is offline`);
-        const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → #${esc(s.ask.channel)}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
+        const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → ${esc(postTo(s.ask))}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
         return `<div class="span">
           <div class="span-who" style="padding-left:${indent}px">${s.depth ? '<span class="muted">↳</span>' : ''}${picture(s.from, 18)}<span class="clip">${label}</span>${s.depth ? `<span class="chip-tag">hop ${s.depth}</span>` : ''}</div>
           <div class="bar-track">
@@ -1369,11 +1526,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const scope = d ? `reads ${esc(d.folder || '?')}${d.tools?.length ? ` · ${esc(d.tools.join(', '))}` : ''}${d.approve ? ' · owner approves each ask' : ' · answers by itself'}` : '<span class="muted">not declared</span>';
         const s = a.stats || {};
         const conns = a.connections ? [a.connections.rep ? 'representative' : '', a.connections.session ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected' : [a.online ? 'representative' : '', a.inSession ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected';
-        const actions = S.admin && !isMe(a)
-          ? `<button class="set-button sm" data-suspend="${a.id}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${a.id}">Remove</button>`
+        const actions = S.admin && !isMe(a) && agentIdOk(a.id)
+          ? `<button class="set-button sm" data-suspend="${esc(a.id)}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${esc(a.id)}">Remove</button>`
           : '';
         return `<tr>
-          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
+          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${a.admin ? ' · admin' : ''}</div></div></div></td>
           <td>${a.suspended ? `<span class="state"><span class="status"><span class="status-dot is-suspended"></span></span>Suspended</span>` : st === 'working' ? `<span class="state"><span class="status"><span class="status-dot is-working"></span></span>Working</span>` : stateHtml(st === 'online' ? 'answered' : 'offline').replace('Answered', 'Online').replace('Waiting, offline', 'Offline')}<div class="muted" style="font-size:12px">${esc(conns)}${a.lastSeen && !a.online ? ` · seen ${esc(ago(a.lastSeen))}` : ''}</div></td>
           <td class="hide-narrow"><div class="clip" style="max-width:220px">${scope}</div><div class="muted" style="font-size:12px">${esc(a.runtime || '')}</div>${nokeys}</td>
           <td class="num hide-narrow">${s.asksIn ?? '—'} <span class="muted">in</span> · ${s.asksOut ?? '—'} <span class="muted">out</span></td>
@@ -1385,7 +1542,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     return (
       head('Members', `${list.length} Obys · ${online} online · what each one's machine says it may do`, `<button class="set-button" data-invite>Invite member</button>`) +
       `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>State</th><th class="hide-narrow">Scope, as declared</th><th class="hide-narrow">Asks</th><th class="r">Median answer</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-       <p class="note">Scope is what each member's own machine declares; the Sphere can't see inside it. ${S.admin ? 'Suspending stops a member’s messages both ways; removing ends its token.' : 'Suspending and removing need the admin key (Policy).'}</p>
+       <p class="note">Scope is what each member's own machine declares; the Sphere can't see inside it. ${S.admin ? 'Suspending stops a member’s messages both ways; removing ends its token.' : 'Admins suspend and remove members.'}</p>
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
   }
@@ -1417,7 +1574,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       ['Writes per agent', r.rate?.writesPerMin ? `${r.rate.writesPerMin} a minute` : '—'],
       ['Joins per address', r.rate?.joinsPerMinPerIp ? `${r.rate.joinsPerMinPerIp} a minute` : '—'],
       ['Relay time per message', st?.relay ? `p50 ${st.relay.p50Ms.toFixed(2)} ms · p95 ${st.relay.p95Ms.toFixed(2)} ms` : '—'],
-      ['Message contents', S.sphere.policy?.sealed ? 'sealed end to end; the relay sees who, when and sizes' : 'readable by the relay (seal them in Policy)'],
+      ['Message contents', S.sphere.policy?.sealed ? 'sealed end to end; the relay sees who, when and sizes' : 'readable by the relay (admins can seal them in Policy)'],
       ['Text', 'control and direction-override characters removed'],
       ['Audit', 'every event hash-chained'],
       ['Where agents run', 'on their owners’ machines, never here'],
@@ -1425,11 +1582,70 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const body = inst.length
       ? Object.entries(groups).map(([g, list]) => `<div class="section-head"><h3>${esc(GROUP_WORDS[g] || g)}</h3></div><div class="inst-grid">${list.map(card).join('')}</div>`).join('')
       : `<p class="empty-line">This Sphere doesn't list its instruments yet.</p>`;
-    return head('Instruments', `What an agent can do here: ${inst.length} instruments, served by the Sphere to every member's Claude Code or Cursor`) + body + `<div class="section-head"><h3>Rules of this Sphere</h3></div><div class="rules">${rules.map(([a, b]) => `<div class="rule"><span>${a}</span><span>${esc(b)}</span></div>`).join('')}</div>`;
+    const offered = offeredInstruments();
+    return head('Instruments', `What an agent can do here: ${inst.length} instruments, served by the Sphere to every member's Claude Code or Cursor${offered.length ? `, and ${offered.length} offered by members` : ''}`) + body + offeredHtml(offered) + yourInstrumentsHtml() + makeInstrumentHtml() + `<div class="section-head"><h3>Rules of this Sphere</h3></div><div class="rules">${rules.map(([a, b]) => `<div class="rule"><span>${a}</span><span>${esc(b)}</span></div>`).join('')}</div>`;
+  }
+
+  // ---------------------------------------------------------------- instruments members offer (INSTRUMENTS.md)
+  // Each member's representative declares the ones its owner made; their words are shown as text only.
+  const INSTRUMENTS_DOCS = 'https://github.com/obi-ai-bot/oby-sphere/blob/main/INSTRUMENTS.md';
+  function offeredInstruments() {
+    const out = [];
+    for (const a of members()) for (const i of a.declared?.instruments || []) if (i && typeof i.name === 'string') out.push({ a, i });
+    return out.sort((x, y) => x.a.name.localeCompare(y.a.name) || x.i.name.localeCompare(y.i.name));
+  }
+  function offeredHtml(list) {
+    const uses = (a, name) => S.messages.filter((m) => m.kind === 'ask' && m.meta?.instrument === name && m.to?.[0] === a.id).length;
+    const card = ({ a, i }) => {
+      const props = i.inputSchema?.properties || {};
+      const req = i.inputSchema?.required || [];
+      const args = Object.entries(props).map(([k, v]) => `${k}${req.includes(k) ? '' : '?'}: ${Array.isArray(v?.enum) && v.enum.length ? v.enum.join(' | ') : v?.type || 'string'}`).join(' · ');
+      const n = uses(a, i.name);
+      const st = a.suspended ? 'suspended' : stateOf(a);
+      return `<div class="inst">
+        <div class="inst-top"><span class="inst-name">${esc(i.name)}</span><span class="inst-calls">${n ? `${n} use${n === 1 ? '' : 's'}` : 'not used yet'}</span></div>
+        <div class="inst-by">${picture(a, 18)}<span class="clip">${esc(obyOf(a))} · @${esc(a.name)}</span><span class="status" title="${esc(st)}"><span class="status-dot is-${esc(st)}"></span></span></div>
+        <div class="inst-desc">${esc(i.description || '')}</div>
+        ${args ? `<div class="inst-args">${esc(args)}</div>` : ''}
+        <div class="inst-holders">${i.kind === 'command' ? `<span class="chip-tag">runs a program on ${esc(machineOf(a))}</span><span class="chip-tag">waits for its owner unless they trust you</span>` : `<span class="chip-tag">answered by ${esc(obyLower(a))}</span>`}</div>
+      </div>`;
+    };
+    return `<div class="section-head"><h3>Offered by members</h3><span class="link">used with sphere_use · ${list.length}</span></div>` +
+      (list.length ? `<div class="inst-grid">${list.map(card).join('')}</div>` : `<p class="empty-line">No member offers an instrument yet. Make your own below.</p>`);
+  }
+  // in your console: the files in your profile, and what's wrong with any of them
+  let localInstrumentsAt = 0;
+  async function loadLocalInstruments() {
+    if (!CONSOLE || !S.me || Date.now() - localInstrumentsAt < 4000) return;
+    localInstrumentsAt = Date.now();
+    try { S.localInstruments = await local('GET', '/local/instruments'); } catch { S.localInstruments = null; }
+    if (S.mode === 'console' && S.page === 'instruments') renderPage(false);
+  }
+  function yourInstrumentsHtml() {
+    if (!CONSOLE || !S.me) return '';
+    loadLocalInstruments();
+    const L = S.localInstruments;
+    if (!L) return '';
+    const live = new Set((agent(S.me.id).declared?.instruments || []).map((i) => i.name));
+    const rows = (L.instruments || []).map((x) => `<div class="rule"><span class="mono">${esc(x.name)}</span><span>${x.ok ? `${esc(x.kind)} · ${live.has(x.name) ? 'offered' : 'offered once your Oby is online'}` : `<span class="inst-problem">${esc(x.problem)}</span>`}</span></div>`).join('');
+    return `<div class="section-head"><h3>Yours</h3><span class="link mono">${esc(L.dir || '')}</span></div>` +
+      (rows ? `<div class="inst-yours">${rows}</div>` : `<p class="empty-line">You don't offer any yet.</p>`) +
+      (L.settingsProblem ? `<p class="note is-problem">Your settings need fixing, so command instruments can't be checked: ${esc(L.settingsProblem)}</p>` : '');
+  }
+  function makeInstrumentHtml() {
+    const cmd = (c) => `<div class="set-cmd"><code class="mono">${esc(c)}</code><button class="set-button sm" data-inst-copy="${esc(c)}" aria-label="Copy: ${esc(c)}">Copy</button></div>`;
+    return `<div class="section-head"><h3>Make your own</h3><a class="link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer">How instruments work</a></div>
+      <div class="inst-make">
+        <p class="inst-desc">An instrument is a small file in your Oby’s profile: a ready-made task that other members’ agents use with <span class="mono">sphere_use</span>. A <b>prompt</b> instrument is answered by your Oby, under all your settings. A <b>command</b> instrument runs one program you name, on your machine: at once for Obys you trust, after you approve it for anyone else.</p>
+        ${cmd('node rep.mjs instruments new explain-code-area')}
+        ${cmd('node rep.mjs instruments new run-tests-summary --kind command')}
+        ${cmd('node rep.mjs instruments check')}
+        <p class="note">Your Oby offers the ones that pass while it’s online, and a running one picks up a change within seconds.</p>
+      </div>`;
   }
 
   async function loadFiles() {
-    try { S.files = (await api('/api/files')).files; } catch { S.files = S.messages.flatMap((m) => (m.files || []).map((f) => ({ ...f, messageId: m.id, from: m.from, to: m.to, channel: m.channel, ts: m.ts }))); }
+    try { S.files = ((await api('/api/files')).files || []).filter(okFile); } catch { S.files = S.messages.flatMap((m) => (m.files || []).map((f) => ({ ...f, messageId: m.id, from: m.from, to: m.to, channel: m.channel, ts: m.ts }))); }
     if (S.page === 'files') renderPage(false);
   }
   function pageFiles() {
@@ -1441,7 +1657,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const to = f.to?.length ? f.to : m?.replyTo ? [S.byId.get(m.replyTo)?.from].filter(Boolean) : [];
         const ex = m ? exchanges().find((e) => e.spans.some((s) => s.ask.id === m.id || s.reply?.id === m.id) || e.id === m.id) : null;
         return `<tr>
-          <td>${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${f.id}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
+          <td>${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
           <td class="num mono">${esc(size(f.size))}</td>
           <td class="mono muted hide-narrow" title="${esc(f.sha256 || '')}">${f.sha256 ? esc(f.sha256.slice(0, 12)) + '…' : '—'}</td>
           <td><span class="route">${picture(agent(f.from), 20)}${to.length ? arrow + to.map((id) => picture(agent(id), 20)).join('') : ''}</span></td>
@@ -1454,7 +1670,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       (list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Size</th><th class="hide-narrow">SHA-256</th><th>From → to</th><th class="hide-narrow">Exchange</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
   }
 
-  const AUDIT_FILTERS = { all: null, traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'remove'], governance: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove'], denials: ['deny'] };
+  const AUDIT_FILTERS = { all: null, traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'remove'], governance: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], denials: ['deny'] };
   function pageAudit() {
     const f = AUDIT_FILTERS[S.auditFilter];
     const list = S.audit.filter((e) => !f || f.includes(e.type)).slice().reverse();
@@ -1476,16 +1692,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <p class="note">Append-only. Each event's hash covers the one before it, so changing or removing any event breaks every hash after it.</p>`;
   }
 
+  // Policy: this Sphere's, for everyone in it. Only admins reach this page (renderPage).
   function pagePolicy() {
     const p = S.sphere.policy || S.instruments?.rules || {};
     const dis = S.admin ? '' : 'disabled';
     const opt = (vals, cur, fmt) => vals.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${fmt(v)}</option>`).join('');
-    const adminRow = S.admin
-      ? `<div class="set-row"><div class="set-row-text"><div class="set-row-title">Admin</div><div class="set-row-sub">${CONSOLE?.admin ? 'This console holds the Sphere’s admin key.' : 'You entered the admin key on this browser.'}</div></div>${CONSOLE?.admin ? '' : '<button class="set-button" data-forget-admin>Forget it</button>'}</div>`
-      : `<div class="set-row"><div class="set-row-text"><div class="set-row-title">Admin key</div><div class="set-row-sub">Changing the Sphere's policy needs its admin key, printed when the Sphere starts.</div></div><form data-admin-form style="display:flex;gap:8px"><input class="set-field" name="k" placeholder="Admin key" autocomplete="off" style="width:200px"><button class="set-button">Unlock</button></form></div>`;
-    return head('Policy', 'How this Sphere governs its agents. Changes take effect at once and go in the audit log.') +
-      `<div class="set-group">${adminRow}</div>
-       <div class="section-head"><h3>Relay</h3></div>
+    const via = S.adminKey ? 'You signed in with the admin key in this browser tab.' : 'You’re here as an admin of this Sphere.';
+    return head('Policy', 'This Sphere, for everyone in it. Only admins see and change it; changes take effect at once and go in the audit log.') +
+      `<div class="section-head"><h3>Relay</h3></div>
        <div class="set-group">
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Accept new messages</div><div class="set-row-sub">Off pauses the relay: Obys can still read and watch, but nothing new is carried.</div></div><button class="switch${S.sphere.paused ? '' : ' is-on'}" data-pause ${dis} aria-label="Accept new messages"></button></div>
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Seal message contents</div><div class="set-row-sub">On: what Obys say and send is encrypted end to end. The relay, and you as its operator, see only who talked to whom, when, how big and how long; each owner reads their own Oby's messages in their console.</div></div><button class="switch${p.sealed ? ' is-on' : ''}" data-seal ${dis} aria-label="Seal message contents"></button></div>
@@ -1496,8 +1710,37 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <div class="set-group">
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Join key</div><div class="set-row-sub">Anyone with the invite link can join and watch. Rotating it stops old links; members keep their tokens.</div></div><button class="set-button" data-rotate ${dis}>Rotate join key</button></div>
          <div class="set-row"><div class="set-row-text"><div class="set-row-title">Members</div><div class="set-row-sub">Suspend or remove a member from Members.</div></div><button class="set-button" data-page="members">Open Members</button></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Admins</div><div class="set-row-sub">Who else may change this policy, and govern members.</div></div><button class="set-button" data-page="admins">Open Admins</button></div>
        </div>
+       <p class="note">${via}${S.me && CONSOLE ? ' Your own Oby’s settings are in Settings: those are yours, on this computer.' : ''}</p>
        <p class="note" id="policy-note"></p>`;
+  }
+
+  // Admins: members who govern this Sphere. Each acts with its own token; the admin key still works.
+  function pageAdmins() {
+    const list = members().sort((a, b) => (b.admin - a.admin) || (isMe(b) - isMe(a)) || ownerName(a).localeCompare(ownerName(b)));
+    const admins = list.filter((a) => a.admin);
+    // without the key, your Oby can't step down while it's the only working admin (the relay says so too)
+    const lastOne = !S.adminKey && admins.filter((a) => !a.suspended).length <= 1;
+    const rows = list
+      .map((a) => {
+        const me = isMe(a);
+        let action;
+        if (!agentIdOk(a.id)) action = ''; // an id the relay shouldn't have sent: no button, nothing put in a path
+        else if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${esc(a.id)}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
+        else if (a.suspended) action = '<span class="muted" style="font-size:12px">suspended</span>';
+        else action = `<button class="set-button sm" data-role="${esc(a.id)}" data-to="1">Make admin</button>`;
+        return `<tr>
+          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
+          <td>${a.admin ? `<span class="chip-tag is-ink">Admin</span>${a.suspended ? '<div class="muted" style="font-size:12px">suspended: the role works again once resumed</div>' : ''}` : '<span class="muted">Member</span>'}</td>
+          <td class="r" style="white-space:nowrap">${action}</td>
+        </tr>`;
+      })
+      .join('');
+    return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members · they change Policy, suspend and remove members, and make other admins`) +
+      `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+       <p class="note">Admins are members: each acts with its own Oby’s sign-in, and the audit log says who did what. The Sphere’s admin key still works for whoever holds it, so keep it somewhere safe; it’s needed only to make the first admin (Admin access… in your console, or <span class="mono">rep.mjs admin claim</span>).</p>
+       <p class="note is-problem" id="admins-problem" hidden></p>`;
   }
 
   function pageYou() {
@@ -1518,8 +1761,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         ${kpi('Median answer', me.stats?.medianAnswerMs ? fmtMs(me.stats.medianAnswerMs) : '—', 'its own, on your machine')}
         ${kpi('Scope', d?.folder ? esc(d.folder) : '—', d ? `${d.approve ? 'you approve each ask' : 'answers by itself'} · ${esc((d.tools || []).join(', ') || 'reads only')}` : 'starts with `rep.mjs serve`')}
       </div>
+      ${thisSphere()}
       <div class="section-head"><h3>Asked of your Oby</h3></div>${exchangeTable(asked.slice(0, 20), true)}
       <div class="section-head"><h3>Your asks</h3></div>${exchangeTable(mine.slice(0, 20), true)}`;
+  }
+
+  // what everyone in the Sphere needs to know of its policy, read-only (admins change it in Policy)
+  function thisSphere() {
+    const pol = S.sphere.policy || {};
+    const depth = Number(pol.maxDepth);
+    const hops = !Number.isFinite(depth) ? '—' : depth === 0 ? 'none: Obys can’t ask Obys' : `up to ${depth} hop${depth === 1 ? '' : 's'}`;
+    return `<div class="section-head"><h3>This Sphere</h3><span class="link">${S.admin ? 'Yours to change in Policy' : 'Set by its admins, for everyone in it'}</span></div>
+      <div class="rules">
+        <div class="rule"><span>Message contents</span><span>${pol.sealed ? 'sealed end to end' : 'readable by the relay'}</span></div>
+        <div class="rule"><span>Largest file</span><span>${pol.maxFileBytes ? esc(size(pol.maxFileBytes)) : '—'}</span></div>
+        <div class="rule"><span>Agents asking agents</span><span>${esc(hops)}</span></div>
+      </div>`;
   }
 
   // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
@@ -1565,13 +1822,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const list = S.pending || [];
     if (!list.length) return '';
     const risky = riskyReach(SET.settings);
-    return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">Your Oby answers none of these until you say so</span></div>` +
-      list.map((p) => `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
+    return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">${list.some((p) => p.kind === 'github') ? 'Nothing here happens until you say so' : 'Your Oby answers none of these until you say so'}</span></div>` +
+      list.map((p) => githubCardHtml(p) || `<div class="ask-card" data-pending="${esc(p.id)}">
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
-          <button class="modal-primary" data-decide="answer">Let my Oby answer</button>
+          <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : 'Let my Oby answer'}</button>
           ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
           <button class="set-button" data-decide="decline">Decline</button>
@@ -1645,6 +1902,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (!SET.settings) { el.innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'it can’t be read')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
       normalizeSettings(SET.settings);
       renderSettings();
+      githubLoad();
     } catch (e) {
       el.innerHTML = head('Settings', e.status === 404 ? 'This console’s rep.mjs is older than settings: update it to change them here.' : esc(e.message));
       return;
@@ -1675,6 +1933,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     s.machine.folders = Array.isArray(s.machine.folders) ? s.machine.folders : [];
     s.machine.web = s.machine.web || {};
     s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
+    if ('notify' in s) normalizeNotify(s); // an older rep.mjs has none, and refuses one
+    if (s.github !== undefined) s.github = githubNormal(s.github); // an older rep.mjs has none, and would refuse one
   }
 
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -1735,6 +1995,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function fieldWords(field) {
     if (!field) return '';
     const ks = dotted(field).split('.');
+    if (ks[0] === 'notify') return notifyFieldWords(ks);
     const where = [];
     const ri = ks.indexOf('rules');
     if (ks[0] === 'routing' && ri === 1 && /^\d+$/.test(ks[2] || '')) {
@@ -1745,6 +2006,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (ks[0] === 'access' && ks[1] === 'default') where.push('Obys you haven’t listed');
     else if (ks[0] === 'access' && ks[1] === 'agents' && ks[2]) where.push(`@${ks[2]}`);
     else if (ks[0] === 'machine' && ks[1] === 'folders' && /^\d+$/.test(ks[2] || '')) where.push(`folder ${Number(ks[2]) + 1}`);
+    else if (ks[0] === 'github') where.push('GitHub');
     const last = [...ks].reverse().find((k) => FIELD_WORDS[k] && !(k === 'rules' || /^\d+$/.test(k)));
     if (last && !(ks[0] === 'access' && ks[1] === 'agents')) where.push(FIELD_WORDS[last]);
     return where.length ? where.join(', ') + ':' : `${field}:`;
@@ -2043,7 +2305,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     return `<div class="route-field"><label class="route-label-sm" for="${id}">${label}</label><select class="set-select" id="${id}" data-k="${b}.when.${k}" data-t="tri"><option value=""${value == null ? ' selected' : ''}>Either</option><option value="true"${value === true ? ' selected' : ''}>${yes}</option><option value="false"${value === false ? ' selected' : ''}>${no}</option></select></div>`;
   }
   function channelNames(extra) {
-    const names = [...S.channels.keys()].sort((a, b) => (a === 'general' ? -1 : b === 'general' ? 1 : a.localeCompare(b)));
+    const names = [...S.channels.values()].filter((c) => c.kind !== 'dm').map((c) => c.name).sort((a, b) => (a === 'general' ? -1 : b === 'general' ? 1 : a.localeCompare(b)));
     if (extra && !names.includes(extra)) names.push(extra);
     return names;
   }
@@ -2279,7 +2541,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     clearTimeout(SET.undo?.timer);
     SET.undo = null; SET.tryKey = null;
     $('#page').innerHTML = `<div id="settings-root" class="set-root">` +
-      head('Settings', 'Your Oby’s, kept and enforced on this machine by rep.mjs. The Sphere sees only a short summary.', `<span class="saved-note" id="settings-state" role="status" aria-live="polite"></span>`) +
+      head('Settings', 'Your Oby, on this computer: kept and enforced here by rep.mjs. The Sphere sees only a short summary.', `<span class="saved-note" id="settings-state" role="status" aria-live="polite"></span>`) +
       `<p class="set-lead">Answers run on your own sign-ins: your plan’s usage, not per-token billing.</p>
        <div class="set-runtimes" data-part="runtimes" aria-label="Runtimes on this Mac">${runtimesHtml()}</div>
 
@@ -2291,13 +2553,20 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <div class="section-head"><h3>Who can ask your Oby, and what</h3></div>
        <div data-part="access">${accessHtml()}</div>
 
+       <div class="section-head"><h3>GitHub</h3><span class="link">Pull requests, through gh, as you</span></div>
+       <div data-part="github">${githubHtml()}</div>
+
        <div class="section-head"><h3>This computer: what your Oby may touch</h3></div>
        <div data-part="machine">${machineHtml()}</div>
+
+       <div class="section-head"><h3>Notifications</h3><span class="link">Made on this machine; the Sphere never sees them</span></div>
+       <div data-part="notify">${notifyHtml()}</div>
        <p class="note">Stored at <span class="mono">${pathHtml(SET.path)}</span>. Changes apply from the next ask.</p>
       </div>`;
     paintState();
     if (SET.error) markError(SET.error.field, SET.error.message);
     wireSettings();
+    wireNotify();
   }
 
   // replace one part's contents, keeping focus (and the caret) on the control that had it
@@ -2674,11 +2943,255 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     });
   }
 
+  // ---------------------------------------------------------------- notifications: Settings › Notifications, and this browser's
+  // rep.mjs makes every notification on this machine (only it can read sealed messages); this page
+  // shows the ones it records for the console (GET /local/notifications) while its tab is hidden.
+  const NOTIFY_EVENT_ROWS = [
+    ['waiting', 'Something waits for you', 'An ask your settings hold for you. It comes through in quiet hours too.'],
+    ['asked', 'An Oby asks yours', 'Every ask that comes to your Oby, declined ones too.'],
+    ['direct', 'A direct message to you', ''],
+    ['mention', 'You or your Oby are @mentioned', 'In a channel.'],
+    ['answered', 'Your ask got its answer', 'Or was declined, or couldn’t be answered.'],
+    ['failed', 'Your Oby couldn’t answer', 'Not signed in, an error, or settings that need fixing.'],
+  ];
+  const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'when to tell you', quiet: 'quiet hours' };
+  const NOTE = { last: null, mine: new Set(), base: '', off: false };
+  function notifyFieldWords(ks) { return `Notifications, ${NOTIFY_FIELD_WORDS[ks[1]] || ks[1] || 'the section'}:`; }
+  // a file without a notify section means the defaults: every way that needs no setup, every event
+  function normalizeNotify(s) {
+    const n = (s.notify = s.notify && typeof s.notify === 'object' ? s.notify : {});
+    for (const k of ['desktop', 'console', 'claude']) if (typeof n[k] !== 'boolean') n[k] = true;
+    n.phone = { url: null, content: 'summary', ...(n.phone && typeof n.phone === 'object' ? n.phone : {}) };
+    n.slack = { webhookUrl: null, content: 'summary', ...(n.slack && typeof n.slack === 'object' ? n.slack : {}) };
+    n.events = { ...Object.fromEntries(NOTIFY_EVENT_ROWS.map(([k]) => [k, true])), ...(n.events && typeof n.events === 'object' ? n.events : {}) };
+    n.quiet = { from: null, to: null, ...(n.quiet && typeof n.quiet === 'object' ? n.quiet : {}) };
+  }
+  function browserNotifyHtml() {
+    if (!('Notification' in window)) return 'This browser can’t show notifications.';
+    const p = Notification.permission;
+    if (p === 'granted') return 'Allowed in this browser.';
+    if (p === 'denied') return 'Blocked in this browser: allow notifications for this page in its site settings, then reload.';
+    return '<button type="button" class="set-button sm" data-notify-allow>Allow notifications in this browser</button>';
+  }
+  function notifyHtml() {
+    const n = SET.settings.notify;
+    if (!n) return '<p class="note">This console’s rep.mjs is older than notifications: update it to set them here.</p>';
+    const test = (way, on = true) => `<button type="button" class="set-button sm" data-notify-test="${way}"${on ? '' : ' disabled'}>Send a test</button>`;
+    const noteEl = (way) => `<div class="set-row-sub notify-note" data-notify-note="${way}" role="status" aria-live="polite"></div>`;
+    const sw = (way, title, sub) => {
+      const k = `notify.${way}`;
+      return `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div>${noteEl(way)}</div><div class="set-row-ctl">${test(way)}<button type="button" class="switch${n[way] ? ' is-on' : ''}" role="switch" aria-checked="${!!n[way]}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div></div>`;
+    };
+    const address = (way, k, title, sub, placeholder) => {
+      const v = getAt(SET.settings, k) || '';
+      const ck = `notify.${way}.content`;
+      const content = getAt(SET.settings, ck) || 'summary';
+      return `<div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div>${noteEl(way)}</div>
+        <div class="notify-url"><input class="set-field" id="${fid(k)}" data-k="${k}" data-t="nullable" data-notify-address="${way}" value="${esc(v)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false" inputmode="url">
+          <select class="set-select" id="${fid(ck)}" data-k="${ck}" aria-label="What ${esc(title)} shows"><option value="summary"${content === 'summary' ? ' selected' : ''}>Summary</option><option value="full"${content === 'full' ? ' selected' : ''}>Full text</option></select>
+          ${v ? `<button type="button" class="set-button" data-notify-clear="${k}" aria-label="Remove the ${esc(title)} address">Remove</button>` : ''}${test(way, !!v)}</div></div>`;
+    };
+    const ev = n.events || {};
+    return `<div class="set-group">
+        ${sw('desktop', 'On this computer', 'Your system’s own notifications (macOS, Linux or Windows). Nothing to set up.')}
+        ${sw('console', 'In this console', `While this page is open in a tab you aren’t looking at, and a count in the tab title while something waits. <span data-notify-browser>${browserNotifyHtml()}</span>`)}
+        ${sw('claude', 'In Claude Code', 'In your own Claude Code session, with the Obysphere channel (a research preview), and a summary when a session starts.')}
+      </div>
+      <div class="set-group">
+        ${address('phone', 'notify.phone.url', 'Your phone (ntfy)', 'An ntfy topic’s address, on ntfy.sh or your own server. The free ntfy app shows it; no account needed. Summary: who and what kind. Full: also the words, up to 600 characters. What waits for you comes at high priority.', 'https://ntfy.sh/your-topic')}
+        ${address('slack', 'notify.slack.webhookUrl', 'Slack', 'Your own incoming-webhook address. Summary: who and what kind, with a link to your console. Full: also the words, up to 600 characters.', 'https://hooks.slack.com/services/…')}
+      </div>
+      <div class="set-group">
+        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title" id="set-notify-events-l">Tell you when</div></div>
+          <div class="notify-events" role="group" aria-labelledby="set-notify-events-l" data-k-box="notify.events">${NOTIFY_EVENT_ROWS.map(([k, title, sub]) => `<label class="notify-event"><input type="checkbox" data-notify-event="${k}"${ev[k] !== false ? ' checked' : ''}><span><span>${title}</span>${sub ? `<span class="s">${sub}</span>` : ''}</span></label>`).join('')}</div></div>
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-notify-quiet-l">Quiet hours</div><div class="set-row-sub">Only what waits for you comes through. Leave both empty for none.</div></div>
+          <div class="set-row-ctl" role="group" aria-labelledby="set-notify-quiet-l"><label class="notify-time">From <input type="time" class="set-field" data-notify-quiet="from" data-k-box="notify.quiet.from" value="${esc(n.quiet?.from || '')}"></label><label class="notify-time">to <input type="time" class="set-field" data-notify-quiet="to" data-k-box="notify.quiet.to" value="${esc(n.quiet?.to || '')}"></label></div></div>
+      </div>`;
+  }
+  // the switches, the Summary/Full choices and the addresses go through the page's own handlers
+  // (data-k); the rest is here
+  function wireNotify() {
+    const box = part('notify');
+    if (!box) return;
+    box.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.dataset.notifyEvent) {
+        SET.settings.notify.events = { ...SET.settings.notify.events, [el.dataset.notifyEvent]: el.checked };
+        changed(true);
+      } else if (el.dataset.notifyQuiet) {
+        const [from, to] = ['from', 'to'].map((k) => box.querySelector(`[data-notify-quiet="${k}"]`));
+        [from, to].forEach(clearFieldError);
+        if (!!from.value !== !!to.value) return showFieldError(from.value ? to : from, 'Set both times, or neither.', false);
+        SET.settings.notify.quiet = { from: from.value || null, to: to.value || null };
+        changed(true);
+      }
+    });
+    box.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el.dataset.notifyAddress) return;
+      const t = box.querySelector(`[data-notify-test="${el.dataset.notifyAddress}"]`);
+      if (t) t.disabled = !el.value.trim();
+    });
+    // a masked address is replaced whole, never edited in the middle
+    box.addEventListener('focusin', (e) => { const el = e.target; if (el.dataset.notifyAddress && el.value.includes('…')) el.select(); });
+    box.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b || b.disabled) return;
+      if (b.dataset.notifyAllow !== undefined) {
+        try { await Notification.requestPermission(); } catch {}
+        const s = box.querySelector('[data-notify-browser]');
+        if (s) s.innerHTML = browserNotifyHtml();
+      } else if (b.dataset.notifyClear) {
+        setAt(SET.settings, b.dataset.notifyClear, null);
+        changed(true);
+        swap(box, notifyHtml());
+        box.querySelector(`[data-k="${CSS.escape(b.dataset.notifyClear)}"]`)?.focus();
+      } else if (b.dataset.notifyTest) notifyTest(b);
+    });
+  }
+  async function notifyTest(b) {
+    const way = b.dataset.notifyTest;
+    const out = part('notify')?.querySelector(`[data-notify-note="${way}"]`);
+    const say = (words, bad = false) => { if (out) { out.textContent = words; out.classList.toggle('is-problem', bad); } };
+    b.disabled = true;
+    say('Sending…');
+    try {
+      await flushSettings();
+      if (SET.error) return say('Fix the marked field first: the test uses your saved settings.', true);
+      const r = await local('POST', '/local/notify-test', { via: way });
+      const x = (r.results || []).find((y) => y.way === way) || { ok: false, note: 'no answer for this way' };
+      if (x.id) NOTE.mine.add(x.id);
+      if (way === 'console' && x.ok) {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return say('Allow notifications in this browser first.', true);
+        try { new Notification('A test from your Obysphere', { body: 'Notifications from this console reach you in this browser.', icon: '/favicon.svg', tag: x.id || 'test' }); } catch {}
+        return say('Shown in this browser.');
+      }
+      say(sentence(x.ok === null ? `not sent: ${x.note}` : x.note), x.ok === false);
+    } catch (e) {
+      say(e.status === 404 ? 'This rep.mjs can’t send tests yet: update it.' : e.message, true);
+    } finally {
+      b.disabled = false;
+    }
+  }
+  // the count in the tab title while something waits, and a notification for what rep.mjs records
+  // for the console while you look elsewhere
+  function startNotifications() {
+    NOTE.base = document.title;
+    const tick = async () => {
+      const n = (S.pending || []).length;
+      const title = n ? `(${n}) ${NOTE.base}` : NOTE.base;
+      if (document.title !== title) document.title = title;
+      if (NOTE.off) return;
+      try {
+        const r = await local('GET', `/local/notifications${NOTE.last ? `?after=${encodeURIComponent(NOTE.last)}` : ''}`);
+        const fresh = NOTE.last === null ? [] : r.notifications || [];
+        NOTE.last = r.last || NOTE.last || '';
+        fresh.forEach(showNotification);
+      } catch (e) { if (e.status === 404) NOTE.off = true; }
+    };
+    tick();
+    setInterval(tick, 3000);
+  }
+  function showNotification(e) {
+    if (!e.console || e.quiet || NOTE.mine.has(e.id) || !document.hidden) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(e.title, { body: String(e.body || '').slice(0, 180), tag: e.id, icon: '/favicon.svg' });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+        if ((e.type === 'direct' || e.type === 'mention') && e.channel && S.channels.has(e.channel)) { if (S.mode !== 'conversation') setMode('conversation'); switchTo(e.channel); }
+        else setPage('you');
+      };
+    } catch {}
+  }
+
+  // ---------------------------------------------------------------- GitHub (Settings › GitHub, and GitHub items in Waiting for you)
+  // rep.mjs keeps and enforces settings.github; this page shows gh's sign-in (/local/github) and lets you
+  // choose, per action, Never, Ask me first, or On its own for Obys you trust.
+  const GH_DEFAULTS = { enabled: false, repos: [], read: true, comment: 'ask', requestChanges: 'ask', approve: 'ask', merge: 'never', push: 'never', protected: ['main', 'master', 'release/*'], signature: true };
+  const GH_LEVEL_WORDS = { never: 'Never', ask: 'Ask me first', trusted: 'On its own for Obys you trust' };
+  Object.assign(FIELD_WORDS, { enabled: 'on or off', repos: 'repositories', read: 'reading pull requests', comment: 'comments', requestChanges: 'requests for changes', approve: 'approvals', merge: 'merging', push: 'pushing', protected: 'protected branches', signature: 'signature' });
+  function githubNormal(g) {
+    const o = g && typeof g === 'object' && !Array.isArray(g) ? g : {};
+    return { ...GH_DEFAULTS, ...o, repos: Array.isArray(o.repos) ? o.repos : [], protected: Array.isArray(o.protected) ? o.protected : [...GH_DEFAULTS.protected] };
+  }
+  const ghCmd = (c) => `<div class="set-cmd"><code class="mono">${esc(c)}</code><button class="set-button sm" data-copy="${esc(c)}" aria-label="Copy: ${esc(c)}">Copy</button></div>`;
+  function githubStatusHtml() {
+    const st = SET.github;
+    if (!st) return SET.githubFailed ? 'Couldn’t check gh on this Mac.' : 'Checking gh…';
+    const gh = st.gh || {};
+    if (!gh.installed) return /^https:\/\//.test(gh.install || '') ? `gh, GitHub’s command line, isn’t installed. Install it from <a href="${esc(gh.install)}" target="_blank" rel="noopener noreferrer">${esc(gh.install.replace(/^https:\/\//, ''))}</a>.` : `gh, GitHub’s command line, isn’t installed. Install it in Terminal:${ghCmd(gh.install || 'brew install gh')}`;
+    if (gh.signedIn === true) return `<span class="status"><span class="status-dot is-online"></span></span> Signed in to GitHub${gh.login ? ` as ${esc(gh.login)}` : ''}${gh.version ? ` · gh ${esc(gh.version)}` : ''}. Your Oby acts with this sign-in.`;
+    if (gh.signedIn === false) return `gh isn’t signed in. Sign in in Terminal:${ghCmd(gh.signIn || 'gh auth login')}`;
+    return `Couldn’t tell whether gh is signed in. To sign in, in Terminal:${ghCmd('gh auth login')}`;
+  }
+  function githubFoldersHtml() {
+    const list = SET.github?.folderRepos;
+    if (!list) return '';
+    return list.length ? `Also allowed, from your folders: ${list.map(esc).join(', ')}.` : 'None of your folders has a GitHub remote.';
+  }
+  async function githubLoad() {
+    SET.github = null; SET.githubFailed = false;
+    let st = null;
+    try { st = await local('GET', '/local/github'); } catch {}
+    SET.github = st; SET.githubFailed = !st;
+    swap(part('github-status'), githubStatusHtml());
+    swap(part('github-folders'), githubFoldersHtml());
+  }
+  function githubHtml() {
+    const g = SET.settings.github;
+    if (!g) return '<p class="note">No GitHub settings here: this console’s rep.mjs is older than them (update it), or your settings file needs fixing first.</p>';
+    const who = CONSOLE?.owner || 'you';
+    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div></div><button type="button" class="switch${on ? ' is-on' : ''}" role="switch" aria-checked="${on}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div>`;
+    const pick = (k, levels, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div></div><div class="set-row-ctl"><select class="set-select" id="${fid(k)}" data-k="${k}">${levels.map((v) => `<option value="${v}"${getAt(SET.settings, k) === v ? ' selected' : ''}>${GH_LEVEL_WORDS[v]}</option>`).join('')}</select></div></div>`;
+    const text = (k, title, sub, placeholder) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div></div><div class="set-row-ctl"><input class="set-field set-text" id="${fid(k)}" data-k="${k}" data-t="list" value="${esc((getAt(SET.settings, k) || []).join(', '))}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false"></div></div>`;
+    const levels = ['never', 'ask', 'trusted'];
+    return `<div class="set-group">
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title">gh on this Mac</div><div class="set-row-sub" data-part="github-status">${githubStatusHtml()}</div></div></div>
+        ${sw('github.enabled', !!g.enabled, 'Let your Oby work on GitHub', 'It reads pull requests, and reviews, comments or merges as you, as far as the choices below allow. Off: it has no GitHub tools.')}
+      </div>
+      <div class="set-group">
+        ${text('github.repos', 'Repositories', `owner/name, separated by commas; owner/* for all of an owner’s. <span class="gh-repos" data-part="github-folders">${githubFoldersHtml()}</span>`, 'octo-org/*, octo-org/octo-repo')}
+        ${sw('github.read', g.read !== false, 'Read pull requests', 'Title, files, diff, checks, reviews and comments.')}
+        ${pick('github.approve', levels, 'Approve', 'On its own: only when an Oby you trust asks for itself. Anyone else’s ask waits for you.')}
+        ${pick('github.requestChanges', levels, 'Request changes', 'A review that asks for changes.')}
+        ${pick('github.comment', levels, 'Comment', 'Comments, and reviews that only comment.')}
+        ${pick('github.merge', ['never', 'ask'], 'Merge', 'Only the commit your Oby read, and never on its own.')}
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title">Push</div><div class="set-row-sub">Never through your Oby. While GitHub is on, its shell can’t run git push or gh.</div></div></div>
+        ${text('github.protected', 'Protected branches', 'Its shell never pushes to these, GitHub on or off. release/* covers every release branch.', 'main, master, release/*')}
+        ${sw('github.signature', g.signature !== false, 'Sign what it posts', `Ends each review and comment with “— written by ${esc(who)}’s Oby”, and “approved by ${esc(who)}” when you clicked.`)}
+      </div>`;
+  }
+  // an item in Waiting for you: the pull request, what your Oby would post, and your choice
+  function githubCardHtml(p) {
+    if (p?.kind !== 'github' || !p.github) return '';
+    const g = p.github;
+    const ref = `${g.repo}#${g.number}`;
+    const url = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(g.url || '') ? g.url : null;
+    const opts = Array.isArray(p.options) ? p.options : ['act', 'decline'];
+    const what = g.action === 'merge' ? 'merge' : g.action === 'comment' ? 'comment on' : { APPROVE: 'approve', REQUEST_CHANGES: 'request changes on', COMMENT: 'post a review on' }[g.event] || 'act on';
+    const pr = [g.title && esc(g.title), g.author && `by @${esc(g.author)}`, g.base && `into ${esc(g.base)}`, g.head && `at <span class="mono">${esc(String(g.head).slice(0, 7))}</span>`, g.action === 'merge' && esc(g.method || 'merge')].filter(Boolean).join(' · ');
+    return `<div class="ask-card" data-pending="${esc(p.id)}">
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">for @${esc(p.from?.name || '?')}’s ask · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
+        ${pr ? `<div class="gh-pr">${pr}</div>` : ''}
+        ${p.text ? `<div class="q">${esc(p.text)}</div>` : g.action === 'review' ? '<div class="gh-quiet">No words: an approval on its own.</div>' : ''}
+        ${p.signed ? `<div class="gh-quiet">Signed “${esc(p.signed)}”.</div>` : ''}
+        <div class="ask-actions">
+          <button class="modal-primary" data-decide="act">${esc(g.button || 'Do it on GitHub')}</button>
+          ${opts.includes('comment') ? '<button class="set-button" data-decide="comment">Post as a comment instead</button>' : ''}
+          <button class="set-button" data-decide="decline">Don’t</button>
+          <span class="saved-note" data-note></span>
+        </div>
+      </div>`;
+  }
+
   function wirePage() {
     const el = $('#page');
     wirePending();
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
+    el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } setTimeout(() => (b.textContent = 'Copy'), 1400); }));
     el.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.filter; renderPage(false); }));
     el.querySelector('[data-export]')?.addEventListener('click', exportAudit);
     el.querySelectorAll('[data-suspend]').forEach((b) => (b.onclick = () => admin(() => apiPost(`/api/admin/agents/${b.dataset.suspend}/suspend`, { suspended: b.dataset.to === '1' }), 'member-problem')));
@@ -2697,15 +3210,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (!CONSOLE) { store.set('obysphere.key', r.key); S.key = r.key; }
       note('policy-note', `New invite link: ${link}`);
     }, 'policy-note'));
-    el.querySelector('[data-admin-form]')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const k = e.target.k.value.trim();
-      if (!k) return;
-      S.adminKey = k;
-      try { await api('/api/admin/check'); session.set('obysphere.admin', k); S.admin = true; renderPage(false); }
-      catch { S.adminKey = null; note('policy-note', 'That isn’t this Sphere’s admin key.', true); }
-    });
-    el.querySelector('[data-forget-admin]')?.addEventListener('click', () => { session.set('obysphere.admin', null); S.adminKey = null; S.admin = false; renderPage(false); });
+    el.querySelectorAll('[data-role]').forEach((b) => (b.onclick = () => {
+      const a = agent(b.dataset.role);
+      const on = b.dataset.to === '1';
+      if (!on && isMe(a) && !confirm('Step down as an admin? To come back you’d need another admin, or the admin key.')) return;
+      admin(async () => { const r = await apiPost(`/api/admin/agents/${a.id}/role`, { admin: on }); if (r.agent) upsertAgent(r.agent); renderNav(); renderPage(false); }, 'admins-problem');
+    }));
   }
   function applyPolicy(r) {
     if (r?.policy) { S.sphere.policy = r.policy; if ('paused' in r.policy) S.sphere.paused = r.policy.paused; }
@@ -2715,6 +3225,129 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   async function admin(fn, noteId) {
     try { await fn(); } catch (e) { note(noteId, e.message, true); }
+  }
+
+  // ===== admin roles: who you are (top right), Admin access…, Admin sign-in (a browser with no member)
+  const ADMIN_PAGES = ['policy', 'admins'];
+  // an agent id as the relay makes them: admin buttons put it in markup and in a request path,
+  // so an id that isn't one (a relay that sends `"` or `/../`) gets no button at all
+  function agentIdOk(id) {
+    return typeof id === 'string' && /^a_[A-Za-z0-9_-]{1,32}$/.test(id);
+  }
+  // in your console, you're an admin while your Oby holds the role (and isn't suspended);
+  // in a browser with the admin key, the key decides
+  function adminFromMe() {
+    if (S.adminKey || !S.me) return;
+    const me = S.agents.get(S.me.id);
+    const now = !!(me && me.admin && !me.suspended && !me.removed);
+    if (now === S.admin) return;
+    S.admin = now;
+    renderAccount();
+    if (!now && ADMIN_PAGES.includes(S.page) && S.mode === 'console') setPage('overview');
+  }
+  function renderAccount() {
+    const el = document.getElementById('bar-account');
+    if (!el) return;
+    if (!(CONSOLE && S.me)) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="account"><button class="account-button" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-label="You: ${esc(S.me.owner)}" title="You: ${esc(S.me.owner)}">${avatar(S.me, 26, false)}</button></div>`;
+    $('#account-button').onclick = (e) => { e.stopPropagation(); toggleAccount(); };
+  }
+  function toggleAccount(open) {
+    const box = document.querySelector('#bar-account .account');
+    if (!box) return;
+    const menu = box.querySelector('.account-menu');
+    const btn = $('#account-button');
+    if (menu) { if (open !== true) { menu.remove(); btn.setAttribute('aria-expanded', 'false'); } return; }
+    if (open === false) return;
+    const it = (k, icon, label) => `<button role="menuitem" data-acc="${k}">${icon}<span class="t">${label}</span></button>`;
+    box.insertAdjacentHTML('beforeend', `<div class="account-menu" role="menu">
+        <div class="account-who"><b>${esc(S.me.owner)}</b><span>@${esc(S.me.name)} · ${S.admin ? 'an admin of this Sphere' : 'a member of this Sphere'}</span></div>
+        <div class="add-sep"></div>
+        ${it('you', obyFace(16), 'Your Oby')}
+        ${it('settings', navIcon(ICON_GEAR, 16), 'Settings')}
+        <div class="add-sep"></div>
+        ${S.admin ? it('policy', navIcon(ICON_SHIELD, 16), 'Policy') + it('admins', navIcon(ICON_ADMINS, 16), 'Admins') : it('claim', navIcon(ICON_KEY, 16), 'Admin access…')}
+      </div>`);
+    btn.setAttribute('aria-expanded', 'true');
+    box.querySelectorAll('[data-acc]').forEach((b) => (b.onclick = () => {
+      toggleAccount(false);
+      if (b.dataset.acc === 'claim') openAdmin('claim');
+      else setPage(b.dataset.acc);
+    }));
+    box.querySelector('[data-acc]')?.focus();
+  }
+  function navFoot() {
+    if (CONSOLE) return '';
+    return S.adminKey
+      ? `<button class="connector nav-foot" data-admin-signout>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-out</span></button>`
+      : `<button class="connector nav-foot" data-admin-signin>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-in</span></button>`;
+  }
+  // claim: your console, your Oby becomes an admin (the key goes once, isn't stored).
+  // signin: a browser with no member keeps the key in this tab (sessionStorage), as before.
+  function openAdmin(mode) {
+    const m = $('#admin-modal');
+    m.dataset.mode = mode;
+    const claim = mode === 'claim';
+    $('#adm-title').textContent = claim ? 'Admin access' : 'Admin sign-in';
+    $('#adm-line').textContent = claim
+      ? 'Enter this Sphere’s admin key once to make your Oby an admin. The key isn’t stored.'
+      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this tab only, and forgotten when you close it.';
+    $('#adm-go').textContent = claim ? 'Make my Oby an admin' : 'Sign in';
+    $('#adm-note').textContent = claim
+      ? 'It goes to the Sphere once, through your console on this machine, and the audit log records the claim. From then on your Oby’s own sign-in is enough. In a terminal: rep.mjs admin claim.'
+      : 'A member can instead make their own Oby an admin from their console (Admin access…), so the key needn’t be in a browser at all.';
+    $('#adm-error').hidden = true;
+    $('#adm-key').value = '';
+    m.hidden = false;
+    $('#adm-key').focus();
+  }
+  async function submitAdmin() {
+    const mode = $('#admin-modal').dataset.mode;
+    const input = $('#adm-key');
+    const k = input.value.trim();
+    if (!k) return input.focus();
+    const go = $('#adm-go');
+    const bad = (t) => { $('#adm-error').textContent = t; $('#adm-error').hidden = false; };
+    $('#adm-error').hidden = true;
+    go.disabled = true;
+    try {
+      if (mode === 'claim') {
+        const r = await fetch('/api/admin/claim', { method: 'POST', headers: { ...headers({ 'content-type': 'application/json' }), 'x-admin-key': k }, body: '{}' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : j.error || `It didn’t work (HTTP ${r.status}).`);
+        if (j.agent) upsertAgent(j.agent);
+        S.admin = true;
+      } else {
+        // checked on its own first: until it's known to be right, no other call (the stream, the
+        // stats) carries it, so a typo neither counts again nor closes this page's stream
+        const r = await fetch('/api/admin/check', { headers: { ...headers(), 'x-admin-key': k } });
+        if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : r.status === 429 ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
+        S.adminKey = k;
+        session.set('obysphere.admin', k);
+        S.admin = true;
+      }
+      input.value = '';
+      closeModal($('#admin-modal'));
+      renderAccount();
+      setPage('policy');
+    } catch (e) {
+      bad(`Couldn’t reach the Sphere: ${e.message}`);
+    } finally {
+      go.disabled = false;
+    }
+  }
+  function adminSignOut() {
+    session.set('obysphere.admin', null);
+    S.adminKey = null;
+    S.admin = false;
+    if (ADMIN_PAGES.includes(S.page)) S.page = 'overview';
+    renderAll();
+    syncHash();
+  }
+  function wireAdmin() {
+    $('#adm-go').onclick = submitAdmin;
+    $('#adm-key').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submitAdmin(); } };
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('#bar-account')) toggleAccount(false); });
   }
   function note(id, text, bad) {
     const n = document.getElementById(id);
@@ -2733,53 +3366,347 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // ---------------------------------------------------------------- conversation: channels, direct messages, bots
+  // A channel is public, private (its members only) or a direct conversation between two Obys
+  // (kind dm). The relay sends each viewer only the ones it may see. Unread counts start from
+  // what this browser last read in each one (localStorage: a convenience, never needed).
+  const R = { read: {}, timer: null, chTimer: null };
+  const chOf = (name) => S.channels.get(name) || { name, kind: String(name).startsWith('dm-') ? 'dm' : 'public', topic: '', members: [] };
+  const isClosed = (c) => c.kind === 'private' || c.kind === 'dm';
+  const inCh = (c, a = S.me) => !!a && (c.members || []).includes(a.id);
+  const dmPeer = (c) => { const id = (c.members || []).find((x) => !S.me || x !== S.me.id); return id ? agent(id) : null; };
+  const dmWith = (a) => [...S.channels.values()].find((c) => c.kind === 'dm' && inCh(c) && inCh(c, a)) || null;
+  const byName = (n) => members().find((a) => a.name === n) || null;
+  const label = (a) => (a.bot ? a.name : ownerName(a)); // a bot goes by its handle: no person behind it
+  const unreadHtml = (n) => (n ? `<span class="unread-count" aria-label="${n} new">${n > 99 ? '99+' : n}</span>` : '');
+  const plusIcon = () => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>';
+  // a channel's name for people: a direct conversation is the other person
+  function channelTitle(name) {
+    const c = chOf(name);
+    if (c.kind !== 'dm') return c.name;
+    if (inCh(c)) return dmPeer(c) ? label(dmPeer(c)) : 'Direct';
+    return (c.members || []).map((id) => label(agent(id))).join(' and ') || 'Direct';
+  }
+  // where something was said, in words: "#design", or "directly"
+  const where = (name) => (chOf(name).kind === 'dm' ? 'directly' : `#${name}`);
+  function postTo(m) {
+    const c = chOf(m.channel);
+    if (c.kind !== 'dm') return `#${c.name}`;
+    const other = (c.members || []).find((id) => id !== m.from);
+    return other ? `${label(agent(other))}, directly` : 'a direct conversation';
+  }
+
+  function initConversations() {
+    try { R.read = JSON.parse(store.get('obysphere.read') || '{}') || {}; } catch { R.read = {}; }
+    const fresh = !Object.keys(R.read).length;
+    const last = {};
+    for (const m of S.messages) last[m.channel] = m.ts;
+    for (const name of new Set([...S.channels.keys(), ...Object.keys(last)])) {
+      if (fresh) { if (last[name]) R.read[name] = last[name]; continue; } // a first visit starts with nothing new
+      const since = R.read[name] || '';
+      S.unread[name] = S.messages.filter((m) => m.channel === name && m.ts > since && countsAsNew(m)).length;
+    }
+    if (fresh) saveRead();
+    if (!S.channels.has(S.current)) S.current = 'general';
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || S.mode !== 'conversation') return;
+      const list = S.messages.filter((m) => m.channel === S.current);
+      if (list.length) markRead(S.current, list[list.length - 1].ts);
+      renderChannels();
+      renderMembers();
+    });
+  }
+  const countsAsNew = (m) => m.kind !== 'system' && !(S.me && m.from === S.me.id);
+  function saveRead() {
+    clearTimeout(R.timer);
+    R.timer = setTimeout(() => store.set('obysphere.read', JSON.stringify(R.read)), 400);
+  }
+  function markRead(name, ts) {
+    S.unread[name] = 0;
+    if (!ts || (R.read[name] && R.read[name] >= ts)) return;
+    R.read[name] = ts;
+    saveRead();
+  }
+  function noteUnread(m) {
+    if (!countsAsNew(m)) return;
+    if (S.mode === 'conversation' && m.channel === S.current && !document.hidden) return markRead(m.channel, m.ts);
+    S.unread[m.channel] = (S.unread[m.channel] || 0) + 1;
+  }
+
+  function setChannels(list) {
+    S.channels = new Map((list || []).filter(okChannel).map((c) => [c.name, c]));
+    if (!S.channels.has(S.current)) { S.current = 'general'; if (S.mode === 'conversation') { renderTrail(); renderFeed(); syncHash(); } }
+  }
+  function refreshConv() {
+    if (S.mode !== 'conversation') return;
+    renderChannels();
+    renderMembers();
+    renderHead();
+    renderTo();
+  }
+  // a message in a channel this page hasn't heard of: ask the relay about it
+  function unknownChannel(name) {
+    S.channels.set(name, chOf(name));
+    clearTimeout(R.chTimer);
+    R.chTimer = setTimeout(async () => { try { setChannels((await api('/api/channels')).channels); refreshConv(); } catch {} }, 300);
+  }
+  function onChannel(c) {
+    if (!okChannel(c)) return;
+    const prev = S.channels.get(c.name);
+    if (S.me && isClosed(c) && !inCh(c) && prev && inCh(prev)) {
+      // you left it, or were taken out of it
+      S.channels.delete(c.name);
+      if (S.current === c.name) { S.current = 'general'; if (S.mode === 'conversation') { renderAll(); syncHash(); } return; }
+    } else S.channels.set(c.name, c);
+    if (c.name === S.current && S.mode === 'conversation') renderTrail();
+    refreshConv();
+  }
+
   // ---------------------------------------------------------------- conversation: side panel
   function renderChannels() {
-    const list = [...S.channels.values()].sort((a, b) => (a.name === 'general' ? -1 : b.name === 'general' ? 1 : a.name.localeCompare(b.name)));
-    $('#channels').innerHTML = list
-      .map((c) => `<button class="connector${c.name === S.current ? ' is-active' : ''}" data-ch="${esc(c.name)}" title="${esc(c.topic || '')}"><span class="channel-hash">#</span><span class="connector-name">${esc(c.name)}</span>${S.unread[c.name] ? '<span class="unread-dot" aria-label="New"></span>' : ''}</button>`)
-      .join('');
-    $('#channels').querySelectorAll('button').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    const list = [...S.channels.values()].filter((c) => c.kind !== 'dm').sort((a, b) => (a.name === 'general' ? -1 : b.name === 'general' ? 1 : a.name.localeCompare(b.name)));
+    $('#channels').innerHTML =
+      list
+        .map((c) => {
+          const n = S.unread[c.name] || 0;
+          return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="${esc(c.topic || (c.kind === 'private' ? 'Private: only its members see it' : ''))}"><span class="channel-hash">${c.kind === 'private' ? lock(13) : '#'}</span><span class="connector-name">${esc(c.name)}</span>${unreadHtml(n)}</button>`;
+        })
+        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : '');
+    $('#channels').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    $('#channels').querySelector('[data-new-channel]')?.addEventListener('click', openChannelModal);
   }
   function switchTo(ch) {
     S.current = ch;
     S.unread[ch] = 0;
+    C.to = null;
+    C.just = false;
+    closeAdd();
     $('#side').classList.remove('is-open');
     renderTrail();
     renderChannels();
+    renderMembers();
+    renderHead();
     renderFeed();
     renderLive();
     renderTo();
     syncHash();
   }
+  // people (your direct conversations with them, when you have a console), then bots
   function renderMembers() {
-    const all = members().sort((a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    const all = members();
     const online = all.filter((a) => a.online).length;
     $('#sphere-count').textContent = `${all.length} ${all.length === 1 ? 'Oby' : 'Obys'} · ${online} online`;
-    $('#members').innerHTML = all
-      .map((a) => {
-        const st = a.suspended ? 'suspended' : stateOf(a);
-        const where = st === 'working' ? `working on ${ownerName(a)}'s machine` : st === 'online' ? 'online, answers on its owner\'s machine' : st;
-        return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}" data-member="${a.id}" title="${esc(a.about || '')}">
-            ${picture(a, 22)}
-            <span class="connector-name">${esc(ownerName(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
-            <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
-          </button>
-          <div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
-            ${a.about ? `<div>${esc(a.about)}</div>` : ''}
-            <div>@${esc(a.name)} · ${esc(a.owner)} · ${esc(a.runtime || 'claude code')}</div>
-            <div>${esc(where)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
-          </div>`;
-      })
-      .join('');
-    $('#members').querySelectorAll('[data-member]').forEach((b) => {
-      b.onclick = () => {
-        const a = S.agents.get(b.dataset.member);
-        if (S.me && !isMe(a)) { C.to = a.name; renderTo(); $('#text').focus(); $('#side').classList.remove('is-open'); return; }
-        S.open.has(a.id) ? S.open.delete(a.id) : S.open.add(a.id);
-        renderMembers();
-      };
+    const order = (a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || label(a).localeCompare(label(b));
+    const shown = all.filter((a) => !(S.me && isMe(a))).sort(order);
+    const people = shown.filter((a) => !a.bot);
+    const bots = shown.filter((a) => a.bot);
+    // an admin also sees other people's direct conversations
+    const theirs = [...S.channels.values()].filter((c) => c.kind === 'dm' && !inCh(c));
+    $('#people-head').textContent = S.me ? 'Direct messages' : 'Members';
+    $('#members').innerHTML = people.map(memberRow).join('') + theirs.map(theirDmRow).join('');
+    $('#bots-head').hidden = !bots.length;
+    $('#bots').innerHTML = bots.map(memberRow).join('');
+    for (const box of [$('#members'), $('#bots')]) {
+      box.querySelectorAll('[data-member]').forEach((b) => {
+        b.onclick = () => {
+          const a = S.agents.get(b.dataset.member);
+          if (!a) return;
+          if (S.me && !isMe(a)) return openDm(a);
+          S.open.has(a.id) ? S.open.delete(a.id) : S.open.add(a.id);
+          renderMembers();
+        };
+      });
+      box.querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    }
+  }
+  function memberRow(a) {
+    const st = a.suspended ? 'suspended' : stateOf(a);
+    const doing = st === 'working' ? `working on ${ownerName(a)}'s machine` : st === 'online' ? 'online, answers on its owner\'s machine' : st;
+    const c = S.me ? dmWith(a) : null;
+    const n = c ? S.unread[c.name] || 0 : 0;
+    const active = !!c && c.name === S.current;
+    const title = S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '';
+    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}" title="${esc(title)}">
+        ${picture(a, 22)}
+        <span class="connector-name">${esc(label(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
+        ${unreadHtml(n)}
+        <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
+      </button>` +
+      (S.me ? '' : `<div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
+        ${a.about ? `<div>${esc(a.about)}</div>` : ''}
+        <div>@${esc(a.name)} · ${esc(a.owner)} · ${esc(a.runtime || 'claude code')}${a.bot ? ' · a bot' : ''}</div>
+        <div>${esc(doing)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
+      </div>`);
+  }
+  function theirDmRow(c) {
+    const n = S.unread[c.name] || 0;
+    return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="A direct conversation"><span class="avatar-stack">${(c.members || []).slice(0, 2).map((id) => avatar(agent(id), 18, false)).join('')}</span><span class="connector-name">${esc(channelTitle(c.name))}</span>${unreadHtml(n)}</button>`;
+  }
+  // your direct conversation with someone: made on the relay the first time
+  async function openDm(a) {
+    let c = dmWith(a);
+    if (!c) {
+      try {
+        c = (await apiPost('/api/dm', { with: a.id })).channel;
+      } catch (e) {
+        problem(`Couldn’t open a conversation with ${label(a)}: ${e.message}`);
+        return;
+      }
+      if (!okChannel(c)) return;
+      S.channels.set(c.name, c);
+    }
+    switchTo(c.name);
+    document.getElementById('text')?.focus();
+  }
+
+  // ---------------------------------------------------------------- conversation: the channel's header
+  function renderHead() {
+    const el = document.getElementById('conv-head');
+    if (!el) return;
+    const c = chOf(S.current);
+    const sealed = !!S.sphere.policy?.sealed;
+    const stack = (ids, btn) => {
+      const list = ids.map(agent).filter((a) => !a.removed);
+      if (!list.length) return '';
+      const shown = list.slice(0, 5);
+      const inner = shown.map((a, i) => avatar(a, 22, i === shown.length - 1)).join('') + (list.length > 5 ? `<span class="avatar-more">+${list.length - 5}</span>` : '');
+      const title = `In it: ${list.map(label).join(', ')}`;
+      return btn ? `<button type="button" class="avatar-stack" data-ch-people title="${esc(title)}" aria-label="${esc(title)}">${inner}</button>` : `<span class="avatar-stack" title="${esc(title)}">${inner}</span>`;
+    };
+    let topic;
+    let tools = '';
+    if (c.kind === 'dm') {
+      const o = inCh(c) ? dmPeer(c) : null;
+      topic = o
+        ? o.bot ? `Your conversation with <b>${esc(o.name)}</b>, a bot: no person behind it.` : `Your conversation with <b>${esc(ownerName(o))}</b> and their Oby.`
+        : `A direct conversation between ${esc(channelTitle(c.name))}.`;
+      if (sealed) topic += o ? ' Sealed for the two of you.' : ' Sealed for the two of them.';
+      tools = stack(c.members || [], false);
+    } else {
+      const mine = inCh(c);
+      const adminHere = !S.me && !!S.adminKey;
+      topic = c.topic ? esc(c.topic) : c.kind === 'private' ? 'Private: only the people and Obys in it see it.' : c.name === 'general' ? 'Where everyone in the Sphere meets.' : 'Anyone in the Sphere can read it and post in it.';
+      if (c.kind === 'private' && !c.topic && sealed) topic += ' What’s said here is sealed for them.';
+      // #general is everyone's: nobody is added to it or leaves it
+      const everyone = c.kind === 'public' && c.name === 'general';
+      const canAdd = !everyone && (c.kind === 'private' ? mine || adminHere : !!S.me || adminHere);
+      tools = stack(c.members || [], true);
+      if (canAdd) tools += `<button type="button" class="set-button sm" data-ch-add>Add people or Obys</button>`;
+      if (S.me && mine) tools += `<button type="button" class="set-button sm" data-ch-leave>Leave</button>`;
+      else if (S.me && c.kind === 'public' && !everyone) tools += `<button type="button" class="set-button sm" data-ch-join>Join</button>`;
+    }
+    el.innerHTML = `<div class="conv-head-in"><p class="conv-topic">${topic}</p>${tools ? `<div class="conv-tools">${tools}</div>` : ''}</div>`;
+    el.hidden = false;
+    el.querySelector('[data-ch-people]')?.addEventListener('click', () => openMembersModal(c.name));
+    el.querySelector('[data-ch-add]')?.addEventListener('click', () => openMembersModal(c.name));
+    el.querySelector('[data-ch-join]')?.addEventListener('click', () => channelCall(c.name, 'join').catch(() => {}));
+    el.querySelector('[data-ch-leave]')?.addEventListener('click', () => {
+      if (c.kind === 'private' && !confirm(`Leave #${c.name}? It’s private: one of its members would have to add you again.`)) return;
+      channelCall(c.name, 'leave').catch(() => {});
     });
+  }
+  async function channelCall(name, what, body) {
+    try {
+      const r = await apiPost(`/api/channels/${encodeURIComponent(name)}/${what}`, body);
+      // left a private channel: the relay doesn't show it any more, so it's gone here too
+      onChannel(r.channel || { ...chOf(name), members: (chOf(name).members || []).filter((id) => id !== S.me?.id) });
+      return r;
+    } catch (e) {
+      problem(e.message);
+      throw e;
+    }
+  }
+
+  // ---------------------------------------------------------------- conversation: a new channel, and who is in one
+  const pickChip = (a) => `<button type="button" data-pick="${esc(a.id)}" aria-pressed="false">${avatar(a, 22, false)}<span>${esc(label(a))}</span>${a.bot ? '<span class="away">bot</span>' : ''}</button>`;
+  function wirePicks(box) {
+    box?.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { const on = !b.classList.contains('is-on'); b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); }));
+  }
+  const picked = (box) => [...(box?.querySelectorAll('[data-pick].is-on') || [])].map((b) => b.dataset.pick);
+  function chProblem(text) {
+    const n = $('#ch-problem');
+    n.textContent = text;
+    n.hidden = !text;
+  }
+  function openChannelModal() {
+    if (!S.me) return;
+    const rest = members().filter((a) => !isMe(a)).sort((a, b) => (a.bot - b.bot) || label(a).localeCompare(label(b)));
+    $('#ch-title').textContent = 'New channel';
+    $('#ch-slot').innerHTML = `
+      <label class="modal-label" for="ch-name">Name</label>
+      <input class="set-field" id="ch-name" placeholder="design-review" autocomplete="off" spellcheck="false" maxlength="32">
+      <label class="modal-label" for="ch-topic">Topic <span class="route-help">(optional)</span></label>
+      <input class="set-field" id="ch-topic" placeholder="What it’s for" autocomplete="off" maxlength="200">
+      <div class="set-row ch-private"><div class="set-row-text"><div class="set-row-title" id="ch-private-l">Private</div><div class="set-row-sub" id="ch-private-sub"></div></div><button type="button" class="switch" role="switch" aria-checked="false" id="ch-private" aria-labelledby="ch-private-l"></button></div>
+      <span class="modal-label">People and Obys</span>
+      ${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">No one else is in the Sphere yet.</p>'}
+      <p class="note is-problem" id="ch-problem" hidden></p>
+      <div class="modal-actions"><button type="button" class="modal-primary" id="ch-create">Create channel</button></div>`;
+    const sw = $('#ch-private');
+    const sub = () => {
+      const on = sw.classList.contains('is-on');
+      $('#ch-private-sub').textContent = !on
+        ? 'Off: anyone in the Sphere can find it, read it and post in it.'
+        : S.sphere.policy?.sealed
+          ? 'Only the people and Obys in it see it. What’s said there is sealed for them.'
+          : 'Only the people and Obys in it see it. This Sphere isn’t sealed, so its relay and admins can still read it.';
+    };
+    sw.onclick = () => { const on = !sw.classList.contains('is-on'); sw.classList.toggle('is-on', on); sw.setAttribute('aria-checked', String(on)); sub(); };
+    sub();
+    wirePicks($('#ch-pick'));
+    const create = async () => {
+      const name = $('#ch-name').value.trim();
+      if (!name) { chProblem('Give it a name.'); $('#ch-name').focus(); return; }
+      chProblem('');
+      try {
+        const r = await apiPost('/api/channels', { name, topic: $('#ch-topic').value.trim(), private: sw.classList.contains('is-on'), members: picked($('#ch-pick')) });
+        if (okChannel(r.channel)) S.channels.set(r.channel.name, r.channel);
+        closeModal($('#channel-modal'));
+        switchTo(r.channel.name);
+      } catch (e) { chProblem(e.message); }
+    };
+    $('#ch-create').onclick = create;
+    $('#ch-name').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } };
+    $('#channel-modal').hidden = false;
+    setTimeout(() => $('#ch-name').focus(), 50);
+  }
+  function openMembersModal(name) {
+    const c = chOf(name);
+    if (c.kind === 'dm') return;
+    const mine = inCh(c);
+    const adminHere = !S.me && !!S.adminKey;
+    const canAdd = c.kind === 'private' ? mine || adminHere : !!S.me || adminHere;
+    const canRemove = (a) => adminHere || (!!S.me && (isMe(a) ? mine : c.kind === 'private' ? mine : c.createdBy === S.me.id));
+    const inIt = (c.members || []).map(agent).filter((a) => !a.removed);
+    const rest = members().filter((a) => !inCh(c, a)).sort((a, b) => (a.bot - b.bot) || label(a).localeCompare(label(b)));
+    $('#ch-title').textContent = `People and Obys in #${c.name}`;
+    $('#ch-slot').innerHTML = `
+      <p class="modal-line">${c.kind === 'private' ? `Only these see #${esc(c.name)}, post in it and are asked in it. Anyone in it can add others.` : `Anyone in the Sphere can read #${esc(c.name)} and post in it; these joined it.`}</p>
+      <div class="set-group">${inIt.length ? inIt.map((a) => `<div class="ch-row">${picture(a, 28)}<span class="t">${esc(label(a))}${isMe(a) ? ' <span class="you" style="color:var(--muted)">(you)</span>' : ''}<small>@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${c.createdBy === a.id ? ' · made it' : ''}</small></span>${canRemove(a) ? `<button type="button" class="set-button sm" data-ch-remove="${esc(a.id)}">${isMe(a) ? 'Leave' : 'Remove'}</button>` : ''}</div>`).join('') : '<div class="ch-row"><span class="t is-none">No one has joined it yet.</span></div>'}</div>
+      ${canAdd ? `<span class="modal-label">Add people or Obys</span>${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">Everyone in the Sphere is in it.</p>'}` : ''}
+      <p class="note is-problem" id="ch-problem" hidden></p>
+      ${canAdd && rest.length ? '<div class="modal-actions"><button type="button" class="modal-primary" id="ch-add">Add</button></div>' : ''}`;
+    wirePicks($('#ch-pick'));
+    $('#ch-slot').querySelectorAll('[data-ch-remove]').forEach((b) => (b.onclick = async () => {
+      const a = agent(b.dataset.chRemove);
+      if (isMe(a) && c.kind === 'private' && !confirm(`Leave #${c.name}? It’s private: one of its members would have to add you again.`)) return;
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/${isMe(a) ? 'leave' : 'members'}`, isMe(a) ? undefined : { remove: [a.id] });
+        onChannel(r.channel || { ...c, members: (c.members || []).filter((id) => id !== a.id) });
+        if (S.channels.has(c.name)) openMembersModal(c.name);
+        else closeModal($('#channel-modal'));
+      } catch (e) { chProblem(e.message); }
+    }));
+    $('#ch-add')?.addEventListener('click', async () => {
+      const ids = picked($('#ch-pick'));
+      if (!ids.length) { chProblem('Pick who to add.'); return; }
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/members`, { add: ids });
+        if (r.channel) onChannel(r.channel);
+        closeModal($('#channel-modal'));
+      } catch (e) { chProblem(e.message); }
+    });
+    $('#channel-modal').hidden = false;
   }
 
   // ---------------------------------------------------------------- conversation: the thread
@@ -2787,15 +3714,37 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const list = S.messages.filter((m) => m.channel === S.current);
     $('#thread').innerHTML = list.map((m, i) => messageHtml(m, list[i - 1])).join('');
     $('#empty').hidden = list.length > 0;
-    $('#empty-1').textContent = `Nothing in #${S.current} yet`;
-    $('#empty-2').textContent = S.me ? 'Ask an Oby below; it answers on its owner’s machine.' : 'What the Obys here say shows up here.';
+    const c = chOf(S.current);
+    const peer = c.kind === 'dm' && inCh(c) ? dmPeer(c) : null;
+    $('#empty-1').textContent = peer ? `This is your conversation with ${label(peer)}` : c.kind === 'dm' ? `Nothing between ${channelTitle(c.name)} yet` : `Nothing in #${S.current} yet`;
+    $('#empty-2').textContent = peer ? `Ask ${obyOf(peer)} below; it answers on ${ownerName(peer)}’s machine.` : S.me ? 'Write below; @ and a name asks an Oby, and it answers on its owner’s machine.' : 'What the Obys here say shows up here.';
     const feed = $('#feed');
     feed.scrollTop = feed.scrollHeight;
+    if (list.length && !document.hidden) markRead(S.current, list[list.length - 1].ts);
+    loadHistory(S.current);
+  }
+  // The page starts with the Sphere's newest messages, all channels together, so a quiet direct
+  // conversation, or a private channel you were just added to, may have older lines it doesn't
+  // hold yet: fetched from the relay when the conversation is shown.
+  const loadingHistory = new Set();
+  async function loadHistory(name) {
+    if (loadingHistory.has(name)) return;
+    loadingHistory.add(name);
+    let got = [];
+    try {
+      got = (await api(`/api/messages?channel=${encodeURIComponent(name)}&limit=200`)).messages || [];
+    } catch {} finally { loadingHistory.delete(name); }
+    const fresh = got.filter((m) => okMessage(m) && m.channel === name && !S.byId.has(m.id));
+    if (!fresh.length) return;
+    for (const m of fresh) S.byId.set(m.id, m);
+    S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    if (fresh.some((m) => m.files?.length)) S.files = null;
+    if (S.mode === 'conversation' && S.current === name) renderFeed();
   }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
   function messageHtml(m, prev) {
-    if (m.kind === 'system') return `<p class="sys" id="${m.id}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
+    if (m.kind === 'system') return `<p class="sys" id="${esc(m.id)}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
     const a = agent(m.from);
     const mine = isMe(a);
     const mt = m.meta || {};
@@ -2804,8 +3753,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const cause = m.cause ? S.byId.get(m.cause) : null;
     let did = '';
     if (m.to.length) did = `asks ${m.to.map(who).join(', ')}`;
-    else if (parent) did = `<button class="jump" data-jump="${parent.id}">answers ${who(parent.from)}</button>`;
-    if (cause) did += `, <button class="jump" data-jump="${cause.id}">while answering ${who(cause.from)}</button>`;
+    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${who(parent.from)}</button>`;
+    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${who(cause.from)}</button>`;
     const cont = prev && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
     let state = '';
     if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(ownerName(a))}’s machine</p>`;
@@ -2825,7 +3774,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       : `<p class="room-state">${lock()}Sealed end to end; opened on your machine</p>`;
     const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>`;
     if (you) {
-      return `<div class="msg is-you" id="${m.id}">
+      return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
         <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
       </div>`;
@@ -2834,7 +3783,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <span class="room-by"><span class="peer-by">${picture(a, 22)}<span>${esc(obyOf(a))}</span></span>${did ? `<span class="room-did">${did}</span>` : ''}</span>
         ${mine ? '' : `<span class="room-from">@${esc(a.name)} · ${esc(a.owner)}</span>`}
       </div>`;
-    return `<div class="msg is-oby${mine ? ' is-mine' : ''}${cont ? ' is-cont' : ''}" id="${m.id}">
+    return `<div class="msg is-oby${mine ? ' is-mine' : ''}${cont ? ' is-cont' : ''}" id="${esc(m.id)}">
       ${by}
       <div class="msg-end">
         ${closed ? sealedHtml(m) : m.text ? `<div class="msg-bubble words">${md(m.text)}</div>` : ''}
@@ -2844,12 +3793,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function systemText(m) {
     const mm = /^\*\*([a-z0-9-]+)\*\* joined/.exec(m.text);
-    if (mm) { const a = [...S.agents.values()].find((x) => x.name === mm[1]); if (a) return `${obyOf(a)} joined`; }
-    return m.text.replace(/\*\*/g, '');
+    // a handle in bold is that Oby (a bot by its handle: no person behind it)
+    const named = (n, at) => { const a = [...S.agents.values()].find((x) => x.name === n); return !a ? n : a.bot ? a.name : at ? obyLower(a) : obyOf(a); };
+    if (mm && [...S.agents.values()].some((x) => x.name === mm[1])) return `${named(mm[1], 0)} joined`;
+    return m.text.replace(/\*\*([a-z0-9-]+)\*\*/g, (w, n, at) => named(n, at)).replace(/\*\*/g, '');
   }
   function fileHtml(f) {
     const texty = /^(text\/|application\/json)/.test(f.mime) && f.size < 200000;
-    return `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${f.id}" ${texty ? `data-peek="${f.id}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
+    return `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}" ${texty ? `data-peek="${esc(f.id)}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
   }
 
   document.addEventListener('click', async (e) => {
@@ -2890,7 +3841,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       .map((a) => {
         const about = a.status.about && S.byId.get(a.status.about);
         const asker = about ? ` ${obyLower(agent(about.from))}` : '';
-        return `<div class="live-line" data-live="${a.id}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)} on ${esc(machineOf(a))}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
+        return `<div class="live-line" data-live="${esc(a.id)}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)} on ${esc(machineOf(a))}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
       })
       .join('');
     if (atEnd && here.length) feed.scrollTop = feed.scrollHeight;
@@ -2899,7 +3850,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function tick() {
     for (const a of S.agents.values()) {
       if (a.status?.state !== 'working') continue;
-      document.querySelectorAll(`[data-live="${a.id}"] .live-secs`).forEach((n) => (n.textContent = secs(a.status.since)));
+      document.querySelectorAll(`[data-live="${esc(a.id)}"] .live-secs`).forEach((n) => (n.textContent = secs(a.status.since)));
     }
     document.querySelectorAll('[data-since]').forEach((n) => (n.textContent = secs(n.dataset.since)));
     document.querySelectorAll('[data-run]').forEach((n) => (n.textContent = fmtMs(Date.now() - Number(n.dataset.run))));
@@ -2912,7 +3863,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   // ---------------------------------------------------------------- the message box (your console)
-  const C = { to: null, files: [] };
+  // In a channel: a post everyone in it reads, or an ask (the tag, or @ and a name: an Oby is
+  // asked only in a channel it's in). In a direct conversation: an ask to the other person's
+  // Oby, or, with "Just for <Name>", a post their Oby doesn't answer.
+  const C = { to: null, files: [], just: false, menu: null, hits: [], pick: 0 };
+  const inModal = () => !!document.getElementById('new-modal') && !$('#new-modal').hidden;
+  // New exchange asks from the Console view: in #general when the open conversation is closed
+  const composerChannel = () => (inModal() && isClosed(chOf(S.current)) ? 'general' : S.current);
   function setupComposer() {
     $('#composer').hidden = false;
     const ta = $('#text');
@@ -2920,15 +3877,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     ta.addEventListener('input', () => {
       grow();
       const mm = /^@([a-z0-9-]{2,32})\s/.exec(ta.value);
-      const hit = mm && members().find((a) => a.name === mm[1] && !isMe(a));
+      const hit = mm && (inModal() || chOf(S.current).kind !== 'dm') && members().find((a) => a.name === mm[1] && !isMe(a));
       if (hit) { C.to = hit.name; ta.value = ta.value.slice(mm[0].length); grow(); renderTo(); }
+      mentionMenu();
       $('#send').classList.toggle('is-ready', !!(ta.value.trim() || C.files.length));
     });
     ta.addEventListener('keydown', (e) => {
+      if (C.menu === 'mention' && !$('#add-panel').hidden && C.hits.length) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); C.pick = (C.pick + (e.key === 'ArrowDown' ? 1 : -1) + C.hits.length) % C.hits.length; mentionMenu(); return; }
+        if ((e.key === 'Enter' && !e.shiftKey && !e.isComposing) || e.key === 'Tab') { e.preventDefault(); completeMention(C.hits[C.pick].name); return; }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd(); return; }
+      }
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
       if (e.key === 'Backspace' && !ta.value && (C.files.length || C.to)) { if (C.files.length) C.files.pop(); else C.to = null; renderTo(); }
     });
-    $('#plus').onclick = () => ($('#add-panel').hidden ? openAdd() : closeAdd());
+    $('#plus').onclick = () => ($('#add-panel').hidden || C.menu !== 'add' ? openAdd() : closeAdd());
+    $('#just').onclick = () => { C.just = !C.just; renderTo(); $('#text').focus(); };
     $('#file').onchange = async (e) => {
       for (const f of e.target.files) {
         if (f.size > (S.sphere.policy?.maxFileBytes || 5 * 1024 * 1024)) { problem(`${f.name} is larger than this Sphere allows`); continue; }
@@ -2938,31 +3902,41 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       renderTo();
     };
     $('#composer').onsubmit = (e) => { e.preventDefault(); send(); };
-    const firstOther = members().filter((a) => !isMe(a)).sort((a, b) => b.online - a.online)[0];
-    C.to = firstOther ? firstOther.name : null;
+    C.to = null; // in a channel, a post unless you ask someone
   }
 
   function openNew() {
     if (!S.me) return;
     $('#new-slot').append($('#composer'));
     $('#new-modal').hidden = false;
+    if (!C.to) {
+      const firstOther = members().filter((a) => !isMe(a)).sort((a, b) => b.online - a.online)[0];
+      C.to = firstOther ? firstOther.name : null;
+    }
     renderTo();
     setTimeout(() => $('#text').focus(), 50);
   }
 
   function openAdd() {
-    const others = members().filter((a) => !isMe(a)).sort((a, b) => (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    const c = chOf(composerChannel());
+    const dm = c.kind === 'dm' && !inModal();
+    const pool = members().filter((a) => !isMe(a) && (c.kind !== 'private' || inCh(c, a))).sort((a, b) => (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    C.menu = 'add';
     $('#add-panel').innerHTML =
-      `<button type="button" role="menuitem" data-add="files">${clip()}<span class="t">Add files</span></button>
-       <div class="add-sep"></div>
+      `<button type="button" role="menuitem" data-add="files">${clip()}<span class="t">Add files</span></button>` +
+      (dm
+        ? ''
+        : `<div class="add-sep"></div>
        <div class="add-label">Ask</div>` +
-      others.map((a) => `<button type="button" role="menuitem" data-to="${esc(a.name)}" class="${C.to === a.name ? 'is-on' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="status">${a.online ? `<span class="status-dot is-${stateOf(a)}"></span>` : ''}</span></button>`).join('') +
-      `<button type="button" role="menuitem" data-to="" class="${C.to ? '' : 'is-on'}"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="6.5"/><path d="M3.5 10h13M10 3.5c2 2 2 11 0 13M10 3.5c-2 2-2 11 0 13"/></svg><span class="t">Everyone in #${esc(S.current)}</span></button>`;
+          pool.map((a) => `<button type="button" role="menuitem" data-to="${esc(a.name)}" class="${C.to === a.name ? 'is-on' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="status">${a.online ? `<span class="status-dot is-${stateOf(a)}"></span>` : ''}</span></button>`).join('') +
+          `<button type="button" role="menuitem" data-to="" class="${C.to ? '' : 'is-on'}"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="6.5"/><path d="M3.5 10h13M10 3.5c2 2 2 11 0 13M10 3.5c-2 2-2 11 0 13"/></svg><span class="t">Everyone in #${esc(c.name)}</span></button>` +
+          (c.kind === 'private' && !inModal() ? `<button type="button" role="menuitem" data-add="people">${plusIcon()}<span class="t">Add people or Obys to #${esc(c.name)}…</span></button>` : ''));
     $('#add-panel').hidden = false;
     $('#plus').classList.add('is-on');
     $('#add-panel').querySelectorAll('button').forEach((b) => {
       b.onclick = () => {
         if (b.dataset.add === 'files') $('#file').click();
+        else if (b.dataset.add === 'people') { closeAdd(); openMembersModal(c.name); return; }
         else { C.to = b.dataset.to || null; renderTo(); }
         closeAdd();
         $('#text').focus();
@@ -2972,26 +3946,124 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function closeAdd() {
     const p = document.getElementById('add-panel');
     if (p) p.hidden = true;
+    C.menu = null;
     document.getElementById('plus')?.classList.remove('is-on');
+  }
+
+  // @ and a name: the Obys you may ask here (in a private channel its members; in a public one, anyone)
+  function mentionable() {
+    const c = chOf(composerChannel());
+    return members()
+      .filter((a) => !isMe(a) && !a.suspended && (c.kind === 'public' || inCh(c, a)))
+      .sort((a, b) => (inCh(c, b) - inCh(c, a)) || (b.online - a.online) || label(a).localeCompare(label(b)));
+  }
+  function mentionQuery() {
+    const ta = $('#text');
+    const before = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
+    const mm = /(^|\s)@([a-z0-9-]{0,32})$/i.exec(before);
+    return mm ? { q: mm[2].toLowerCase(), at: before.length - mm[2].length - 1 } : null;
+  }
+  function mentionMenu() {
+    const q = mentionQuery();
+    const off = () => { if (C.menu === 'mention') closeAdd(); };
+    if (!q || (chOf(S.current).kind === 'dm' && !inModal())) return off();
+    const starts = (s) => String(s).toLowerCase().split(/[\s-]+/).some((w) => w.startsWith(q.q));
+    const hits = mentionable().filter((a) => a.name.startsWith(q.q) || starts(ownerName(a))).slice(0, 8);
+    if (!hits.length) return off();
+    if (C.menu !== 'mention') C.pick = 0;
+    C.menu = 'mention';
+    C.hits = hits;
+    C.pick = Math.max(0, Math.min(C.pick, hits.length - 1));
+    const c = chOf(composerChannel());
+    $('#add-panel').innerHTML = `<div class="add-label">${c.kind === 'private' ? `Ask someone in #${esc(c.name)}` : 'Ask an Oby'}</div>` +
+      hits.map((a, i) => `<button type="button" role="menuitem" data-mention="${esc(a.name)}" class="${i === C.pick ? 'is-pick' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="mention-handle">@${esc(a.name)}</span></button>`).join('');
+    $('#add-panel').hidden = false;
+    $('#add-panel').querySelectorAll('[data-mention]').forEach((b) => {
+      b.onpointerdown = (e) => e.preventDefault(); // keep the caret in the message
+      b.onclick = () => completeMention(b.dataset.mention);
+    });
+  }
+  function completeMention(name) {
+    const ta = $('#text');
+    const q = mentionQuery();
+    closeAdd();
+    C.pick = 0;
+    if (!q) return;
+    const end = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, q.at) + '@' + name + ' ' + ta.value.slice(end);
+    const pos = q.at + name.length + 2;
+    ta.setSelectionRange(pos, pos);
+    ta.focus();
+    ta.dispatchEvent(new Event('input')); // "@name " at the start becomes the ask's tag, as typed
+  }
+  // the Obys a message's words name (@handle), you and Obys not in the Sphere left out
+  function mentionsIn(text) {
+    const out = [];
+    for (const mm of String(text).matchAll(/(^|[\s(])@([a-z0-9-]{2,32})(?![a-z0-9-])/g)) {
+      const a = byName(mm[2]);
+      if (a && !isMe(a) && !out.includes(a.name)) out.push(a.name);
+    }
+    return out;
   }
 
   function renderTo() {
     if (!S.me || !document.getElementById('composer')) return;
-    const t = members().find((a) => a.name === C.to && !isMe(a));
-    if (!t) C.to = null;
-    $('#tags').innerHTML =
-      (t ? `<span class="composer-tag">${avatar(t, 18, false)}<span class="t">${esc(obyOf(t))}</span><button type="button" class="x" data-untag="to" aria-label="Ask no one in particular">${xIcon()}</button></span>` : '') +
-      C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
-    $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
-    $('#text').placeholder = t ? `Ask ${obyOf(t)}…` : `Message everyone on ${S.sphere.name}…`;
+    const c = chOf(composerChannel());
+    const peer = c.kind === 'dm' && !inModal() ? dmPeer(c) : null;
     const hint = $('#hint');
     hint.classList.remove('is-problem');
-    const sealedNote = S.sphere.policy?.sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : ' Sealed for every member; the relay can’t read it.') : '';
+    const sealed = !!S.sphere.policy?.sealed;
+    const just = $('#just');
+    const fileTags = C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
+    const wireTags = () => $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
+    // a private channel or direct conversation you aren't in (the admin key shows every one): read only
+    const outside = isClosed(c) && !inCh(c) && !inModal();
+    $('#text').disabled = outside;
+    $('#plus').disabled = outside;
+    if (outside) {
+      C.to = null;
+      C.just = false;
+      just.hidden = true;
+      $('#tags').innerHTML = '';
+      $('#text').placeholder = c.kind === 'dm' ? `Between ${channelTitle(c.name)}` : `You aren’t in #${c.name}`;
+      hint.textContent = c.kind === 'dm' ? 'A direct conversation between two others: only they write here.' : `Only the people and Obys in #${c.name} write here; one of them can add you.`;
+      $('#send').classList.remove('is-ready');
+      return;
+    }
+    if (peer) {
+      // a direct conversation: ask their Oby, or a note just for them
+      C.to = null;
+      if (peer.bot) C.just = false;
+      just.hidden = !!peer.bot;
+      just.classList.toggle('is-on', C.just);
+      just.setAttribute('aria-checked', String(C.just));
+      $('#just-t').textContent = `Just for ${ownerName(peer)}`;
+      $('#tags').innerHTML = fileTags;
+      wireTags();
+      $('#text').placeholder = C.just ? `Just for ${ownerName(peer)}…` : `Ask ${obyOf(peer)}…`;
+      hint.textContent = (S.sphere.paused
+        ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
+        : C.just
+          ? `${obyOf(peer)} doesn’t answer this; ${ownerName(peer)} reads it in their console.`
+          : peer.suspended ? `${obyOf(peer)} is suspended by the Sphere's operator.` : peer.online ? `${obyOf(peer)} answers on ${ownerName(peer)}’s machine, with their files and their rules.` : `${obyOf(peer)} is offline; it will answer once ${ownerName(peer)}’s representative is back.`) +
+        (sealed ? ' Sealed for the two of you.' : '');
+      $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
+      return;
+    }
+    just.hidden = true;
+    C.just = false;
+    const t = members().find((a) => a.name === C.to && !isMe(a));
+    if (!t) C.to = null;
+    $('#tags').innerHTML = (t ? `<span class="composer-tag">${avatar(t, 18, false)}<span class="t">${esc(obyOf(t))}</span><button type="button" class="x" data-untag="to" aria-label="Ask no one in particular">${xIcon()}</button></span>` : '') + fileTags;
+    wireTags();
+    $('#text').placeholder = t ? `Ask ${obyOf(t)}…` : `Message #${c.name}…`;
+    const n = (c.members || []).length;
+    const sealedNote = sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : c.kind === 'private' ? ` Sealed for the ${n} in #${c.name}.` : ' Sealed for every member; the relay can’t read it.') : '';
     hint.textContent = (S.sphere.paused
       ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
       : t
-        ? t.suspended ? `${obyOf(t)} is suspended by the Sphere's operator.` : t.online ? `${obyOf(t)} answers on ${ownerName(t)}’s machine, with their files and their rules.` : `${obyOf(t)} is offline; it will answer once ${ownerName(t)}’s representative is back.`
-        : `Everyone in #${S.current} sees it; no one has to answer.`) + sealedNote;
+        ? t.suspended ? `${obyOf(t)} is suspended by the Sphere's operator.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : t.online ? `${obyOf(t)} answers on ${ownerName(t)}’s machine, with their files and their rules.` : `${obyOf(t)} is offline; it will answer once ${ownerName(t)}’s representative is back.`
+        : `Everyone in #${c.name} sees it; no one has to answer. @ and a name asks an Oby.`) + sealedNote;
     $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
   }
 
@@ -2999,14 +4071,29 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const ta = $('#text');
     const text = ta.value.trim();
     if (!text && !C.files.length) return;
+    const modal = inModal();
+    const channel = composerChannel();
+    const c = chOf(channel);
+    if (isClosed(c) && !inCh(c) && !modal) return; // not yours to write in
+    let to = [];
+    if (c.kind === 'dm' && !modal) {
+      const peer = dmPeer(c);
+      if (peer && !C.just) to = [peer.name];
+    } else {
+      to = C.to ? [C.to] : [];
+      for (const n of mentionsIn(text)) if (!to.includes(n)) to.push(n); // @ and a name asks that Oby
+      const out = c.kind === 'private' ? to.map(byName).filter((a) => a && !inCh(c, a)) : [];
+      if (out.length) return offerAdd(c, out);
+    }
     $('#send').classList.remove('is-ready');
     try {
-      const r = await apiPost('/api/messages', { channel: S.current, text, to: C.to ? [C.to] : [], files: C.files.map(({ size, ...f }) => f) });
+      const r = await apiPost('/api/messages', { channel, text, to, files: C.files.map(({ size, ...f }) => f) });
       ta.value = '';
       ta.style.height = 'auto';
       C.files = [];
+      C.to = null;
       renderTo();
-      if (!$('#new-modal').hidden) {
+      if (modal) {
         closeModal($('#new-modal'));
         if (r?.message) { onMessage(r.message); setPage('exchange:' + r.message.id); }
       }
@@ -3015,6 +4102,20 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       $('#send').classList.add('is-ready');
     }
     ta.focus();
+  }
+  // an ask to an Oby that isn't in this private channel: add it first, then send
+  function offerAdd(c, out) {
+    const h = $('#hint');
+    h.classList.remove('is-problem');
+    const one = out.length === 1;
+    h.innerHTML = `${esc(andList(out.map(obyOf)))} ${one ? 'isn’t' : 'aren’t'} in #${esc(c.name)}, so ${one ? 'it' : 'they'} can’t be asked here. <button type="button" data-offer-add>Add ${one ? 'it' : 'them'} and send</button>`;
+    h.querySelector('[data-offer-add]').onclick = async () => {
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/members`, { add: out.map((a) => a.id) });
+        if (r.channel) onChannel(r.channel);
+        send();
+      } catch (e) { problem(e.message); }
+    };
   }
   function problem(m) { const h = $('#hint'); h.textContent = m; h.classList.add('is-problem'); }
   function toB64(file) {
@@ -3026,26 +4127,199 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     });
   }
 
-  // ---------------------------------------------------------------- Invite member
-  function openInvite() {
-    const origin = (S.sphere.publicUrl || (CONSOLE ? CONSOLE.sphere : location.origin)).replace(/\/+$/, '');
-    const key = CONSOLE ? '<the Sphere key>' : S.key;
-    const insecure = /^http:\/\//.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(origin) ? ' --insecure' : '';
-    const cmds = {
-      get: `curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs`,
-      join: `node rep.mjs join "${origin}/#key=${key}"${insecure} --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <folder it may read>`,
-      serve: `node rep.mjs serve`,
-      ui: `node rep.mjs ui --open`,
-    };
-    document.querySelectorAll('[data-cmd]').forEach((el) => {
-      const text = cmds[el.dataset.cmd];
-      el.innerHTML = `<pre class="ss-code">${esc(text)}</pre><button class="set-button" type="button">Copy</button>`;
-      $('button', el).onclick = async (ev) => {
-        try { await navigator.clipboard.writeText(text); ev.target.textContent = 'Copied'; } catch { ev.target.textContent = 'Select it'; }
-        setTimeout(() => (ev.target.textContent = 'Copy'), 1400);
-      };
-    });
+  // ---------------------------------------------------------------- Invite member (console-polish)
+  // The main thing is one text your teammate pastes into their AI agent (Claude Code, Codex or
+  // Cursor), which installs Obysphere, joins and opens their console. The plugin's skill is the
+  // other way, and the commands by hand (inviteCommands) are folded away below. The invite link
+  // holds the join key: a deployed page opened with the key has it (S.key); your console asks your
+  // rep for the one it keeps (GET /local/invite), and when there's none, or the key was rotated
+  // elsewhere, you paste it once and the rep keeps it. The key never goes in a URL query or the relay.
+  const REPO = 'obi-ai-bot/oby-sphere';
+  const INSTALL_CMD = `curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sh`;
+  const INV = { key: null, seq: 0 }; // key: pasted in a console whose rep.mjs can't keep it (this page only)
+
+  // the key in an invite link (#key=…, or ?key=…), or a bare key: as rep.mjs reads it
+  function inviteKeyOf(s) {
+    const t = String(s ?? '').trim();
+    if (!t || t.length > 2000) return null;
+    const m = /[#?&]key=([^&#\s]*)/.exec(t);
+    let k = t;
+    if (m) { try { k = decodeURIComponent(m[1]); } catch { return null; } }
+    else if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return null; // a link with no key in it
+    return /^[\x21-\x7e]{22,256}$/.test(k) ? k : null;
+  }
+  // where a teammate reaches the Sphere: its public address when it has one, else the one we use.
+  // The address comes from the relay and goes into a shell command, and a URL's host may hold
+  // " $ ( ) { } , ` ; so only a plain host name, IPv4 or [IPv6] is taken; else a placeholder
+  function inviteOrigin() {
+    for (const u of [S.sphere.publicUrl, CONSOLE ? CONSOLE.sphere : location.origin]) {
+      try {
+        const x = new URL(u);
+        if ((x.protocol === 'https:' || x.protocol === 'http:') && /^(?:[a-z0-9_-]+\.)*[a-z0-9_-]+$|^\[[0-9a-f:.]+\]$/i.test(x.hostname)) return x.origin;
+      } catch {}
+    }
+    return 'https://<the Sphere’s address>';
+  }
+  // the key as the link carries it: ! ' ( ) * encoded too (a ! inside "…" is history expansion in bash and zsh)
+  const keyParam = (key) => encodeURIComponent(key).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const inviteLinkOf = (key) => `${inviteOrigin()}/#key=${keyParam(key)}`;
+  function insecureFlag(link) {
+    try {
+      const u = new URL(link);
+      const h = u.hostname.replace(/^\[|\]$/g, '');
+      const loopback = h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+      return u.protocol === 'http:' && !loopback ? ' --insecure' : '';
+    } catch { return ''; }
+  }
+  // the one text for their AI agent. Nothing in it comes from the relay but the link (checked
+  // above): the Sphere's name, which the relay picks, would be words an agent with a shell reads
+  function inviteText(link) {
+    return [
+      `Help me join our team's Obysphere, where our AI agents work together. Each of us has an Oby there: an agent that runs on our own machine, with our own files and rules.`,
+      '',
+      `If you're Claude Code, ask me to type /plugin marketplace add ${REPO}, then /plugin install obysphere@obysphere, and use its join-a-sphere skill with the invite link below.`,
+      '',
+      'Otherwise, install the Obysphere CLI (it needs Node 22 or later):',
+      INSTALL_CMD,
+      '',
+      'Ask me for my name, a short handle (like "alice") and the one folder my Oby may read. Then join with this invite link:',
+      `obysphere join "${link}"${insecureFlag(link)} --name <handle> --owner "<my name>" --cwd <that folder>`,
+      '',
+      'Then run obysphere start, so my Oby answers from this machine, and obysphere open to open my console.',
+      '',
+      'Keep this link inside our team: anyone who has it can join.',
+    ].join('\n');
+  }
+
+  // the same, by hand: [what it does, the command]. Kept apart from the text above, so the CLI's commands change here only.
+  function inviteCommands(link, flag = '') {
+    const who = '--name <handle> --owner "<Their Name>"';
+    return [
+      ['1. Install the Obysphere CLI (it needs Node 22 or later)', INSTALL_CMD],
+      ['2. Join, choosing the folder their Oby may read', `obysphere join "${link}"${flag} ${who} --about "<what their Oby knows>" --cwd <folder it may read>`],
+      ['3. Go online in the background, so others can ask them', 'obysphere start'],
+      ['4. Open their console, signed in as them', 'obysphere open'],
+      ['Or with nothing installed: one file, then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
+    ];
+  }
+
+  async function openInvite() {
+    const seq = ++INV.seq;
     $('#invite-modal').hidden = false;
+    if (!CONSOLE) return paintInvite({ key: S.key });
+    if (INV.key) return paintInvite({ key: INV.key, unkept: true });
+    $('#inv-body').innerHTML = '<p class="modal-line">Getting your invite link…</p>';
+    let r = null, failed = null;
+    try { r = await local('GET', '/local/invite'); } catch (e) { failed = e; }
+    if (seq !== INV.seq || $('#invite-modal').hidden) return; // closed, or opened again, meanwhile
+    if (failed) return paintInvite({ ask: failed.status === 404 ? 'old' : 'error', error: failed.message });
+    const key = inviteKeyOf(r.invite);
+    paintInvite(key && r.current !== false ? { key } : { ask: key ? 'rotated' : 'none' });
+  }
+  // closed: the link leaves the page's DOM, and a slow answer doesn't paint it back
+  function closeInvite() {
+    INV.seq++;
+    $('#inv-body').innerHTML = '';
+  }
+
+  const INVITE_ASK = {
+    none: 'Your console doesn’t have this Sphere’s invite link yet. Paste it once: the link you joined with, or a newer one from the Sphere’s admin. It stays on this machine, beside your Oby’s token.',
+    rotated: 'The invite link your console kept no longer opens this Sphere: its key was rotated. Paste the current one, and your console keeps it instead.',
+    old: 'This console’s rep.mjs is older than this page, so it can’t hand on the invite link. Paste the link here to fill in the text this time, or update rep.mjs so your console keeps it.',
+  };
+  function paintInvite({ key = null, ask = 'none', error = '', unkept = false }) {
+    const body = $('#inv-body');
+    const link = key ? inviteLinkOf(key) : null;
+    const copies = [];
+    const row = (text) => { copies.push(text); return `<div class="code-row"><pre class="ss-code">${esc(text)}</pre><button class="set-button" type="button" data-inv-copy="${copies.length - 1}" data-label="Copy">Copy</button></div>`; };
+    let html;
+    if (link) {
+      html = `<p class="modal-line">Send this to your teammate. They paste it into their AI agent (Claude Code, Codex or Cursor), which sets up their Oby: on their own machine, with their files and their rules.</p>
+        <pre class="ss-code inv-text" tabindex="0" aria-label="The text for their AI agent">${esc(inviteText(link))}</pre>
+        <div class="inv-actions"><button class="modal-primary" type="button" data-inv-main data-label="Copy for your AI agent">Copy for your AI agent</button>${unkept ? '<span class="saved-note">For now only: update rep.mjs so your console keeps the link.</span>' : ''}</div>
+        <span class="modal-label">Or with the skill, in Claude Code</span>
+        <p class="modal-line">They run <code class="tok-code">/plugin marketplace add ${esc(REPO)}</code>, then <code class="tok-code">/plugin install obysphere@obysphere</code>, and ask Claude Code to join with this link. Its join-a-sphere skill does the rest.</p>
+        ${row(link)}`;
+    } else {
+      const words = ask === 'error' ? `Your console couldn’t get its invite link (${error}). Paste it here instead.` : INVITE_ASK[ask] || INVITE_ASK.none;
+      html = `<p class="modal-line">${esc(words)}</p>
+        <form class="inv-paste" id="inv-paste" autocomplete="off"><input class="set-field" name="link" placeholder="https://…/#key=…" aria-label="This Sphere’s invite link" aria-describedby="inv-err" autocomplete="off" spellcheck="false"><button class="modal-primary">Keep it</button></form>
+        <p class="note is-problem" id="inv-err" role="alert" hidden></p>`;
+    }
+    html += `<details class="inv-hand"><summary>Do it by hand</summary>` +
+      inviteCommands(link || '<invite link>', insecureFlag(inviteOrigin())).map(([label, cmd]) => `<span class="modal-label">${esc(label)}</span>${row(cmd)}`).join('') +
+      `<p class="modal-note">With the plugin, Claude Code has the Sphere’s instruments; without it, <code class="tok-code">obysphere mcp-config</code> prints the line that adds them.</p></details>
+      <p class="modal-note">The link holds this Sphere’s key: anyone who has it can join and watch. Keep it inside your team.</p>`;
+    body.innerHTML = html;
+    const main = body.querySelector('[data-inv-main]');
+    if (main) main.onclick = () => copyText(inviteText(link), main, body.querySelector('.inv-text'));
+    body.querySelectorAll('[data-inv-copy]').forEach((b) => (b.onclick = () => copyText(copies[Number(b.dataset.invCopy)], b, b.previousElementSibling)));
+    const form = body.querySelector('#inv-paste');
+    if (form) { form.onsubmit = keepInvite; form.link.focus(); }
+    else main?.focus();
+  }
+
+  async function keepInvite(e) {
+    e.preventDefault();
+    const form = e.target;
+    const v = form.link.value.trim();
+    const key = inviteKeyOf(v);
+    const fail = (words) => {
+      const err = $('#inv-err');
+      err.textContent = words; err.hidden = false;
+      form.link.classList.add('set-invalid'); form.link.setAttribute('aria-invalid', 'true'); form.link.focus();
+    };
+    if (!key) return fail('That isn’t an invite link: it looks like https://…/#key=…');
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    const seq = INV.seq;
+    try {
+      const r = await local('PUT', '/local/invite', { invite: v });
+      if (seq === INV.seq) paintInvite({ key: inviteKeyOf(r.invite) || key });
+    } catch (x) {
+      if (seq !== INV.seq) return;
+      if (x.status === 404) { INV.key = key; return paintInvite({ key, unkept: true }); } // an older rep.mjs: this page only
+      btn.disabled = false;
+      fail(sentence(String(x.message).replace(/^invite:\s*/, '')));
+    }
+  }
+
+  // the clipboard when there is one; else the text is selected (and copied the old way where that works)
+  async function copyText(text, btn, from) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+    if (!ok && from) {
+      const range = document.createRange();
+      range.selectNodeContents(from);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try { ok = document.execCommand('copy'); } catch {}
+    }
+    btn.textContent = ok ? 'Copied' : 'Selected: copy it';
+    clearTimeout(btn.copyTimer);
+    btn.copyTimer = setTimeout(() => (btn.textContent = btn.dataset.label || 'Copy'), 1600);
+  }
+
+  // ---------------------------------------------------------------- a newer Oby (GET /local/version; rep.mjs checks once a day)
+  function newerVersion(a, b) {
+    const p = (v) => { const m = /^(\d+)\.(\d+)\.(\d+)(?:-([^+]*))?/.exec(String(v || '')); return m ? [+m[1], +m[2], +m[3], m[4] || ''] : null; };
+    const x = p(a), y = p(b);
+    if (!x || !y) return false;
+    for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+    return !x[3] && !!y[3]; // a release is newer than its pre-releases
+  }
+  async function checkVersion(again = true) {
+    let v = null;
+    try { v = await api('/local/version'); } catch {}
+    // the first look starts the day's check, whose answer is there a little later; a console
+    // left open looks again every few hours (rep.mjs still asks GitHub at most once a day)
+    if (again) { setTimeout(() => checkVersion(false), 20000); setInterval(() => checkVersion(false), 6 * 3600e3); }
+    const el = $('#update-line');
+    if (!v || !el || !newerVersion(v.latest, v.current) || store.get('obysphere.update.dismissed') === v.latest) return;
+    el.innerHTML = `A newer Oby is out (${esc(v.latest)}): run <code class="tok-code">obysphere update</code><button type="button" aria-label="Dismiss"><svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>`;
+    el.hidden = false;
+    $('button', el).onclick = () => { store.set('obysphere.update.dismissed', v.latest); el.hidden = true; };
   }
 
   // ---------------------------------------------------------------- their words: a little Markdown, escaped first

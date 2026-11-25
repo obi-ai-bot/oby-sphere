@@ -79,10 +79,11 @@ for (const kind of ['fs', 'redis']) {
       }
     });
     after(async () => {
-      for (const p of procs) p.kill();
+      // stopped before their folder goes: a process still exiting may write once more
+      await Promise.all(procs.map((p) => (p.exitCode !== null || p.signalCode !== null ? null : new Promise((r) => { p.once('exit', r); p.kill(); }))));
       await fake?.close();
-      fs.rmSync(dir, { recursive: true, force: true });
-      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
 
     test('joining makes keys and publishes them', async () => {
