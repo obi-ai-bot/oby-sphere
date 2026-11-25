@@ -3737,7 +3737,9 @@ async function profileCmd() {
 async function profileExport() {
   if (opt.out !== undefined && (typeof opt.out !== 'string' || !opt.out)) die('--out needs a file name');
   const p = loadProfile();
+  const had = readJsonFile(path.join(p.dir, 'keys.json'), null);
   getSec(p); // an older profile makes its keys now, as serve would
+  const newKeys = !had?.seal?.d || !had?.sign?.d; // getSec's own test: it made keys just now
   try {
     loadSettings(p); // an older profile gets its settings.json; a version 1 file moves to version 2
   } catch {} // kept as it is: the new computer says what needs fixing
@@ -3798,7 +3800,14 @@ async function profileExport() {
 ${green('✓')} Exported ${bold(p.profile)} to ${out} (${fmtSize(bytes.length)}, only you can read it).
   It holds:  ${profileHolds(payload.files)}.
   Left out:  ${PROFILE_LEAVES}.
-  Anyone with this file and its passphrase can act as your Oby: keep them apart, and delete the file once it's imported.
+  Anyone with this file and its passphrase can act as your Oby: keep them apart, and delete the file once it's imported.${
+    newKeys
+      ? `
+
+${yellow('⚠')} This profile had no keys, so new ones were made for it now. If your Oby published keys before
+  (and lost them), Obys that pinned those will see your keys change when it next goes online (SECURITY.md).`
+      : ''
+  }
 
 On the new computer:  node rep.mjs profile import ${shq(path.basename(out))}
 Then stop your Oby here (its serve, ui --serve and mcp --serve): both computers hold the same token,
@@ -3843,8 +3852,8 @@ async function profileImport() {
   const prof = { ...files['profile.json'], profile: name };
   const who = (x) => `${x.agent?.name ? slug(x.agent.name) : '?'}, ${cleanLine(x.agent?.owner, 60) || '?'}'s Oby in ${cleanLine(x.sphereName, 80) || 'a Sphere'} (${cleanLine(x.sphere, 300) || '?'})`;
   const sameOby = !!old && old.profile.sphere === prof.sphere && old.profile.agent?.id === prof.agent.id;
+  const sameKeys = !!old && old.keys?.seal?.x === files['keys.json'].seal.x && old.keys?.sign?.x === files['keys.json'].sign.x;
   if (old) {
-    const sameKeys = old.keys?.seal?.x === files['keys.json'].seal.x && old.keys?.sign?.x === files['keys.json'].sign.x;
     console.log(`
 ${yellow('Replacing')} profile ${bold(name)} (${printable(who(old.profile))}): its token, keys, pinned keys and settings.
   ${sameKeys ? 'The same keys: nothing changes for other Obys.' : "Its old keys are gone for good: anything sealed to them can't be opened again."}${sameOby ? '' : ' Its local conversations go too.'}`);
@@ -3879,7 +3888,13 @@ ${yellow('Replacing')} profile ${bold(name)} (${printable(who(old.profile))}): i
   console.log(`
 ${green('✓')} Imported ${bold(name)} into ${dir}: ${printable(who(prof))}.
   It holds:  ${profileHolds(files)}.
-  Your keys came with it: the keys other Obys pinned for you still match, so they see no change.${
+  ${
+    sameOby && !sameKeys
+      ? `${yellow('⚠')} These aren't the keys this profile had. When your Oby next goes online it publishes them, and
+  any Oby that pinned the ones it had sees your keys change: it doesn't trust your sealed messages
+  until its owner deletes your entry in their peers.json (SECURITY.md).`
+      : 'Your keys came with it: the keys other Obys pinned for you still match, so they see no change.'
+  }${
     fix
       ? `
 

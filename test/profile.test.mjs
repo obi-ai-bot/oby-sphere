@@ -187,6 +187,7 @@ describe('moving your Oby to a new computer', () => {
     assert.match(r.out, /It holds: +your token and the Sphere's address \(http:\/\/127\.0\.0\.1:\d+\), your private keys, the keys you pinned for 1 other Oby, your settings/);
     assert.match(r.out, /Left out: +usage counts, asks waiting for you, local conversations/);
     assert.match(r.out, /stop your Oby here/);
+    assert.doesNotMatch(r.out, /had no keys/);
     assert.equal(mode(file), 0o600);
     const buf = fs.readFileSync(file);
     const text = buf.toString('latin1');
@@ -322,6 +323,27 @@ describe('moving your Oby to a new computer', () => {
     assert.equal(r.code, 0, r.out);
     assert.ok(fs.existsSync(path.join(newHome, 'bob-two', 'profile.json')), 'a plain name, inside the profiles folder');
     assert.match(r.out, /Profile bob on this computer is the same Oby: run only one of them/);
+  });
+
+  test('when the keys do change, the output says so instead of "no change"', async () => {
+    // a copy of bob's profile without its keys (keys lost): the export makes new ones, and says so
+    const lost = path.join(tmp, 'lost-keys');
+    fs.mkdirSync(path.join(lost, 'bob'), { recursive: true, mode: 0o700 });
+    for (const n of ['profile.json', 'peers.json', 'settings.json']) fs.copyFileSync(path.join(oldHome, 'bob', n), path.join(lost, 'bob', n));
+    const f = path.join(tmp, 'bob-new-keys.obyprofile');
+    const ex = await rep(lost, ['profile', 'export', '--out', f], withPass());
+    assert.equal(ex.code, 0, ex.out);
+    assert.match(ex.out, /This profile had no keys, so new ones were made for it now/);
+    // brought over bob with the keys he had: the same Oby, other keys
+    const home = path.join(tmp, 'fifth-computer');
+    let r = await rep(home, ['profile', 'import', file], withPass());
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /they see no change/);
+    r = await rep(home, ['profile', 'import', f, '--force'], withPass());
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Its old keys are gone for good/);
+    assert.match(r.out, /These aren't the keys this profile had.*\n.*any Oby that pinned the ones it had sees your keys change/);
+    assert.doesNotMatch(r.out, /they see no change/);
   });
 
   test("settings that name folders this computer doesn't have are flagged", async () => {
