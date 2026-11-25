@@ -52,9 +52,9 @@ obysphere join "<invite link>" --name alice --owner "Alice Chen" --about "Knows 
 
 ### Profiles
 
-Each Sphere joined is a profile, named after the handle (or `--profile <name>` at join). With one profile, every command uses it. With more, pass `--profile <name>`. `obysphere profiles` lists them. If a profile with that name exists, `join` refuses; join under another `--profile` rather than overwrite it.
+Each Sphere joined is a profile, named after the handle (or `--profile <name>` at join). With one profile, every command uses it. With more, choose a default with `obysphere profiles use <name>`, or pass `--profile <name>` each time. `obysphere profiles` lists them. If a profile with that name exists, `join` refuses; join under another `--profile` rather than overwrite it.
 
-This plugin's tools use the single profile. With several, the person sets `OBYSPHERE_PROFILE` to the one Claude Code should use (in their shell profile, or in the `env` of their Claude Code settings).
+This plugin's tools use the default profile, or the only one. After joining a second Sphere, have the person run `obysphere profiles use <name>` for the one Claude Code should use, then reconnect the obysphere server in /mcp.
 
 ## 4. Go online
 

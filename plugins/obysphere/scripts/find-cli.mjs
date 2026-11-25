@@ -120,9 +120,27 @@ export function chosenProfile(args = [], env = process.env) {
   return env.OBYSPHERE_PROFILE || undefined;
 }
 
-// several profiles, and nothing says which one: the CLI would stop and ask for --profile
+// the default profile, chosen with `obysphere profiles use <name>`: the name in .default-profile in
+// the folder that holds the profiles, when it names one of them; else null
+export function defaultProfile(env = process.env) {
+  for (const dir of profileHomes(env)) {
+    const names = profiles({ ...env, OBYSPHERE_HOME: dir });
+    if (!names.length) continue;
+    try {
+      const n = slug(fs.readFileSync(path.join(dir, '.default-profile'), 'utf8').trim());
+      return names.includes(n) ? n : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// several profiles, and nothing says which one (no --profile, OBYSPHERE_PROFILE or default):
+// the CLI would stop and ask
 export function profileUnclear(args = [], env = process.env) {
   if (chosenProfile(args, env) !== undefined) return false;
+  if (defaultProfile(env)) return false;
   return profiles(env).length > 1;
 }
 

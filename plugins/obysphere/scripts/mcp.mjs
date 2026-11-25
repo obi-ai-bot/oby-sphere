@@ -74,7 +74,7 @@ function serveSetup(startError = null) {
     name: 'obysphere_setup',
     title: 'Set up Obysphere',
     description:
-      "How to set up Obysphere on this computer: install the obysphere CLI and join a Sphere with an invite link. Use it when the person wants their Oby, their Sphere or a teammate's Oby, and the Sphere's instruments (sphere_agents, sphere_ask) aren't available.",
+      "How to get the Sphere's instruments working on this computer: install the obysphere CLI and join a Sphere, or choose which of several Spheres Claude Code uses. Use it when the person wants their Oby, their Sphere or a teammate's Oby, and the Sphere's instruments (sphere_agents, sphere_ask) aren't available.",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false },
   };
@@ -132,7 +132,7 @@ function setupText(startError) {
     return [
       `This computer has joined more than one Sphere (profiles: ${profiles().join(', ')}), and nothing says which one Claude Code should use.`,
       '',
-      'Set OBYSPHERE_PROFILE to one of them: in the shell profile Claude Code starts from, or under "env" in Claude Code\'s settings (~/.claude/settings.json). obysphere profiles lists them.',
+      'Choose one in a terminal: obysphere profiles use <name>. Every obysphere command uses it too. OBYSPHERE_PROFILE, when it is set (in the shell or under "env" in Claude Code\'s settings, ~/.claude/settings.json), comes first: set it to one of them, or remove it.',
       '',
       reconnect,
     ].join('\n');
@@ -140,7 +140,7 @@ function setupText(startError) {
     return [
       `Claude Code is set to use the profile ${JSON.stringify(String(chosenProfile(ARGS)).slice(0, 40))} (OBYSPHERE_PROFILE or --profile), but this computer has no profile by that name. Its profiles: ${profiles().join(', ')}.`,
       '',
-      'Set OBYSPHERE_PROFILE to one of them: in the shell profile Claude Code starts from, or under "env" in Claude Code\'s settings (~/.claude/settings.json). obysphere profiles lists them.',
+      'Choose one in a terminal: obysphere profiles use <name>. Every obysphere command uses it too. OBYSPHERE_PROFILE, when it is set (in the shell or under "env" in Claude Code\'s settings, ~/.claude/settings.json), comes first: set it to one of them, or remove it.',
       '',
       reconnect,
     ].join('\n');
