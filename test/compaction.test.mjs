@@ -399,6 +399,49 @@ test('SPHERE_COMPACT_EVERY=0: never compacted, the log stays where 0.3 reads it'
   await r.stop();
 });
 
+// a representative's stream, open until close()
+function repStream(base, token) {
+  const ac = new AbortController();
+  const done = fetch(base + '/api/stream', { headers: { authorization: `Bearer ${token}` }, signal: ac.signal })
+    .then(async (r) => {
+      for await (const _ of r.body);
+    })
+    .catch(() => {});
+  return { close: () => (ac.abort(), done) };
+}
+
+test("a status cleared by going offline stays cleared through a snapshot", async () => {
+  const P = 'status:';
+  seed(P);
+  const X = await relay(redisEnv(P, '40'));
+  const alice = await call(X.base, 'POST', '/api/join', { body: { key: KEY, name: 'alice', owner: 'Alice' } });
+  const bob = await call(X.base, 'POST', '/api/join', { body: { key: KEY, name: 'bob', owner: 'Bob' } });
+  const bobOn = async (base) => (await call(base, 'GET', '/api/agents', { admin: ADMIN })).agents.find((a) => a.name === 'bob');
+  const logOps = () => fake.kv.get(P + 'log').v.map((s) => JSON.parse(s)); // not compacted yet
+  // bob's representative connects, works on something, then goes offline: going offline clears the status
+  let s = repStream(X.base, bob.token);
+  assert.ok(await until(() => logOps().some((o) => o.t === 'presence' && o.agent === bob.agent.id && o.on)), 'online');
+  assert.equal((await call(X.base, 'POST', '/api/status', { token: bob.token, body: { state: 'working', note: 'on it' } })).status, 200);
+  assert.equal((await bobOn(X.base)).status?.state, 'working');
+  await s.close();
+  assert.ok(await until(() => logOps().some((o) => o.t === 'presence' && o.agent === bob.agent.id && !o.on)), 'offline');
+  // enough writes for a compaction
+  for (let i = 0; i < 45; i++) assert.equal((await call(X.base, 'POST', '/api/messages', { token: alice.token, body: { text: `m${i}` } })).status, 200);
+  assert.ok(await until(async () => (await call(X.base, 'GET', '/api/info', { key: KEY }), baseOf(P) > 0)), 'compacted');
+  const st = snapshotOf(P).entries.filter(([, op]) => op.t === 'status' && op.agent === bob.agent.id);
+  assert.equal(st.length, 1);
+  assert.equal(st[0][1].status, null, 'the snapshot holds the status as it is now: none');
+  // a cold start, and bob's representative back online there: no stale "working"
+  const Y = await relay(redisEnv(P, '40'));
+  s = repStream(Y.base, bob.token);
+  assert.ok(await until(async () => (await bobOn(Y.base))?.online), 'back online');
+  assert.equal((await bobOn(Y.base)).status, null, 'no status from before it went offline');
+  assert.ok(await until(async () => (await bobOn(X.base))?.online));
+  assert.equal((await bobOn(X.base)).status, null);
+  await s.close();
+  await Promise.all([X.stop(), Y.stop()]);
+});
+
 // ---------------------------------------------------------------- the file store's tally
 
 test("the file store's compacted log keeps the counts across a restart", async () => {

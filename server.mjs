@@ -1323,10 +1323,14 @@ function withoutKeys(op) {
 // (init, sphere, policy, the compaction mark, and ones this version doesn't know). Counts are left to a
 // tally the caller adds. A record that depends on another comes after it in the log
 // (an agent before its role, a channel before its messages), so it does here too.
+// A status is also cleared without a status operation (its member removed or
+// suspended, its representative offline); records apply where they first appeared,
+// so a status cleared after its last operation is folded as cleared.
 function foldOps(entries, retain = Infinity) {
   const ids = [];
   const last = new Map();
   const seen = new Set();
+  const cleared = new Map(); // agent id -> where its status was last cleared
   entries.forEach(([, op], i) => {
     if (op.t === 'msg' && !seen.has(op.m.id)) {
       seen.add(op.m.id);
@@ -1334,7 +1338,13 @@ function foldOps(entries, retain = Infinity) {
     }
     const k = recordKey(op);
     if (k) last.set(k, i);
+    if (op.t === 'agent' && (op.a?.removed || op.a?.suspended)) cleared.set(op.a.id, i);
+    if (op.t === 'presence' && op.role === 'rep' && !op.on) cleared.set(op.agent, i);
   });
+  const asNow = (i) => {
+    const [p, op] = entries[i];
+    return op.t === 'status' && op.status && cleared.get(op.agent) > i ? [p, { ...op, status: null }] : entries[i];
+  };
   const kept = new Set(ids.slice(Math.max(0, ids.length - retain)));
   const out = [];
   const done = new Set();
@@ -1349,7 +1359,7 @@ function foldOps(entries, retain = Infinity) {
       if (kept.has(op.id)) out.push([p, op]);
     } else if (recordKey(op)) {
       if (op.t === 'claim' && op.ask && !kept.has(op.ask)) continue;
-      if (once(recordKey(op))) out.push(entries[last.get(recordKey(op))]);
+      if (once(recordKey(op))) out.push(asNow(last.get(recordKey(op))));
     } else out.push([p, withoutKeys(op)]);
   }
   return out;
