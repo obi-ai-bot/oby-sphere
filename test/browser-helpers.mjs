@@ -1,15 +1,18 @@
 // Helpers for the browser tests (test/browser-tests.test.mjs): a Sphere and its members on this
-// machine, each Oby answering with the fake runtimes (test/fake-runtimes.mjs, first on PATH),
-// and small steps for driving the console in Chromium through Playwright. Nothing here imports
-// Playwright: the test file loads it when it's installed, so `npm test` runs without it.
+// machine, each Oby answering with the fake runtimes (test/fake-runtimes.mjs) and working on GitHub
+// through the fake gh (test/fake-gh.mjs), both first on PATH; a fake ntfy and Slack; and small
+// steps for driving the console in Chromium through Playwright. Nothing here imports Playwright:
+// the test file loads it when it's installed, so `npm test` runs without it.
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { makeFakeGh } from './fake-gh.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -57,29 +60,61 @@ export const freePort = () =>
     });
   });
 
+// what a member's machine would show on its desktop or open in a browser: here each only
+// writes a line to desktop.log beside it, so nothing reaches this machine's own desktop
+const DESKTOP_FAKES = ['osascript', 'terminal-notifier', 'notify-send', 'open', 'xdg-open'];
+function makeDesktopFakes(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const name of DESKTOP_FAKES) fs.writeFileSync(path.join(dir, name), `#!/bin/sh\necho "${name} $*" >> "$(dirname "$0")/desktop.log"\nexit 0\n`, { mode: 0o755 });
+}
+
 // Everything lives in one temp folder (OBYSPHERE_HOME, the relay's data, the members' folders,
-// a Claude Code config folder with nothing in it), and every process started here is stopped.
+// a Claude Code config folder with nothing in it, a HOME and an app home of their own), and
+// every process started here is stopped.
 export class World {
   constructor() {
     this.tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'obysphere-browser-')));
     this.home = path.join(this.tmp, 'reps');
     this.cfg = path.join(this.tmp, 'claude-config');
-    for (const d of [this.home, this.cfg]) fs.mkdirSync(d, { recursive: true });
+    this.userHome = path.join(this.tmp, 'home');
+    this.appHome = path.join(this.tmp, 'app');
+    for (const d of [this.home, this.cfg, this.userHome, this.appHome]) fs.mkdirSync(d, { recursive: true });
     this.bin = path.join(this.tmp, 'bin');
     this.fake = makeFakeRuntimes(this.bin);
+    // gh in a folder of its own: it keeps its own control.json and calls.jsonl
+    this.gh = makeFakeGh(path.join(this.tmp, 'gh-bin'));
+    makeDesktopFakes(path.join(this.tmp, 'desktop-bin'));
+    this.notifyLog = path.join(this.tmp, 'notify.jsonl');
     this.procs = [];
   }
 
-  // the members' environment: the fake runtimes first on PATH, and nothing of this machine's own
+  // The members' environment: the fake runtimes, gh and desktop first on PATH, and nothing of
+  // this machine's own: no update check on GitHub, notifications recorded in a log (a Slack or
+  // phone address on 127.0.0.1 is still called), and HOME a temp folder.
   env() {
-    const e = { ...process.env, PATH: `${this.bin}${path.delimiter}${process.env.PATH || ''}`, OBYSPHERE_HOME: this.home, OBYSPHERE_DOWNLOADS: path.join(this.tmp, 'downloads'), CLAUDE_CONFIG_DIR: this.cfg, OBYSPHERE_CHROME: '0' };
-    for (const k of Object.keys(e)) if (/^SPHERE_/.test(k) || k === 'OBYSPHERE_ADMIN_KEY' || k === 'OBYSPHERE_PROFILE') delete e[k];
+    const fakes = [this.bin, this.gh.dir, path.join(this.tmp, 'desktop-bin')];
+    const e = {
+      ...process.env,
+      PATH: [...fakes, process.env.PATH || ''].join(path.delimiter),
+      HOME: this.userHome,
+      OBYSPHERE_HOME: this.home,
+      OBYSPHERE_APP_HOME: this.appHome,
+      OBYSPHERE_DOWNLOADS: path.join(this.tmp, 'downloads'),
+      OBYSPHERE_NO_UPDATE_CHECK: '1',
+      OBYSPHERE_RELEASES_API: 'http://127.0.0.1:9/api',
+      OBYSPHERE_NOTIFY_LOG: this.notifyLog,
+      CLAUDE_CONFIG_DIR: this.cfg,
+      OBYSPHERE_CHROME: '0',
+    };
+    for (const k of Object.keys(e)) if (/^SPHERE_/.test(k) || /^(OBYSPHERE_(ADMIN_KEY|PROFILE|CLI)|GH_TOKEN|GITHUB_TOKEN|GH_CONFIG_DIR)$/.test(k)) delete e[k];
     return e;
   }
 
   // a process that keeps running; its output is kept for failure messages
   start(label, file, args, env) {
-    const proc = spawn(process.execPath, [path.join(ROOT, file), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    return this.keep(label, spawn(process.execPath, [path.join(ROOT, file), ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] }));
+  }
+  keep(label, proc) {
     const p = { label, proc, out: '' };
     const add = (d) => {
       p.out += d;
@@ -108,7 +143,7 @@ export class World {
   async startSphere({ name = 'Browser Test Sphere', sealed = true } = {}) {
     const port = await freePort();
     this.sphere = { name, url: `http://127.0.0.1:${port}`, key: 'join-key-browser-tests-0123456789', admin: 'admin-key-browser-tests-0123456789' };
-    const env = { ...process.env, SPHERE_KEY: this.sphere.key, SPHERE_ADMIN_KEY: this.sphere.admin, SPHERE_SEALED: sealed ? '1' : '0', SPHERE_STORE: 'fs', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000' };
+    const env = { ...process.env, HOME: this.userHome, SPHERE_KEY: this.sphere.key, SPHERE_ADMIN_KEY: this.sphere.admin, SPHERE_SEALED: sealed ? '1' : '0', SPHERE_STORE: 'fs', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000' };
     this.relay = this.start('relay', 'server.mjs', ['--port', String(port), '--host', '127.0.0.1', '--data', path.join(this.tmp, 'relay'), '--name', name], env);
     for (let i = 0; i < 100; i++) {
       try {
@@ -119,9 +154,9 @@ export class World {
     throw new Error(`the relay didn't start:\n${this.relay.out}`);
   }
 
-  // `rep.mjs <args>` to the end
-  async rep(args, timeoutMs = 60000) {
-    const p = this.start(`rep.mjs ${args[0]}`, 'rep.mjs', args, this.env());
+  // `rep.mjs <args>` to the end (env: more of the environment, such as a key it reads from there)
+  async rep(args, { env = {}, timeoutMs = 60000 } = {}) {
+    const p = this.start(`rep.mjs ${args[0]}`, 'rep.mjs', args, { ...this.env(), ...env });
     const t = setTimeout(() => p.proc.kill(), timeoutMs);
     const r = await p.exited;
     clearTimeout(t);
@@ -140,6 +175,13 @@ export class World {
     fs.writeFileSync(path.join(cwd, 'README.md'), `# ${owner}'s notes\n`);
     const r = await this.rep(['join', `${this.sphere.url}/#key=${this.sphere.key}`, '--name', name, '--owner', owner, '--about', about, '--cwd', cwd]);
     assert.match(r.out, /joined/, r.out);
+  }
+
+  // a member's Oby made an admin, as `rep.mjs admin claim` does it: the admin key in the
+  // environment for that one command, never on its command line
+  async claimAdmin(name) {
+    const r = await this.rep(['admin', 'claim', '--profile', name], { env: { OBYSPHERE_ADMIN_KEY: this.sphere.admin } });
+    assert.equal(r.code, 0, r.out);
   }
 
   settingsPath(name) {
@@ -170,6 +212,41 @@ export class World {
     return { url: `http://${name}.localhost:${port}/`, proc: p };
   }
 
+  // The answering session's own MCP server (`rep.mjs mcp --as-session`), started as Claude Code
+  // starts it, from the config a fake runtime was given (run.mcp). call(tool, args) gives the
+  // tool's words; what it would do on GitHub goes through the fake gh.
+  session(run) {
+    const { command, args, env } = run.mcp.mcpServers.obysphere;
+    const proc = spawn(command, args, { env: { ...this.env(), ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.keep('the answering session (rep.mjs mcp)', proc);
+    const waiting = new Map();
+    let buf = '';
+    let n = 0;
+    proc.stdout.on('data', (d) => {
+      buf += d;
+      for (let i = buf.indexOf('\n'); i >= 0; i = buf.indexOf('\n')) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 1);
+        try {
+          const m = JSON.parse(line);
+          waiting.get(m.id)?.(m);
+        } catch {}
+      }
+    });
+    const rpc = (method, params) =>
+      new Promise((resolve) => {
+        waiting.set(++n, resolve);
+        proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
+      });
+    return {
+      call: async (name, input) => {
+        const r = await rpc('tools/call', { name, arguments: input });
+        return r.result?.content?.[0]?.text ?? r.error?.message ?? '';
+      },
+      close: () => proc.kill(),
+    };
+  }
+
   async stop() {
     for (const p of this.procs) p.proc.kill('SIGTERM');
     await Promise.race([Promise.all(this.procs.map((p) => p.exited)), sleep(5000)]);
@@ -182,22 +259,30 @@ export class World {
 
 const ARTIFACTS = path.resolve(process.env.OBYSPHERE_BROWSER_ARTIFACTS || path.join(os.tmpdir(), 'obysphere-browser-artifacts'));
 
-// Opens url at vp's width in a fresh context, runs fn(page), and checks that the page logged no
-// errors. On a failure it keeps a screenshot and a Playwright trace (npx playwright show-trace).
+// Opens url at vp's width in a fresh context and runs fn(page, { open }); open(url) opens another
+// page in the same context, such as another member's console. Then it checks that no page logged
+// an error. On a failure it keeps a screenshot of each page and a Playwright trace
+// (npx playwright show-trace).
 export async function withPage(browser, t, url, vp, fn) {
   const context = await browser.newContext({ viewport: vp.viewport, isMobile: !!vp.isMobile, hasTouch: !!vp.hasTouch });
   context.setDefaultTimeout(15000);
   await context.tracing.start({ screenshots: true, snapshots: true });
-  const page = await context.newPage();
   const problems = [];
-  page.on('pageerror', (e) => problems.push(`page error: ${firstLine(e.stack || e.message)}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error') problems.push(`console error: ${m.text()}${m.location()?.url ? ` (${m.location().url})` : ''}`);
-  });
+  const pages = [];
+  const open = async (to) => {
+    const page = await context.newPage();
+    const where = new URL(to).host;
+    page.on('pageerror', (e) => problems.push(`page error at ${where}: ${firstLine(e.stack || e.message)}`));
+    page.on('console', (m) => {
+      if (m.type() === 'error') problems.push(`console error at ${where}: ${m.text()}${m.location()?.url ? ` (${m.location().url})` : ''}`);
+    });
+    pages.push(page);
+    await page.goto(to);
+    return page;
+  };
   let failed = null;
   try {
-    await page.goto(url);
-    await fn(page);
+    await fn(await open(url), { open });
     assert.deepEqual(problems, [], 'no page errors or console errors');
   } catch (e) {
     failed = e;
@@ -206,9 +291,10 @@ export async function withPage(browser, t, url, vp, fn) {
     if (failed) {
       fs.mkdirSync(ARTIFACTS, { recursive: true });
       const base = path.join(ARTIFACTS, `${vp.name}-${t.name}`.replace(/[^\w-]+/g, '-').slice(0, 90));
-      await page.screenshot({ path: `${base}.png`, fullPage: true }).catch(() => {});
+      const shots = pages.map((p, i) => `${base}${i ? `-${i + 1}` : ''}.png`);
+      for (const [i, p] of pages.entries()) await p.screenshot({ path: shots[i], fullPage: true }).catch(() => {});
       await context.tracing.stop({ path: `${base}-trace.zip` });
-      failed.message += `\n  screenshot and trace: ${base}.png, ${base}-trace.zip${problems.length ? `\n  the page also logged:\n    ${problems.join('\n    ')}` : ''}`;
+      failed.message += `\n  screenshots and trace: ${[...shots, `${base}-trace.zip`].join(', ')}${problems.length ? `\n  the pages also logged:\n    ${problems.join('\n    ')}` : ''}`;
     } else await context.tracing.stop();
   } finally {
     await context.close();
@@ -249,20 +335,20 @@ export async function sidePanel(page) {
   return side;
 }
 
-// a page of the console, from the side panel ("Traffic", "Your Oby", …; a count may follow the name)
+// What the side panel offers: a page of the console ("Traffic", "Your Oby", …), or in the
+// Conversation view a channel or a person ("general", "Bob Test"). A count may follow the name.
+const inSide = (page, name) => page.getByRole('complementary').getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+\\+?( new)?)?$`) });
 export async function goTo(page, name) {
   const side = await sidePanel(page);
-  await side.getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+)?$`) }).click();
+  await inSide(page, name).click();
   await settled(side);
 }
 export async function hasPage(page, name) {
-  return (await page.getByRole('complementary').getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+)?$`) }).count()) > 0;
+  return (await inSide(page, name).count()) > 0;
 }
 
-// Console or Conversation: the switch in the title bar (0.3.0 moves it to the side panel)
+// Console or Conversation: the view switch at the side panel's left edge
 export async function switchView(page, name) {
-  const tab = page.getByRole('tab', { name, exact: true });
-  if (await tab.count()) return tab.click();
   const side = await sidePanel(page);
   await side.getByRole('button', { name, exact: true }).click();
   if (await page.getByRole('button', { name: 'Side panel' }).isVisible()) {
@@ -292,6 +378,29 @@ export async function sidewaysScroll(page) {
 }
 export async function noSidewaysScroll(page, vp, where) {
   assert.deepEqual(await sidewaysScroll(page), [], `${where}, ${vp.viewport.width}px wide: nothing scrolls sideways`);
+}
+
+// A phone's ntfy server and a Slack incoming webhook, on 127.0.0.1: every request it gets is kept
+// in hits ({ path, headers, body }), and it answers 200
+export async function startFakeHooks() {
+  const hits = [];
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      hits.push({ path: req.url, headers: req.headers, body });
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+  });
+  // never on the demo's ports (4848 to 4850)
+  for (;;) {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    if (port < 4848 || port > 4850) break;
+    await new Promise((resolve) => server.close(resolve));
+  }
+  return { url: `http://127.0.0.1:${server.address().port}`, hits, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 // polls until fn() is truthy

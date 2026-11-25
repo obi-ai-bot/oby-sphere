@@ -1,7 +1,9 @@
 // The console (public/index.html) in a real browser: Chromium through Playwright, at desktop and
-// phone width. A sealed Sphere and two members run on this machine; their Obys answer with fake
-// runtimes (test/fake-runtimes.mjs), so no model and no network. Each flow also checks that the
-// page logged no errors and that nothing scrolls sideways.
+// phone width. A sealed Sphere and three members run on this machine: alice, whose console most
+// flows drive; bob, an admin; and carol, who is in none of their conversations. Their Obys answer
+// with fake runtimes (test/fake-runtimes.mjs), gh is a fake (test/fake-gh.mjs), and so are the
+// phone's ntfy server and Slack: no model and no network. Each flow also checks that no page
+// logged an error and that nothing scrolls sideways.
 //
 // Playwright is installed only for these tests, never as a dependency (CONTRIBUTING.md):
 //   npm install --no-save playwright@<version in test/browser-helpers.mjs>
@@ -10,19 +12,15 @@
 // Without Playwright the file skips, saying why; with OBYSPHERE_BROWSER_TESTS=1 it fails instead,
 // so CI can't skip it by accident.
 //
-// Next, with 0.3.0, each a few lines on these helpers (World, withPage, goTo, switchView):
-// - direct messages: a member in the side panel opens your conversation with them;
-// - channels: a new channel, and Obys invited to it;
-// - admins: Policy only for admins, and the Admin access dialog;
-// - Settings › Notifications, and the console's own notifications;
-// - Settings › GitHub, and GitHub items in Waiting for you;
-// - Invite member: the one text to copy.
+// A new flow is a few lines on the helpers: World (the machine, and an answering session's own
+// tools with world.session), withPage (a page, and more pages with open), goTo (the side panel),
+// switchView, noSidewaysScroll and until.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, until } from './browser-helpers.mjs';
+import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, startFakeHooks, until } from './browser-helpers.mjs';
 
 const REQUIRED = process.env.OBYSPHERE_BROWSER_TESTS === '1';
 const ANSWER = 'Here is my answer, from a fake runtime on this machine.';
@@ -59,7 +57,7 @@ if (!chromium) {
   });
 
   describe('the console in a real browser', () => {
-    let browser, world, sphere, alice;
+    let browser, world, sphere, hooks, alice, bob, carol;
     const run = (t, url, vp, fn) => withPage(browser, t, url, vp, fn).catch((e) => {
       e.message += `\n${world.logs()}`;
       throw e;
@@ -69,18 +67,25 @@ if (!chromium) {
       browser = await chromium.launch();
       world = new World();
       world.fake.control({ text: ANSWER });
+      hooks = await startFakeHooks();
       sphere = await world.startSphere();
       await world.join('alice', 'Alice Test', 'Knows the release notes');
       await world.join('bob', 'Bob Test', 'Knows the payments service');
+      await world.join('carol', 'Carol Test', 'Knows the design system');
+      // Bob's Oby is an admin of the Sphere; Alice's and Carol's are members
+      await world.claimAdmin('bob');
       // Alice's Oby waits for her on asks from Bob (Waiting for you)
       world.editSettings('alice', (s) => (s.access.agents = { bob: 'approve' }));
       await world.serve('bob');
       alice = await world.console('alice', { serve: true });
+      bob = await world.console('bob');
+      carol = await world.console('carol');
     });
     after(async () => {
       try {
         await browser?.close();
       } finally {
+        await hooks?.close();
         await world?.stop();
       }
     });
@@ -93,16 +98,15 @@ if (!chromium) {
             await page.getByText('Agents run here').waitFor();
             await page.getByText('Live log').waitFor();
             await noSidewaysScroll(page, vp, 'Overview');
-            // someone holding only the join key watches: no member's pages
-            assert.equal(await hasPage(page, 'Your Oby'), false);
-            assert.equal(await hasPage(page, 'Settings'), false);
+            // someone holding only the join key watches: no member's pages, and no admin's
+            for (const name of ['Your Oby', 'Settings', 'Policy', 'Admins']) assert.equal(await hasPage(page, name), false, `no ${name}`);
+            assert.equal(await hasPage(page, 'Admin sign-in'), true);
             const pages = [
               ['Traffic', 'Traffic', /exchanges · \d+ in flight/],
               ['Members', 'Members', /Bob Test.s Oby/],
               ['Instruments', 'Instruments', 'sphere_ask'],
               ['Files', 'Files', /No files yet|files relayed/],
               ['Audit log', 'Audit log', /Chain verified/],
-              ['Policy', 'Policy', 'Seal message contents'],
               ['Overview', sphere.name, 'Agents run here'],
             ];
             for (const [nav, heading, shows] of pages) {
@@ -119,6 +123,10 @@ if (!chromium) {
             await title(page, sphere.name).waitFor();
             await page.getByRole('button', { name: 'New exchange' }).waitFor();
             assert.equal(await hasPage(page, 'Settings'), true);
+            // the side panel's edge names the Sphere and you, on a touch screen too
+            const side = page.getByRole('complementary');
+            await side.getByRole('button', { name: sphere.name, exact: true }).waitFor({ state: 'attached' });
+            await side.getByRole('button', { name: 'You: Alice Test (alice)', exact: true }).waitFor({ state: 'attached' });
             await goTo(page, 'Your Oby');
             await title(page, 'Your Oby').waitFor();
             await page.getByText('@alice · represents Alice Test').waitFor();
@@ -135,9 +143,9 @@ if (!chromium) {
             await dialog.waitFor();
             await dialog.getByRole('button', { name: 'Add', exact: true }).click();
             await dialog.getByRole('menuitem', { name: /Bob Test.s Oby/ }).click();
-            await dialog.getByRole('textbox', { name: 'Message' }).fill(question);
+            await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill(question);
             await noSidewaysScroll(page, vp, 'New exchange');
-            await dialog.getByRole('button', { name: 'Send' }).click();
+            await dialog.getByRole('button', { name: 'Send', exact: true }).click();
             // the exchange opens, then fills in when Bob's Oby answers on "his" machine
             await title(page, /^Exchange m_/).waitFor();
             await page.getByText(question).first().waitFor();
@@ -182,18 +190,21 @@ if (!chromium) {
           });
         });
 
-        test('Waiting for you: an ask held for approval is let through, and another declined', EACH, async (t) => {
+        test('Waiting for you: an ask held for approval is let through, another declined, and one answered by you', EACH, async (t) => {
           const yes = `Could you summarise the release notes? (${vp.name}, let through)`;
           const no = `Could you share the launch date? (${vp.name}, declined)`;
+          const mine = `Could you check the changelog? (${vp.name}, answered by Alice)`;
+          const myAnswer = `Alice here: the changelog is fine. (${vp.name})`;
           await run(t, alice.url, vp, async (page) => {
             await goTo(page, 'Your Oby');
             await title(page, 'Your Oby').waitFor();
-            const askYes = world.repInBackground(['ask', 'alice', yes, '--profile', 'bob', '--wait', '60']);
-            const askNo = world.repInBackground(['ask', 'alice', no, '--profile', 'bob', '--wait', '60']);
+            const ask = (text) => world.repInBackground(['ask', 'alice', text, '--profile', 'bob', '--wait', '60']);
+            const [askYes, askNo, askMine] = [ask(yes), ask(no), ask(mine)];
             const card = (text) => page.locator('[data-pending]').filter({ hasText: text });
 
             await page.getByRole('heading', { name: /^Waiting for you/ }).waitFor();
             await card(yes).getByText(/Bob Test.s Oby asks/).waitFor();
+            await card(mine).waitFor();
             await noSidewaysScroll(page, vp, 'Waiting for you');
             await card(yes).getByRole('button', { name: 'Let my Oby answer' }).click();
             await card(yes).waitFor({ state: 'detached' });
@@ -206,7 +217,45 @@ if (!chromium) {
             await card(no).waitFor({ state: 'detached' });
             const declined = await askNo.exited;
             assert.match(declined.out, /Alice Test's Oby isn't taking this ask: its owner declined it/, declined.out);
-            assert.equal(world.fake.calls().length, runs, 'no runtime ran for the declined ask');
+
+            await card(mine).getByRole('button', { name: 'Answer myself' }).click();
+            await card(mine).getByPlaceholder('Your answer, sent as yours').fill(myAnswer);
+            await noSidewaysScroll(page, vp, 'Answer myself');
+            await card(mine).getByRole('button', { name: 'Send my answer' }).click();
+            await card(mine).waitFor({ state: 'detached' });
+            const written = await askMine.exited;
+            assert.ok(written.out.includes(myAnswer), written.out);
+            assert.equal(world.fake.calls().length, runs, 'no runtime ran for the declined ask, or the one Alice answered');
+          });
+        });
+
+        test('Waiting for you: what your Oby would do on GitHub waits for your click', EACH, async (t) => {
+          const pr = vp.name === 'desktop' ? 7 : 8;
+          const question = `Could you approve acme/payments#${pr}? (${vp.name})`;
+          await run(t, alice.url, vp, async (page) => {
+            world.editSettings('alice', (s) => (s.github = { ...s.github, enabled: true, repos: ['acme/*'] }));
+            // Carol asks; Alice's Oby answers, and its session would approve the pull request
+            const asked = await world.rep(['ask', 'alice', question, '--profile', 'carol', '--wait', '60']);
+            assert.ok(asked.out.includes(ANSWER), asked.out);
+            const session = world.session(world.fake.calls().find((c) => c.prompt.includes(question)));
+            assert.match(await session.call('github_review', { repo: 'acme/payments', number: pr, event: 'APPROVE', body: 'Looks right to me.' }), /waits for Alice Test/);
+            session.close();
+            const writes = world.gh.writes().length;
+
+            await goTo(page, 'Your Oby');
+            const card = page.locator('[data-pending]').filter({ hasText: `acme/payments#${pr}` });
+            await card.getByText(`Your Oby would approve acme/payments#${pr} on GitHub`).waitFor();
+            await card.getByText('Looks right to me.').waitFor();
+            assert.equal(world.gh.writes().length, writes, 'nothing on GitHub while it waits');
+            await noSidewaysScroll(page, vp, 'a GitHub item in Waiting for you');
+            await card.getByRole('button', { name: 'Approve on GitHub' }).click();
+            await card.waitFor({ state: 'detached' });
+            const done = await until(() => world.gh.writes()[writes], 'gh pr review');
+            assert.deepEqual(done.argv.slice(0, 5), ['pr', 'review', String(pr), '--repo=acme/payments', '--approve']);
+            assert.match(done.argv[5], /^--body=Looks right to me\.\n\n— written by Alice Test's Oby, approved by Alice Test$/);
+            // and the ask's thread says so, for Carol
+            await switchView(page, 'Conversation');
+            await page.getByRole('log').getByText(`Alice Test approved acme/payments#${pr} on GitHub.`).waitFor();
           });
         });
 
@@ -219,15 +268,171 @@ if (!chromium) {
             const thread = page.getByRole('log');
             await thread.waitFor();
             // to everyone in #general, not to an Oby in particular
-            await page.getByRole('button', { name: 'Ask no one in particular' }).click();
-            await page.getByRole('textbox', { name: 'Message' }).fill(mine);
-            await page.getByRole('button', { name: 'Send' }).click();
+            await page.getByText(/^Everyone in #general sees it/).waitFor();
+            await page.getByRole('textbox', { name: 'Message', exact: true }).fill(mine);
+            await page.getByRole('button', { name: 'Send', exact: true }).click();
             await thread.getByText(mine).waitFor();
             // and someone else's post arrives while the page is open
             const r = await world.rep(['post', his, '--profile', 'bob']);
             assert.match(r.out, /Posted in #general/, r.out);
             await thread.getByText(his).waitFor();
             await noSidewaysScroll(page, vp, 'Conversation');
+          });
+        });
+
+        test("Direct messages: a person opens your conversation with them; it's theirs and yours alone", EACH, async (t) => {
+          const note = `Lunch at noon? Just between us. (${vp.name})`;
+          await run(t, alice.url, vp, async (page, { open }) => {
+            await switchView(page, 'Conversation');
+            await goTo(page, 'Bob Test');
+            await page.getByText('Your conversation with Bob Test and their Oby.').waitFor();
+            // a note just for Bob: his Oby doesn't answer it
+            const just = page.getByRole('switch', { name: 'Just for Bob Test' });
+            await just.click();
+            assert.equal(await just.getAttribute('aria-checked'), 'true');
+            const runs = world.fake.calls().length;
+            await page.getByRole('textbox', { name: 'Message', exact: true }).fill(note);
+            await page.getByRole('button', { name: 'Send', exact: true }).click();
+            await page.getByRole('log').getByText(note).waitFor();
+            await noSidewaysScroll(page, vp, 'a direct conversation');
+
+            // Bob finds it under Alice's name in his console
+            const his = await open(bob.url);
+            await switchView(his, 'Conversation');
+            await goTo(his, 'Alice Test');
+            await his.getByText('Your conversation with Alice Test and their Oby.').waitFor();
+            await his.getByRole('log').getByText(note).waitFor();
+            assert.equal(world.fake.calls().length, runs, "Bob's Oby didn't answer a note just for him");
+
+            // Carol, a third member, has no way to it: not in her side panel, not by its link, not
+            // from the relay (an admin would see it in the side panel as "Alice Test and Bob Test")
+            const dm = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('c');
+            assert.match(dm, /^dm-[0-9a-f]{24}$/);
+            assert.ok((await world.rep(['read', dm, '--profile', 'bob'])).out.includes(note), 'Bob reads it from the relay');
+            const hers = await open(`${carol.url}#mode=conversation&c=${dm}`);
+            await hers.getByRole('log').waitFor();
+            await hers.getByText(/^Everyone in #general sees it/).waitFor(); // #general instead
+            for (const name of ['Alice Test and Bob Test', 'Bob Test and Alice Test']) assert.equal(await hasPage(hers, name), false, `no "${name}" in Carol's side panel`);
+            assert.equal(await hers.getByText(note).count(), 0, "Carol's page doesn't have the note");
+            assert.ok(!(await world.rep(['read', dm, '--profile', 'carol'])).out.includes(note), 'Carol reads nothing of it');
+            await noSidewaysScroll(hers, vp, "Carol's Conversation view");
+          });
+        });
+
+        test('A new channel, with the people and Obys picked for it', EACH, async (t) => {
+          const name = `launch-${vp.name}`;
+          const words = `Launch checklist is in the doc. (${vp.name})`;
+          await run(t, alice.url, vp, async (page) => {
+            await switchView(page, 'Conversation');
+            await goTo(page, 'New channel');
+            const dialog = page.getByRole('dialog', { name: 'New channel' });
+            await dialog.getByRole('textbox', { name: 'Name' }).fill(name);
+            await dialog.getByRole('switch', { name: 'Private' }).click();
+            await dialog.getByRole('button', { name: 'Bob Test', exact: true }).click();
+            await noSidewaysScroll(page, vp, 'New channel');
+            await dialog.getByRole('button', { name: 'Create channel' }).click();
+            await dialog.waitFor({ state: 'hidden' });
+            // it opens, with Alice and Bob in it
+            await page.getByText('Private: only the people and Obys in it see it.', { exact: false }).waitFor();
+            await page.getByRole('button', { name: /^In it: / }).click();
+            const people = page.getByRole('dialog', { name: `People and Obys in #${name}` });
+            await people.getByText('@alice · Alice Test').waitFor();
+            await people.getByText('@bob · Bob Test').waitFor();
+            assert.equal(await people.getByText('@carol').count(), 0, 'Carol isn’t in it');
+            await people.getByRole('button', { name: 'Carol Test', exact: true }).waitFor(); // offered, to add
+            await people.getByRole('button', { name: 'Close' }).click();
+            await page.getByRole('textbox', { name: 'Message', exact: true }).fill(words);
+            await page.getByRole('button', { name: 'Send', exact: true }).click();
+            await page.getByRole('log').getByText(words).waitFor();
+            await noSidewaysScroll(page, vp, `#${name}`);
+            // Bob reads it; Carol, who isn't in it, doesn't
+            assert.match((await world.rep(['read', name, '--profile', 'bob'])).out, new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+            assert.ok(!(await world.rep(['read', name, '--profile', 'carol'])).out.includes(words), 'Carol reads nothing of it');
+          });
+        });
+
+        test("Admin pages: an admin member sees Policy, Admins and the invite; a member who isn't an admin never sees Policy", EACH, async (t) => {
+          await run(t, bob.url, vp, async (page, { open }) => {
+            // Bob's Oby is an admin
+            await goTo(page, 'Policy');
+            await title(page, 'Policy').waitFor();
+            assert.match(await page.getByRole('button', { name: 'Seal message contents' }).getAttribute('class'), /\bis-on\b/, 'sealed');
+            await page.getByRole('button', { name: 'Rotate join key' }).waitFor();
+            await noSidewaysScroll(page, vp, 'Policy');
+            await goTo(page, 'Admins');
+            await title(page, 'Admins').waitFor();
+            await page.getByRole('row').filter({ hasText: 'Your Oby' }).getByText('Admin', { exact: true }).waitFor();
+            await noSidewaysScroll(page, vp, 'Admins');
+            // the invite: one text for the new member's AI agent, with this Sphere's link in it
+            await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+            await switchView(page, 'Conversation');
+            await goTo(page, 'Invite member');
+            const dialog = page.getByRole('dialog', { name: 'Invite member' });
+            const join = `obysphere join "${sphere.url}/#key=${sphere.key}"`;
+            assert.ok((await dialog.getByLabel('The text for their AI agent').textContent()).includes(join));
+            await noSidewaysScroll(page, vp, 'Invite member');
+            await dialog.getByRole('button', { name: 'Copy for your AI agent' }).click();
+            await dialog.getByRole('button', { name: 'Copied' }).waitFor();
+            assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(join), 'the text is on the clipboard');
+
+            // Alice's Oby isn't an admin: no Policy anywhere, only the way to claim it
+            const hers = await open(alice.url);
+            await title(hers, sphere.name).waitFor();
+            assert.equal(await hasPage(hers, 'Policy'), false);
+            assert.equal(await hasPage(hers, 'Admins'), false);
+            await hers.getByRole('button', { name: 'You: Alice Test', exact: true }).click();
+            const menu = hers.getByRole('menu');
+            assert.equal(await menu.getByRole('menuitem', { name: 'Policy' }).count(), 0);
+            await menu.getByRole('menuitem', { name: 'Admin access…' }).click();
+            const claim = hers.getByRole('dialog', { name: 'Admin access' });
+            await claim.getByRole('textbox', { name: 'Admin key' }).waitFor();
+            await claim.getByRole('button', { name: 'Make my Oby an admin' }).waitFor();
+            await noSidewaysScroll(hers, vp, 'Admin access');
+            await claim.getByRole('button', { name: 'Close' }).click();
+            await claim.waitFor({ state: 'hidden' });
+            // and a link straight to Policy opens the Overview
+            await hers.goto(`${alice.url}#mode=console&page=policy`);
+            await hers.reload();
+            await title(hers, sphere.name).waitFor();
+            assert.equal(await title(hers, 'Policy').count(), 0);
+          });
+        });
+
+        test('Settings › Notifications: Send a test reaches a phone (ntfy) or Slack', EACH, async (t) => {
+          // desktop: a phone's ntfy topic; phone: a Slack incoming webhook. Both are fakes on 127.0.0.1
+          const way = vp.name === 'desktop' ? { field: 'Your phone (ntfy)', path: '/obysphere-browser-topic' } : { field: 'Slack', path: '/services/T000/B000/browserTestHook0123' };
+          await run(t, alice.url, vp, async (page) => {
+            await goTo(page, 'Settings');
+            await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
+            const address = page.getByRole('textbox', { name: way.field, exact: true });
+            const row = page.locator('.set-row').filter({ has: address });
+            await address.fill(hooks.url + way.path);
+            const sent = hooks.hits.length;
+            await row.getByRole('button', { name: 'Send a test' }).click();
+            await row.getByRole('status').getByText('Sent (summary).').waitFor();
+            const hit = hooks.hits.slice(sent).find((h) => h.path === way.path);
+            assert.ok(hit, `the fake ${way.field} got the test`);
+            assert.ok((hit.headers.title || hit.body).includes('A test from your Obysphere'), JSON.stringify(hit));
+            // kept on this machine whole; the page shows it masked
+            await until(() => JSON.stringify(world.settings('alice').notify || {}).includes(hooks.url + way.path), 'settings.json to keep the address');
+            await noSidewaysScroll(page, vp, 'Settings › Notifications');
+            await page.reload();
+            await until(async () => (await address.inputValue()).includes('…'), 'the address masked after a reload');
+            assert.ok(!(await address.inputValue()).includes(way.path), await address.inputValue());
+          });
+        });
+
+        test('Settings › GitHub: gh’s sign-in (a fake gh first on PATH), and the switch saved', EACH, async (t) => {
+          await run(t, alice.url, vp, async (page) => {
+            await goTo(page, 'Settings');
+            await page.getByRole('heading', { name: 'GitHub', exact: true }).waitFor();
+            await page.getByText(/Signed in to GitHub as octo-bob · gh 2\.99\.0\./).waitFor();
+            assert.ok(world.gh.calls().some((c) => c.argv.join(' ').startsWith('auth status')), 'asked the fake gh');
+            const on = page.getByRole('switch', { name: 'Let your Oby work on GitHub' });
+            const was = (await on.getAttribute('aria-checked')) === 'true';
+            await on.click();
+            await until(() => world.settings('alice').github?.enabled === !was, 'settings.json to have GitHub turned ' + (was ? 'off' : 'on'));
+            await noSidewaysScroll(page, vp, 'Settings › GitHub');
           });
         });
       });
