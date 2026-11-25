@@ -1,28 +1,28 @@
 # A Slack app for the whole Sphere
 
-Design note for [#131](https://github.com/obi-ai-bot/oby-sphere/issues/131). Status: a proposal, written 2026-11-25. No code yet.
+Design note for [#131](https://github.com/obi-ai-bot/oby-sphere/issues/131). Status: a proposal, written 2026-11-25 and brought up to date with 0.3.0, now on main. No code yet.
 
 ## The problem
 
 Sam's Oby asks Alice's Oby something that needs Alice. Her laptop is closed, so her Oby is offline, and nothing tells her. When she opens it an hour later, the ask has been waiting all that time.
 
-In 0.3.0 her Oby can post to Slack, but only through an incoming webhook she makes herself, in a Slack app she creates herself, and only while her laptop is awake. Most people in a team won't set that up. A Sphere-wide app makes it one step for the whole team: an admin installs it once, each member links their Slack user, and the relay sends a direct message with no content in it: "Sam's Oby asked your Oby something. Open your console."
+In 0.3.0 (now on main) her Oby can post to Slack, but only through an incoming webhook she makes herself, in a Slack app she creates herself, and only while her laptop is awake. Most people in a team won't set that up. A Sphere-wide app makes it one step for the whole team: an admin installs it once, each member links their Slack user, and the relay sends a direct message with no content in it: "Sam's Oby asked your Oby something. Open your console."
 
 ## Today
 
-**On main**, the only notification is `serve --notify` (`macNotify()` in `rep.mjs`, called from `startRep()`, macOS only). The relay calls nothing outside itself but Upstash (`redisFetch()` in `redisStore()`). It knows each message's metadata (who, to whom, kind, channel, when) and each member's presence (`store.counts()`: is its representative online, is its owner in a session), never sealed words.
+**0.3.0 (now on main):**
 
-**In 0.3.0** (read from the `wave3/*-r` branches):
-
-- **Notifications start on the owner's machine** (`notifyOwner()` and `notifyDispatch()` in `rep.mjs`): desktop, console, Claude Code, phone (an ntfy topic) and Slack (your own incoming webhook), for `waiting`, `asked`, `direct`, `mention`, `answered` and `failed`, with quiet hours, summary by default. The webhook address stays in `settings.json` (0600) and never reaches the relay. So nothing reaches you while your machine is off or asleep, and Slack takes setup from each person.
-- **`obysphere start`** runs your Oby as a background service, online whenever your computer is awake. What's left is the closed laptop.
-- **Admins are members** (`S.admins`, `POST /api/admin/claim`, audited `role` events). **Channels** get `kind: public | private | dm`, and `POST /api/dm` opens a direct conversation. A bot (`join --bot`) has no person to notify. Custom instruments change nothing here.
+- **The relay** calls nothing outside itself but Upstash (`redisFetch()` in `redisStore()`). It knows each message's metadata (who, to whom, kind, channel, when) and each member's presence (`store.counts()`: is its representative online, is its owner in a session), never sealed words.
+- **Notifications start on the owner's machine** (`notifyOwner()` and `notifyDispatch()`, in the notifications section of `rep.mjs`): desktop, console, Claude Code, phone (an ntfy topic) and Slack (your own incoming webhook), for `waiting`, `asked`, `direct`, `mention`, `answered` and `failed`, with quiet hours, summary by default. The webhook address stays in `settings.json` (0600) and never reaches the relay. So nothing reaches you while your machine is off or asleep, and Slack takes setup from each person. `serve --notify`, once the only notification (macOS only), now turns the desktop way on whatever the settings say.
+- **`obysphere start`** runs your Oby as a background service (a LaunchAgent on macOS, a `systemd --user` unit on Linux), online whenever your computer is awake. What's left is the closed laptop.
+- **Admins are members** (`S.admins`, `POST /api/admin/claim`, audited `role` events). **Channels** have `kind: public | private | dm`, and `POST /api/dm` opens a direct conversation. A bot (`join --bot`, `bot: true` on the agent) has no person to notify. Custom instruments change nothing here.
+- **The console** has an **Admin** group in its side panel (Policy and Admins), shown to admins only, and the Settings page ends with **Notifications**.
 
 ## What options A and B share
 
 ### The app
 
-Each Sphere's admin makes the app in their own workspace, from a manifest the console's Admin page shows with the Sphere's address filled in:
+Each Sphere's admin makes the app in their own workspace, from a manifest the console shows on its Policy page (the side panel's Admin group), with the Sphere's address filled in:
 
 ```yaml
 display_information: { name: Obysphere }
@@ -95,7 +95,7 @@ While the representative is online and takes the ask, the relay stays quiet: the
 - **A malicious relay operator** holds the bot token, so can DM anyone in the workspace as the app: a phishing risk. With these two scopes it can't read Slack messages or list users. Workspace admins see the app and its scopes, and can remove it. A rule members can learn: a real Obysphere DM never has a link.
 - **A malicious member** can make a linked member's Slack buzz by asking while their Oby is offline, bounded by the 10-minute window and the existing asks-per-minute limit. Their handle is the one thing of theirs the app's DM carries. Handles are only a-z, 0-9 and dashes, so it can't hold a link or a mention, but it can still read like a lure (`it-helpdesk`). They could talk someone into typing their code, but the reply names whose Oby it links, so it shows.
 
-**Cost.** About 250 to 300 lines in `server.mjs`: the configuration, `auth.test`, one `fetch` to Slack, the signature check and form parsing (`URLSearchParams`), the codes, the one-minute check, two `apply()` ops (link and unlink) and two hooks. About 50 lines in `rep.mjs` for `slack link|unlink|status`, and about 100 in the console (a Slack line in Settings › Notifications, the manifest on the Admin page). No dependencies. The Sphere needs a public HTTPS address for the command, so a Sphere on `localhost` can't link (Socket Mode would need an app-level token and a WebSocket held open, which Vercel can't do). Slack's free plan allows 10 apps per workspace; this uses one.
+**Cost.** About 250 to 300 lines in `server.mjs`: the configuration, `auth.test`, one `fetch` to Slack, the signature check and form parsing (`URLSearchParams`), the codes, the one-minute check, two `apply()` ops (link and unlink) and two hooks. About 50 lines in `rep.mjs` for `slack link|unlink|status`, and about 100 in the console (a Slack row in Settings › Notifications, and a Slack section with the manifest on the Policy page). No dependencies. The Sphere needs a public HTTPS address for the command, so a Sphere on `localhost` can't link (Socket Mode would need an app-level token and a WebSocket held open, which Vercel can't do). Slack's free plan allows 10 apps per workspace; this uses one.
 
 ### B. Your Oby decides, the relay delivers
 
@@ -117,22 +117,53 @@ While the representative is online and takes the ask, the relay stays quiet: the
 
 **A.** It's the only option that reaches someone whose laptop is closed, it keeps every word on members' machines, and for asks it never doubles 0.3.0's notifications. The two sit side by side: the Sphere's app covers the time your machine is away, and your own webhook (if you set one) covers the rest, with the words if you want them and the events only your machine knows. Only a direct message could reach you both ways, while your Oby is online but your console is closed (question 4). Add B's `POST /api/slack/notify` later, if members want `waiting` in Slack through the shared app. Leave C.
 
-## First step
+## The plan
 
-One PR: **the app, linking, and a DM for an ask while your Oby is offline**, configured by environment variables only.
+Option A, in four pull requests, then three that are optional. Each one runs `npm test` on both stores, changes API.md when it changes the API, and adds its lines under **Unreleased** in CHANGELOG.md. The plan assumes one app per Sphere, made by its own admin (question 2); the other answer needs a design of its own. Steps 1 and 2 use templates that name who asks or writes; if the answer to question 1 is no, each becomes "Your Oby has a new ask" or "You have a new direct message", a one-line change.
 
-- `server.mjs`: the `// ===== slack` section; `POST /api/slack/link`, `DELETE /api/slack/link`, `POST /api/slack/command` (`link`, `unlink`, `status`); the ask hook; removal drops the link; `me.slack` in `GET /api/info`. `SPHERE_SLACK_API` (a loopback address only, for tests) points it at a fake Slack.
-- `rep.mjs`: `slack link|unlink|status`, in a section of its own.
-- Docs: API.md (the endpoints and the manifest), SECURITY.md (what Slack and the relay learn), a paragraph in README.md, and `changes/slack.md`.
-- Tests in `test/slack.test.mjs`, with `test/fake-slack.mjs` (a local server answering `auth.test` and `chat.postMessage`), on both stores:
-  - A good signature passes. A wrong secret, a changed body, and a timestamp 6 minutes old are refused.
-  - A code works once, is gone after 10 minutes, and is refused from another workspace; after five wrong tries, even the right code is refused.
-  - An ask to a linked member whose representative is offline sends one DM; while it's online and claims the ask, none; an ask still unclaimed after the minute (shortened for tests) while it looks online, one; ten asks in a minute, one, also from two Redis instances at once.
-  - In a sealed and in an unsealed Sphere, the ask's words appear nowhere in what the fake Slack received.
-  - The token appears in no response, audit event or log line.
-  - Unlinking, removing the member, and a `token_revoked` answer each stop the DMs.
+1. **The app, linking, and a DM for an ask while your Oby is offline.** Configured by environment variables only. Depends on nothing but 0.3.0.
+   - `server.mjs`, a new `slack` section:
+     - `SPHERE_SLACK_BOT_TOKEN` and `SPHERE_SLACK_SIGNING_SECRET` in `CFG`. With either missing, the section is off and its routes answer `404`. At start, `auth.test` once (the workspace's `team_id`, the bot user). `SPHERE_SLACK_API` (a loopback address only, for tests) points it at a fake Slack.
+     - One `fetch` to Slack (`chat.postMessage`, `channel` set to the member's Slack user id, `unfurl_links` and `unfurl_media` off), with the token only in `Authorization: Bearer` and a 2-second timeout. A failed send never fails the ask.
+     - The link codes: 40 random bits, kept as a hash with the agent id, valid 10 minutes and used once (a map on fs; on Redis, a key with a 10-minute expiry). After five wrong codes in 10 minutes, a Slack user gets no more tries until the 10 minutes are up.
+     - Two operations in `apply()`: `slack-link` (`agent → { user, linkedAt }`) and `slack-unlink`. The `agent` case drops the link of a removed member, as it drops its admin role. The fs snapshot (`snapshot()` in `fsStore()`) keeps the map, as it keeps `admins`.
+     - The ask hook, after `POST /api/messages` commits an ask: for each asked member that is linked, send if its representative is offline (`store.counts(id).rep === 0`). The one-minute check sends for an ask still unclaimed (`claimedAt` unset) a minute after it was sent: a timer on fs, `pollLoop()` on Redis. The 10-minute mark is `SET … NX PX 600000` on Redis and a map on fs; it never goes in the log.
+     - Routes. `POST /api/slack/link` (agent token): `{ code, expiresAt }`. A bot can't link: no person reads its DMs. `DELETE /api/slack/link` (agent token): `{ ok }`. `POST /api/slack/command`: no token, Slack's signature instead, so it's routed before the token check, as `POST /api/join` is. Its raw body (at most 8 KB) is read before it's parsed, for the signature. It answers `link <code>`, `unlink` and `status` privately, and a line of help for anything else; an answer that would miss Slack's 3 seconds goes to the command's `response_url`. A bad signature counts as a failed credential (`authFailed()`).
+     - `GET /api/info` returns `me.slack: { linked, linkedAt }`, added to that response only and not in `publicAgent()`, which also feeds `GET /api/agents` and live events. It's absent when the Sphere has no app.
+     - Audit `slack` events: "alice linked Slack", "alice unlinked Slack" and "alice's Slack link moved", never a Slack id. Linking to another Slack user tells the old one, in a DM, that the link moved.
+   - `rep.mjs`: `slack link | unlink | status`, in a section of its own and in `commands`. `link` prints the code and what to type in Slack; `status` says whether you're linked, and since when.
+   - `obysphere.mjs`: a **Slack** group in `help`. The CLI contract in `test/readme.test.mjs` and `test/plugin.test.mjs` gets `slack: link, unlink, status`, and the help test in `test/cli.test.mjs` names it.
+   - Tests in `test/slack.test.mjs`, with `test/fake-slack.mjs` (a local server answering `auth.test` and `chat.postMessage`, which records each request), on both stores (Redis through `test/fake-upstash.mjs`):
+     - A good signature passes. A wrong secret, a changed body, and a timestamp 6 minutes old are refused.
+     - A code works once, is gone after 10 minutes, and is refused from another workspace; after five wrong tries, even the right code is refused.
+     - An ask to a linked member whose representative is offline sends one DM; while it's online and claims the ask, none; an ask still unclaimed after the minute (shortened for tests) while it looks online, one; ten asks in a minute, one, also from two Redis instances at once.
+     - In a sealed and in an unsealed Sphere, the ask's words appear nowhere in what the fake Slack received.
+     - The token appears in no response, audit event or log line, and the Slack user id in no response but the linked member's own.
+     - Unlinking, removing the member, and a `token_revoked` answer each stop the DMs. A link survives a restart on fs.
+   - Docs: API.md (the three routes, `me.slack`, and the two variables under **Running it**), docs/DEPLOY.md (a **Slack** section: make the app from the manifest, install it, set the two variables, as sensitive ones on Vercel), SECURITY.md (what Slack and the relay learn, under **On the relay** and **What it doesn't protect**), and a paragraph in README.md's **Notifications**.
 
-DMs for direct conversations come in a second PR, once 0.3.0's channels are on main.
+2. **A DM for a direct message while you're away.** Depends on step 1. Its condition waits on question 4.
+   - `server.mjs`: a second hook after a commit. A post or a reply (not an ask) in a channel of `kind: 'dm'`, to its other member, when that member is linked and has no console or session open (`store.counts(id).session === 0`): "Sam wrote to you. Open your console." It shares the 10-minute mark with asks, so a member gets one DM for both. If the answer to question 4 is no (never both ways), the condition also needs the member's representative offline, when its own webhook can't tell them.
+   - Tests in `test/slack.test.mjs`, on both stores: a post in a direct conversation with no console open sends one DM; with a `role=console` stream open, none; an ask there follows step 1; a post in a public or private channel, none; the post's words never reach the fake Slack, sealed or not.
+   - Docs: API.md, a sentence in README.md, SECURITY.md (Slack also learns when someone writes to you directly).
+
+3. **Link Slack from your console.** Depends on step 1.
+   - `public/index.html`: Settings › Notifications gets a row for the Sphere's Slack app, shown only when `me.slack` is there. **Link Slack** calls `POST /api/slack/link` through your console, shows the code with a copy button and what to type in Slack, and reads `GET /api/info` every few seconds until you're linked or the code runs out. **Unlink** calls `DELETE /api/slack/link`. The row says the app's DMs carry no words, and that your own webhook, above it, is separate.
+   - `rep.mjs`: nothing new. The console's proxy already passes `/api/*` on with your token.
+   - Tests: the row's functions, picked from the page and run in `vm` as `test/console-polish.test.mjs` does, show the code and the linked state; the page's script compiles; through a real console, `POST /api/slack/link` reaches the relay with your token, and the page never gets the token.
+   - Docs: SETTINGS.md (under **Notifications**, a paragraph on the Sphere's app: it isn't in settings.json, and it's the Sphere's, not your machine's), README.md, the `oby-settings` skill in `plugins/obysphere/skills/`.
+
+4. **The admin's Slack section.** Depends on step 1. The list of who has linked waits on question 5. With this step, option A is complete.
+   - `server.mjs`: `GET /api/admin/slack`: `{ configured, workspace: { id, name }, working, linked }`. `working` turns false when a send fails with `invalid_auth`, `account_inactive` or `token_revoked`, and that instance then stops sending. `linked` is a count, or the handles that linked if the answer to question 5 is yes (never Slack ids). `DELETE /api/admin/agents/:id/slack` unlinks a member, audited (`slack`, "· by alice"). A Slack user the app can no longer reach (`channel_not_found`) is unlinked after three failures, audited.
+   - `public/index.html`: a **Slack** section on the Policy page. Without an app: the manifest with the Sphere's address filled in, a copy button, and the steps. With an app: the workspace, how many members linked, and "The Slack app's token no longer works" when it doesn't. The address is the one Invite member uses (`inviteOrigin()` in the page: `sphere.publicUrl` or the Sphere your console signs in to, only when it's a plain host name), and only an `https://` one; for any other, the section says Slack can't reach this Sphere. Members shows **Unlink Slack** to admins, for a member that is linked.
+   - Tests: `GET /api/admin/slack` is `403` for members and viewers, and never holds the token, the secret or a Slack id; an admin's unlink stops the DMs and is audited; three `channel_not_found` answers unlink; a `token_revoked` answer shows as `working: false`; the page's manifest takes the address only when it's a plain `https://` host name (picked from the page and run in `vm`).
+   - Docs: API.md, docs/DEPLOY.md (the console's manifest), the `run-a-sphere` skill.
+
+5. **Optional: the app's two values, pasted in the console.** Depends on step 4. `POST /api/admin/slack { botToken, signingSecret }` and `DELETE /api/admin/slack`, stored only as AES-256-GCM ciphertext (in the log on Redis, in `sphere.json` on fs) under a key derived from the admin key, the way `useAdminKey()` derives the audit chain's, with a label of its own. Never returned, and audited without the values. The environment wins when it's set. The Policy page's Slack section gets the two fields. Tests: neither value appears as plain text in a response, the audit log, the Redis log or `sphere.json`; they survive a restart; the environment wins. Docs: API.md, SECURITY.md (who can read them: whoever has the admin key and the stored data), docs/DEPLOY.md.
+
+6. **Optional, waits on question 3: your Oby's own events through the Sphere's app (option B).** Depends on steps 1 and 3. `POST /api/slack/notify { type, ref, count }` (agent token): linked, `type` one of the six events, `ref` a message the caller is in, at most once a minute per member, and the DM built from the relay's template and metadata, never words from the call. In `rep.mjs`, a sixth way, `slackApp` (off by default), in `notifyDefaults()` and `validateNotify()`, called from `notifyDispatch()`, and in `notify test --via`. Settings › Notifications gets its switch. Tests: words in the call never reach the fake Slack; a `ref` the caller isn't in is refused; a second call within the minute is refused; quiet hours apply. Docs: SETTINGS.md (**The ways**), API.md, SECURITY.md (the relay learns which asks wait for you).
+
+7. **Optional, waits on question 6: Enterprise Grid.** Depends on step 1. Match on `enterprise_id` as well as `team_id`, from `auth.test` and from the command's form, for an app installed across an organization. Tests with the fake Slack answering as an organization-wide install. Docs: docs/DEPLOY.md.
 
 ## Questions for the owner
 
