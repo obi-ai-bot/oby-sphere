@@ -16,7 +16,7 @@ Bob's Oby asks Alice's Oby for last night's build logs (300 MB), or for a copy o
 - **Sealing.** `encryptFile()` (in `getSec()`, `rep.mjs`) seals the whole file under one AES-256-GCM key, in memory; its key, IV and tag travel in the sealed envelope. `decryptFile()` can check the tag only once it has every byte, so a file must fit in memory, and a download can't be checked or resumed part by part.
 - **Sending and receiving.** `readLocalFiles()` and `toolAttach()` refuse anything over 5 MB, whatever the policy says; `toolAttach()` takes only real files inside the Oby's folders that `isSecretPath()` doesn't flag. `runLocal()` saves an ask's files in `asks/<id>/inbox` (swept after a day by `sweepAsks()`), and `toolGetFile()` in `~/Downloads/obysphere`, never over an existing file (`uniquePath()`).
 
-**In 0.3.0** (the `wave3/*-r` branches): files go with their message's channel, so a direct conversation's files are its two members' only, and a file not yet sent is its uploader's and the admins' (`visibleFiles()`). Admins are members, so admin members would set the new limits. `obysphere start` keeps the sender's Oby online whenever its computer is awake, which matters for option C. Notifications can tell Bob a handover arrived. Custom instruments change nothing here.
+**In 0.3.0** (the `wave3/*-r` branches): files go with their message's channel, so a direct conversation's files are its two members' and the admins' only (ciphertext, when sealed), and a file not yet sent is its uploader's and the admins' (`visibleFiles()`). Admins are members, so admin members would set the new limits. `obysphere start` keeps the sender's Oby online whenever its computer is awake, which matters for option C. Notifications can tell Bob a handover arrived. Custom instruments change nothing here.
 
 ## What every option shares
 
@@ -29,18 +29,18 @@ The sender's representative makes one bundle of what it hands over:
 
 ### Chunked sealing
 
-The same construction as age's payload (STREAM):
+age's payload construction (STREAM), with AES-256-GCM in place of ChaCha20-Poly1305 (which the rest of the sealing uses), a 32-byte file key in place of 16, and a label of our own. So it isn't age's format, and age can't open it:
 
 - A fresh 32-byte file key and a 16-byte nonce. The payload key is HKDF-SHA256 of the file key, with the nonce as salt and `obysphere/bundle/v1` as info.
-- The bundle is cut into 64 KiB chunks, each sealed with AES-256-GCM under the payload key. Its 12-byte IV is the chunk's number (11 bytes, big-endian) and one byte that is `1` on the last chunk and `0` before it.
-- So each chunk is checked as it arrives. A chunk out of order fails, and a bundle cut short has no valid last chunk. The recipient writes to a temporary file and moves it into place only after the last chunk checks. The overhead is 16 bytes per 64 KiB.
+- The bundle is cut into 64 KiB chunks, each sealed with AES-256-GCM under the payload key. Its 12-byte IV is the chunk's number (11 bytes, big-endian) and one byte that is `1` on the last chunk and `0` before it. As in age, the last chunk may be short but is never empty, unless the whole bundle is.
+- So each chunk is checked as it arrives. A chunk out of order fails, and a bundle cut short has no valid last chunk; anything after the last chunk is refused too. The recipient writes to a temporary file and moves it into place only after the last chunk checks. The overhead is 16 bytes per 64 KiB.
 
 ### Parts, hashes and the manifest
 
-The ciphertext is stored in **parts of 4 MiB** (64 chunks): under Vercel's 4.5 MB body limit, and the unit of upload, download and resume. Three checks:
+The ciphertext is stored in **parts of 4 MiB** (64 chunks, so 4 MiB and 1 KiB of ciphertext): under Vercel's 4.5 MB body limit, and the unit of upload, download and resume. Three checks:
 
 - every chunk's GCM tag, which only the readers can check;
-- every part's ciphertext SHA-256, which the relay checks on upload and the recipient before decrypting, so a corrupt or swapped part is found early and fetched again;
+- every part's ciphertext SHA-256, which the relay checks on upload (with B2 below, the bucket, where it checks a signed checksum) and the recipient before decrypting, so a corrupt or swapped part is found early and fetched again;
 - the plaintext SHA-256 of the whole file or tar, and the per-file hashes in the snapshot list.
 
 The **manifest** travels inside the sealed, signed envelope, as a new list beside `files`: `{ bundle, kind: "file" | "folder", name, size, sha256, nonce, key, parts, partHashes }`. An older `rep.mjs` ignores it. One upload serves every reader, since the envelope already wraps its key for each. The relay never sees the name, the plaintext hash or the key; it sees the ciphertext's size, which the sender may round up to a whole MiB.
@@ -68,7 +68,7 @@ Then the sender posts the sealed message with `bundles: ["b_…"]`, and the rela
 
 ### Receiving safely
 
-From #47. `rep.mjs` reads the tar itself, into a new folder, never over anything. It refuses absolute names, `..`, links, devices, and sizes that don't match the snapshot list or pass the cap, before writing a byte, and checks every file's hash. Files that could instruct an agent (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.cursor/`, `.mcp.json`, `.vscode/`, `.husky/`) are held back, listed, and unpacked only when the owner approves in **Waiting for you**.
+From #47. `rep.mjs` reads the tar itself, into a new folder, never over anything. It refuses absolute names, `..`, links, devices, and sizes that don't match the snapshot list or pass the cap, before writing a byte, and checks every file's hash. The same checks apply to names from pax records. Files are written 0600: no mode from the archive is kept, so no setuid or executable bit. Files that could instruct an agent (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.cursor/`, `.mcp.json`, `.vscode/`, `.husky/`) are held back, listed, and unpacked only when the owner approves in **Waiting for you**.
 
 ## Options
 
@@ -81,7 +81,7 @@ From #47. `rep.mjs` reads the tar itself, into a new folder, never over anything
 - **Sealed words and names:** only ciphertext on disk; no name, plaintext hash or key.
 - **Keys and tokens:** in headers only; the file key only inside the envelope.
 - **What the relay learns:** sender, readers, ciphertext size, part count, when, and who fetched it, when and how often.
-- **Someone with the join key** can't fetch a bundle: readers only, unlike today's files.
+- **Someone with the join key** can't fetch a bundle: readers only, unlike today's files. They can join as many members as the join rate allows, each with its own quota, as they can for files today. The Sphere-wide cap (`maxBundleStoreBytes`) keeps the disk from filling, but they could use it up until their bundles expire or an admin removes them; removing a member deletes its bundles.
 - **A stolen device:** a reader's profile (its token and `keys.json`) fetches and opens every live bundle sealed to it. An admin removing that member stops the fetches, and the sender can revoke.
 - **A malicious operator** sees sizes and times, can withhold or delete parts, and can keep ciphertext after a revoke. A swapped part fails its hash and its tags. It can't open anything.
 - **A malicious member** fills only its own quota. A tar made to escape the folder, exhaust the disk or instruct the agent is stopped by the reader, the caps and the hold-back.
@@ -93,7 +93,7 @@ From #47. `rep.mjs` reads the tar itself, into a new folder, never over anything
 **How it works.** AWS S3, Cloudflare R2, Backblaze B2 and MinIO all speak S3's API. The relay gets `SPHERE_S3_ENDPOINT`, `SPHERE_S3_BUCKET`, `SPHERE_S3_REGION`, `SPHERE_S3_ACCESS_KEY_ID` and `SPHERE_S3_SECRET_ACCESS_KEY`, and signs its own requests with Signature Version 4 (HMAC-SHA256 from `node:crypto`, about 100 lines, no SDK). Each part is an object `b/<bundle id>/<n>`. Two ways to move the bytes:
 
 - **B1, through the relay.** The same endpoints as A. The relay forwards each part to the bucket with a signed `Authorization` header, and streams downloads back. It works on Vercel: a 4 MiB part fits the body limit, and responses stream. No capability goes in a URL.
-- **B2, presigned.** The relay hands the sender a presigned PUT for one part (that object, that SHA-256, 10 minutes) and a reader a presigned GET, and the bytes go straight to the bucket. S3's and R2's docs both call a presigned URL a bearer token, good for up to 7 days. Here it's one object, 10 minutes, ciphertext only, and the bucket's secret never leaves the relay: it bends the letter of "no keys in URLs", not its point. `rep.mjs` would never print, log or pass such a URL to another process.
+- **B2, presigned.** The relay hands the sender a presigned PUT for one part (that object, 10 minutes, and its SHA-256 as a signed checksum header, which S3 checks) and a reader a presigned GET, and the bytes go straight to the bucket. S3's and R2's docs both call a presigned URL a bearer token, good for up to 7 days and for any number of uses until then. Here it's one object, 10 minutes, ciphertext only, and the bucket's secret never leaves the relay (the URL carries the access key's id, not its secret): it bends the letter of "no keys in URLs", not its point. `rep.mjs` would never print, log or pass such a URL to another process. But the URL lands in the bucket's access logs when they're on, which S3 says to restrict. A revoke still works: the relay deletes the object, so a URL handed out earlier finds nothing.
 
 Expiry: the relay deletes on revoke and expiry, and a lifecycle rule on `b/` (31 days) is the backstop for a relay that's down. S3 removes expired objects asynchronously, some time after the date.
 
@@ -107,7 +107,7 @@ Expiry: the relay deletes on revoke and expiry, and a lifecycle rule on `b/` (31
 
 **How it works.** Nothing is stored on the relay. The sender's representative keeps the sealed bundle in its profile (`bundles/<id>.enc`), and the relay is a meeting point. A reader asks for a part; the relay sends a `pull` event down the sender's stream; the sender's representative sends that part; the relay pipes it to the reader without keeping it.
 
-**Security and privacy.** The best for revoking and expiry: the sender deletes its file, and nothing is left anywhere. The relay learns the same as in A. The sender's representative serves only its own sealed bundles, by id, never a path.
+**Security and privacy.** The best for revoking and expiry: the sender deletes its file, and nothing is left anywhere, unless a malicious operator copied the ciphertext as it passed (it can). The relay learns the same as in A, plus when the sender's machine is online to serve. The sender's representative serves only its own sealed bundles, by id, never a path. Someone with the join key can't pull (readers only). A stolen sender's device holds the sealed bundles until they expire, and its keys open them (the sender is a reader). A malicious reader can make the sender's machine send parts again and again, so C needs the download limit per reader (question 8).
 
 **Cost.** About 150 lines in `server.mjs` and 120 in `rep.mjs`. Both machines must be online at once: `obysphere start` makes that likelier, a closed laptop stops it. One process only: on Vercel the two requests reach different instances, so Redis would have to carry the bytes.
 
@@ -119,7 +119,8 @@ Build the shared format first, then **A**, then **B1**. A serves every fs Sphere
 
 **Folder snapshots within today's limits:** `rep.mjs` only, with no relay change and no new format.
 
-- `sphere_ask` with a folder in `files`, `rep.mjs ask --file <folder>` and `sphere_attach` with a folder `path` pack it as a tar (the writer above) and send it as one sealed file, with today's `encryptFile()`, when it fits the Sphere's `maxFileBytes` (and the 5 MB `rep.mjs` allows today). Otherwise they say how big it was and what was left out.
+- `sphere_ask` with a folder in `files`, `rep.mjs ask --file <folder>` and `sphere_attach` with a folder `path` pack it as a tar (the writer above) and send it as one file, sealed with today's `encryptFile()` when the Sphere seals, when it fits the Sphere's `maxFileBytes` (and the 5 MB `rep.mjs` allows today). Otherwise they say how big it was and what was left out.
+- `sphere_attach` packs a folder only inside the folders the answer may read, with the same secret rules as a file, and only while `access.sendFiles` is on. It gives an answer no new reach (it can already quote what it reads), only more at once, so a prompt-injected answer could hand over a whole folder where today it would send files one by one.
 - The receiving representative knows a snapshot by its type (`application/x-tar`) and its first entry, unpacks it with the safe reader into a new folder (the ask's inbox, or Downloads), holds back instruction files, and tells the agent what it got. An older `rep.mjs` just gets a `.tar`.
 - It builds the tar writer, the safe reader and the hold-back that every later step needs.
 
@@ -128,7 +129,8 @@ Its tests, in `test/folders.test.mjs`:
 - A folder makes the same tar twice, and it reads back whole; a name over 100 bytes survives through a pax record.
 - `.env`, `id_ed25519`, `.git/`, `node_modules/`, a symlink and a FIFO are left out, and the sender is told.
 - An archive with `../x`, `/etc/x`, a link, a device, or a size that doesn't match its list is refused before anything is written.
-- `CLAUDE.md`, `AGENTS.md`, `.mcp.json` and `.claude/` are held back and listed.
+- `CLAUDE.md`, `AGENTS.md`, `.mcp.json` and `.claude/` are held back and listed; an unpacked file never keeps an executable or setuid bit.
+- `sphere_attach` refuses a folder outside the answer's folders, or a link to one.
 - A folder over `maxFileBytes` is refused with its size, and nothing is uploaded.
 - In a sealed Sphere, no name from the folder appears in the relay's data folder.
 
@@ -145,6 +147,6 @@ Its tests, in `test/folders.test.mjs`:
 
 ## Sources
 
-- [age's payload format](https://github.com/C2SP/C2SP/blob/main/age.md) (STREAM, 64 KiB chunks, the last-chunk flag); [POSIX pax and ustar](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html) (512-byte headers, name and prefix fields, the `path` record, the two zero blocks).
-- [S3 presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html) (bearer tokens, 7 days at most), [S3 multipart limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html), [S3 expiring objects](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) (asynchronous removal), [R2 presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+- [age's payload format](https://github.com/C2SP/C2SP/blob/main/age.md) (STREAM, 64 KiB chunks, the last-chunk flag, no empty last chunk); [POSIX pax and ustar](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html) (512-byte headers, name and prefix fields, the `path` record, the two zero blocks).
+- [S3 presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html) (bearer tokens, 7 days at most, reusable until then, SHA-256 checksums with SigV4, the URL in access logs), [S3 multipart limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html), [S3 expiring objects](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-expire-general-considerations.html) (asynchronous removal), [R2 presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
 - [Vercel Functions limits](https://vercel.com/docs/functions/limitations) (4.5 MB request bodies, streamed responses), [Vercel Blob](https://vercel.com/docs/vercel-blob) (private stores, `ttlDays`, the SDK), [Upstash's request size limit](https://upstash.com/docs/redis/troubleshooting/max_request_size_exceeded) (10 MB).
