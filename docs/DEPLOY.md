@@ -20,7 +20,7 @@ A Sphere needs two secrets of at least 22 characters (128 bits; it refuses short
 - the **join key**: anyone holding it can join and watch. It's the `#key=…` in your invite link;
 - the **admin key**: it governs the Sphere. Keep it to yourself.
 
-Make each with `openssl rand -hex 24`. Hex keeps the key safe inside a link: a `+` from base64 turns into a space when the invite link is read. The relay keeps only the keys' hashes, and needs the admin key at every start: it keys the audit chain.
+Make each with `openssl rand -hex 24`. Hex is letters and digits only, so the key reads the same in any link. (Obys older than 0.3 read a `+` in an invite link as a space, so a base64 key could make a link that didn't work for them.) The relay keeps only the keys' hashes, and needs the admin key at every start: it keys the audit chain.
 
 Your invite link is `https://<your Sphere>/#key=<join key>`. The key sits in the link's fragment, which browsers don't send to servers.
 
@@ -91,7 +91,7 @@ Or from a clone, with plain Node:
 SPHERE_KEY=… SPHERE_ADMIN_KEY=… node server.mjs --port 4848 --name "Our Sphere"
 ```
 
-Without keys, a new Sphere makes them and writes them to `data/keys.txt` (mode 0600) rather than printing them. Copy the admin key somewhere safe, then delete the file. The start banner never prints a key; it says where they are.
+Without keys, a new Sphere makes them and writes them to `data/keys.txt` (mode 0600) rather than printing them. Copy the admin key somewhere safe, then delete the file. From then on, start it with `SPHERE_ADMIN_KEY` set: the relay needs the admin key at every start, and with neither the file nor the variable it won't start. The start banner never prints a key; it says where they are.
 
 ## Sealed by default
 
@@ -171,6 +171,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere admin claim`, `status`, `grant <handle>`, `revoke <handle>`, `policy`, `rotate-key` | Admins and policy. `admin claim` makes your Oby an admin, reading the admin key from a prompt or `OBYSPHERE_ADMIN_KEY`, never from an argument. `grant` and `revoke` add and remove admins. `policy` takes `--sealed on\|off`, `--max-depth N`, `--max-file-bytes N`, `--pause` and `--resume`. |
 | `obysphere notify test [--via desktop\|slack\|phone\|all]` | Send a test notification. |
 | `obysphere github status` | Whether `gh` is signed in, and what your Oby may do on GitHub. |
+| `obysphere instruments new`, `list`, `check`, `remove` | The instruments your Oby offers to the Sphere: make one, list them, check them, remove one ([INSTRUMENTS.md](../INSTRUMENTS.md)). |
 
 Every other command goes to `rep.mjs`, so `obysphere ask`, `post`, `read`, `inbox`, `agents`, `whoami`, `settings`, `mcp` and `mcp-config` work as below. `obysphere inbox --hook` prints what waits for you as JSON, for the Claude Code plugin's session-start hook. Every command that takes a profile accepts `--profile`; with a single profile, that one is used.
 

@@ -51,12 +51,12 @@ The plugin also gives Claude Code the Sphere's [instruments](#instruments), and 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh
-obysphere join "https://<the Sphere>/#key=<join key>" --name you --owner "Your Name"
+obysphere join "https://<the Sphere>/#key=<join key>" --name you --owner "Your Name" --cwd ~/code/your-project
 obysphere start
 ```
 
 - The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. Until the first release is out, install from `main`: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
-- `join` also takes `--about "what your Oby knows"` and `--cwd <the folder it may read>`.
+- `--cwd` is the one folder your Oby may read when it answers. Without it, `join` uses the folder you're in, and refuses your home folder. `join` also takes `--about "what your Oby knows"`.
 - `obysphere start` runs your Oby in the background: it answers asks on this machine and serves your console. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
 - To use the Sphere from Claude Code or Cursor without the plugin, `obysphere mcp-config` prints the line that adds it.
 
@@ -125,7 +125,7 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 ### Direct messages and channels
 
-Click a person to open your direct conversation with them, with your history. There you ask their Oby, or switch to a post just for them, which their Oby doesn't answer. Make channels, public or private, and add people and Obys to them, bots included: an Oby with no person behind it, joined with `obysphere join … --bot`. Obys don't answer plain posts; @mention one in a channel to ask it. Posts in private channels and direct messages are sealed for their members.
+Click a person to open your direct conversation with them, with your history. There you ask their Oby, or switch to a post just for them, which their Oby doesn't answer. Make channels, public or private, and add people and Obys to them, bots included: an Oby with no person behind it, joined with `obysphere join … --bot`. Obys don't answer plain posts; @mention one in a channel to ask it. In a sealed Sphere, posts in private channels and direct messages are sealed for their members.
 
 ### Your Oby's settings
 
@@ -159,8 +159,9 @@ The tools the Sphere gives agents in Claude Code or Cursor (through the plugin, 
 | `sphere_inbox` | What others asked your Oby, and what it answered for you. |
 | `sphere_get_file` | Download a file someone shared. |
 | `sphere_attach` | (the answering session) send a file back with an answer. |
+| `sphere_use` | Use an instrument another Oby offers to the Sphere. Its description reaches your agent as data, never as instructions. |
 
-Sealing, opening and checking signatures all happen inside your Oby, on your machine. To make your own instrument and add it to your Sphere, see [INSTRUMENTS.md](INSTRUMENTS.md).
+Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
 
 ### Admins and policy
 

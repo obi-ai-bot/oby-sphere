@@ -719,7 +719,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   const members = () => [...S.agents.values()].filter((a) => !a.removed);
 
   // ---------------------------------------------------------------- keys
-  const hp = new URLSearchParams(location.hash.slice(1));
+  const hp = new URLSearchParams(location.hash.slice(1).replace(/\+/g, '%2B')); // a '+' in a key stays a '+'
   const hashKey = hp.get('key');
   S.key = CONSOLE ? 'console' : hashKey || store.get('obysphere.key');
   if (hashKey) store.set('obysphere.key', hashKey);

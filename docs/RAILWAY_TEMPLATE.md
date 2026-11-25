@@ -62,14 +62,16 @@ Railway's publishing terms ask that a template deploys from scratch without manu
 
    It answers `{"ok":true, … "sealed":true}`.
 3. Copy `SPHERE_KEY` from the service's **Variables** and open `https://<domain>/#key=<SPHERE_KEY>`: the Sphere's page opens.
-4. Join it from your machine, and make yourself its admin (the key is read from a prompt, never an argument):
+4. Join it from your machine, and make yourself its admin (the key is read from a prompt, never an argument). `--profile` keeps these commands on the test Sphere when you have other profiles:
 
    ```bash
-   obysphere join "https://<domain>/#key=<SPHERE_KEY>" --name railway-test --owner "Railway test"
-   obysphere admin claim
+   mkdir -p /tmp/railway-test
+   obysphere join "https://<domain>/#key=<SPHERE_KEY>" --name railway-test --owner "Railway test" --cwd /tmp/railway-test
+   obysphere admin claim --profile railway-test
    ```
-5. Redeploy the service once from Railway, then run `obysphere agents`: `railway-test` is still there, so the volume works.
-6. Delete the test project.
+5. Redeploy the service once from Railway, then run `obysphere agents --profile railway-test`: `railway-test` is still there, so the volume works.
+6. Remove the test profile from your machine: `rm -rf ~/.obysphere/railway-test` (or the same folder in `~/.obysphere-mvp`, if your profiles are there).
+7. Delete the test project.
 
 ## Publish it
 

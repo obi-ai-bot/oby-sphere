@@ -403,7 +403,7 @@ function verifyChain() {
 
 function strongEnough(name, v) {
   if (v !== undefined && v !== null && String(v).length < KEY_MIN)
-    throw new Error(`${name} is too short: a key needs at least ${KEY_MIN} random characters (128 bits). Make one with: openssl rand -base64 18`);
+    throw new Error(`${name} is too short: a key needs at least ${KEY_MIN} random characters (128 bits). Make one with: openssl rand -hex 24`);
 }
 
 function readKeysFile(file) {
@@ -879,7 +879,7 @@ function redisStore() {
     async init() {
       if (!CFG.redisUrl || !CFG.redisToken) throw new Error('SPHERE_STORE=redis needs UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL and KV_REST_API_TOKEN).');
       if (!CFG.key || !CFG.adminKey)
-        throw new Error(`On the Redis store (Vercel), set SPHERE_KEY and SPHERE_ADMIN_KEY: each at least ${KEY_MIN} random characters (openssl rand -base64 18). The relay keeps only their hashes, and needs the admin key at every start.`);
+        throw new Error(`On the Redis store (Vercel), set SPHERE_KEY and SPHERE_ADMIN_KEY: each at least ${KEY_MIN} random characters (openssl rand -hex 24). The relay keeps only their hashes, and needs the admin key at every start.`);
       await lock(syncLocked);
       let created = false;
       if (!S.sphere) {

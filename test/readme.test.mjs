@@ -1,10 +1,15 @@
 // README.md and the docs it leads to (docs/DEPLOY.md, docs/RAILWAY_TEMPLATE.md): every relative
 // link and image points to a file in this repository, every #anchor to a heading, every
 // `obysphere <command>` they show is one the CLI has (the wave-3 contract, hard-coded below),
-// and every `node rep.mjs <command>` is one rep.mjs has. Reads files only. `npm test`.
+// every `node rep.mjs <command>` is one rep.mjs has, and every `join` they show names its folder.
+// Then the invite link they describe: a key with a `+` joins, from `join` and in the console.
+// `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,10 +32,13 @@ const CONTRACT = {
   // obysphere.mjs
   start: true, stop: true, restart: true, status: true, logs: true, open: true, profiles: true, update: true, version: true, doctor: true,
   server: ['start', 'deploy', 'update', 'status'],
+  // the instruments stream (plans/wave3.md, "Added during the build")
+  instruments: ['new', 'list', 'check', 'remove'],
 };
 const DEPLOY_TARGETS = ['vercel'];
 
-const FENCE = /^(```|~~~)[^\n]*\n([\s\S]*?)^\1[ \t]*$/gm;
+// a fenced block, also one indented inside a list item
+const FENCE = /^[ \t]*(```|~~~)[^\n]*\n([\s\S]*?)^[ \t]*\1[ \t]*$/gm;
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const noComments = (md) => md.replace(/<!--[\s\S]*?-->/g, '');
 
@@ -134,7 +142,7 @@ test('every `obysphere <command>` in README.md and its docs is in the CLI contra
   }
   assert.deepEqual(wrong, []);
   // the parser found what the README is about, so the check above isn't empty
-  for (const c of ['join', 'start', 'open', 'update', 'mcp-config', 'server start', 'server deploy', 'admin claim', 'notify test', 'github status'])
+  for (const c of ['join', 'start', 'open', 'update', 'mcp-config', 'server start', 'server deploy', 'admin claim', 'notify test', 'github status', 'instruments new'])
     assert.ok(shown.has(c), `README shows obysphere ${c}`);
 });
 
@@ -154,4 +162,74 @@ test('every `node rep.mjs <command>` in the docs is one rep.mjs has', () => {
   }
   assert.ok(seen > 5, `found only ${seen}`);
   assert.deepEqual(wrong, []);
+});
+
+// ===== review fixes (wave3/readme-r)
+
+// `join` without --cwd uses the folder you're in and refuses your home folder, where a new
+// terminal opens: so every join the docs give to copy (fenced blocks) names its folder
+test('every `join` the docs give to copy names --cwd', () => {
+  const missing = [];
+  let seen = 0;
+  for (const doc of DOCS) {
+    for (const m of noComments(read(doc)).matchAll(FENCE)) {
+      // a command goes on over a trailing \ and over option lines that start with [
+      const lines = m[2].replace(/\\\n/g, ' ').replace(/\n[ \t]+(?=\[)/g, ' ').split('\n');
+      for (const line of lines) {
+        if (!/(?:^|[\s;&|])(?:obysphere|node[ \t]+(?:"[^"\n]*)?rep\.mjs"?)[ \t]+join\b/.test(line)) continue;
+        seen++;
+        if (!/--cwd\b/.test(line)) missing.push(`${doc}: ${line.trim()}`);
+      }
+    }
+  }
+  assert.ok(seen >= 4, `found only ${seen}`);
+  assert.deepEqual(missing, []);
+});
+
+const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// a key made with `openssl rand -base64 …` often holds a '+'; read as form data it became a space
+test('an invite link whose key holds a + joins', async () => {
+  const KEY = 'join+key/with+plus=0123456789abc';
+  const ADMIN = 'admin-key-readme-0123456789ab';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-readme-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-readme-reps-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-readme-cwd-'));
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
+  const env = { ...process.env, SPHERE_KEY: KEY, SPHERE_ADMIN_KEY: ADMIN, SPHERE_STORE: 'fs', OBYSPHERE_HOME: home };
+  const relay = spawn(process.execPath, [path.join(ROOT, 'server.mjs'), '--port', String(port), '--host', '127.0.0.1', '--data', dir], { env, stdio: 'ignore' });
+  const rep = (args) =>
+    new Promise((resolve) => {
+      const p = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), ...args], { env });
+      let out = '';
+      p.stdout.on('data', (d) => (out += d));
+      p.stderr.on('data', (d) => (out += d));
+      const t = setTimeout(() => p.kill(), 30000);
+      p.on('close', () => { clearTimeout(t); resolve(out); });
+    });
+  try {
+    for (let i = 0; i < 80; i++) {
+      try { if ((await fetch(base + '/healthz')).ok) break; } catch {}
+      await sleep(100);
+    }
+    for (const [name, link] of [['inhash', `${base}/#key=${KEY}`], ['inquery', `${base}/?key=${KEY}`]]) {
+      const out = await rep(['join', link, '--name', name, '--owner', 'Readme Test', '--cwd', cwd]);
+      assert.match(out, /joined/, `${name}: ${out}`);
+      assert.ok(fs.existsSync(path.join(home, name, 'profile.json')), `${name} has a profile`);
+    }
+  } finally {
+    relay.kill();
+    for (const d of [dir, home, cwd]) fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("the console keeps a + in the link's key", () => {
+  const m = /const hp = (new URLSearchParams\(location\.hash[^;]*\));/.exec(read('public/index.html'));
+  assert.ok(m, "the console's reading of the link");
+  const hp = new Function('location', `return ${m[1]}`)({ hash: '#key=ab+cd/ef==&admin=x+y&mode=chat' });
+  assert.equal(hp.get('key'), 'ab+cd/ef==');
+  assert.equal(hp.get('admin'), 'x+y');
+  assert.equal(hp.get('mode'), 'chat');
 });
