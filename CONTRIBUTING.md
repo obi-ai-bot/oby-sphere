@@ -15,6 +15,7 @@ The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 | `Dockerfile`, `railway.json` | The image and its Railway settings. |
 | `test/` | The relay's tests, including a fake of Upstash's REST API. |
 | `API.md` | The HTTP API, the sealing envelope and the stores. |
+| `MCP-HOSTS.md` | Setting up `rep.mjs mcp` in each app that runs MCP servers, and how it speaks MCP. Re-check an app's docs when you change its part, and update the date. |
 
 ## Rules of the house
 
