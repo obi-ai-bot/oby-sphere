@@ -584,6 +584,19 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .folder-tags .set-tag { margin-left: 0; }
 .folder-start { color: var(--muted); }
 .folder-add { border-top: 0 !important; }
+/* never-read: your own names, as chips, and the built-in list folded under them, read-only */
+.set-never code, .set-never .ctl-chip-t, .set-never .ctl-chips-field { font-family: var(--mono); font-size: 12px; }
+.set-never .set-row-sub code { color: var(--text); }
+/* after the field's row, so an error shows right under the field, above the list */
+.set-always { margin: -2px 0 12px; }
+.set-always > summary { width: fit-content; display: flex; align-items: center; gap: 8px; border-radius: 4px; color: var(--muted); font-size: var(--text-sm); line-height: 16px; list-style: none; cursor: default; }
+.set-always > summary::-webkit-details-marker { display: none; }
+.set-always > summary::before { content: ''; flex: none; width: 5px; height: 5px; margin: 0 1px 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--fade); }
+.set-always[open] > summary::before { margin-bottom: 4px; transform: rotate(45deg); }
+.set-always > summary:hover { color: var(--text); }
+.set-always > summary:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.set-always-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; max-width: 720px; }
+.set-always-list code { padding: 0 6px; border-radius: 5px; background: var(--surface-edge); color: var(--text); font: 11.5px/18px var(--mono); }
 .notify-url { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .notify-url .set-field { flex: 1 1 260px; min-width: 0; font: 12.5px var(--mono); }
 .notify-content { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; }
@@ -3075,6 +3088,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     try {
       const [s, usage] = await Promise.all([local('GET', '/local/settings'), local('GET', '/local/usage').catch(() => null)]);
       SET.settings = s.settings; SET.path = s.path; SET.usage = usage; SET.state = ''; SET.loadedAt = Date.now();
+      SET.neverReadBuiltIn = Array.isArray(s.neverReadBuiltIn) ? s.neverReadBuiltIn : null; // never-read: null from an older rep.mjs
       SET.error = s.error ? { message: String(s.error), field: s.field || null } : null;
       if (!SET.settings) { el.innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'it can’t be read')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
       normalizeSettings(SET.settings);
@@ -3168,7 +3182,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   // ---- errors on the field: rep.mjs answers { error: "routing.rules[0].use.model: is …", field }
-  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers' };
+  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers', neverRead: 'never read' };
   const dotted = (f) => String(f || '').replace(/\[(\d+)\]/g, '.$1');
   function fieldWords(field) {
     if (!field) return '';
@@ -3658,6 +3672,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     for (const n of picked) if (!options.some((o) => o.value === n)) options.push({ value: n, label: n, hint: list ? 'Not found' : '' });
     return ctlDropdown({ id: 'set-machine-mcp', multiple: true, value: picked, options, label: 'Your MCP servers', labelledby: 'set-mcp-l', none: 'None', adding: 'Add', empty: SET.env || SET.envFailed ? 'None found in your Claude Code' : 'Looking…', attrs: 'data-k="machine.mcp"' });
   }
+  // ===== never-read: your own names of files answers never read (#125), as chips like every list on
+  // this page, and the built-in list, read-only and folded. rep.mjs checks each name; an error shows
+  // under the field. An older rep.mjs sends no built-in list and would refuse the setting, so the
+  // field shows only when it knows it (or the file already has some).
+  const NEVER_READ_MAX = 50, NEVER_READ_LEN = 200; // as rep.mjs: names, and characters in one
+  function neverReadHtml() {
+    const m = SET.settings.machine;
+    const always = SET.neverReadBuiltIn;
+    if (!always && !Array.isArray(m.neverRead)) return '';
+    const k = 'machine.neverRead';
+    const how = 'A * is any characters inside a name, / joins names, and a name that ends in / is a folder and everything in it. They stay on this computer: the Sphere never sees them.';
+    return `<div class="set-row is-stack set-never"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">Never read</div><div class="set-row-sub">Files and folders in them that your Oby never reads or sends, such as <code>*.sqlite</code> or <code>customers/</code>. Codex, Cursor and a shell set to Any command can still read them.${ctlInfo(how)}</div></div>${ctlChips({ id: fid(k), values: m.neverRead || [], label: 'Never read', placeholder: 'Add a file or folder name', max: NEVER_READ_MAX, each: NEVER_READ_LEN, attrs: `data-k="${k}"` })}</div>
+          ${always ? `<details class="set-always"><summary>Always hidden: .env files, keys, credentials and similar</summary><div class="set-always-list">${always.map((n) => `<code>${esc(n)}</code>`).join(' ')}</div></details>` : ''}`;
+  }
+  // ===== end of never-read
+
   function machineHtml() {
     const m = SET.settings.machine;
     const shell = m.shell || 'off';
@@ -3665,6 +3695,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title">Folders</div><div class="set-row-sub">Secrets in them (.env, keys, credentials) stay unreadable. Only Obys you trust may write.</div></div>
           <div data-part="folders">${foldersHtml()}</div>
           <div class="folder-row folder-add"><input class="set-field" id="set-folder-new" aria-label="Another folder, by its full path" placeholder="/path/to/another/folder" autocomplete="off" spellcheck="false"><button type="button" class="set-button" data-folder-add>Add folder</button></div></div>
+          ${neverReadHtml()}
       </div>
       <div class="set-block">
         <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-machine-shell-l">Shell</div><div class="set-row-sub" data-sub-for="machine.shell">${shellSub(shell)}</div></div><div class="set-row-ctl">${ctlSegmented({ id: 'set-machine-shell', value: shell, options: [{ value: 'off', label: 'Off' }, { value: 'read', label: 'Read-only' }, { value: 'full', label: 'Any command' }], label: 'Shell', labelledby: 'set-machine-shell-l', attrs: 'data-k="machine.shell"' })}</div></div>
@@ -3836,13 +3867,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     clearTimeout(SET.timer); SET.timer = null;
     SET.state = 'Saving…'; paintState();
     const ok = await saveSettings();
-    if (!ok && SET.error && /^machine\.folders/.test(dotted(SET.error.field || ''))) {
+    // never-read: one of your Never read names would hide the new folder whole
+    const hidden = !!SET.error && /^machine\.neverRead/.test(dotted(SET.error.field || '')) && /would hide your whole folder/.test(SET.error.message || '');
+    if (!ok && SET.error && (/^machine\.folders/.test(dotted(SET.error.field || '')) || hidden)) {
       // the new folder didn't pass: take it back off and say why next to the field
       const err = SET.error;
       SET.settings.machine.folders = before;
       SET.error = null; SET.state = ''; clearErrors(); paintState();
       paintPart('folders');
-      addFolderError(errorWords(err));
+      addFolderError(hidden ? `Under Never read, ${errorWords(err).replace(/: name something inside it instead$/, '')}.` : errorWords(err));
       SET.rev++;
       changed(true);
       return;

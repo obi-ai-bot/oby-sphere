@@ -88,16 +88,19 @@ const SECRET_HOME = [
   '.terraform.d/credentials.tfrc.json', '.cargo/credentials', '.cargo/credentials.toml', '.gem/credentials', '.composer/auth.json', '.config/composer/auth.json',
   '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf',
 ];
-const SECRET_LISTS = (() => {
+// the three forms of a list of such names (also of your own, machine.neverRead: the never-read section)
+function denyListForms(names) {
   const glob = (n) => (n.endsWith('/') ? `**/${n}**` : `**/${n}`);
   const part = (s) => s.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^\\\\/]*');
   const re = (n) => n.replace(/\/$/, '').split('/').map(part).join('[\\\\/]');
   return {
-    deny: SECRET_FILES.map((n) => `Read(${glob(n)})`),
-    globs: SECRET_FILES.map(glob),
-    regex: new RegExp(`(^|[\\\\/])(${SECRET_FILES.map(re).join('|')})($|[\\\\/])`, 'i'),
+    deny: names.map((n) => `Read(${glob(n)})`),
+    globs: names.map(glob),
+    // no names, no regex: an empty alternation would match every path
+    regex: names.length ? new RegExp(`(^|[\\\\/])(${names.map(re).join('|')})($|[\\\\/])`, 'i') : null,
   };
-})();
+}
+const SECRET_LISTS = denyListForms(SECRET_FILES);
 // ===== end of deny-list
 
 const SECRET_DENY = [
@@ -115,6 +118,96 @@ const EDIT_DENY = [
 ];
 // the same secrets for the shell's sandbox (shell: read), where they hold for every command, `grep -r` included
 const SECRET_GLOBS = SECRET_LISTS.globs; // the deny-list table above
+
+// ===== never-read: your own names of files answers never read (#125)
+// machine.neverRead (SETTINGS.md › Your own: neverRead): names written as SECRET_FILES's
+// are, which add to that list and never replace it. They make the same three forms
+// (denyListForms): Claude Code's Read rules (and Edit rules, for a writable folder), the shell
+// sandbox's denyRead, and a regex for this file's own checks (sphere_attach, and no folder of
+// yours hidden whole). They stay on this machine: declaredSummary never sees them, and
+// sphere_attach reads them from your settings rather than from its environment, which Codex
+// gets on its command line. test/never-read.test.mjs.
+const NEVER_READ_MAX = 50; // names
+const NEVER_READ_LEN = 200; // characters in one
+const NEVER_READ_STARS = 4; // * in one: each is a loop in the regex, and many can take ages on a long file name
+// what a name may hold: letters, digits, spaces and a few marks; * inside a name, / between names.
+// No glob or rule syntax ([ ] { } ? ! ( ) , \ : quotes), so the three forms can't disagree.
+const NEVER_READ_CHAR = /[\p{L}\p{N}\p{M} ._\-+@=%&~#*/]/u;
+const neverReadOf = (s) => (Array.isArray(s?.machine?.neverRead) ? s.machine.neverRead : []);
+
+// why a name can't be one, or null
+function neverReadProblem(n) {
+  if (/^[/\\~]/.test(n) || /^[A-Za-z]:/.test(n)) return 'is a name inside your folders, not a full path: write customers/, not /Users/you/work/customers/';
+  if (n.includes('\\')) return 'uses / between names, not \\';
+  if (n.includes('**')) return "can't use **: a name already counts anywhere inside your folders";
+  const odd = [...n].find((ch) => !NEVER_READ_CHAR.test(ch));
+  if (odd !== undefined) {
+    const code = `U+${odd.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+    const what = odd === '\t' ? 'a tab' : /[\n\r\u2028\u2029]/.test(odd) ? 'a line break' : /[\p{C}\p{Z}]/u.test(odd) ? `an invisible character (${code})` : JSON.stringify(odd);
+    return `can't have ${what} in it: use * for any characters inside a name, and / between names`;
+  }
+  if (n.split('*').length - 1 > NEVER_READ_STARS) return `has at most ${NEVER_READ_STARS} *`;
+  const names = n.replace(/\/$/, '').split('/');
+  if (names.includes('')) return 'has an empty name between two /';
+  if (names.includes('..')) return "can't use ..: it names what's inside your folders";
+  if (names.includes('.')) return "can't use . as a name: write customers/, not ./customers/";
+  if (names.some((x) => x.trim() !== x)) return 'has a space at the start or end of a name';
+  // * (any name) and *.* (any name with a dot) at every step: everything, or nearly (.* is fine: the names that start with a dot)
+  if (names.every((x) => /^\*+(\.\*+)?$/.test(x))) return 'would hide every file, or nearly: name what to hide, such as *.sqlite or customers/';
+  return null;
+}
+
+// the names as they must be, or an error naming the one that isn't (bad: settingsError); folders:
+// the checked machine.folders, none of which a name may hide whole
+function validateNeverRead(v, folders, bad) {
+  const field = 'machine.neverRead';
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw bad(field, 'is a list of names to hide, such as ["*.sqlite", "customers/"]');
+  if (v.length > NEVER_READ_MAX) throw bad(field, `has at most ${NEVER_READ_MAX} names`);
+  const kept = [];
+  v.forEach((x, i) => {
+    const f = `${field}[${i}]`;
+    if (typeof x !== 'string' || !x.trim()) throw bad(f, 'is a name to hide, such as *.sqlite or customers/');
+    const n = x.trim();
+    if (n.length > NEVER_READ_LEN) throw bad(f, `is at most ${NEVER_READ_LEN} characters`);
+    const why = neverReadProblem(n);
+    if (why) throw bad(f, `${JSON.stringify(n.length > 60 ? `${n.slice(0, 60)}…` : n)} ${why}`);
+    // a repeat is kept once; another spelling stays, for the rules where case counts (Linux)
+    if (!kept.some((k) => k.n === n)) kept.push({ n, i });
+  });
+  // a name that matches one of your folders, or a folder above it, would hide everything in it
+  for (const { n, i } of kept) {
+    const re = denyListForms([n]).regex;
+    const hit = folders.find((f) => re.test(f.path + path.sep));
+    if (hit) throw bad(`${field}[${i}]`, `${JSON.stringify(n)} would hide your whole folder ${hit.path} (it matches a name in its path): name something inside it instead`);
+  }
+  return kept.map((k) => k.n);
+}
+
+// the three forms of your names, made as the deny-list's are; regex is null when there are none
+function neverReadForms(list) {
+  const f = denyListForms(list);
+  return { ...f, edit: f.globs.map((g) => `Edit(${g})`) };
+}
+
+// sphere_attach: your names as your settings say now. While they don't pass, nothing from your
+// folders goes out: the names can't be known.
+function neverReadAttach(p, file) {
+  let s;
+  try {
+    s = loadSettings(p);
+  } catch {
+    throw new Error("your owner's settings need fixing; no file from the folders goes out until then");
+  }
+  if (neverReadForms(neverReadOf(s)).regex?.test(file)) throw new Error('your owner keeps that file private; not attaching it');
+}
+
+// `rep.mjs settings`, in words
+function neverReadSummary(s) {
+  const own = neverReadOf(s);
+  return `  never reads: .env files, keys, credentials and similar${own.length ? `, and yours: ${own.join(', ')}` : ''} (the full shell, Codex and Cursor can still read them)`;
+}
+// ===== end of never-read
 
 // ---- your Oby's settings (SETTINGS.md): settings.json in the profile folder
 const SETTINGS_VERSION = 2;
@@ -661,10 +754,10 @@ async function localApi(req, res, url, p) {
   try {
     if (route === '/local/settings' && m === 'GET') {
       try {
-        return sendJson(res, 200, { settings: settingsForConsole(loadSettings(p)), path: settingsFile(p) });
+        return sendJson(res, 200, { settings: settingsForConsole(loadSettings(p)), path: settingsFile(p), neverReadBuiltIn: SECRET_FILES });
       } catch (e) {
         // the file as it is, so the owner can see what to fix
-        return sendJson(res, 200, { settings: settingsAsFile(readJsonFile(settingsFile(p), null)), path: settingsFile(p), error: printable(e.message), field: e.field || null });
+        return sendJson(res, 200, { settings: settingsAsFile(readJsonFile(settingsFile(p), null)), path: settingsFile(p), error: printable(e.message), field: e.field || null, neverReadBuiltIn: SECRET_FILES });
       }
     }
     if (route === '/local/settings' && m === 'PUT') {
@@ -1604,14 +1697,15 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
   const writable = m.folders.filter((f) => f.write).map((f) => f.path);
   const tools = ['Read', 'Glob', 'Grep'];
   const allow = [];
-  const deny = [...SECRET_DENY];
+  const never = neverReadForms(neverReadOf(s)); // never-read: your own names, after the built-in list
+  const deny = [...SECRET_DENY, ...never.deny];
   const fileOnly = [];
   if (writable.length) {
     tools.push('Edit', 'Write', 'NotebookEdit');
     for (const w of writable) allow.push(`Edit(/${w}/**)`);
     // a read-only folder inside a writable one stays read-only
     for (const f of m.folders) if (!f.write && writable.some((w) => f.path.startsWith(w + path.sep))) fileOnly.push(`Edit(/${f.path}/**)`);
-    deny.push(...EDIT_DENY);
+    deny.push(...EDIT_DENY, ...never.edit);
   } else deny.push('Edit', 'Write', 'NotebookEdit');
   let sandbox;
   if (m.shell === 'off') deny.push('Bash');
@@ -1633,7 +1727,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
         allowUnsandboxedCommands: false,
         autoAllowBashIfSandboxed: false,
         filesystem: {
-          denyRead: [...SECRET_GLOBS, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d))],
+          denyRead: [...SECRET_GLOBS, ...never.globs, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d))],
           denyWrite: m.folders.map((f) => f.path),
         },
         network: { allowedDomains: [] },
@@ -1922,7 +2016,7 @@ async function mcp() {
       name: 'sphere_attach',
       description: 'Attach a file to the reply you are writing. Give either `content` (text you write now) or `path` (an existing file in your folders). Never attach secrets.',
       inputSchema: { type: 'object', properties: { name: str('File name, like summary.md.'), content: str("The file's text."), path: str('Path of an existing file in your working folder.') }, required: ['name'] },
-      run: (a) => toolAttach(a),
+      run: (a) => toolAttach(a, p),
     });
   } else {
     tools.push(
@@ -2162,8 +2256,9 @@ async function toolGetFile(api, p, a) {
   return `Saved ${path.basename(dest)} (${fmtSize(buf.length)}) to ${dest}.${texty ? `\n\n${quoted('Its content', buf.toString('utf8'))}` : ''}`;
 }
 
-// a file from the working folder (or this ask's inbox): its real path, not a link, not a secret
-function toolAttach(a) {
+// a file from the working folder (or this ask's inbox): its real path, not a link, not a secret,
+// not one your own names hide (p: the profile, whose settings have them)
+function toolAttach(a, p) {
   const outbox = process.env.SPHERE_OUTBOX;
   if (!outbox) throw new Error('sphere_attach only works while answering');
   const name = safeName(a.name || 'file.txt');
@@ -2196,6 +2291,7 @@ function toolAttach(a) {
       .filter(Boolean);
     if (!roots.some((r) => real === r || real.startsWith(r + path.sep))) throw new Error('you may only attach files from your folders');
     if (isSecretPath(real)) throw new Error('that file looks like a secret; not attaching it');
+    if (p) neverReadAttach(p, real); // never-read: your own names
     if (st.size > 5 * 1024 * 1024) throw new Error('larger than 5 MB');
     buf = fs.readFileSync(real);
   } else throw new Error('give `content` or `path`');
@@ -3714,7 +3810,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   };
 
   // machine
-  const m = obj(input.machine, 'machine', ['folders', 'shell', 'web', 'browser', 'mcp'], 'an object');
+  const m = obj(input.machine, 'machine', ['folders', 'shell', 'web', 'browser', 'mcp', 'neverRead'], 'an object');
   if (!Array.isArray(m.folders) || !m.folders.length) throw bad('machine.folders', 'needs at least one folder (the first is where your Oby starts)');
   if (m.folders.length > 20) throw bad('machine.folders', 'has at most 20 folders');
   const folders = [];
@@ -3742,6 +3838,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
     if (folders.some((x) => x.path === abs)) throw bad(`${field}.path`, `${abs} is listed twice`);
     folders.push({ path: abs, write: bool(f.write, `${field}.write`, false) });
   });
+  const neverRead = validateNeverRead(m.neverRead, folders, bad); // never-read: your own names
   const shell = m.shell ?? 'off';
   if (!SHELL_MODES.includes(shell)) throw bad('machine.shell', `is off, read or full, not ${said(shell)}`);
   const web = obj(m.web, 'machine.web', ['fetch', 'search'], '{ fetch, search }');
@@ -3763,7 +3860,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
     version: SETTINGS_VERSION,
     routing,
     access,
-    machine: { folders, shell, web: { fetch: bool(web.fetch, 'machine.web.fetch', false), search: bool(web.search, 'machine.web.search', false) }, browser, mcp: servers },
+    machine: { folders, shell, web: { fetch: bool(web.fetch, 'machine.web.fetch', false), search: bool(web.search, 'machine.web.search', false) }, browser, mcp: servers, ...(neverRead.length ? { neverRead } : {}) }, // none: left out, so an older rep.mjs still reads the file
     ...(input.notify === undefined || input.notify === null ? {} : { notify: validateNotify(input.notify, bad) }), // left out: the defaults (notifyOf)
     github: validateGithubSettings(input.github),
   };
@@ -3806,6 +3903,7 @@ function withOverrides(s, o = {}) {
     if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw settingsError('--cwd', `there's no folder at ${abs}`);
     const why = folderProblem(abs);
     if (why) throw settingsError('--cwd', why);
+    if (neverReadForms(neverReadOf(t)).regex?.test(abs + path.sep)) throw settingsError('--cwd', 'is hidden by one of your own never-read names (machine.neverRead)'); // never-read
     t.machine.folders = [{ path: abs, write: false }, ...t.machine.folders.filter((f) => f.path !== abs)];
   }
   return t;
@@ -4670,6 +4768,7 @@ function settingsSummary(s) {
     'What it may touch on this machine',
     ...m.folders.map((f, i) => `  ${f.path} (${f.write ? 'read and write, for trusted Obys' : 'read only'}${i === 0 ? ', starts here' : ''})`),
     `  shell: ${m.shell === 'read' ? 'read-only commands' : m.shell === 'full' ? 'any command, as you (trusted Obys; others get read-only commands)' : 'off'} · web: ${m.web.fetch ? 'fetch' : 'no fetch'}, ${m.web.search ? 'search' : 'no search'} · browser: ${m.browser === 'chrome' ? 'your Chrome (trusted Obys)' : 'off'} · your MCP servers: ${m.mcp.length ? `${m.mcp.join(', ')} (trusted Obys)` : 'none'}`,
+    neverReadSummary(s), // never-read
     "  Codex and Cursor answer only trusted Obys' own asks; anyone else, and any ask passed on from another, gets Claude Code.",
     ...notifySummary(s),
     ...githubSummary(s),

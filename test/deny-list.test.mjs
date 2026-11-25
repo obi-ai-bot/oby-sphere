@@ -35,7 +35,7 @@ function lists(home) {
   };
   const section = grab(/^\/\/ ===== deny-list[\s\S]*?^\/\/ ===== end of deny-list$/m, 'its deny-list section');
   const consts = ['SECRET_DENY', 'SECRETISH', 'SECRET_GLOBS'].map((n) => grab(new RegExp(`^const ${n} = [\\s\\S]*?;(?: *//.*)?$`, 'm'), n));
-  return new Function('HOME', `${section}\n${consts.join('\n')}\nreturn { SECRET_FILES, SECRET_HOME, SECRET_DENY, SECRETISH, SECRET_GLOBS };`)(home);
+  return new Function('HOME', `${section}\n${consts.join('\n')}\nreturn { SECRET_FILES, SECRET_HOME, SECRET_DENY, SECRETISH, SECRET_GLOBS, denyListForms };`)(home);
 }
 
 // the list as it was before #125 (0.2.0)
@@ -222,6 +222,32 @@ describe('the files answers never read', () => {
     }
     // every entry of the table is tried by at least one sample
     for (const g of L.SECRET_GLOBS) assert.ok(SAMPLES.some(([p, secret]) => secret && globMatches(g, p)) || /\*(secret|credential)\*\./.test(g), `a sample for ${g}`);
+  });
+
+  // never-read: an owner's own names (machine.neverRead) are made by the same code, and an answer
+  // gets them after the table's, in each form (test/never-read.test.mjs has the rest)
+  test("with an owner's own names added, the three forms still agree, and every secret stays", () => {
+    const OWN = ['*.sqlite', 'customers/', 'notes/private-*.md'];
+    const own = L.denyListForms(OWN);
+    assert.deepEqual(L.denyListForms(L.SECRET_FILES).globs, L.SECRET_GLOBS, 'the same code makes the table');
+    const regex = (p) => L.SECRETISH.test(p) || own.regex.test(p);
+    const globs = [...L.SECRET_GLOBS, ...own.globs];
+    const rules = [...L.SECRET_DENY, ...own.deny];
+    const theirs = [
+      ['/home/sam/app/db/app.sqlite', SECRET],
+      ['C:\\Users\\sam\\app\\db\\APP.SQLITE', SECRET, 'case'],
+      ['/home/sam/app/customers/2026/list.csv', SECRET],
+      ['/home/sam/app/notes/private-q3.md', SECRET],
+      ['/home/sam/app/notes/public.md', READABLE],
+      ['/home/sam/app/src/customers.ts', READABLE],
+      ['/home/sam/app/db/app.sqlite3', READABLE],
+    ];
+    for (const [p, secret, spelled] of [...SAMPLES, ...theirs]) {
+      assert.equal(regex(p), secret, `SECRETISH and theirs: ${p}`);
+      assert.equal(globs.some((g) => globMatches(g, p)), secret, `SECRET_GLOBS and theirs: ${p}`);
+      assert.equal(rules.some((r) => globMatches(ruleGlob(r), p)), secret, `SECRET_DENY and theirs: ${p}`);
+      if (spelled !== 'case') assert.equal(globs.some((g) => globMatches(g, p, { ignoreCase: false })), secret, `case by case: ${p}`);
+    }
   });
 
   test("the files in your home folder that the sandbox names are on the list", () => {
