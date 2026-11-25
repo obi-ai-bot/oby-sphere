@@ -651,8 +651,10 @@ async function localApi(req, res, url, p) {
 // as the x-sphere-key header that checks it still opens the Sphere. Never in argv, a URL query
 // or a log. A key rotated through this console replaces it; a pasted one is checked first.
 
+// the key encoded, ! ' ( ) * too: a ! inside "…" is history expansion in bash and zsh
 function inviteLink(sphere, key) {
-  return `${String(sphere).replace(/\/+$/, '')}/#key=${encodeURIComponent(key)}`;
+  const k = encodeURIComponent(key).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return `${String(sphere).replace(/\/+$/, '')}/#key=${k}`;
 }
 
 // the key in an invite link (#key=…, or ?key=… as join takes it), or a bare key; null when it isn't one
@@ -682,9 +684,7 @@ function rememberInvite(p, key) {
   const cur = readJsonFile(file, null);
   if (!cur) return null;
   const link = inviteLink(p.sphere, key);
-  const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ ...cur, invite: link }, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  saveProfile({ ...cur, dir: p.dir, invite: link });
   p.invite = link;
   return link;
 }
@@ -3609,7 +3609,11 @@ function listProfiles() {
 function saveProfile(p) {
   const { dir, ...rest } = p;
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify(rest, null, 2), { mode: 0o600 });
+  // whole, and owner-only even over an older file (it holds the token and the invite link)
+  const file = path.join(dir, 'profile.json');
+  const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(rest, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
 
 // written whole, owner-only (keys, pins, sessions)

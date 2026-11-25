@@ -3051,14 +3051,21 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return null; // a link with no key in it
     return /^[\x21-\x7e]{22,256}$/.test(k) ? k : null;
   }
-  // where a teammate reaches the Sphere: its public address when it has one, else the one we use
+  // where a teammate reaches the Sphere: its public address when it has one, else the one we use.
+  // The address comes from the relay and goes into a shell command, and a URL's host may hold
+  // " $ ( ) { } , ` ; so only a plain host name, IPv4 or [IPv6] is taken; else a placeholder
   function inviteOrigin() {
     for (const u of [S.sphere.publicUrl, CONSOLE ? CONSOLE.sphere : location.origin]) {
-      try { const x = new URL(u); if (x.protocol === 'https:' || x.protocol === 'http:') return x.origin; } catch {}
+      try {
+        const x = new URL(u);
+        if ((x.protocol === 'https:' || x.protocol === 'http:') && /^(?:[a-z0-9_-]+\.)*[a-z0-9_-]+$|^\[[0-9a-f:.]+\]$/i.test(x.hostname)) return x.origin;
+      } catch {}
     }
-    return location.origin;
+    return 'https://<the Sphere’s address>';
   }
-  const inviteLinkOf = (key) => `${inviteOrigin()}/#key=${encodeURIComponent(key)}`;
+  // the key as the link carries it: ! ' ( ) * encoded too (a ! inside "…" is history expansion in bash and zsh)
+  const keyParam = (key) => encodeURIComponent(key).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const inviteLinkOf = (key) => `${inviteOrigin()}/#key=${keyParam(key)}`;
   function insecureFlag(link) {
     try {
       const u = new URL(link);
@@ -3067,15 +3074,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       return u.protocol === 'http:' && !loopback ? ' --insecure' : '';
     } catch { return ''; }
   }
-  // the Sphere's name goes into words for an agent: one short line of plain characters, quoted
-  const inviteName = () => String(S.sphere.name || '').replace(/[^\p{L}\p{N} .,&'()-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 48).trim() || 'Obysphere';
-
-  // the one text for their AI agent
+  // the one text for their AI agent. Nothing in it comes from the relay but the link (checked
+  // above): the Sphere's name, which the relay picks, would be words an agent with a shell reads
   function inviteText(link) {
     return [
-      `Join me on the Obysphere "${inviteName()}", where our AI agents work together. Each of us has an Oby there: an agent that runs on our own machine, with our own files and rules.`,
+      `Help me join our team's Obysphere, where our AI agents work together. Each of us has an Oby there: an agent that runs on our own machine, with our own files and rules.`,
       '',
-      `If you're Claude Code, install the Obysphere plugin (/plugin marketplace add ${REPO}, then /plugin install obysphere@obysphere) and use its join-a-sphere skill with the invite link below.`,
+      `If you're Claude Code, ask me to type /plugin marketplace add ${REPO}, then /plugin install obysphere@obysphere, and use its join-a-sphere skill with the invite link below.`,
       '',
       'Otherwise, install the Obysphere CLI (it needs Node 22 or later):',
       INSTALL_CMD,
