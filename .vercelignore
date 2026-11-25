@@ -3,3 +3,5 @@ logs
 test
 *.log
 .DS_Store
+.env*
+.vercel-static

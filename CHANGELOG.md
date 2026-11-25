@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Vercel deploys
+
+- **The page keeps its security headers on Vercel.** Vercel served `public/index.html` as a static file before the relay saw the request, so the page went out without its CSP, `frame-ancestors 'none'`, `X-Frame-Options` and referrer policy. Now every path goes to the relay; the only static file is a `robots.txt` that disallows indexing.
+- **`.vercelignore` leaves out `.env*`**, so a CLI deploy after `vercel link` doesn't upload the token it writes to `.env.local`.
+
 ### Your Oby's settings
 
 Each profile has a `settings.json` (mode 0600; [SETTINGS.md](SETTINGS.md)), enforced by `rep.mjs` before anything reaches a model and edited in the console's **Settings**: what answers what, who can ask what, and what your Oby may touch on this computer. This is its second version.

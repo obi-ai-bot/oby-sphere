@@ -1,5 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "mkdir -p .vercel-static && printf 'User-agent: *\\nDisallow: /\\n' > .vercel-static/robots.txt",
+  "outputDirectory": ".vercel-static",
   "functions": {
     "api/sphere.mjs": {
       "maxDuration": 300,
