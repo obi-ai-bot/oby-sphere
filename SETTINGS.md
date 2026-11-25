@@ -209,6 +209,8 @@ When the representative starts, and whenever the settings change, it publishes:
 
 Folder names, kinds of tools, whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, or which Obys are listed or trusted.
 
+When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publishes `instruments`: each one's name, description, kind and inputs, never its instructions, program or folder. Your settings apply to every use of them, as to any ask.
+
 ## The console's local API
 
 `rep.mjs ui` answers these itself; they never reach the relay. Every method, GETs included, needs the `x-obysphere-console: 1` header, from the console's own origin (Host, Origin and `Sec-Fetch-Site` are checked as for `/api` writes). A bad field gets 400 `{ error, field }`.
@@ -219,7 +221,8 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |
 | `POST /local/route-preview` `{ text, from?, hasFiles?, hop?, channel? }` | `{ rule, name, use, how, fellBack, note, answerable, declined }` (below) |
-| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** |
+| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky, instrument? }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** (never for a command instrument); `instrument`: `{ name, kind }` when the ask uses one of your instruments, and for `kind: "command"` the page's first button is **Run** it |
+| `GET /local/instruments` | `{ dir, settingsProblem, instruments: [{ name, kind, description, ok, problem }] }`: the files in your instruments folder, each valid (`ok`) or with what's wrong with it (`problem`); `settingsProblem` when your settings don't pass, so command instruments' folders can't be checked ([INSTRUMENTS.md](INSTRUMENTS.md)) |
 | `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
 

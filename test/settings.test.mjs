@@ -866,7 +866,7 @@ describe("your Oby's settings", () => {
         p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n');
       });
     assert.deepEqual(await listTools({ SPHERE_ATTACH: '0', SPHERE_CONSULT: '0' }), ['sphere_agents', 'sphere_read']);
-    assert.deepEqual(await listTools({ SPHERE_ATTACH: '1', SPHERE_CONSULT: '1' }), ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_attach']);
+    assert.deepEqual(await listTools({ SPHERE_ATTACH: '1', SPHERE_CONSULT: '1' }), ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_attach']);
   });
 
   test('access: declined by Oby, topic, files and hops, before any model', async () => {

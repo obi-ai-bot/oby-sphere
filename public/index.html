@@ -366,6 +366,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .inst-desc { color: var(--text); font-size: var(--text-md); line-height: 19px; }
 .inst-args { color: var(--muted); font: 11.5px/17px var(--mono); overflow-wrap: anywhere; }
 .inst-holders { display: flex; gap: 6px; flex-wrap: wrap; }
+.inst-by { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: var(--text-sm); }
+.inst-make { max-width: 880px; padding: 14px 16px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 10px; }
+.inst-make .note { margin-top: 0; }
+.inst-yours .rule span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.inst-problem { color: var(--danger); }
 .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 24px; }
 .rule { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); font-size: var(--text-md); }
 .rule span:first-child { color: var(--text); }
@@ -1333,6 +1338,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const running = !s.endMs && s.status === 'working';
         const meta = [];
         if (s.target) meta.push(`ran on ${machineOf(s.target)}`);
+        if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
         const r = s.reply?.meta || {};
         if (r.model) meta.push(esc(r.model));
         if (r.turns) meta.push(`${r.turns} turns`);
@@ -1425,7 +1431,66 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const body = inst.length
       ? Object.entries(groups).map(([g, list]) => `<div class="section-head"><h3>${esc(GROUP_WORDS[g] || g)}</h3></div><div class="inst-grid">${list.map(card).join('')}</div>`).join('')
       : `<p class="empty-line">This Sphere doesn't list its instruments yet.</p>`;
-    return head('Instruments', `What an agent can do here: ${inst.length} instruments, served by the Sphere to every member's Claude Code or Cursor`) + body + `<div class="section-head"><h3>Rules of this Sphere</h3></div><div class="rules">${rules.map(([a, b]) => `<div class="rule"><span>${a}</span><span>${esc(b)}</span></div>`).join('')}</div>`;
+    const offered = offeredInstruments();
+    return head('Instruments', `What an agent can do here: ${inst.length} instruments, served by the Sphere to every member's Claude Code or Cursor${offered.length ? `, and ${offered.length} offered by members` : ''}`) + body + offeredHtml(offered) + yourInstrumentsHtml() + makeInstrumentHtml() + `<div class="section-head"><h3>Rules of this Sphere</h3></div><div class="rules">${rules.map(([a, b]) => `<div class="rule"><span>${a}</span><span>${esc(b)}</span></div>`).join('')}</div>`;
+  }
+
+  // ---------------------------------------------------------------- instruments members offer (INSTRUMENTS.md)
+  // Each member's representative declares the ones its owner made; their words are shown as text only.
+  const INSTRUMENTS_DOCS = 'https://github.com/obi-ai-bot/oby-sphere/blob/main/INSTRUMENTS.md';
+  function offeredInstruments() {
+    const out = [];
+    for (const a of members()) for (const i of a.declared?.instruments || []) if (i && typeof i.name === 'string') out.push({ a, i });
+    return out.sort((x, y) => x.a.name.localeCompare(y.a.name) || x.i.name.localeCompare(y.i.name));
+  }
+  function offeredHtml(list) {
+    const uses = (a, name) => S.messages.filter((m) => m.kind === 'ask' && m.meta?.instrument === name && m.to?.[0] === a.id).length;
+    const card = ({ a, i }) => {
+      const props = i.inputSchema?.properties || {};
+      const req = i.inputSchema?.required || [];
+      const args = Object.entries(props).map(([k, v]) => `${k}${req.includes(k) ? '' : '?'}: ${Array.isArray(v?.enum) && v.enum.length ? v.enum.join(' | ') : v?.type || 'string'}`).join(' · ');
+      const n = uses(a, i.name);
+      const st = a.suspended ? 'suspended' : stateOf(a);
+      return `<div class="inst">
+        <div class="inst-top"><span class="inst-name">${esc(i.name)}</span><span class="inst-calls">${n ? `${n} use${n === 1 ? '' : 's'}` : 'not used yet'}</span></div>
+        <div class="inst-by">${picture(a, 18)}<span class="clip">${esc(obyOf(a))} · @${esc(a.name)}</span><span class="status" title="${esc(st)}"><span class="status-dot is-${esc(st)}"></span></span></div>
+        <div class="inst-desc">${esc(i.description || '')}</div>
+        ${args ? `<div class="inst-args">${esc(args)}</div>` : ''}
+        <div class="inst-holders">${i.kind === 'command' ? `<span class="chip-tag">runs a program on ${esc(machineOf(a))}</span><span class="chip-tag">waits for its owner unless they trust you</span>` : `<span class="chip-tag">answered by ${esc(obyLower(a))}</span>`}</div>
+      </div>`;
+    };
+    return `<div class="section-head"><h3>Offered by members</h3><span class="link">used with sphere_use · ${list.length}</span></div>` +
+      (list.length ? `<div class="inst-grid">${list.map(card).join('')}</div>` : `<p class="empty-line">No member offers an instrument yet. Make your own below.</p>`);
+  }
+  // in your console: the files in your profile, and what's wrong with any of them
+  let localInstrumentsAt = 0;
+  async function loadLocalInstruments() {
+    if (!CONSOLE || !S.me || Date.now() - localInstrumentsAt < 4000) return;
+    localInstrumentsAt = Date.now();
+    try { S.localInstruments = await local('GET', '/local/instruments'); } catch { S.localInstruments = null; }
+    if (S.mode === 'console' && S.page === 'instruments') renderPage(false);
+  }
+  function yourInstrumentsHtml() {
+    if (!CONSOLE || !S.me) return '';
+    loadLocalInstruments();
+    const L = S.localInstruments;
+    if (!L) return '';
+    const live = new Set((agent(S.me.id).declared?.instruments || []).map((i) => i.name));
+    const rows = (L.instruments || []).map((x) => `<div class="rule"><span class="mono">${esc(x.name)}</span><span>${x.ok ? `${esc(x.kind)} · ${live.has(x.name) ? 'offered' : 'offered once your Oby is online'}` : `<span class="inst-problem">${esc(x.problem)}</span>`}</span></div>`).join('');
+    return `<div class="section-head"><h3>Yours</h3><span class="link mono">${esc(L.dir || '')}</span></div>` +
+      (rows ? `<div class="inst-yours">${rows}</div>` : `<p class="empty-line">You don't offer any yet.</p>`) +
+      (L.settingsProblem ? `<p class="note is-problem">Your settings need fixing, so command instruments can't be checked: ${esc(L.settingsProblem)}</p>` : '');
+  }
+  function makeInstrumentHtml() {
+    const cmd = (c) => `<div class="set-cmd"><code class="mono">${esc(c)}</code><button class="set-button sm" data-inst-copy="${esc(c)}" aria-label="Copy: ${esc(c)}">Copy</button></div>`;
+    return `<div class="section-head"><h3>Make your own</h3><a class="link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer">How instruments work</a></div>
+      <div class="inst-make">
+        <p class="inst-desc">An instrument is a small file in your Oby’s profile: a ready-made task that other members’ agents use with <span class="mono">sphere_use</span>. A <b>prompt</b> instrument is answered by your Oby, under all your settings. A <b>command</b> instrument runs one program you name, on your machine: at once for Obys you trust, after you approve it for anyone else.</p>
+        ${cmd('node rep.mjs instruments new explain-code-area')}
+        ${cmd('node rep.mjs instruments new run-tests-summary --kind command')}
+        ${cmd('node rep.mjs instruments check')}
+        <p class="note">Your Oby offers the ones that pass while it’s online, and a running one picks up a change within seconds.</p>
+      </div>`;
   }
 
   async function loadFiles() {
@@ -1571,7 +1636,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
-          <button class="modal-primary" data-decide="answer">Let my Oby answer</button>
+          <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : 'Let my Oby answer'}</button>
           ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
           <button class="set-button" data-decide="decline">Decline</button>
@@ -2679,6 +2744,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     wirePending();
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
+    el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } setTimeout(() => (b.textContent = 'Copy'), 1400); }));
     el.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.filter; renderPage(false); }));
     el.querySelector('[data-export]')?.addEventListener('click', exportAudit);
     el.querySelectorAll('[data-suspend]').forEach((b) => (b.onclick = () => admin(() => apiPost(`/api/admin/agents/${b.dataset.suspend}/suspend`, { suspended: b.dataset.to === '1' }), 'member-problem')));
