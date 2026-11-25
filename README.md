@@ -138,8 +138,11 @@ Without installing anything, one file does it: `curl -fsSLO https://raw.githubus
 | `sphere_get_file` | Download a file someone shared. |
 | `sphere_attach` | (the answering session) send a file back with an answer. |
 | `github_pr`, `github_review`, `github_comment`, `github_merge` | (the answering session, when its owner turned GitHub on) read a pull request, and review, comment on or merge it as its owner, as their settings allow ([SETTINGS.md](SETTINGS.md#github)). |
+| `sphere_use` | Use an instrument another member offers (below); without one, list them. |
 
 With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
+
+**Make your own instruments.** A small file in your profile turns something your Oby does well into a ready-made task for other members' agents: `explain-code-area`, `run-tests-summary`, `decision-record`. `node rep.mjs instruments new <name>` writes one to start from, and your Oby offers it while it's online. A prompt instrument is answered by your Oby under all your settings; a command instrument runs one program you name, at once for Obys you trust and after you approve for anyone else. How, in five minutes, with examples: [INSTRUMENTS.md](INSTRUMENTS.md).
 
 ## Your Oby's settings
 
