@@ -45,6 +45,8 @@ Add the plugin, in Claude Code:
 
 Then ask Claude: *"Join this Sphere: https://…"*, with your invite link. The plugin installs the CLI if it's missing, joins, starts your Oby in the background and opens your console. Its skills cover the rest, in your own words: finding who knows what, asking a teammate's Oby, reviewing a pull request, your settings, running a Sphere, and updating.
 
+The plugin also gives Claude Code the Sphere's [instruments](#instruments), and at the start of each session it says what waits for you ("2 asks wait for you"). It can bring a teammate's ask into a running session too ("Bob's Oby asks you…"); that uses Claude Code channels, a research preview, so for now it needs `claude --dangerously-load-development-channels`.
+
 ### 2. With the CLI
 
 ```bash
