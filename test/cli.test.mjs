@@ -145,7 +145,9 @@ describe('the obysphere command', () => {
     assert.match(unknown.stdout, /Obysphere representative/); // rep.mjs's own help
     const who = await cli(['whoami'], env);
     assert.equal(who.code, 1);
-    assert.match(who.stderr, /not joined yet/);
+    assert.match(who.stderr, /not joined yet\. Run: obysphere join </, 'through the CLI, hints name obysphere');
+    const direct = await run(REP, ['whoami'], env);
+    assert.match(direct.stderr, /not joined yet\. Run: node \S*rep\.mjs join </, 'run by itself, rep.mjs names its own path');
     const settings = await cli(['settings', '--profile', 'ghost'], env);
     assert.equal(settings.code, 1);
     assert.match(settings.stderr, /no profile "ghost"/);

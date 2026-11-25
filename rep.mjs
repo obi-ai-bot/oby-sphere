@@ -33,6 +33,10 @@ import { fileURLToPath } from 'node:url';
 
 const { randomBytes, createHash } = crypto;
 const SELF = fileURLToPath(import.meta.url);
+// how a hint names this program: `obysphere` when it runs through the CLI, else `node <path>/rep.mjs`
+const meCmd = () => (process.env.OBYSPHERE_CLI ? 'obysphere' : `node ${rel(SELF)}`);
+// how a hint opens your console: the CLI opens the one already running in the background
+const consoleCmd = (profile) => (process.env.OBYSPHERE_CLI ? `obysphere open --profile ${profile}` : `${meCmd()} ui --profile ${profile}`);
 // profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
 const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
@@ -169,7 +173,7 @@ Downloads go to ${DOWNLOADS} (OBYSPHERE_DOWNLOADS).`);
 }
 
 async function join() {
-  const invite = pos[0] || die('usage: node rep.mjs join <invite link> --name <handle> --owner "<Your Name>"');
+  const invite = pos[0] || die(`usage: ${meCmd()} join <invite link> --name <handle> --owner "<Your Name>"`);
   let u;
   try {
     u = new URL(invite);
@@ -236,7 +240,7 @@ ${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as
   Sphere:   ${sphere}${data.sphere?.policy?.sealed ? "  (sealed: the relay can't read what you send)" : ''}${p.insecure ? yellow('  (http on a network: --insecure)') : ''}
   Access:   ${accessLabel(p)}  ·  runtime: ${runtimeLabel(p)}
   Profile:  ${path.join(dir, 'profile.json')}  (your token and keys: never share them)
-  Settings: ${settingsFile(p)}  (what your Oby may do: node ${rel(SELF)} settings --profile ${profile})
+  Settings: ${settingsFile(p)}  (what your Oby may do: ${meCmd()} settings --profile ${profile})
 
 Next:
   1. ${goOnline(profile)}
@@ -269,7 +273,7 @@ async function settingsCmd() {
 
 ${settingsSummary(s)}
 
-Change them in your console (node ${rel(SELF)} ui --profile ${p.profile}, then Settings) or in the file.
+Change them in your console (${consoleCmd(p.profile)}, then Settings) or in the file.
 A running representative applies them at its next ask.`);
 }
 
@@ -299,7 +303,7 @@ ${settings}`);
 async function ask() {
   const p = loadProfile();
   const [agent, ...words] = pos;
-  if (!agent || !words.length) die('usage: node rep.mjs ask <agent> "<message>"');
+  if (!agent || !words.length) die(`usage: ${meCmd()} ask <agent> "<message>"`);
   const files = opt.file ? [].concat(opt.file) : [];
   const api = client(p, 'sphere_ask');
   await ensurePublished(client(p), p);
@@ -309,7 +313,7 @@ async function ask() {
 
 async function post() {
   const p = loadProfile();
-  if (!pos.length) die('usage: node rep.mjs post "<message>"');
+  if (!pos.length) die(`usage: ${meCmd()} post "<message>"`);
   await ensurePublished(client(p), p);
   out(await toolPost(client(p, 'sphere_post'), p, { message: pos.join(' '), channel: opt.channel, files: opt.file ? [].concat(opt.file) : [] }));
 }
@@ -346,7 +350,7 @@ async function ui() {
   let adminKey = (typeof opt['admin-key'] === 'string' && opt['admin-key']) || process.env.OBYSPHERE_ADMIN_KEY || null;
   const claimed = adminKey ? await claimAdmin(p, adminKey).then(() => true, (e) => (log(yellow('  could not make your Oby an admin: ') + printable(e.message)), false)) : false;
   adminKey = null;
-  if (opt['admin-key'] !== undefined) log(dim(`  --admin-key shows in your shell history and the process list: next time run node ${rel(SELF)} admin claim once instead.`));
+  if (opt['admin-key'] !== undefined) log(dim(`  --admin-key shows in your shell history and the process list: next time run ${meCmd()} admin claim once instead.`));
   const fileKeys = new Map(); // file id -> its key, iv, tag, name and mime, from a message you opened
   const pending = new Map(); // file id -> encrypted by this console, waiting for its message
   let agentsAt = 0;
@@ -800,7 +804,7 @@ Cursor (~/.cursor/mcp.json, or .cursor/mcp.json in a project):
 ${JSON.stringify({ mcpServers: { obysphere: { command: node, args: [SELF, 'mcp', '--profile', p.profile, '--serve'] } } }, null, 2)}
 
 --serve makes your representative answer for you while that session is open.
-Leave it out if you run \`node rep.mjs serve\` in a terminal instead (both at once is fine too).`);
+Leave it out if you run \`${meCmd()} serve\` in a terminal instead (both at once is fine too).`);
 }
 
 // ================================================================ admin: this Sphere's admins and policy
@@ -810,8 +814,8 @@ Leave it out if you run \`node rep.mjs serve\` in a terminal instead (both at on
 // admin call. The key comes from OBYSPHERE_ADMIN_KEY or a hidden prompt, never from
 // the command line (shell history, the process list), and isn't stored.
 
-const ADMIN_USAGE = `usage: node rep.mjs admin claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
-       node rep.mjs admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]`;
+const ADMIN_USAGE = `usage: ${meCmd()} admin claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
+       ${meCmd()} admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]`;
 
 async function adminCmd() {
   const [sub, ...args] = pos;
@@ -844,8 +848,8 @@ async function adminClaim(p) {
   await claimAdmin(p, key);
   console.log(`${green('✓')} ${bold(p.agent.name)} is an admin of ${bold(where)} now (the audit log says so).
   The key wasn't stored: your Oby's token is enough from here on.
-  See the admins with: node ${rel(SELF)} admin status
-  Change this Sphere's policy with: node ${rel(SELF)} admin policy, or in your console's Policy.`);
+  See the admins with: ${meCmd()} admin status
+  Change this Sphere's policy with: ${meCmd()} admin policy, or in your console's Policy.`);
 }
 
 // the claim itself (also `ui --admin-key`, the old way): the key in one header, once
@@ -881,11 +885,11 @@ async function adminStatus(p) {
   you:    ${you}
   admins: ${list || 'none yet: whoever holds the admin key can run admin claim'}
   policy: ${policyLine(sphere)}`);
-  if (admin !== true) log(dim(`  To become one: node ${rel(SELF)} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`));
+  if (admin !== true) log(dim(`  To become one: ${meCmd()} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`));
 }
 
 async function adminRole(p, handle, on) {
-  if (!handle) die(`usage: node rep.mjs admin ${on ? 'grant' : 'revoke'} <handle>`);
+  if (!handle) die(`usage: ${meCmd()} admin ${on ? 'grant' : 'revoke'} <handle>`);
   const { agents } = await client(p).get('/api/agents');
   const n = slug(handle);
   const here = (agents || []).filter((a) => validAgent(a) && !a.removed);
@@ -893,7 +897,7 @@ async function adminRole(p, handle, on) {
   if (!a) die(`There's no member @${n || '?'} here. Members: ${here.map((x) => '@' + slug(x.name)).join(', ') || 'none'}.`);
   const r = await adminFetch(p, 'POST', `/api/admin/agents/${a.id}/role`, { admin: on }).catch((e) => {
     // the relay says "or use the admin key", which this command never sends: say what works here
-    if (e.code === 'last_admin') die(`${p.agent.name} is this Sphere's only admin who isn't suspended, so it can't step down: make another member an admin first (node ${rel(SELF)} admin grant <handle>), then revoke.`);
+    if (e.code === 'last_admin') die(`${p.agent.name} is this Sphere's only admin who isn't suspended, so it can't step down: make another member an admin first (${meCmd()} admin grant <handle>), then revoke.`);
     throw e;
   });
   const now = r.agent?.admin === true;
@@ -925,7 +929,7 @@ async function adminPolicy(p) {
     const { sphere, admin } = await client(p).get('/api/info');
     out(`${cleanLine(sphere?.name, 80)}: this Sphere, for everyone in it
   ${policyLine(sphere)}`);
-    if (admin !== true) log(dim(`  Only admins change it (node ${rel(SELF)} admin status).`));
+    if (admin !== true) log(dim(`  Only admins change it (${meCmd()} admin status).`));
     return;
   }
   const r = await adminFetch(p, 'POST', '/api/admin/policy', set);
@@ -960,7 +964,7 @@ async function adminFetch(p, method, url, body, headers = {}) {
   if (r.status === 401 && headers['x-admin-key']) throw new Error("That isn't this Sphere's admin key.");
   if (r.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
   if (r.status === 403 && data?.code === 'forbidden' && !headers['x-admin-key'])
-    throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: node ${rel(SELF)} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
+    throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: ${meCmd()} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
   throw Object.assign(new Error(relayError(data, r.status)), { code: /^[a-z_]{1,32}$/.test(String(data?.code || '')) ? data.code : null });
 }
 
@@ -2579,7 +2583,7 @@ function offerFor(p, s, summary = {}) {
   for (const x of loadInstruments(p, { settings: s })) {
     if (!x.inst) {
       const note = `${x.name}: ${x.problem}`;
-      if (!instrumentNotes.has(note)) log(yellow('  instrument not offered: ') + dim(`${printable(note)} (node ${rel(SELF)} instruments check)`));
+      if (!instrumentNotes.has(note)) log(yellow('  instrument not offered: ') + dim(`${printable(note)} (${meCmd()} instruments check)`));
       instrumentNotes.add(note);
       continue;
     }
@@ -2904,7 +2908,7 @@ async function instrumentsCmd() {
     }
   };
   if (sub === 'new') {
-    if (!name || !INSTRUMENT_NAME.test(name)) die(`usage: node ${rel(SELF)} instruments new <name> [--kind prompt|command]: a name like explain-code-area (lowercase letters, digits and -)`);
+    if (!name || !INSTRUMENT_NAME.test(name)) die(`usage: ${meCmd()} instruments new <name> [--kind prompt|command]: a name like explain-code-area (lowercase letters, digits and -)`);
     const kind = opt.kind === undefined ? 'prompt' : opt.kind;
     if (kind !== 'prompt' && kind !== 'command') die('--kind is prompt (your Oby answers it) or command (it runs a program you name)');
     const file = path.join(dir, `${name}.md`);
@@ -2917,16 +2921,16 @@ async function instrumentsCmd() {
     console.log(`${green('✓')} Made ${file}${wroteScript ? `\n  and ${script}, the program it runs` : ''}: a ${kind} instrument, ready to try.
 
   1. Edit it: its description, its inputs, and ${kind === 'command' ? `the program (${name}.mjs gets the input as JSON on stdin; what it prints is the answer)` : 'what your Oby should do with them'}.
-  2. Check it:  node ${rel(SELF)} instruments check --profile ${p.profile}
+  2. Check it:  ${meCmd()} instruments check --profile ${p.profile}
   3. Your Oby offers it while it's online (serve, or ui --serve); one that's running now picks it up within seconds.
-     Others use it with sphere_use, or: node rep.mjs use ${p.agent.name} ${name}
+     Others use it with sphere_use, or: ${meCmd()} use ${p.agent.name} ${name}
 
   ${kind === 'command' ? "Obys you trust use it at once; anyone else's use waits for you (your console's Waiting for you)." : 'Your Oby answers it under all your settings, like any ask.'}
   How instruments work: ${DOCS_INSTRUMENTS}`);
     return;
   }
   if (sub === 'remove') {
-    if (!name || !INSTRUMENT_NAME.test(name)) die(`usage: node ${rel(SELF)} instruments remove <name>`);
+    if (!name || !INSTRUMENT_NAME.test(name)) die(`usage: ${meCmd()} instruments remove <name>`);
     const file = path.join(dir, `${name}.md`);
     if (!fs.existsSync(file)) die(`there's no instrument ${name} in ${dir}`);
     fs.rmSync(file);
@@ -2937,7 +2941,7 @@ async function instrumentsCmd() {
   if (sub === 'check' || sub === 'list') {
     const all = loadInstruments(p, { settings: settings() });
     if (!all.length) {
-      console.log(`No instruments yet in ${dir}.\nMake one: node ${rel(SELF)} instruments new <name> [--kind prompt|command]\nHow instruments work: ${DOCS_INSTRUMENTS}`);
+      console.log(`No instruments yet in ${dir}.\nMake one: ${meCmd()} instruments new <name> [--kind prompt|command]\nHow instruments work: ${DOCS_INSTRUMENTS}`);
     } else {
       console.log(`${bold('Your instruments')} ${dim(dir)}`);
       for (const x of all) console.log(x.inst ? `  ${green('✓')} ${x.name}  ${dim(x.inst.kind)}  ${printable(x.inst.description)}` : `  ${red('✗')} ${x.name}.md  ${printable(x.problem)}`);
@@ -2959,7 +2963,7 @@ async function instrumentsCmd() {
     }
     return;
   }
-  die(`usage: node ${rel(SELF)} instruments new <name> [--kind prompt|command] | list | check | remove <name>`);
+  die(`usage: ${meCmd()} instruments new <name> [--kind prompt|command] | list | check | remove <name>`);
 }
 
 async function useCmd() {
@@ -2985,7 +2989,7 @@ function scaffoldPrompt(name) {
   return `---
 # An instrument your Oby offers in the Sphere: a ready-made task that other members'
 # agents use with sphere_use. Your Oby answers it on this machine, under all your
-# settings, like any ask. Check it with: node rep.mjs instruments check
+# settings, like any ask. Check it with: ${meCmd()} instruments check
 # How instruments work: ${DOCS_INSTRUMENTS}
 name: ${name}
 description: Explains how one area of my project works, from the files my Oby can read.
@@ -3015,7 +3019,7 @@ function scaffoldCommand(name) {
 # agents use with sphere_use. A command instrument runs one program you name, here,
 # with no shell: it gets the use as JSON on stdin, and what it prints is the answer.
 # Obys you trust use it at once; anyone else's use waits for you (your console's
-# Waiting for you). Check it with: node rep.mjs instruments check
+# Waiting for you). Check it with: ${meCmd()} instruments check
 # How instruments work: ${DOCS_INSTRUMENTS}
 name: ${name}
 description: Counts the lines, words and characters of a text.
@@ -5282,7 +5286,7 @@ async function notifyTest(p, via = 'all') {
 
 async function notifyCmd() {
   const via = typeof opt.via === 'string' ? opt.via : 'all';
-  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: node rep.mjs notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]`);
+  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: ${meCmd()} notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]`);
   const p = loadProfile();
   const { results, settingsError } = await notifyTest(p, via);
   if (settingsError) log(yellow('  your settings need fixing, so the test used the defaults: ') + settingsError);
@@ -5678,7 +5682,7 @@ async function githubStatus(p) {
 }
 async function githubCmd() {
   const p = loadProfile();
-  if ((pos[0] || 'status') !== 'status') die('usage: node rep.mjs github status [--profile <name>] [--json]');
+  if ((pos[0] || 'status') !== 'status') die(`usage: ${meCmd()} github status [--profile <name>] [--json]`);
   const st = await githubStatus(p);
   if (opt.json) return console.log(JSON.stringify(st, null, 2));
   const g = st.gh;
@@ -5693,7 +5697,7 @@ async function githubCmd() {
 ${lines.join('\n')}
   your folders' GitHub remotes: ${st.folderRepos.length ? st.folderRepos.join(', ') : 'none found'}
 
-Change it in your console (node ${rel(SELF)} ui --profile ${p.profile}, then Settings › GitHub) or in ${settingsFile(p)}.`);
+Change it in your console (${consoleCmd(p.profile)}, then Settings › GitHub) or in ${settingsFile(p)}.`);
 }
 
 // ---- in words
@@ -6319,7 +6323,7 @@ function loadProfile() {
   if (!name) {
     const all = listProfiles();
     if (all.length === 1) name = all[0];
-    else if (!all.length) die('not joined yet. Run: node rep.mjs join <invite link> --name <handle> --owner "<Your Name>"');
+    else if (!all.length) die(`not joined yet. Run: ${meCmd()} join <invite link> --name <handle> --owner "<Your Name>"`);
     else die(`several profiles here (${all.join(', ')}): pass --profile <name>`);
   }
   name = slug(name);
@@ -6538,7 +6542,7 @@ function serveWhenReachable(p, waitMs = 2000) {
 
 // what `join` says to do next: `obysphere start` when it came through the CLI
 function goOnline(profile) {
-  return process.env.OBYSPHERE_CLI ? `Go online, in the background:          obysphere start --profile ${profile}` : `Go online, so others can ask you:   node ${rel(SELF)} serve --profile ${profile}`;
+  return process.env.OBYSPHERE_CLI ? `Go online, in the background:          obysphere start --profile ${profile}` : `Go online, so others can ask you:   ${meCmd()} serve --profile ${profile}`;
 }
 
 // GET /local/version: { current, latest, checkedAt }. GitHub's latest release, checked at

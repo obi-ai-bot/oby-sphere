@@ -389,7 +389,7 @@ describe('notifications', () => {
     assert.deepEqual(all.map((l) => l.way).sort(), ['claude', 'console', 'desktop', 'phone', 'slack'], 'the desktop too: serve --notify');
     assert.ok(lines.every((l) => l.title === '3 asks for your Oby'), JSON.stringify(lines));
     assert.equal(all.find((l) => l.way === 'console').body, 'From @alice.');
-    const slack = hits.slice(h).filter((x) => x.path.startsWith('/services/'));
+    const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/')); return s.length && s; }, 4000, 'the Slack request');
     assert.equal(slack.length, 1);
     assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/>\n> From @alice\.$/);
 
@@ -431,7 +431,8 @@ describe('notifications', () => {
     const waiting = await waitFor(() => { const x = logLines().slice(mark).filter((l) => l.type === 'waiting'); return x.length >= 3 && x; }, 4000, 'every way');
     assert.equal(waiting[0].title, "@alice's ask waits for you");
     assert.deepEqual(logLines().slice(mark).map((l) => l.way).sort(), ['claude', 'console', 'phone']);
-    const phone = hits.slice(h).find((x) => x.path === `/${TOPIC}`);
+    // the log line is written as the request goes out: wait for the fake server to have it
+    const phone = await waitFor(() => hits.slice(h).find((x) => x.path === `/${TOPIC}`), 4000, 'the phone request');
     assert.equal(phone.headers.priority, 'high');
     assert.equal(phone.headers.title, "@alice's ask waits for you");
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## Unreleased
+
+- **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
+
+## 0.3.0 (2026-11-25)
 
 ### One command: `obysphere`
 
