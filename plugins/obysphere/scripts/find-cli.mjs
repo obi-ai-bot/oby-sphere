@@ -107,10 +107,30 @@ export function profiles(env = process.env) {
 // has this computer joined a Sphere?
 export const hasProfile = (env = process.env) => profiles(env).length > 0;
 
+// a profile name as rep.mjs reads it (its slug())
+const slug = (s) => String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+
+// the profile named by --profile (or --profile=) in these arguments, else by OBYSPHERE_PROFILE;
+// undefined when neither names one
+export function chosenProfile(args = [], env = process.env) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--profile') return String(args[i + 1] ?? '');
+    if (String(args[i]).startsWith('--profile=')) return String(args[i]).slice('--profile='.length);
+  }
+  return env.OBYSPHERE_PROFILE || undefined;
+}
+
 // several profiles, and nothing says which one: the CLI would stop and ask for --profile
 export function profileUnclear(args = [], env = process.env) {
-  if (env.OBYSPHERE_PROFILE || args.some((a) => a === '--profile' || a.startsWith('--profile='))) return false;
+  if (chosenProfile(args, env) !== undefined) return false;
   return profiles(env).length > 1;
+}
+
+// a profile is named, but this computer has none by that name: the CLI would stop with "no profile"
+export function profileMissing(args = [], env = process.env) {
+  const name = chosenProfile(args, env);
+  if (name === undefined || !hasProfile(env)) return false;
+  return !profiles(env).includes(slug(name));
 }
 
 // how to run the CLI with these arguments

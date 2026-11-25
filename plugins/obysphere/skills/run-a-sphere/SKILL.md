@@ -39,6 +39,8 @@ On Vercel, files are capped at 512 KB, and live streams reconnect at the functio
 
 ## On Railway
 
+The quickest start is the published template, https://railway.com/deploy/oby-sphere: it deploys this repository. Check the same variables and volume as below. By hand:
+
 1. In Railway: **New project › Deploy from GitHub repo ›** `obi-ai-bot/oby-sphere` (or a fork). Railway builds the `Dockerfile` and reads `railway.json`: one replica, health check on `/healthz`.
 2. **Variables:** `SPHERE_KEY`, `SPHERE_ADMIN_KEY`, `SPHERE_TRUST_PROXY=1`, and optionally `SPHERE_NAME`.
 3. **Volumes:** one mounted at `/data`, so the Sphere keeps its members and history across deploys.

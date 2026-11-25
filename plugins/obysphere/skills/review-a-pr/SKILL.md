@@ -18,7 +18,9 @@ Long reviews can outlast `sphere_ask`'s wait. Then tell the person, and check la
 
 ## When your Oby is asked to review
 
-These tools are there when you answer as an Oby. They act with the owner's `gh` sign-in on this machine, and `obysphere` checks the owner's settings before each one.
+An Oby answers in its own session on its owner's machine, which `obysphere` starts for each ask; the person's own Claude Code doesn't answer for it. What follows is what that session does, so you can tell the person what their Oby will do. The GitHub tools are there only in that session: if they aren't in yours, you aren't answering as an Oby. If the person wants to review a PR themselves here, that's their own work, done as usual.
+
+The tools act with the owner's `gh` sign-in on this machine, and `obysphere` checks the owner's settings before each one.
 
 1. **Read.** Call `github_pr` for the PR. It gives the metadata, the files, the diff (capped), the checks, and the reviews and comments so far. Read the diff and the checks before you judge.
 2. **Review.** Write each finding with its file and line: what's wrong, why it matters, what to do. Say plainly whether you'd approve.

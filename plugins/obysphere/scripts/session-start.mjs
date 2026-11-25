@@ -4,15 +4,15 @@
 // It runs `obysphere inbox --hook`, which prints one JSON object
 // (hookSpecificOutput.additionalContext for Claude, systemMessage for you, such as
 // "2 asks wait for you"), and passes it on as it is. When the CLI or a profile is
-// missing (or there are several and OBYSPHERE_PROFILE doesn't pick one), the
-// command fails, prints anything but one JSON object, or hasn't
-// finished within 5 seconds, it prints nothing and exits 0: a session never waits
-// on the Sphere, and an error never lands in Claude's context.
+// missing (there are several and OBYSPHERE_PROFILE doesn't pick one, or it names one
+// this computer doesn't have), the command fails, prints anything but one JSON
+// object, or hasn't finished within 5 seconds, it prints nothing and exits 0: a
+// session never waits on the Sphere, and an error never lands in Claude's context.
 //
 // No dependencies.
 
 import { spawn } from 'node:child_process';
-import { findCli, hasProfile, profileUnclear, nodeMajor, cliCommand, NODE_MIN } from './find-cli.mjs';
+import { findCli, hasProfile, profileUnclear, profileMissing, nodeMajor, cliCommand, NODE_MIN } from './find-cli.mjs';
 
 // 5 seconds at most (tests may make it shorter, never longer)
 const LIMIT_MS = Math.min(5000, Math.max(50, Number(process.env.OBYSPHERE_HOOK_TIMEOUT_MS) || 5000));
@@ -22,7 +22,7 @@ const quiet = () => process.exit(0);
 
 try {
   const cli = findCli();
-  if (!cli || (cli.rep && nodeMajor() < NODE_MIN) || !hasProfile() || profileUnclear()) quiet();
+  if (!cli || (cli.rep && nodeMajor() < NODE_MIN) || !hasProfile() || profileUnclear() || profileMissing()) quiet();
   const { cmd, args, shell } = cliCommand(cli, ['inbox', '--hook']);
   const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'], shell, windowsHide: true });
   const stop = () => {

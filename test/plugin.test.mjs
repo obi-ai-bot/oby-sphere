@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { which, findCli, hasProfile } from '../plugins/obysphere/scripts/find-cli.mjs';
+import { which, findCli, hasProfile, chosenProfile, profileUnclear, profileMissing } from '../plugins/obysphere/scripts/find-cli.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -48,6 +48,8 @@ const CONTRACT = {
   notify: { subs: { test: ['--via'] } },
   admin: { subs: { claim: [], status: [], grant: [], revoke: [], policy: ['--sealed', '--max-depth', '--max-file-bytes', '--pause', '--resume'], 'rotate-key': [] } },
   github: { subs: { status: [] } },
+  // added during the build (instruments)
+  instruments: { subs: { new: [], list: [], check: [], remove: [] } },
   // obysphere.mjs (cli)
   start: {},
   stop: {},
@@ -236,6 +238,20 @@ describe('the plugin and its marketplace', () => {
     assert.equal(problems.length, 3, problems.join('\n'));
   });
 
+  // review: the privacy statement (and the directory listing) said the CLI talks only to the
+  // Sphere, but wave 3's CLI also checks GitHub for updates, may use `gh`, and may post to
+  // a Slack webhook or ntfy topic
+  test('the privacy statements name everything the CLI may reach', () => {
+    const privacy = (md) => /^## Privacy\n([\s\S]*?)(?=^## )/m.exec(md)?.[1] || '';
+    const readme = fs.readFileSync(path.join(PLUGIN, 'README.md'), 'utf8');
+    const listing = fs.readFileSync(path.join(PLUGIN, 'LISTING.md'), 'utf8');
+    for (const [name, text] of [['README.md#privacy', privacy(readme)], ['LISTING.md#privacy', privacy(listing)], ['LISTING.md#what-it-accesses', /^## What it accesses\n([\s\S]*?)(?=^## )/m.exec(listing)?.[1] || '']]) {
+      assert.ok(text.length > 100, `${name} is there`);
+      assert.doesNotMatch(text, /talks only to the Sphere/, name);
+      for (const w of [/Sphere you join/, /GitHub/, /`gh`/, /Slack/, /ntfy/]) assert.match(text, w, `${name} names ${w}`);
+    }
+  });
+
   test('the repository README tells how to install it', () => {
     const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
     assert.match(readme, /\/plugin marketplace add obi-ai-bot\/oby-sphere/);
@@ -296,13 +312,20 @@ function computer() {
   };
   return d;
 }
+// every server a test started, so one that a failing test left running can't keep the suite from ending
+const started = [];
 after(() => {
+  for (const p of started) {
+    if (p.exitCode === null && p.signalCode === null) p.kill('SIGKILL');
+    for (const s of [p.stdin, p.stdout, p.stderr]) s.destroy(); // and a CLI it ran sees its stdin end
+  }
   for (const t of temps) fs.rmSync(t, { recursive: true, force: true });
 });
 
 // the plugin's MCP server, spoken to as Claude Code would: one JSON-RPC message per line
 function startMcp(env, args = []) {
   const p = spawn(process.execPath, [MCP, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  started.push(p);
   p.stdin.on('error', () => {}); // it may have exited already
   const lines = [];
   let waiters = [];
@@ -457,6 +480,49 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
     assert.equal((await m.exited).code, 0);
   });
 
+  // review: a named profile that isn't here made `rep.mjs mcp` stop at once ("no profile"),
+  // so the server just failed in /mcp, with nothing to say what to fix
+  test('OBYSPHERE_PROFILE or --profile naming a profile this computer lacks: it says so, and lists them', async () => {
+    const c = computer();
+    c.installApp();
+    c.join('alice');
+    const pid = path.join(c.dir, 'pid');
+    for (const [env, args] of [[{ ...c.env, OBYSPHERE_PROFILE: 'bob', FAKE_PID: pid }, []], [{ ...c.env, FAKE_PID: pid }, ['--profile', 'bob']], [{ ...c.env, FAKE_PID: pid }, ['--profile=bob']]]) {
+      const m = startMcp(env, args);
+      await m.request(1, 'initialize', {});
+      const text = (await m.request(2, 'tools/call', { name: 'obysphere_setup' })).result.content[0].text;
+      assert.match(text, /profile "bob" .*no profile by that name\. Its profiles: alice\./);
+      assert.match(text, /OBYSPHERE_PROFILE/);
+      assert.deepEqual(checkCommands(text.split('\n'), 'obysphere_setup').problems, []);
+      m.end();
+      assert.equal((await m.exited).code, 0);
+    }
+    assert.ok(!fs.existsSync(pid), 'the CLI is not run');
+    // the same name in other letters is the same profile, as rep.mjs reads it
+    const m = startMcp({ ...c.env, OBYSPHERE_PROFILE: 'Alice' });
+    const hello = JSON.parse(await m.nextLine((l) => l.startsWith('{'), 'the fake CLI'));
+    assert.equal(hello.profile, 'Alice');
+    m.end();
+    assert.equal((await m.exited).code, 0);
+  });
+
+  // review: after the CLI failed to start, the launcher had replaced the default SIGTERM with
+  // "pass it to the CLI", so serving obysphere_setup it ignored SIGTERM until stdin closed
+  test('the CLI is found but can’t start: obysphere_setup says why, and a signal still stops it', { skip: !POSIX && 'shebangs' }, async () => {
+    const c = computer();
+    fs.writeFileSync(path.join(c.bin, 'obysphere'), '#!/no/such/interpreter\n', { mode: 0o755 });
+    c.join();
+    const m = startMcp(c.env);
+    await m.request(1, 'initialize', {});
+    const text = (await m.request(2, 'tools/call', { name: 'obysphere_setup' })).result.content[0].text;
+    assert.match(text, /was found \(.*obysphere\) but couldn't start: ENOENT/);
+    assert.match(text, /obysphere doctor/);
+    m.p.kill('SIGTERM');
+    const ended = await Promise.race([m.exited, sleep(3000).then(() => 'still running')]);
+    if (ended === 'still running') m.p.kill('SIGKILL');
+    assert.deepEqual(ended, { code: 128 + os.constants.signals.SIGTERM, signal: null });
+  });
+
   test('`obysphere` on PATH with no rep.mjs to be found: it runs `obysphere mcp`', { skip: !POSIX && 'shell scripts' }, async () => {
     const c = computer();
     fs.writeFileSync(path.join(c.bin, 'obysphere'), '#!/bin/sh\necho "{\\"shim\\":\\"$*\\"}"\nexit 3\n', { mode: 0o755 });
@@ -499,6 +565,24 @@ describe('finding the CLI (scripts/find-cli.mjs)', () => {
     fs.mkdirSync(path.join(c.home, '.obysphere-mvp', 'bob'), { recursive: true });
     fs.writeFileSync(path.join(c.home, '.obysphere-mvp', 'bob', 'profile.json'), '{}');
     assert.equal(hasProfile(noHome), true);
+  });
+
+  test('which profile is chosen: --profile, then --profile=, then OBYSPHERE_PROFILE; and whether it is here', () => {
+    const c = computer();
+    c.join('alice');
+    c.join('work');
+    assert.equal(chosenProfile([], c.env), undefined);
+    assert.equal(chosenProfile(['--profile', 'work'], { ...c.env, OBYSPHERE_PROFILE: 'alice' }), 'work');
+    assert.equal(chosenProfile(['--serve', '--profile=work'], c.env), 'work');
+    assert.equal(chosenProfile([], { ...c.env, OBYSPHERE_PROFILE: 'alice' }), 'alice');
+    assert.equal(profileUnclear([], c.env), true);
+    assert.equal(profileUnclear(['--profile', 'work'], c.env), false);
+    assert.equal(profileMissing([], c.env), false);
+    assert.equal(profileMissing(['--profile', 'work'], c.env), false);
+    assert.equal(profileMissing(['--profile', '@Work'], c.env), false, 'read as rep.mjs reads it');
+    assert.equal(profileMissing(['--profile', 'bob'], c.env), true);
+    assert.equal(profileMissing(['--profile'], c.env), true, 'no name at all');
+    assert.equal(profileMissing([], { ...c.env, OBYSPHERE_PROFILE: 'bob' }), true);
   });
 });
 
@@ -554,6 +638,9 @@ describe('the SessionStart hook (scripts/session-start.mjs)', () => {
     assert.ok(!fs.existsSync(pid), 'the CLI is not run');
     const chosen = await runHook({ ...c.env, FAKE_MODE: 'json', OBYSPHERE_PROFILE: 'work' });
     assert.equal(JSON.parse(chosen.out).systemMessage, '2 asks wait for you');
+    const missing = await runHook({ ...c.env, FAKE_MODE: 'json', FAKE_PID: pid, OBYSPHERE_PROFILE: 'bob' });
+    assert.deepEqual({ code: missing.code, out: missing.out }, { code: 0, out: '' });
+    assert.ok(!fs.existsSync(pid), 'nor for a profile that isn’t here');
   });
 
   for (const mode of ['text', 'array', 'fail']) {

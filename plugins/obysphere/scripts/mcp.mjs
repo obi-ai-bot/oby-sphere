@@ -17,17 +17,18 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import readline from 'node:readline';
-import { findCli, hasProfile, profiles, profileUnclear, nodeMajor, cliCommand, NODE_MIN, INSTALL, INSTALL_MAIN } from './find-cli.mjs';
+import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenProfile, nodeMajor, cliCommand, NODE_MIN, INSTALL, INSTALL_MAIN } from './find-cli.mjs';
 
 const VERSION = '0.3.0';
 const ARGS = process.argv.slice(2);
 
-// why the CLI can't serve yet: 'install', 'node', 'join' or 'several'; null when it can
+// why the CLI can't serve yet: 'install', 'node', 'join', 'several' or 'missing'; null when it can
 function blocker(cli) {
   if (!cli) return 'install';
   if (cli.rep && nodeMajor() < NODE_MIN) return 'node';
   if (!hasProfile()) return 'join';
   if (profileUnclear(ARGS)) return 'several';
+  if (profileMissing(ARGS)) return 'missing';
   return null;
 }
 
@@ -44,6 +45,8 @@ function run(found) {
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     try {
       process.on(sig, () => {
+        // serving obysphere_setup instead (the CLI never started): stop, as a signal would
+        if (failed) return process.exit(128 + (os.constants.signals[sig] || 1));
         try {
           child.kill(sig);
         } catch {}
@@ -128,6 +131,14 @@ function setupText(startError) {
   if (why === 'several')
     return [
       `This computer has joined more than one Sphere (profiles: ${profiles().join(', ')}), and nothing says which one Claude Code should use.`,
+      '',
+      'Set OBYSPHERE_PROFILE to one of them: in the shell profile Claude Code starts from, or under "env" in Claude Code\'s settings (~/.claude/settings.json). obysphere profiles lists them.',
+      '',
+      reconnect,
+    ].join('\n');
+  if (why === 'missing')
+    return [
+      `Claude Code is set to use the profile ${JSON.stringify(String(chosenProfile(ARGS)).slice(0, 40))} (OBYSPHERE_PROFILE or --profile), but this computer has no profile by that name. Its profiles: ${profiles().join(', ')}.`,
       '',
       'Set OBYSPHERE_PROFILE to one of them: in the shell profile Claude Code starts from, or under "env" in Claude Code\'s settings (~/.claude/settings.json). obysphere profiles lists them.',
       '',

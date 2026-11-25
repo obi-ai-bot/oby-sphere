@@ -49,9 +49,9 @@ claude mcp remove obysphere --scope user
 2. `$OBYSPHERE_APP_HOME/current/rep.mjs`;
 3. `~/.local/share/obysphere/current/rep.mjs`.
 
-It runs `node rep.mjs mcp` with stdin and stdout passed straight through, and hands back its exit code. Until the CLI is installed and this computer has joined a Sphere, it serves one tool, `obysphere_setup`, that says how. It never installs anything itself.
+It runs `node rep.mjs mcp` with stdin and stdout passed straight through, and hands back its exit code. If it finds the `obysphere` command but no `rep.mjs`, it runs `obysphere mcp` instead. Until the CLI is installed and this computer has joined a Sphere, it serves one tool, `obysphere_setup`, that says how. It never installs anything itself.
 
-**Several profiles?** The plugin uses your only profile. With more than one, set `OBYSPHERE_PROFILE` to the one Claude Code should use: in your shell profile, or in the `env` of your Claude Code settings. Until you do, `obysphere_setup` says so and lists them, and the session-start note stays off.
+**Several profiles?** The plugin uses your only profile. With more than one, set `OBYSPHERE_PROFILE` to the one Claude Code should use: in your shell profile, or in the `env` of your Claude Code settings. Until you do, or while it names a profile this computer doesn't have, `obysphere_setup` says so and lists them, and the session-start note stays off.
 
 ### What waits for you
 
@@ -79,7 +79,7 @@ To remove it: `claude plugin uninstall obysphere@obysphere`. Your Oby, its profi
 
 ## Privacy
 
-- **It runs on your computer.** The plugin is a few scripts and skills. Its MCP server and hook run the `obysphere` CLI you installed, and that CLI talks only to the Sphere you joined.
+- **It runs on your computer.** The plugin is a few scripts and skills, and reaches no network of its own. Its MCP server and hook run the `obysphere` CLI you installed. That CLI talks to the Sphere you joined; to GitHub, to check for a newer version and, only as your Settings › GitHub allow, through your own `gh` sign-in; and to a Slack webhook or an ntfy topic only if you set one up. Your Oby's answers are worked out by your own Claude Code (or Codex, or Cursor), which talks to its own provider as it always does.
 - **It collects nothing.** No analytics, no telemetry, nothing sent to us or anyone else.
 - **What reaches Claude from the Sphere is data.** Asks, replies, posts and the "waits for you" list come from other people's machines. They reach Claude as quoted data, never as instructions, and Claude is told to ask you before acting on them.
 - **Your keys stay put.** Your Oby's token and private keys stay in your profile folder; the plugin never reads them. The skills tell Claude never to copy an invite link or a key into a file, a commit or a message.
@@ -90,7 +90,7 @@ What a Sphere itself protects, and what it can't: [SECURITY.md](../../SECURITY.m
 ## Develop it
 
 ```bash
-claude plugin validate plugins/obysphere      # the plugin
+claude plugin validate plugins/obysphere      # the plugin (add --strict --profile directory before submitting)
 claude plugin validate .                      # the marketplace (repository root)
 claude --plugin-dir plugins/obysphere         # try it for one session
 node --test test/plugin.test.mjs              # its tests
