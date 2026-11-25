@@ -109,6 +109,7 @@ const S = {
   announced: dict(), // agent id -> { rep, session }: what the audit log last said about presence
   status: dict(), // agent id -> { state, about, note, since }
   claims: new Map(), // `${ask}:${agent}` -> { instance, ts }
+  admins: new Set(), // agent ids of members who are admins (role ops); the admin key works besides
 };
 const STARTED = now();
 const STARTED_MS = Date.now();
@@ -182,6 +183,7 @@ function apply(op, liveEvents = true) {
       if (a.tokenHash && !a.removed) tokenIndex.set(a.tokenHash, a);
       if (a.removed) tombstones.add(a.name);
       else nameIndex.set(a.name, a);
+      if (a.removed) S.admins.delete(a.id); // a removed member is no admin
       if (a.removed || a.suspended) delete S.status[a.id];
       ev.push(['agent', publicAgent(a), ALL]);
       // removed or suspended: its streams close, and it reads nothing more
@@ -235,6 +237,14 @@ function apply(op, liveEvents = true) {
       touch(op.agent, op.ts);
       if (S.agents[op.agent]) ev.push(['presence', publicAgent(S.agents[op.agent]), ALL]);
       break;
+    case 'role': {
+      // ===== admin roles: a member made an admin, or no longer one
+      const a = S.agents[op.id];
+      if (op.admin && a && !a.removed) S.admins.add(op.id);
+      else S.admins.delete(op.id);
+      if (a) ev.push(['agent', publicAgent(a), ALL]);
+      break;
+    }
   }
   if (liveEvents) for (const [e, d, who] of ev) broadcast(e, d, who);
 }
@@ -456,7 +466,7 @@ function fsStore() {
   const buckets = new Map();
 
   // small and rarely written: files and messages are in the log, not here
-  const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels });
+  const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels, admins: [...S.admins] });
   function saveNow() {
     clearTimeout(snapTimer);
     snapTimer = null;
@@ -498,6 +508,7 @@ function fsStore() {
       case 'init':
       case 'sphere':
       case 'policy':
+      case 'role':
         return save(true);
       case 'agent':
         return save(!!op.urgent);
@@ -556,6 +567,7 @@ function fsStore() {
       useAdminKey(CFG.adminKey || plainAdmin || readKeysFile(KEYS).SPHERE_ADMIN_KEY);
 
       for (const a of Object.values(snap.agents || {})) apply({ t: 'agent', a }, false);
+      for (const id of [].concat(snap.admins || [])) if (typeof id === 'string') apply({ t: 'role', id, admin: true }, false);
       for (const ch of Object.values(snap.channels || {})) apply({ t: 'channel', ch }, false);
       const oldFiles = Object.values(snap.files || {}); // an older version kept file records in the snapshot
       for (const f of oldFiles) apply({ t: 'file', f }, false);
@@ -973,6 +985,7 @@ function publicAgent(a) {
     online: !a.removed && c.rep > 0,
     inSession: !a.removed && c.session > 0,
     suspended: !!a.suspended,
+    admin: !a.removed && S.admins.has(a.id),
     ...(a.removed ? { removed: true } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
@@ -1466,12 +1479,15 @@ async function route(req, res, url) {
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
   if (bearer && !me) await authFailed(req, 'an unknown agent token');
   const adminHdr = req.headers['x-admin-key'];
-  const admin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
-  if (adminHdr && !admin) await authFailed(req, 'a wrong admin key');
+  const keyAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
+  if (adminHdr && !keyAdmin) await authFailed(req, 'a wrong admin key');
   const keyHdr = req.headers['x-sphere-key'];
-  const viewer = admin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
+  const viewer = keyAdmin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
   if (keyHdr && !viewer && !me) await authFailed(req, 'a wrong Sphere key');
   if (!me && !viewer) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  // an admin: whoever holds the admin key, or a member made an admin (never while suspended)
+  const memberAdmin = isAdmin(me);
+  const admin = keyAdmin || memberAdmin;
   if (me) {
     // a suspended agent sees only its own state
     if (me.suspended && !(m === 'GET' && p === '/api/info')) throw err(403, 'suspended', "The Sphere's operator suspended this agent: it can't read or write until they resume it.");
@@ -1569,7 +1585,7 @@ async function route(req, res, url) {
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !admin ? sha(String(keyHdr)) : null, admin: !me && admin, planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
@@ -1604,10 +1620,47 @@ async function route(req, res, url) {
     return;
   }
 
-  // ---- the operator: governance with the admin key
+  // ---- admins: governance, with the admin key or an admin member's token
   if (p.startsWith('/api/admin/')) {
-    if (!admin) throw err(403, 'forbidden', 'This needs the admin key.');
-    if (m === 'GET' && p === '/api/admin/check') return send(res, 200, { ok: true });
+    // ===== admin roles: a member trades the admin key, once, for the admin role (both are needed)
+    if (m === 'POST' && p === '/api/admin/claim') {
+      if (!me) throw err(403, 'forbidden', "Claiming admin needs your Oby's token (Authorization: Bearer) as well as the admin key: it makes that member an admin.");
+      if (!keyAdmin) throw err(403, 'forbidden', 'Claiming admin needs the admin key (x-admin-key) as well as your token.');
+      await store.commit((b) => {
+        const a = S.agents[me.id];
+        if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        if (S.admins.has(a.id)) return;
+        b.push({ t: 'role', id: a.id, admin: true });
+        b.audit('role', { actor: a.id, target: a.id, detail: `${a.name} is an admin now: claimed with the admin key` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
+    }
+    if (!admin) throw err(403, 'forbidden', 'This needs an admin: the admin key, or the token of a member who is an admin.');
+    // who did it: the member when a token came, else whoever holds the key ("operator")
+    const actor = me ? me.id : 'operator';
+    const by = me ? ` · by ${me.name}${memberAdmin ? '' : ' with the admin key'}` : '';
+    const notSelf = (id, what) => {
+      if (me && id === me.id && !keyAdmin) throw err(400, 'bad_request', `An admin can't ${what} its own Oby: ask another admin, or use the admin key.`);
+    };
+    if (m === 'GET' && p === '/api/admin/check') return send(res, 200, { ok: true, via: keyAdmin ? 'key' : 'member' });
+    if (m === 'POST' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})\/role$/))) {
+      const body = await readJson(req);
+      if (typeof body.admin !== 'boolean') throw err(400, 'bad_request', 'admin is true or false.');
+      const id = mm[1];
+      await store.commit((b) => {
+        const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
+        if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        if (S.admins.has(id) === body.admin) return;
+        if (body.admin && a.suspended) throw err(403, 'target_suspended', `${a.name} is suspended: resume it before making it an admin.`);
+        // the admin key always works, so the last admin may go; but not by its own token alone,
+        // or nobody could govern without digging out the key
+        if (!body.admin && me && id === me.id && !keyAdmin && activeAdmins().length <= 1)
+          throw err(409, 'last_admin', "Your Oby is this Sphere's only admin: make another member an admin first, or use the admin key.");
+        b.push({ t: 'role', id, admin: body.admin });
+        b.audit('role', { actor, target: id, detail: body.admin ? `${a.name} is an admin now${by}` : `${a.name} is no longer an admin${by}` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[id]) });
+    }
     if (m === 'POST' && p === '/api/admin/policy') {
       const body = await readJson(req);
       const set = {};
@@ -1627,19 +1680,19 @@ async function route(req, res, url) {
         const pol = {};
         if (typeof body.paused === 'boolean' && body.paused !== S.paused) {
           b.push({ t: 'policy', paused: body.paused });
-          b.audit(body.paused ? 'pause' : 'unpause', { actor: 'operator', detail: body.paused ? 'the relay is paused: no new messages' : 'the relay is running again' });
+          b.audit(body.paused ? 'pause' : 'unpause', { actor, detail: (body.paused ? 'the relay is paused: no new messages' : 'the relay is running again') + by });
         }
         if (set.maxDepth !== undefined && set.maxDepth !== S.policy.maxDepth) {
           pol.maxDepth = set.maxDepth;
-          b.audit('policy', { actor: 'operator', detail: `hop limit ${S.policy.maxDepth} → ${set.maxDepth}` });
+          b.audit('policy', { actor, detail: `hop limit ${S.policy.maxDepth} → ${set.maxDepth}${by}` });
         }
         if (set.maxFileBytes !== undefined && set.maxFileBytes !== S.policy.maxFileBytes) {
           pol.maxFileBytes = set.maxFileBytes;
-          b.audit('policy', { actor: 'operator', detail: `file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(set.maxFileBytes)}` });
+          b.audit('policy', { actor, detail: `file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(set.maxFileBytes)}${by}` });
         }
         if (typeof body.sealed === 'boolean' && body.sealed !== !!S.policy.sealed) {
           pol.sealed = body.sealed;
-          b.audit('policy', { actor: 'operator', detail: body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again' });
+          b.audit('policy', { actor, detail: (body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again') + by });
         }
         if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
       });
@@ -1649,24 +1702,31 @@ async function route(req, res, url) {
       const body = await readJson(req);
       const on = body.suspended !== false;
       const id = mm[1];
+      notSelf(id, on ? 'suspend' : 'resume');
       await store.commit((b) => {
         const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
         if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
         if (!!a.suspended === on) return;
         b.push({ t: 'agent', a: { ...a, suspended: on }, urgent: true });
         if (on) b.push({ t: 'status', agent: a.id, status: null });
-        b.audit(on ? 'suspend' : 'resume', { actor: 'operator', target: a.id, detail: on ? `${a.name} suspended: it can't read, post or be asked` : `${a.name} resumed` });
+        b.audit(on ? 'suspend' : 'resume', { actor, target: a.id, detail: (on ? `${a.name} suspended: it can't read, post or be asked` : `${a.name} resumed`) + by });
       });
       return send(res, 200, { agent: publicAgent(S.agents[id]) });
     }
     if (m === 'DELETE' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})$/))) {
       const id = mm[1];
+      notSelf(id, 'remove');
       await store.commit((b) => {
         const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
         if (!a || a.removed) throw err(404, 'not_found', 'There is no such agent.');
+        // a removed member is no admin, and the audit log says so
+        if (S.admins.has(id)) {
+          b.push({ t: 'role', id, admin: false });
+          b.audit('role', { actor, target: id, detail: `${a.name} is no longer an admin: removed${by}` });
+        }
         const { tokenHash, ...rest } = a;
         b.push({ t: 'agent', a: { ...rest, removed: true }, urgent: true });
-        b.audit('remove', { actor: 'operator', target: a.id, detail: `${a.name} removed: its token no longer works, and its handle isn't given out again` });
+        b.audit('remove', { actor, target: a.id, detail: `${a.name} removed: its token no longer works, and its handle isn't given out again${by}` });
       });
       return send(res, 200, { ok: true });
     }
@@ -1674,7 +1734,7 @@ async function route(req, res, url) {
       const key = token(16);
       await store.commit((b) => {
         b.push({ t: 'sphere', fields: { keyHash: sha(key) } });
-        b.audit('rotate', { actor: 'operator', detail: 'the join key was rotated: old invite links and viewers on the old key are out; members keep their tokens' });
+        b.audit('rotate', { actor, detail: 'the join key was rotated: old invite links and viewers on the old key are out; members keep their tokens' + by });
       });
       return send(res, 200, { key });
     }
@@ -1847,6 +1907,14 @@ async function joinRefused(ip) {
 function liveOf(id) {
   if (!live.has(id)) live.set(id, { rep: new Set(), client: new Set() });
   return live.get(id);
+}
+
+// ===== admin roles: a member is an admin while it holds the role and isn't suspended or removed
+function isAdmin(a) {
+  return !!a && !a.removed && !a.suspended && S.admins.has(a.id);
+}
+function activeAdmins() {
+  return [...S.admins].filter((id) => isAdmin(S.agents[id]));
 }
 
 function cleanKeys(k) {
