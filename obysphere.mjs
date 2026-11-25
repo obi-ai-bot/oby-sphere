@@ -42,7 +42,7 @@ const NO_CHECK = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_NO_UPDATE_CHECK
 const RESERVED = new Set([4848, 4849, 4850]); // the relay's, the console's and the demo's ports
 const VER = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?(?:\+[0-9A-Za-z.-]{1,40})?$/;
 const DAY = 24 * 3600e3;
-const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'follow', 'json', 'help']);
+const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'follow', 'json', 'help', 'clear']);
 const SHIM_MARK = '# obysphere shim';
 
 const tty = process.stdout.isTTY;
@@ -70,6 +70,7 @@ Join and run your Oby
   obysphere open [--profile p]     your console, in the browser
   obysphere logs [--profile p] [-f] [-n 50]
   obysphere profiles [--json]      your profiles, and the folder that holds them
+  obysphere profiles use <name>    the profile commands and the Claude Code plugin use when you don't say (--clear forgets it)
   obysphere settings [--profile p] [--json]   where your Oby's settings are, and what they say
 
 Ask and read
@@ -158,6 +159,18 @@ function listProfiles() {
   }
 }
 
+// the profile chosen with `obysphere profiles use <name>`, kept in <profiles>/.default-profile
+// (rep.mjs and the plugin read the same file); null when none is chosen, or it's gone
+const DEFAULT_PROFILE_FILE = '.default-profile';
+function defaultProfile() {
+  try {
+    const n = slug(fs.readFileSync(path.join(HOME, DEFAULT_PROFILE_FILE), 'utf8').trim());
+    return n && listProfiles().includes(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 // what a profile says, without its token
 function publicProfile(name) {
   const j = readJson(path.join(HOME, name, 'profile.json'), {});
@@ -179,7 +192,7 @@ function notJoined() {
 // that takes one profile (logs, open), so --all isn't offered
 function targets({ one = false, all = !one && !!opt.all } = {}) {
   const names = listProfiles();
-  const want = typeof opt.profile === 'string' ? opt.profile : process.env.OBYSPHERE_PROFILE;
+  const want = typeof opt.profile === 'string' ? opt.profile : process.env.OBYSPHERE_PROFILE || (all ? null : defaultProfile());
   if (want) {
     const n = slug(want);
     if (!names.includes(n)) die(`no profile "${n}" in ${HOME}${names.length ? ` (there: ${names.join(', ')})` : ''}`);
@@ -187,19 +200,41 @@ function targets({ one = false, all = !one && !!opt.all } = {}) {
   }
   if (!names.length) die(notJoined());
   if (all || names.length === 1) return names;
-  die(`several profiles here (${names.join(', ')}): pass --profile <name>${!one && opt.all === undefined ? ', or --all' : ''}`);
+  die(`several profiles here (${names.join(', ')}): pass --profile <name>${!one && opt.all === undefined ? ', or --all' : ''}, or choose one for every command: obysphere profiles use <name>`);
+}
+
+// obysphere profiles use <name>: the profile every command (and the Claude Code plugin) uses
+// when nothing else says; --clear forgets it. --profile and OBYSPHERE_PROFILE still win.
+function useProfile(name) {
+  const file = path.join(HOME, DEFAULT_PROFILE_FILE);
+  if (opt.clear || name === '--clear') {
+    fs.rmSync(file, { force: true });
+    return say(`${green('✓')} No default profile now: with several, pass --profile <name>.`);
+  }
+  if (!name) die('usage: obysphere profiles use <name> | profiles use --clear');
+  const n = slug(name);
+  const names = listProfiles();
+  if (!names.includes(n)) die(`no profile "${n}" in ${HOME}${names.length ? ` (there: ${names.join(', ')})` : ''}`);
+  fs.writeFileSync(file, n + '\n', { mode: 0o644 });
+  const p = publicProfile(n);
+  say(`${green('✓')} ${bold(n)} is your default profile: ${p.owner}'s Oby in ${p.sphereName}.
+  Commands without --profile use it, and so does the Claude Code plugin (restart Claude Code, or reconnect the obysphere server in /mcp).`);
 }
 
 function profiles() {
+  if (pos[0] === 'use') return useProfile(pos[1]);
+  if (pos.length) die('usage: obysphere profiles [--json] | profiles use <name> | profiles use --clear');
   const names = listProfiles();
-  if (opt.json) return say(JSON.stringify({ home: HOME, profiles: names.map((n) => ({ ...publicProfile(n), port: savedPort(n), service: serviceInstalled(n) })) }, null, 2));
+  const chosen = defaultProfile();
+  if (opt.json) return say(JSON.stringify({ home: HOME, default: chosen, profiles: names.map((n) => ({ ...publicProfile(n), port: savedPort(n), service: serviceInstalled(n) })) }, null, 2));
   say(`${bold('Profiles')} in ${HOME} ${dim(`(${homeWhy()})`)}`);
   if (!names.length) return say(`  none yet.\n\n${notJoined()}`);
   for (const n of names) {
     const p = publicProfile(n);
     const port = savedPort(n);
-    say(`  ${bold(n)}  ${p.owner}'s Oby in ${p.sphereName}  ${dim(p.sphere || '')}${port ? dim(`  · console ${consoleUrl(n, port)}`) : ''}`);
+    say(`  ${bold(n)}${n === chosen ? green('  (default)') : ''}  ${p.owner}'s Oby in ${p.sphereName}  ${dim(p.sphere || '')}${port ? dim(`  · console ${consoleUrl(n, port)}`) : ''}`);
   }
+  if (names.length > 1 && !chosen) say(dim(`\nChoose the one commands and Claude Code use when you don't say: obysphere profiles use <name>`));
   const other = path.join(os.homedir(), path.basename(HOME) === '.obysphere' ? '.obysphere-mvp' : '.obysphere');
   if (!process.env.OBYSPHERE_HOME && other !== HOME && holdsProfile(other)) say(dim(`\nMore profiles are in ${other}: OBYSPHERE_HOME=${other} obysphere … uses them.`));
 }

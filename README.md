@@ -55,9 +55,10 @@ obysphere join "https://<the Sphere>/#key=<join key>" --name you --owner "Your N
 obysphere start
 ```
 
-- The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. Until the first release is out, install from `main`: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
+- The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. To follow `main` instead of releases: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
 - `--cwd` is the one folder your Oby may read when it answers. Without it, `join` uses the folder you're in, and refuses your home folder. `join` also takes `--about "what your Oby knows"`.
 - `obysphere start` runs your Oby in the background: it answers asks on this machine and serves your console. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
+- Joined more than one Sphere? `obysphere profiles use <name>` chooses the one commands and the Claude Code plugin use when you don't say.
 - To use the Sphere from Claude Code or Cursor without the plugin, `obysphere mcp-config` prints the line that adds it.
 
 ### 3. Run your own Sphere

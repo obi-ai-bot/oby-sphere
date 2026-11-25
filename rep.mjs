@@ -6319,12 +6319,12 @@ async function stream(p, role, { onEvent, onOpen, onDown }) {
 }
 
 function loadProfile() {
-  let name = opt.profile || process.env.OBYSPHERE_PROFILE;
+  let name = opt.profile || process.env.OBYSPHERE_PROFILE || defaultProfile();
   if (!name) {
     const all = listProfiles();
     if (all.length === 1) name = all[0];
     else if (!all.length) die(`not joined yet. Run: ${meCmd()} join <invite link> --name <handle> --owner "<Your Name>"`);
-    else die(`several profiles here (${all.join(', ')}): pass --profile <name>`);
+    else die(`several profiles here (${all.join(', ')}): pass --profile <name>, or choose one for every command: obysphere profiles use <name> (or set OBYSPHERE_PROFILE)`);
   }
   name = slug(name);
   const dir = path.join(HOME, name);
@@ -6346,6 +6346,17 @@ function loadProfile() {
 function isLoopback(host) {
   const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
   return h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+}
+
+// the profile `obysphere profiles use <name>` chose, kept in <profiles>/.default-profile; null
+// when none is chosen, or it's gone. --profile and OBYSPHERE_PROFILE come first.
+function defaultProfile() {
+  try {
+    const n = slug(fs.readFileSync(path.join(HOME, '.default-profile'), 'utf8').trim());
+    return n && fs.existsSync(path.join(HOME, n, 'profile.json')) ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 function listProfiles() {
