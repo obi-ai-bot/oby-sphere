@@ -3919,8 +3919,18 @@ function profileTaken(name) {
   return { profile: readJsonFile(f, {}), keys: readJsonFile(path.join(dir, 'keys.json'), {}) };
 }
 
-// the folder an Oby on this computer may read that holds this file, or null
+// the folder an Oby on this computer may read that holds this file, or null. Folders are
+// matched by device and inode too, not only by path: on a disk that ignores letter case
+// (macOS, Windows), ~/Work and ~/work are the same folder, and realpath keeps the case typed.
 function profileReadableBy(file) {
+  const above = new Set();
+  for (let d = path.dirname(file); ; d = path.dirname(d)) {
+    try {
+      const st = fs.statSync(d, { bigint: true });
+      above.add(`${st.dev}:${st.ino}`);
+    } catch {}
+    if (path.dirname(d) === d) break;
+  }
   for (const n of listProfiles()) {
     const dir = path.join(HOME, n);
     const s = readJsonFile(path.join(dir, 'settings.json'), null);
@@ -3929,6 +3939,10 @@ function profileReadableBy(file) {
       if (typeof f !== 'string' || !f.trim()) continue;
       const abs = realOr(path.resolve(expandHome(f.trim())));
       if (file === abs || file.startsWith(abs + path.sep)) return abs;
+      try {
+        const st = fs.statSync(abs, { bigint: true });
+        if (st.isDirectory() && above.has(`${st.dev}:${st.ino}`)) return abs;
+      } catch {}
     }
   }
   return null;

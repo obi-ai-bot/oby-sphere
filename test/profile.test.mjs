@@ -169,6 +169,14 @@ describe('moving your Oby to a new computer', () => {
     assert.equal(r.code, 1);
     assert.match(r.out, /inside a folder an Oby on this computer may read/);
     assert.ok(!fs.existsSync(path.join(work, 'bob', 'bob.obyprofile')));
+    // the same folder in another letter case, on a disk that ignores case (macOS, Windows)
+    const otherCase = path.join(tmp, 'WORK', 'BOB');
+    if (fs.existsSync(otherCase)) {
+      r = await rep(oldHome, ['profile', 'export', '--profile', 'bob', '--out', path.join(otherCase, 'bob.obyprofile')], withPass());
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /inside a folder an Oby on this computer may read/);
+      assert.ok(!fs.readdirSync(path.join(work, 'bob')).some((n) => n.endsWith('.obyprofile')));
+    }
   });
 
   test('export: one file, 0600, with nothing readable in it', async () => {
