@@ -220,8 +220,9 @@ test('an invite link whose key holds a + joins', async () => {
       assert.ok(fs.existsSync(path.join(home, name, 'profile.json')), `${name} has a profile`);
     }
   } finally {
-    relay.kill();
-    for (const d of [dir, home, cwd]) fs.rmSync(d, { recursive: true, force: true });
+    // let the relay stop before its folder goes, or a last write races the removal (ENOTEMPTY)
+    if (relay.exitCode === null && relay.signalCode === null) await new Promise((r) => { relay.once('exit', r); relay.kill(); });
+    for (const d of [dir, home, cwd]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
