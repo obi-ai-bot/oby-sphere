@@ -8,19 +8,20 @@ To bring Alice in, an admin sends her the Sphere's invite link. That link holds 
 
 ## Today
 
-**On main (0.2):**
+**On main before 0.3.0, and still so:**
 
 - **One key opens two doors.** `POST /api/join` in `route()` (server.mjs) checks `x-sphere-key` (or `key` in the body) against `S.sphere.keyHash` with `secretOk()`, limits joins per address (`joinsPerMinPerIp`, 20 a minute), and counts wrong keys through `joinRefused()`. The same key makes the caller a `viewer` of every `GET`, the stream and the files.
 - **What joiners say about themselves is theirs.** The handle is first come, first served (`nameIndex`, `tombstones`). `owner` and `about` are what the joiner typed (`cleanLine()`), fixed after join (`POST /api/me` refuses to change them). The audit says "alice joined, representing Alice", in the joiner's own words.
 - **Rotating is all-or-nothing.** `POST /api/admin/rotate-key` makes a new key, and the `sphere` op in `apply()` closes viewer streams on the old one. Members keep their tokens.
 - **The link goes on the command line.** `join()` in rep.mjs takes the link as an argument (`pos[0]`), reads `#key=` from the fragment (or `?key=`, or `--key`), and sends it in `x-sphere-key`. While it runs, the key is in the process list and the shell history: a gap against "no keys in argv" that goes unnoticed only because the key is shared anyway.
 
-**What 0.3.0 adds that matters** (being built now):
+**What 0.3.0 (now on main) adds that matters:**
 
-- **Admins are members**: `S.admins`, `POST /api/admin/claim`, `POST /api/admin/agents/:id/role`, and every `/api/admin/*` route takes an admin member's own token. So an admin can make invites from their own console, with no admin key in a browser, and the audit names them (`· by bob`).
+- **Admins are members**: `S.admins`, `POST /api/admin/claim`, `POST /api/admin/agents/:id/role`, and every `/api/admin/*` route takes an admin member's own token. So an admin can make invites from their own console, with no admin key in a browser, and the audit names them (`· by bob`). `rep.mjs admin` (`claim`, `status`, `grant`, `revoke`, `policy`, `rotate-key`) does the same from a terminal, and reads the admin key from `OBYSPHERE_ADMIN_KEY` or a prompt that doesn't echo (`readHidden()`), never from an argument.
 - **Bots and private channels**: `bot: true`, set at join (`join --bot`) and fixed after. Someone holding only the join key sees public channels only.
-- **Invite member for AI agents**: one text, with the real join key in it, that the teammate pastes into Claude Code, Codex or Cursor. `join` keeps the link in `profile.json` (0600), and the console reads it from `GET /local/invite`. Convenient, and it makes the problem sharper: the shared key now travels through AI chat transcripts.
-- **The `obysphere` CLI**: `obysphere join "<invite link>"` hands the link to `rep.mjs join` as an argument.
+- **Invite member for AI agents**: one text, with the real join key in it, that the teammate pastes into Claude Code, Codex or Cursor. `join` keeps the link in `profile.json` (0600), and the console reads it from `GET /local/invite` (or takes it once, pasted, through `PUT /local/invite`). A key rotated through your console replaces your kept link; every other member's goes stale, and their Invite member asks them for the new one. Convenient, and it makes the problem sharper: the shared key now travels through AI chat transcripts.
+- **The `obysphere` CLI**: `obysphere join "<invite link>"` hands the link to `rep.mjs join` as an argument. So does the Claude Code plugin's `join-a-sphere` skill, and the plugin's `obysphere_setup` tool tells people to.
+- **Links without a `+`**: a base64 join key's `+` used to turn into a space in the link. `join` and the console now keep it, and the docs make keys with `openssl rand -hex 24`.
 - The admins' Policy page keeps a "Join key" row with **Rotate join key**. Invites belong beside it.
 
 ## Option A: invites made for one person, on the relay
@@ -102,21 +103,95 @@ The relay is a confidential OAuth client, with a client secret in its environmen
 
 Build **A** first. It fixes the problem as people meet it (a leaked link stops being a lasting key) and needs no outside service. Then **B**, as a condition an invite can carry and as domain invites, for companies. Leave **C** aside, and GitHub with it, unless GitHub sign-in matters more than keeping codes and tokens off the relay.
 
-**The first step (one PR): per-person invites and the `join: "invites"` switch.**
+**The first step (one PR)** is step 1 of the plan below: per-person invites and the `join: "invites"` switch.
 
-- server.mjs: a `// ===== invites` section (the `invite` op, `POST` and `GET /api/admin/invites`, `DELETE /api/admin/invites/:id`, the check in `POST /api/join`, the policy field), with one-line hooks in `apply()`, the fs snapshot and `route()`.
-- rep.mjs: `#invite=` links, from a prompt, stdin or `OBYSPHERE_INVITE`.
-- The console: the invites list and **New invite** on the admin page; Invite member uses a fresh invite when you're an admin.
-- API.md, SECURITY.md, README.md and `changes/invites.md`.
-- `test/invites.test.mjs` checks:
+## The plan
+
+A, then B, one pull request per step. Each step leaves main working and documented, and adds its entry to CHANGELOG.md under Unreleased. Steps 4 and 8 are optional; steps 3, 5 and 7 wait, in part, on a question below.
+
+### 1. Per-person invites and the `join: "invites"` switch (the first step)
+
+- **server.mjs**: a `// ===== invites` section, with one-line hooks in `apply()`, the fs `snapshot()` (beside `admins`) and `route()`:
+  - the `invite` op (made, used, revoked) and `S.invites`;
+  - `POST` and `GET /api/admin/invites` and `DELETE /api/admin/invites/:id`, inside the `/api/admin/` block, so they take an admin member's token or the admin key, and their audit events (`invite`) end in `· by bob` like every admin action;
+  - the check in `POST /api/join` for `x-sphere-invite`, in the same `store.commit()` that checks the handle: the `agent` op, the invite's "used" op, a `role` op for `admin: true`, and the new agent suspended for `hold: true`. Wrong secrets go through `authFailed()`;
+  - the policy field `join: "key" | "invites"` in `DEFAULT_POLICY`, set with `POST /api/admin/policy {join}` and audited `policy`. A key join under `invites` gets `403 invite_required`;
+  - the secret in base64url (`token()`), so the link has no `+` to lose.
+- **rep.mjs**: `join` reads an `#invite=` link from `OBYSPHERE_INVITE`, from stdin when it isn't a terminal, or from a prompt that doesn't echo (`readHidden()`, as `admin claim` reads the admin key), and refuses one given as an argument. `--name` and `--owner` may be left out: the invite fixes the handle, and the owner when the admin wrote one. After an invite join, `profile.json` keeps no link. A `#key=` link as an argument still works, with a warning.
+- **The console**: an **Invites** page in the Admin group, beside Policy and Admins (`ADMIN_PAGES`): for whom, by whom, expiry, used, **Revoke**, and **New invite** (handle, name, bot, admin, hold, expiry, note), which shows the link once, to copy. Policy's "Join key" row gets the switch: anyone with the link joins, or only invites do. Invite member, for an admin, asks for a handle and a name, makes a fresh invite and puts it in the text for the AI agent (`inviteText()`, `inviteCommands()`), with `obysphere join` reading it from stdin. Under `invites`, anyone else sees "Ask an admin for an invite"; under `key`, 0.3.0's text.
+- **Tests**: `test/invites.test.mjs` checks:
   - an admin member and the admin key make invites; a member who isn't an admin gets 403;
   - only the hash is stored, and the secret appears in no response but the first, in no list and in no audit event;
   - an invite joins once; a second use is refused; two joins at once on the fake Upstash make one member;
   - expired, revoked and wrong-secret invites are refused, and wrong secrets are rate-limited and audited;
-  - the handle is the invite's, and `admin` and `bot` carry over;
+  - the handle is the invite's, and `admin` and `bot` carry over; a `hold` invite's member starts suspended;
   - with `join: "invites"`, the join key no longer joins but still watches;
   - invites survive a restart on both stores;
-  - `rep.mjs join` takes the link on stdin, and refuses an invite link given as an argument.
+  - `rep.mjs join` takes the link on stdin, and refuses an invite link given as an argument;
+  - the Invites page and the switch are in the console's admin markup, for admins only (as `test/admin.test.mjs` checks Policy and Admins).
+- **Docs**: API.md (the three endpoints, `x-sphere-invite` on `POST /api/join`, the `join` field, `invite_required`, and a row in "Who can call what"), SECURITY.md (a row for someone holding an invite, and what a leaked one gives), README.md ("Admins and policy"), docs/DEPLOY.md ("The two keys") and CHANGELOG.md.
+- **Depends on**: 0.3.0's admins as members. Until the owner answers question 6, invites last 7 days and don't hold; until question 1 is answered, every Sphere stays on `join: "key"`.
+
+### 2. Invites from a terminal and from AI agents
+
+- **rep.mjs**: `admin invite <handle> [--owner "<name>"] [--bot] [--admin] [--hold] [--expires 7d] [--note "…"]` prints the link once, on stdout, and never logs it; `admin invites` lists them, never with a secret; `admin revoke-invite <id>`; `admin policy --join key|invites`. `ADMIN_USAGE` and `help()` list them.
+- **obysphere.mjs**: the Admins group of `help()` lists them. `obysphere join` already passes stdin on to rep.mjs.
+- **The plugin**: the `join-a-sphere` skill takes an `#invite=` link and gives it to `obysphere join` on stdin, never as an argument; `run-a-sphere` says how to make invites and switch a Sphere to them; the `obysphere_setup` tool's text (plugins/obysphere/scripts/mcp.mjs) says the same as the skill.
+- **Tests**: the CLI contracts in `test/readme.test.mjs` and `test/plugin.test.mjs` gain the new subcommands and `--join`; `test/cli.test.mjs` checks `help`; `test/invites.test.mjs` checks that `admin invite` prints a link that joins, that `admin invites` shows no secret, and that `obysphere join` with the link on stdin joins.
+- **Docs**: docs/DEPLOY.md ("Commands"), README.md, plugins/obysphere/README.md and CHANGELOG.md.
+- **Depends on**: step 1.
+
+### 3. The shared key stops joining (waits on question 1)
+
+- **server.mjs**: `SPHERE_JOIN` (`key`, `invites` or `off`) sets a new Sphere's `join` at first start, as `SPHERE_SEALED` sets sealing. With `off`, the join key doesn't watch either: `x-sphere-key` is refused, and only members and the admin key read.
+- **rep.mjs**: a `#key=` link as an argument is refused, no longer just warned about. Under `invites` or `off`, `profile.json` stops keeping the join key, and `GET /local/invite` has nothing to hand on, so a stolen device no longer carries it.
+- **The first member** of an invites-only Sphere joins with an invite made with the admin key: from the Sphere's own page (**Admin sign-in**, then Invites), or with `obysphere server invite <handle> --admin`, which reads the admin key from the deploy's 0600 file or `OBYSPHERE_ADMIN_KEY`. With `admin: true`, that member is an admin without a claim.
+- **Tests**: a Sphere started with `SPHERE_JOIN=invites` refuses key joins; with `off`, the key reads nothing; `join` refuses a `#key=` argument; a profile joined under `invites` keeps no key; `server invite` is in the CLI contracts.
+- **Docs**: SECURITY.md (the join key's row), docs/DEPLOY.md ("The two keys", and each platform's variables), README.md and CHANGELOG.md.
+- **Depends on**: steps 1 and 2.
+
+### 4. Members invite too (optional; waits on question 2)
+
+- **server.mjs**: a policy field `memberInvites`, the open invites each member may have (0 by default). `POST /api/invites` for members, never with `admin`, audited with who made it; `GET /api/invites` and `DELETE /api/invites/:id` for a member's own. Admins still see and revoke every invite.
+- **The console**: Invite member makes one for any member the policy lets; Policy gets the number.
+- **Tests**: a member past the cap gets `429`; a member can't make an admin invite or revoke someone else's; a removed member's open invites stop working.
+- **Docs**: API.md, SECURITY.md (what a malicious member can do then) and CHANGELOG.md.
+- **Depends on**: step 1.
+
+### 5. The relay checks ID tokens (B, first half)
+
+- **server.mjs**: a `// ===== sign-in` section:
+  - `SPHERE_SIGNIN`, read and checked at start, which refuses a bad entry as it refuses a short key. Sign-in also needs the relay's own address (`SPHERE_PUBLIC_URL`, or the platform's), since the nonce holds the Sphere's origin;
+  - `GET /api/signin` (the providers, public data) and `POST /api/signin/ticket` (an HMAC under a key derived from the admin key, as the audit chain's is; rate-limited per address);
+  - `verifyIdToken()`: every check in Option B, with `node:crypto` alone. The discovery document and the JWKS are cached as their headers say, and fetched again for an unknown `kid` at most once a minute;
+  - `x-sphere-id-token` on `POST /api/join`. The join's commit records the used ticket (or a device-flow token's hash, until it expires) and keeps the account's `iss|sub` hash and domain on the agent, never in `publicAgent()`;
+  - invites gain `signin: {provider, email?}`: such an invite joins only with that provider's ID token (and that email, when set).
+- **Tests**: `test/signin.test.mjs`, with a fake issuer on loopback (a discovery document, a JWKS, and tokens signed with a key made in the test): `alg` `none` and HS256 refused; a wrong `iss`, `aud` or `azp`, an expired token, an `iat` too old, `email_verified` false and an `hd` outside `domains` refused; a nonce for another origin, a ticket used twice and a forged ticket refused; an unknown `kid` refetches the JWKS at most once a minute; a `signin` invite refuses a join without the token; both stores.
+- **Docs**: API.md (the two endpoints, the header and the errors), docs/DEPLOY.md (a "Sign-in" section: registering a client, `SPHERE_SIGNIN`), SECURITY.md (what the relay learns) and CHANGELOG.md.
+- **Depends on**: step 1. Which issuers the tests and docs cover first, and whether the project runs one shared client, wait on question 3.
+
+### 6. Sign-in on the person's own machine (B, second half)
+
+- **rep.mjs**: `join --signin <provider>`: a ticket from the relay, the nonce made on the machine, a listener on `127.0.0.1` at a random port, `state`, PKCE (S256) and `iss` checked, and the code exchanged for the ID token, which goes to the relay in `x-sphere-id-token` with the join. It prints the sign-in link, and opens it where it can (as `ui --open` does). `--device` uses the device flow, on a machine with no browser, and only with a client of the Sphere's own. An invite that needs a sign-in asks for it without the flag.
+- **The console**: **New invite** gets "Needs a sign-in" (a provider, and an email for one person's account); Invite member's text adds `--signin` when the invite needs it.
+- **The plugin**: `join-a-sphere` says a browser page will open to sign in.
+- **Tests**: against step 5's fake issuer: the loopback flow joins; a wrong `state` or `iss` is refused before anything reaches the relay; the device flow joins with the Sphere's own client and is refused without one; the code and the verifier appear in no log and no argv.
+- **Docs**: README.md, docs/DEPLOY.md ("Sign-in"), SECURITY.md and CHANGELOG.md.
+- **Depends on**: step 5.
+
+### 7. Domain invites, and what admins see (the email waits on question 5)
+
+- **server.mjs**: an invite may be `{provider, domain, uses, expiresAt}`: many uses, no handle fixed, one Oby per account (a second join with the same `iss|sub` is refused). If the owner says so, the relay also keeps each member's verified email, which only admins see.
+- **The console**: **New invite** offers "Anyone with a verified example.com account", and the list shows uses left. The Members page shows admins each member's domain (and email, when kept).
+- **Tests**: a domain invite joins up to `uses` times, and refuses a second Oby for one account and an account outside the domain; the email reaches no one who isn't an admin.
+- **Docs**: API.md, SECURITY.md, docs/DEPLOY.md and CHANGELOG.md.
+- **Depends on**: steps 5 and 6.
+
+### 8. GitHub sign-in (optional; waits on question 4)
+
+Only if the owner wants GitHub enough for the relay to hold people's GitHub tokens: Option C for GitHub alone, the relay a confidential client, the flow's state in the log, and the token dropped once `GET /user` and `GET /user/orgs` have answered. It needs its own pass over SECURITY.md first.
+
+Later, outside this plan: the inviting admin's Oby signing the new member's id, handle and keys (Option A, "A malicious relay operator"), and rejoining from a new computer with the same account (#128).
 
 ## Questions for the owner
 
