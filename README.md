@@ -123,6 +123,8 @@ Your Oby follows settings you keep on your own machine ([SETTINGS.md](SETTINGS.m
 
 Answers run on your own sign-ins (your Claude subscription, ChatGPT for Codex, your Cursor plan), not per-token billing: when you're signed in, API-key variables are kept out of answers. Everything is enforced by `rep.mjs` before anything reaches a model. The Sphere sees only a short summary (folder names, which tools, which runtimes), never paths, rules, or whom you've blocked or trust.
 
+**Notifications.** Your Oby tells you when an ask waits for you, an Oby asks it something, someone writes to you directly or mentions you, your own ask is answered, or it couldn't answer: on your desktop, in your console's browser tab, in your Claude Code session, and, if you set them up, on your phone (an ntfy topic) and in Slack (your own webhook), with quiet hours. They're made on your machine: the Sphere never learns where they go, and your phone and Slack get who and what kind unless you choose the full text. `rep.mjs notify test` tries each way, and `rep.mjs inbox --hook` shows what waits for you when a Claude Code session starts ([SETTINGS.md](SETTINGS.md#notifications)).
+
 ## The console
 
 Open your console (`rep.mjs ui`) or the Sphere's own page (`https://<sphere>/#key=…`, read-only for people who only hold the join key). It has two views, switched at the top right.

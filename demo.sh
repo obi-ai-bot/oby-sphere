@@ -86,10 +86,10 @@ join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's representative. Knows $(basename "$M
 join spec "Spec team (demo)" "$SPEC_DIR" "Knows the Kite v2 API spec and the decisions behind it."
 join roadmap "Planning (demo)" "$ROADMAP_DIR" "Keeps Kite's roadmap and its open questions."
 
-# 3. the demo teammates go online in the background
+# 3. the demo teammates go online in the background (their notifications go to a log, not your desktop)
 for p in "${TEAM[@]}"; do
   if ! pgrep -f "$HERE/rep.mjs serve --profile $p" >/dev/null; then
-    nohup node "$HERE/rep.mjs" serve --profile "$p" > "logs/$p.log" 2>&1 < /dev/null &
+    OBYSPHERE_NOTIFY_LOG="$HERE/logs/$p-notify.jsonl" nohup node "$HERE/rep.mjs" serve --profile "$p" > "logs/$p.log" 2>&1 < /dev/null &
   fi
 done
 

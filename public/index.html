@@ -509,6 +509,18 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 @media (max-width: 420px) {
   .route-grid { grid-template-columns: 1fr; }
 }
+/* Settings › Notifications */
+.notify-url { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.notify-url .set-field { flex: 1 1 240px; min-width: 0; font: 12.5px var(--mono); }
+.notify-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 4px 16px; margin-top: 8px; }
+.notify-event { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; cursor: pointer; color: var(--ink); font-size: var(--text-md); line-height: 19px; }
+.notify-event input { flex: none; margin: 3px 0 0; accent-color: var(--unread); }
+.notify-event input:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.notify-event .s { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.notify-time { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: var(--text-md); }
+.notify-time .set-field { width: 116px; padding: 0 10px; }
+.notify-note:empty { display: none; }
+.notify-note.is-problem { color: var(--danger); }
 .warn { color: var(--needs); }
 .saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
@@ -801,6 +813,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
     if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
+    if (CONSOLE && S.me) startNotifications(); // browser notifications, and the count in the tab title
   }
 
   function wire() {
@@ -1675,6 +1688,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     s.machine.folders = Array.isArray(s.machine.folders) ? s.machine.folders : [];
     s.machine.web = s.machine.web || {};
     s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
+    normalizeNotify(s);
   }
 
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -1735,6 +1749,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function fieldWords(field) {
     if (!field) return '';
     const ks = dotted(field).split('.');
+    if (ks[0] === 'notify') return notifyFieldWords(ks);
     const where = [];
     const ri = ks.indexOf('rules');
     if (ks[0] === 'routing' && ri === 1 && /^\d+$/.test(ks[2] || '')) {
@@ -2293,11 +2308,15 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 
        <div class="section-head"><h3>This computer: what your Oby may touch</h3></div>
        <div data-part="machine">${machineHtml()}</div>
+
+       <div class="section-head"><h3>Notifications</h3><span class="link">Made on this machine; the Sphere never sees them</span></div>
+       <div data-part="notify">${notifyHtml()}</div>
        <p class="note">Stored at <span class="mono">${pathHtml(SET.path)}</span>. Changes apply from the next ask.</p>
       </div>`;
     paintState();
     if (SET.error) markError(SET.error.field, SET.error.message);
     wireSettings();
+    wireNotify();
   }
 
   // replace one part's contents, keeping focus (and the caret) on the control that had it
@@ -2672,6 +2691,168 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       else if (d.try !== undefined) tryAsk();
       else if (d.page) setPage(d.page);
     });
+  }
+
+  // ---------------------------------------------------------------- notifications: Settings › Notifications, and this browser's
+  // rep.mjs makes every notification on this machine (only it can read sealed messages); this page
+  // shows the ones it records for the console (GET /local/notifications) while its tab is hidden.
+  const NOTIFY_EVENT_ROWS = [
+    ['waiting', 'Something waits for you', 'An ask your settings hold for you. It comes through in quiet hours too.'],
+    ['asked', 'An Oby asks yours', 'Every ask your Oby takes.'],
+    ['direct', 'A direct message to you', ''],
+    ['mention', 'You or your Oby are @mentioned', 'In a channel.'],
+    ['answered', 'Your ask got its answer', 'Or was declined.'],
+    ['failed', 'Your Oby couldn’t answer', 'Not signed in, an error, or settings that need fixing.'],
+  ];
+  const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'when to tell you', quiet: 'quiet hours' };
+  const NOTE = { last: null, mine: new Set(), base: '', off: false };
+  function notifyFieldWords(ks) { return `Notifications, ${NOTIFY_FIELD_WORDS[ks[1]] || ks[1] || 'the section'}:`; }
+  // a file without a notify section means the defaults: every way that needs no setup, every event
+  function normalizeNotify(s) {
+    const n = (s.notify = s.notify && typeof s.notify === 'object' ? s.notify : {});
+    for (const k of ['desktop', 'console', 'claude']) if (typeof n[k] !== 'boolean') n[k] = true;
+    n.phone = { url: null, content: 'summary', ...(n.phone && typeof n.phone === 'object' ? n.phone : {}) };
+    n.slack = { webhookUrl: null, content: 'summary', ...(n.slack && typeof n.slack === 'object' ? n.slack : {}) };
+    n.events = { ...Object.fromEntries(NOTIFY_EVENT_ROWS.map(([k]) => [k, true])), ...(n.events && typeof n.events === 'object' ? n.events : {}) };
+    n.quiet = { from: null, to: null, ...(n.quiet && typeof n.quiet === 'object' ? n.quiet : {}) };
+  }
+  function browserNotifyHtml() {
+    if (!('Notification' in window)) return 'This browser can’t show notifications.';
+    const p = Notification.permission;
+    if (p === 'granted') return 'Allowed in this browser.';
+    if (p === 'denied') return 'Blocked in this browser: allow notifications for this page in its site settings, then reload.';
+    return '<button type="button" class="set-button sm" data-notify-allow>Allow notifications in this browser</button>';
+  }
+  function notifyHtml() {
+    const n = SET.settings.notify;
+    const test = (way, on = true) => `<button type="button" class="set-button sm" data-notify-test="${way}"${on ? '' : ' disabled'}>Send a test</button>`;
+    const noteEl = (way) => `<div class="set-row-sub notify-note" data-notify-note="${way}" role="status" aria-live="polite"></div>`;
+    const sw = (way, title, sub) => {
+      const k = `notify.${way}`;
+      return `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div>${noteEl(way)}</div><div class="set-row-ctl">${test(way)}<button type="button" class="switch${n[way] ? ' is-on' : ''}" role="switch" aria-checked="${!!n[way]}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div></div>`;
+    };
+    const address = (way, k, title, sub, placeholder) => {
+      const v = getAt(SET.settings, k) || '';
+      const ck = `notify.${way}.content`;
+      const content = getAt(SET.settings, ck) || 'summary';
+      return `<div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div>${noteEl(way)}</div>
+        <div class="notify-url"><input class="set-field" id="${fid(k)}" data-k="${k}" data-t="nullable" data-notify-address="${way}" value="${esc(v)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false" inputmode="url">
+          <select class="set-select" id="${fid(ck)}" data-k="${ck}" aria-label="What ${esc(title)} shows"><option value="summary"${content === 'summary' ? ' selected' : ''}>Summary</option><option value="full"${content === 'full' ? ' selected' : ''}>Full text</option></select>
+          ${v ? `<button type="button" class="set-button" data-notify-clear="${k}" aria-label="Remove the ${esc(title)} address">Remove</button>` : ''}${test(way, !!v)}</div></div>`;
+    };
+    const ev = n.events || {};
+    return `<div class="set-group">
+        ${sw('desktop', 'On this computer', 'Your system’s own notifications (macOS, Linux or Windows). Nothing to set up.')}
+        ${sw('console', 'In this console', `While this page is open in a tab you aren’t looking at, and a count in the tab title while something waits. <span data-notify-browser>${browserNotifyHtml()}</span>`)}
+        ${sw('claude', 'In Claude Code', 'In your own Claude Code session, with the Obysphere channel (a research preview), and a summary when a session starts.')}
+      </div>
+      <div class="set-group">
+        ${address('phone', 'notify.phone.url', 'Your phone (ntfy)', 'An ntfy topic’s address, on ntfy.sh or your own server. The free ntfy app shows it; no account needed. Summary: who and what kind. Full: also the words, up to 600 characters. What waits for you comes at high priority.', 'https://ntfy.sh/your-topic')}
+        ${address('slack', 'notify.slack.webhookUrl', 'Slack', 'Your own incoming-webhook address. Summary: who and what kind, with a link to your console. Full: also the words, up to 600 characters.', 'https://hooks.slack.com/services/…')}
+      </div>
+      <div class="set-group">
+        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title" id="set-notify-events-l">Tell you when</div></div>
+          <div class="notify-events" role="group" aria-labelledby="set-notify-events-l" data-k-box="notify.events">${NOTIFY_EVENT_ROWS.map(([k, title, sub]) => `<label class="notify-event"><input type="checkbox" data-notify-event="${k}"${ev[k] !== false ? ' checked' : ''}><span><span>${title}</span>${sub ? `<span class="s">${sub}</span>` : ''}</span></label>`).join('')}</div></div>
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-notify-quiet-l">Quiet hours</div><div class="set-row-sub">Only what waits for you comes through. Leave both empty for none.</div></div>
+          <div class="set-row-ctl" role="group" aria-labelledby="set-notify-quiet-l"><label class="notify-time">From <input type="time" class="set-field" data-notify-quiet="from" data-k-box="notify.quiet.from" value="${esc(n.quiet?.from || '')}"></label><label class="notify-time">to <input type="time" class="set-field" data-notify-quiet="to" data-k-box="notify.quiet.to" value="${esc(n.quiet?.to || '')}"></label></div></div>
+      </div>`;
+  }
+  // the switches, the Summary/Full choices and the addresses go through the page's own handlers
+  // (data-k); the rest is here
+  function wireNotify() {
+    const box = part('notify');
+    if (!box) return;
+    box.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.dataset.notifyEvent) {
+        SET.settings.notify.events = { ...SET.settings.notify.events, [el.dataset.notifyEvent]: el.checked };
+        changed(true);
+      } else if (el.dataset.notifyQuiet) {
+        const [from, to] = ['from', 'to'].map((k) => box.querySelector(`[data-notify-quiet="${k}"]`));
+        [from, to].forEach(clearFieldError);
+        if (!!from.value !== !!to.value) return showFieldError(from.value ? to : from, 'Set both times, or neither.', false);
+        SET.settings.notify.quiet = { from: from.value || null, to: to.value || null };
+        changed(true);
+      }
+    });
+    box.addEventListener('input', (e) => {
+      const el = e.target;
+      if (!el.dataset.notifyAddress) return;
+      const t = box.querySelector(`[data-notify-test="${el.dataset.notifyAddress}"]`);
+      if (t) t.disabled = !el.value.trim();
+    });
+    // a masked address is replaced whole, never edited in the middle
+    box.addEventListener('focusin', (e) => { const el = e.target; if (el.dataset.notifyAddress && el.value.includes('…')) el.select(); });
+    box.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b || b.disabled) return;
+      if (b.dataset.notifyAllow !== undefined) {
+        try { await Notification.requestPermission(); } catch {}
+        const s = box.querySelector('[data-notify-browser]');
+        if (s) s.innerHTML = browserNotifyHtml();
+      } else if (b.dataset.notifyClear) {
+        setAt(SET.settings, b.dataset.notifyClear, null);
+        changed(true);
+        swap(box, notifyHtml());
+        box.querySelector(`[data-k="${CSS.escape(b.dataset.notifyClear)}"]`)?.focus();
+      } else if (b.dataset.notifyTest) notifyTest(b);
+    });
+  }
+  async function notifyTest(b) {
+    const way = b.dataset.notifyTest;
+    const out = part('notify')?.querySelector(`[data-notify-note="${way}"]`);
+    const say = (words, bad = false) => { if (out) { out.textContent = words; out.classList.toggle('is-problem', bad); } };
+    b.disabled = true;
+    say('Sending…');
+    try {
+      await flushSettings();
+      if (SET.error) return say('Fix the marked field first: the test uses your saved settings.', true);
+      const r = await local('POST', '/local/notify-test', { via: way });
+      const x = (r.results || []).find((y) => y.way === way) || { ok: false, note: 'no answer for this way' };
+      if (x.id) NOTE.mine.add(x.id);
+      if (way === 'console' && x.ok) {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return say('Allow notifications in this browser first.', true);
+        try { new Notification('A test from your Obysphere', { body: 'Notifications from this console reach you in this browser.', icon: '/favicon.svg', tag: x.id || 'test' }); } catch {}
+        return say('Shown in this browser.');
+      }
+      say(sentence(x.ok === null ? `not sent: ${x.note}` : x.note), x.ok === false);
+    } catch (e) {
+      say(e.status === 404 ? 'This rep.mjs can’t send tests yet: update it.' : e.message, true);
+    } finally {
+      b.disabled = false;
+    }
+  }
+  // the count in the tab title while something waits, and a notification for what rep.mjs records
+  // for the console while you look elsewhere
+  function startNotifications() {
+    NOTE.base = document.title;
+    const tick = async () => {
+      const n = (S.pending || []).length;
+      const title = n ? `(${n}) ${NOTE.base}` : NOTE.base;
+      if (document.title !== title) document.title = title;
+      if (NOTE.off) return;
+      try {
+        const r = await local('GET', `/local/notifications${NOTE.last ? `?after=${encodeURIComponent(NOTE.last)}` : ''}`);
+        const fresh = NOTE.last === null ? [] : r.notifications || [];
+        NOTE.last = r.last || NOTE.last || '';
+        fresh.forEach(showNotification);
+      } catch (e) { if (e.status === 404) NOTE.off = true; }
+    };
+    tick();
+    setInterval(tick, 3000);
+  }
+  function showNotification(e) {
+    if (!e.console || e.quiet || NOTE.mine.has(e.id) || !document.hidden) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(e.title, { body: String(e.body || '').slice(0, 180), tag: e.id, icon: '/favicon.svg' });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+        if ((e.type === 'direct' || e.type === 'mention') && e.channel && S.channels.has(e.channel)) { if (S.mode !== 'conversation') setMode('conversation'); switchTo(e.channel); }
+        else setPage('you');
+      };
+    } catch {}
   }
 
   function wirePage() {

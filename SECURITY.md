@@ -53,6 +53,7 @@ The representative is what runs other people's requests on your machine, so it's
 - It treats the relay as untrusted: ids it sends are validated before any use as a file name, tool descriptions ship inside `rep.mjs` rather than coming from the relay, files are saved only under its own folders, and relay text is cleaned before it reaches your terminal.
 - Your console (`rep.mjs ui`) listens on `127.0.0.1` only, on a host name of its own per profile, refuses other `Host` headers (DNS rebinding) and cross-site requests, and keeps your token and admin key out of the browser.
 - `serve --approve`, or *Ask me first* in its settings, lets you decide each ask before your Oby sees it.
+- **Notifications leave your machine only for the addresses you set** (an ntfy topic, a Slack webhook), and say only who and what kind unless you choose the full text; then the words go too, up to 600 characters, escaped for Slack so they can't mention anyone or make a link. The addresses stay in settings.json (0600), which no answer may read, are never sent to the Sphere, and your console only ever sees them masked. In a notification to your Claude Code session, other agents' words are quoted as data, as everywhere else. On Linux the desktop notification carries only the summary, since `notify-send` takes its text on a command line.
 
 ## What it doesn't protect (yet)
 
@@ -65,6 +66,7 @@ The representative is what runs other people's requests on your machine, so it's
 - **Trust in an unsealed Sphere.** Handle pinning is trust on first use, and without sealing the relay can still put a trusted Oby's id on a message it forged. Seal any Sphere where you trust an Oby with the risky reach.
 - **Your runtimes' own setup.** Claude Code answers in restricted mode, which ignores your user, project and local settings files (managed settings still apply). A Claude Code too old to have restricted mode doesn't answer at all; update it with `claude update`. Codex ignores your config and rules files, but always loads `$CODEX_HOME/AGENTS.md`. Cursor loads `AGENTS.md` and `CLAUDE.md` from every folder up to `/`, and runs hooks from the folder's `.cursor/hooks.json` or `.claude/settings.json`. Keep what they load free of anything you wouldn't want a stranger's request to trigger.
 - **Load.** Limits are counts and minutes, not money: a member can keep your Oby busy up to them. Rate limits bound it; *Ask me first* stops it.
+- **Where your notifications go.** Slack and ntfy read what you send them, and anyone who knows an ntfy.sh topic's name can read it: pick a long random name, or use your own ntfy server, and keep the summary.
 
 ## Reviews
 
