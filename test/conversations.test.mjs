@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import crypto from 'node:crypto';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
 
@@ -22,6 +23,14 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer().l
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (x) => crypto.createHash('sha256').update(x).digest('hex');
 const dmName = (a, b) => 'dm-' + sha([a, b].sort().join('|')).slice(0, 24);
+// a process stopped and gone (a relay saves its state on the way out), so its folder can be removed
+const stop = (p, signal) => new Promise((resolve) => {
+  if (!p || p.exitCode !== null || p.signalCode !== null) return resolve();
+  const t = setTimeout(resolve, 3000);
+  p.once('exit', () => { clearTimeout(t); resolve(); });
+  p.kill(signal === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM');
+});
+const rmDir = (d) => d && fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
 async function startRelay({ store = 'fs', dir, sealed = false, env = {} } = {}) {
   const port = await freePort();
@@ -107,9 +116,9 @@ describe('channels, members and direct messages', () => {
     for (const n of ['alice', 'bob', 'carol']) ag[n] = await call('POST', '/api/join', { body: { key: KEY, name: n, owner: `${n[0].toUpperCase()}${n.slice(1)}` } });
     ag.reviewer = await call('POST', '/api/join', { body: { key: KEY, name: 'reviewer', owner: 'Platform team', bot: true } });
   });
-  after(() => {
-    relay?.p.kill();
-    fs.rmSync(dir, { recursive: true, force: true });
+  after(async () => {
+    await stop(relay?.p);
+    rmDir(dir);
   });
 
   test('a bot is marked as one; #general is public', async () => {
@@ -264,6 +273,30 @@ describe('channels, members and direct messages', () => {
     assert.equal(await (await fetch(`${base}/api/files/${up.file.id}`, { headers: { authorization: `Bearer ${tok('carol')}` } })).text(), 'draft');
   });
 
+  test("a reply to an ask elsewhere can't be hidden in a closed channel", async () => {
+    const q = (await call('POST', '/api/messages', { tok: tok('alice'), body: { channel: 'general', text: 'open question', to: ['bob'] } })).message;
+    // bob is in #design and the direct conversation, alice's #general ask isn't: its answer stays where alice reads it
+    for (const channel of ['design', dm]) {
+      const hidden = await call('POST', '/api/messages', { tok: tok('bob'), body: { channel, text: 'answered where you cannot see', replyTo: q.id } });
+      assert.equal(hidden.status, 400, channel);
+      assert.match(hidden.error, /#general/);
+    }
+    assert.equal((await call('POST', '/api/messages', { tok: tok('bob'), body: { channel: 'general', text: 'answered in the open', replyTo: q.id } })).message.kind, 'reply');
+    assert.equal((await call('GET', `/api/messages/${q.id}`, { tok: tok('alice') })).replies.length, 1);
+  });
+
+  test('someone added to a private channel reads what was said there before', async () => {
+    const made = await call('POST', '/api/channels', { tok: tok('alice'), body: { name: 'history', private: true, members: ['bob'] } });
+    assert.equal(made.status, 200);
+    const early = (await call('POST', '/api/messages', { tok: tok('alice'), body: { channel: 'history', text: 'said before carol came' } })).message;
+    assert.deepEqual((await call('GET', '/api/messages?channel=history', { tok: tok('carol') })).messages, [], 'not before she is in it');
+    await call('POST', '/api/channels/history/members', { tok: tok('bob'), body: { add: ['carol'] } });
+    // the console fetches a conversation's own history when it's shown: this is what it reads
+    assert.ok((await call('GET', '/api/messages?channel=history&limit=200', { tok: tok('carol') })).messages.some((m) => m.id === early.id));
+    await call('POST', '/api/channels/history/members', { tok: tok('alice'), body: { remove: ['carol'] } });
+    assert.deepEqual((await call('GET', '/api/messages?channel=history', { tok: tok('carol') })).messages, [], 'and not after she is out');
+  });
+
   test('live events are filtered the same way', async () => {
     const s = {
       alice: openStream(base, { tok: tok('alice'), role: 'console' }),
@@ -307,8 +340,7 @@ describe('channels, members and direct messages', () => {
 
   test('channels and their members survive a restart', async () => {
     const before = (await call('GET', '/api/channels', { admin: ADMIN })).channels;
-    relay.p.kill();
-    await sleep(300);
+    await stop(relay.p, 'SIGKILL'); // a crash, not a clean stop: who is in a channel was saved as it changed
     relay = await startRelay({ dir });
     base = relay.base;
     const now = (await call('GET', '/api/channels', { admin: ADMIN })).channels;
@@ -338,7 +370,7 @@ describe('channels on the Redis store', () => {
     for (const n of ['alice', 'bob', 'carol']) ag[n] = await at(A)('POST', '/api/join', { body: { key: KEY, name: n, owner: n } });
   });
   after(async () => {
-    for (const p of procs) p.kill();
+    await Promise.all(procs.map((p) => stop(p)));
     await fake?.close();
   });
 
@@ -438,10 +470,10 @@ describe('sealed private channels and direct messages', () => {
     procs.push(relay.p);
     base = relay.base;
   });
-  after(() => {
-    for (const p of procs) p.kill();
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
+  after(async () => {
+    await Promise.all(procs.map((p) => stop(p)));
+    rmDir(dir);
+    rmDir(home);
   });
 
   test('join --bot makes an Oby with no person behind it', async () => {
@@ -518,7 +550,50 @@ describe('sealed private channels and direct messages', () => {
     assert.equal((await page('GET', `/api/messages?channel=${dm.name}`)).messages.find((m) => m.id === asked.message.id).text, 'review this?');
   });
 
+  test("a note in a direct conversation isn't sealed for you alone when the other's keys changed", async () => {
+    const dm = (await call('POST', '/api/dm', { tok: tok('alice'), body: { with: 'carol' } })).channel.name;
+    assert.match(await rep(['post', 'before the change', '--channel', dm, '--profile', 'alice']), /sealed for the 1 member/);
+    // carol's keys change on the relay (a new machine, or a relay lying): alice pinned the old ones
+    const pub = (kind) => crypto.generateKeyPairSync(kind).publicKey.export({ format: 'jwk' }).x;
+    assert.equal((await call('POST', '/api/me', { tok: tok('carol'), body: { keys: { seal: pub('x25519'), sign: pub('ed25519') } } })).status, 200);
+    const count = async () => (await call('GET', `/api/messages?channel=${dm}&limit=1000`, { admin: ADMIN })).messages.filter((m) => m.kind === 'post').length;
+    const before = await count();
+    assert.match(await rep(['post', 'after the change', '--channel', dm, '--profile', 'alice']), /Not sealing to @carol: its keys changed/);
+    assert.equal(await count(), before, 'nothing was sent that only alice could read');
+  });
+
   test('the audit chain still verifies', async () => {
     assert.equal((await call('GET', '/api/audit?limit=1', { key: KEY })).verified, true);
+  });
+});
+
+// ---------------------------------------------------------------- the console page
+
+describe('the Conversation view', () => {
+  const page = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  const script = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((x) => x[1]).join('\n;\n');
+  const body = (head) => {
+    const i = script.indexOf(head);
+    return i < 0 ? '' : script.slice(i, script.indexOf('\n  }\n', i));
+  };
+
+  test("the page's script parses", () => {
+    assert.ok(script.length > 1000);
+    assert.doesNotThrow(() => new vm.Script(script, { filename: 'index.html' }));
+  });
+
+  test('a conversation shows its own history, not only what the page started with', () => {
+    // the page starts with the Sphere's newest 500 messages, every channel together: a quiet
+    // direct conversation, or a private channel you were just added to, is fetched when shown
+    assert.match(body('function renderFeed() {'), /loadHistory\(S\.current\)/);
+    const load = body('async function loadHistory(name) {');
+    assert.match(load, /\/api\/messages\?channel=\$\{encodeURIComponent\(name\)\}/);
+    assert.match(load, /!S\.byId\.has\(m\.id\)/, 'what the page holds already is kept, not doubled');
+  });
+
+  test("a closed conversation you aren't in is read only", () => {
+    // an admin's console sees every channel; the relay refuses its posts in ones it isn't in
+    assert.match(body('function renderTo() {'), /const outside = isClosed\(c\) && !inCh\(c\) && !inModal\(\);\s*\$\('#text'\)\.disabled = outside;/);
+    assert.match(body('async function send() {'), /if \(isClosed\(c\) && !inCh\(c\) && !modal\) return;/);
   });
 });

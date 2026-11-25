@@ -532,6 +532,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .composer-hint button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .composer-toggle { flex: none; height: 24px; padding: 0 10px 0 6px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-sm); white-space: nowrap; transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
 .composer-toggle:hover { color: var(--text); }
+.composer-button:disabled, .composer-input:disabled { opacity: 0.4; cursor: default; }
 .composer-toggle.is-on { color: var(--ink); background: var(--active); border-color: transparent; }
 .composer-toggle:focus-visible, .conv-tools :focus-visible, .ch-pick button:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
 .mini-switch { position: relative; flex: none; width: 22px; height: 13px; border-radius: 7px; background: rgba(255, 255, 255, 0.16); transition: background-color var(--fade); }
@@ -2945,7 +2946,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const n = c ? S.unread[c.name] || 0 : 0;
     const active = !!c && c.name === S.current;
     const title = S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '';
-    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${a.id}" title="${esc(title)}">
+    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}" title="${esc(title)}">
         ${picture(a, 22)}
         <span class="connector-name">${esc(label(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
         ${unreadHtml(n)}
@@ -3037,7 +3038,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   // ---------------------------------------------------------------- conversation: a new channel, and who is in one
-  const pickChip = (a) => `<button type="button" data-pick="${a.id}" aria-pressed="false">${avatar(a, 22, false)}<span>${esc(label(a))}</span>${a.bot ? '<span class="away">bot</span>' : ''}</button>`;
+  const pickChip = (a) => `<button type="button" data-pick="${esc(a.id)}" aria-pressed="false">${avatar(a, 22, false)}<span>${esc(label(a))}</span>${a.bot ? '<span class="away">bot</span>' : ''}</button>`;
   function wirePicks(box) {
     box?.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { const on = !b.classList.contains('is-on'); b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); }));
   }
@@ -3101,7 +3102,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     $('#ch-title').textContent = `People and Obys in #${c.name}`;
     $('#ch-slot').innerHTML = `
       <p class="modal-line">${c.kind === 'private' ? `Only these see #${esc(c.name)}, post in it and are asked in it. Anyone in it can add others.` : `Anyone in the Sphere can read #${esc(c.name)} and post in it; these joined it.`}</p>
-      <div class="set-group">${inIt.length ? inIt.map((a) => `<div class="ch-row">${picture(a, 28)}<span class="t">${esc(label(a))}${isMe(a) ? ' <span class="you" style="color:var(--muted)">(you)</span>' : ''}<small>@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${c.createdBy === a.id ? ' · made it' : ''}</small></span>${canRemove(a) ? `<button type="button" class="set-button sm" data-ch-remove="${a.id}">${isMe(a) ? 'Leave' : 'Remove'}</button>` : ''}</div>`).join('') : '<div class="ch-row"><span class="t is-none">No one has joined it yet.</span></div>'}</div>
+      <div class="set-group">${inIt.length ? inIt.map((a) => `<div class="ch-row">${picture(a, 28)}<span class="t">${esc(label(a))}${isMe(a) ? ' <span class="you" style="color:var(--muted)">(you)</span>' : ''}<small>@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${c.createdBy === a.id ? ' · made it' : ''}</small></span>${canRemove(a) ? `<button type="button" class="set-button sm" data-ch-remove="${esc(a.id)}">${isMe(a) ? 'Leave' : 'Remove'}</button>` : ''}</div>`).join('') : '<div class="ch-row"><span class="t is-none">No one has joined it yet.</span></div>'}</div>
       ${canAdd ? `<span class="modal-label">Add people or Obys</span>${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">Everyone in the Sphere is in it.</p>'}` : ''}
       <p class="note is-problem" id="ch-problem" hidden></p>
       ${canAdd && rest.length ? '<div class="modal-actions"><button type="button" class="modal-primary" id="ch-add">Add</button></div>' : ''}`;
@@ -3140,6 +3141,25 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const feed = $('#feed');
     feed.scrollTop = feed.scrollHeight;
     if (list.length && !document.hidden) markRead(S.current, list[list.length - 1].ts);
+    loadHistory(S.current);
+  }
+  // The page starts with the Sphere's newest messages, all channels together, so a quiet direct
+  // conversation, or a private channel you were just added to, may have older lines it doesn't
+  // hold yet: fetched from the relay when the conversation is shown.
+  const loadingHistory = new Set();
+  async function loadHistory(name) {
+    if (loadingHistory.has(name)) return;
+    loadingHistory.add(name);
+    let got = [];
+    try {
+      got = (await api(`/api/messages?channel=${encodeURIComponent(name)}&limit=200`)).messages || [];
+    } catch {} finally { loadingHistory.delete(name); }
+    const fresh = got.filter((m) => m && m.id && m.channel === name && !S.byId.has(m.id));
+    if (!fresh.length) return;
+    for (const m of fresh) S.byId.set(m.id, m);
+    S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    if (fresh.some((m) => m.files?.length)) S.files = null;
+    if (S.mode === 'conversation' && S.current === name) renderFeed();
   }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
@@ -3416,6 +3436,20 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const just = $('#just');
     const fileTags = C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
     const wireTags = () => $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
+    // a private channel or direct conversation you aren't in (the admin key shows every one): read only
+    const outside = isClosed(c) && !inCh(c) && !inModal();
+    $('#text').disabled = outside;
+    $('#plus').disabled = outside;
+    if (outside) {
+      C.to = null;
+      C.just = false;
+      just.hidden = true;
+      $('#tags').innerHTML = '';
+      $('#text').placeholder = c.kind === 'dm' ? `Between ${channelTitle(c.name)}` : `You aren’t in #${c.name}`;
+      hint.textContent = c.kind === 'dm' ? 'A direct conversation between two others: only they write here.' : `Only the people and Obys in #${c.name} write here; one of them can add you.`;
+      $('#send').classList.remove('is-ready');
+      return;
+    }
     if (peer) {
       // a direct conversation: ask their Oby, or a note just for them
       C.to = null;
@@ -3460,6 +3494,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const modal = inModal();
     const channel = composerChannel();
     const c = chOf(channel);
+    if (isClosed(c) && !inCh(c) && !modal) return; // not yours to write in
     let to = [];
     if (c.kind === 'dm' && !modal) {
       const peer = dmPeer(c);

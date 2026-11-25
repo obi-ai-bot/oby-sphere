@@ -1411,7 +1411,8 @@ function visibleFiles(v, list) {
 // Returns the channel, or null when the post makes a new public one.
 function channelAccess(me, name, to, replyTo) {
   const parent = replyTo ? byId.get(replyTo) : null;
-  if (parent && parent.channel !== name && closedChannels.has(parent.channel)) throw err(400, 'bad_request', `A reply goes in its ask's channel, #${parent.channel}.`);
+  // a reply where the asker can't read it, or out of a closed channel, is refused
+  if (parent && parent.channel !== name && (closedChannels.has(parent.channel) || closedChannels.has(name))) throw err(400, 'bad_request', `A reply goes in its ask's channel, #${parent.channel}.`);
   const ch = S.channels[name] || null;
   if (!ch) {
     if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations: open one with POST /api/dm.');

@@ -1862,7 +1862,9 @@ async function sendMessage(api, p, { channel, text, to = [], replyTo = null, rep
     const sec = getSec(p);
     let readers;
     const only = everyone ? await closedMembers(api, channel) : null; // a private or direct channel: its members only
-    if (everyone) readers = agents.filter((a) => validAgent(a) && !a.removed && a.keys && a.id !== p.agent.id && (!only || only.includes(a.id)) && sec.trust(a).ok);
+    // in a direct conversation the other one is the reader: one without trusted keys is refused below, not skipped
+    const pair = !!only && channel.startsWith('dm-');
+    if (everyone) readers = agents.filter((a) => validAgent(a) && !a.removed && a.id !== p.agent.id && (!only || only.includes(a.id)) && (pair || (a.keys && sec.trust(a).ok)));
     else readers = [...to, ...(replyToFrom && replyToFrom.id !== p.agent.id && !to.some((a) => a.id === replyToFrom.id) ? [replyToFrom] : [])];
     for (const a of readers) {
       if (!a.keys) throw new Error(`@${slug(a.name)} has no published keys (its representative is an older rep.mjs), so it can't receive a sealed message.`);
