@@ -242,6 +242,8 @@ describe("your Oby's settings", () => {
       },
       access: { default: 'approve', agents: { roadmap: 'answer', spec: 'decline' }, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, declineTopics: [], asksPerAgentPerDay: 0, answersPerDay: 0, rules: '' },
       machine: { folders: [{ path: work, write: false }], shell: 'off', web: { fetch: false, search: false }, browser: 'off', mcp: [] },
+      // a section the file doesn't have takes its defaults (GitHub off)
+      github: { enabled: false, repos: [], read: true, comment: 'ask', requestChanges: 'ask', approve: 'ask', merge: 'never', push: 'never', protected: ['main', 'master', 'release/*'], signature: true },
     };
     assert.deepEqual(JSON.parse(r.stdout), want);
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), want, 'the file is rewritten as version 2');

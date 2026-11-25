@@ -561,6 +561,11 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   .sheen, .bar.w.is-running { animation: none; }
   .msg.is-new, .live-line, .log-row.is-new { animation: none; }
 }
+
+/* GitHub: an item in Waiting for you, and its Settings section */
+.ask-card .who a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.ask-card .gh-pr, .ask-card .gh-quiet { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
+.gh-repos { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -1565,8 +1570,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const list = S.pending || [];
     if (!list.length) return '';
     const risky = riskyReach(SET.settings);
-    return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">Your Oby answers none of these until you say so</span></div>` +
-      list.map((p) => `<div class="ask-card" data-pending="${esc(p.id)}">
+    return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">${list.some((p) => p.kind === 'github') ? 'Nothing here happens until you say so' : 'Your Oby answers none of these until you say so'}</span></div>` +
+      list.map((p) => githubCardHtml(p) || `<div class="ask-card" data-pending="${esc(p.id)}">
         <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
@@ -1645,6 +1650,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (!SET.settings) { el.innerHTML = head('Settings', `Your settings file doesn’t pass: ${esc(SET.error?.message || 'it can’t be read')}. Fix it at <span class="mono">${esc(s.path || '')}</span>, then reopen this page.`); return; }
       normalizeSettings(SET.settings);
       renderSettings();
+      githubLoad();
     } catch (e) {
       el.innerHTML = head('Settings', e.status === 404 ? 'This console’s rep.mjs is older than settings: update it to change them here.' : esc(e.message));
       return;
@@ -1675,6 +1681,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     s.machine.folders = Array.isArray(s.machine.folders) ? s.machine.folders : [];
     s.machine.web = s.machine.web || {};
     s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
+    if (s.github !== undefined) s.github = githubNormal(s.github); // an older rep.mjs has none, and would refuse one
   }
 
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -1745,6 +1752,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (ks[0] === 'access' && ks[1] === 'default') where.push('Obys you haven’t listed');
     else if (ks[0] === 'access' && ks[1] === 'agents' && ks[2]) where.push(`@${ks[2]}`);
     else if (ks[0] === 'machine' && ks[1] === 'folders' && /^\d+$/.test(ks[2] || '')) where.push(`folder ${Number(ks[2]) + 1}`);
+    else if (ks[0] === 'github') where.push('GitHub');
     const last = [...ks].reverse().find((k) => FIELD_WORDS[k] && !(k === 'rules' || /^\d+$/.test(k)));
     if (last && !(ks[0] === 'access' && ks[1] === 'agents')) where.push(FIELD_WORDS[last]);
     return where.length ? where.join(', ') + ':' : `${field}:`;
@@ -2291,6 +2299,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <div class="section-head"><h3>Who can ask your Oby, and what</h3></div>
        <div data-part="access">${accessHtml()}</div>
 
+       <div class="section-head"><h3>GitHub</h3><span class="link">Pull requests, through gh, as you</span></div>
+       <div data-part="github">${githubHtml()}</div>
+
        <div class="section-head"><h3>This computer: what your Oby may touch</h3></div>
        <div data-part="machine">${machineHtml()}</div>
        <p class="note">Stored at <span class="mono">${pathHtml(SET.path)}</span>. Changes apply from the next ask.</p>
@@ -2672,6 +2683,86 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       else if (d.try !== undefined) tryAsk();
       else if (d.page) setPage(d.page);
     });
+  }
+
+  // ---------------------------------------------------------------- GitHub (Settings › GitHub, and GitHub items in Waiting for you)
+  // rep.mjs keeps and enforces settings.github; this page shows gh's sign-in (/local/github) and lets you
+  // choose, per action, Never, Ask me first, or On its own for Obys you trust.
+  const GH_DEFAULTS = { enabled: false, repos: [], read: true, comment: 'ask', requestChanges: 'ask', approve: 'ask', merge: 'never', push: 'never', protected: ['main', 'master', 'release/*'], signature: true };
+  const GH_LEVEL_WORDS = { never: 'Never', ask: 'Ask me first', trusted: 'On its own for Obys you trust' };
+  Object.assign(FIELD_WORDS, { enabled: 'on or off', repos: 'repositories', read: 'reading pull requests', comment: 'comments', requestChanges: 'requests for changes', approve: 'approvals', merge: 'merging', push: 'pushing', protected: 'protected branches', signature: 'signature' });
+  function githubNormal(g) {
+    const o = g && typeof g === 'object' && !Array.isArray(g) ? g : {};
+    return { ...GH_DEFAULTS, ...o, repos: Array.isArray(o.repos) ? o.repos : [], protected: Array.isArray(o.protected) ? o.protected : [...GH_DEFAULTS.protected] };
+  }
+  const ghCmd = (c) => `<div class="set-cmd"><code class="mono">${esc(c)}</code><button class="set-button sm" data-copy="${esc(c)}" aria-label="Copy: ${esc(c)}">Copy</button></div>`;
+  function githubStatusHtml() {
+    const st = SET.github;
+    if (!st) return SET.githubFailed ? 'Couldn’t check gh on this Mac.' : 'Checking gh…';
+    const gh = st.gh || {};
+    if (!gh.installed) return `gh, GitHub’s command line, isn’t installed. Install it in Terminal:${ghCmd(gh.install || 'brew install gh')}`;
+    if (gh.signedIn === true) return `<span class="status"><span class="status-dot is-online"></span></span> Signed in to GitHub${gh.login ? ` as ${esc(gh.login)}` : ''}${gh.version ? ` · gh ${esc(gh.version)}` : ''}. Your Oby acts with this sign-in.`;
+    if (gh.signedIn === false) return `gh isn’t signed in. Sign in in Terminal:${ghCmd(gh.signIn || 'gh auth login')}`;
+    return `Couldn’t tell whether gh is signed in. To sign in, in Terminal:${ghCmd('gh auth login')}`;
+  }
+  function githubFoldersHtml() {
+    const list = SET.github?.folderRepos;
+    if (!list) return '';
+    return list.length ? `Also allowed, from your folders: ${list.map(esc).join(', ')}.` : 'None of your folders has a GitHub remote.';
+  }
+  async function githubLoad() {
+    SET.github = null; SET.githubFailed = false;
+    let st = null;
+    try { st = await local('GET', '/local/github'); } catch {}
+    SET.github = st; SET.githubFailed = !st;
+    swap(part('github-status'), githubStatusHtml());
+    swap(part('github-folders'), githubFoldersHtml());
+  }
+  function githubHtml() {
+    const g = SET.settings.github;
+    if (!g) return '<p class="note">No GitHub settings here: this console’s rep.mjs is older than them (update it), or your settings file needs fixing first.</p>';
+    const who = CONSOLE?.owner || 'you';
+    const sw = (k, on, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">${title}</div><div class="set-row-sub">${sub}</div></div><button type="button" class="switch${on ? ' is-on' : ''}" role="switch" aria-checked="${on}" data-k="${k}" data-t="bool" aria-labelledby="${fid(k)}-l"></button></div>`;
+    const pick = (k, levels, title, sub) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div></div><div class="set-row-ctl"><select class="set-select" id="${fid(k)}" data-k="${k}">${levels.map((v) => `<option value="${v}"${getAt(SET.settings, k) === v ? ' selected' : ''}>${GH_LEVEL_WORDS[v]}</option>`).join('')}</select></div></div>`;
+    const text = (k, title, sub, placeholder) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title"><label for="${fid(k)}">${title}</label></div><div class="set-row-sub">${sub}</div></div><div class="set-row-ctl"><input class="set-field set-text" id="${fid(k)}" data-k="${k}" data-t="list" value="${esc((getAt(SET.settings, k) || []).join(', '))}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false"></div></div>`;
+    const levels = ['never', 'ask', 'trusted'];
+    return `<div class="set-group">
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title">gh on this Mac</div><div class="set-row-sub" data-part="github-status">${githubStatusHtml()}</div></div></div>
+        ${sw('github.enabled', !!g.enabled, 'Let your Oby work on GitHub', 'It reads pull requests, and reviews, comments or merges as you, as far as the choices below allow. Off: it has no GitHub tools.')}
+      </div>
+      <div class="set-group">
+        ${text('github.repos', 'Repositories', `owner/name, separated by commas; owner/* for all of an owner’s. <span class="gh-repos" data-part="github-folders">${githubFoldersHtml()}</span>`, 'octo-org/*, octo-org/octo-repo')}
+        ${sw('github.read', g.read !== false, 'Read pull requests', 'Title, files, diff, checks, reviews and comments.')}
+        ${pick('github.approve', levels, 'Approve', 'On its own: only when an Oby you trust asks for itself. Anyone else’s ask waits for you.')}
+        ${pick('github.requestChanges', levels, 'Request changes', 'A review that asks for changes.')}
+        ${pick('github.comment', levels, 'Comment', 'Comments, and reviews that only comment.')}
+        ${pick('github.merge', ['never', 'ask'], 'Merge', 'Only the commit your Oby read, and never on its own.')}
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title">Push</div><div class="set-row-sub">Never through your Oby. While GitHub is on, its shell can’t run git push or gh.</div></div></div>
+        ${text('github.protected', 'Protected branches', 'Its shell never pushes to these, GitHub on or off. release/* covers every release branch.', 'main, master, release/*')}
+        ${sw('github.signature', g.signature !== false, 'Sign what it posts', `Ends each review and comment with “— written by ${esc(who)}’s Oby”, and “approved by ${esc(who)}” when you clicked.`)}
+      </div>`;
+  }
+  // an item in Waiting for you: the pull request, what your Oby would post, and your choice
+  function githubCardHtml(p) {
+    if (p?.kind !== 'github' || !p.github) return '';
+    const g = p.github;
+    const ref = `${g.repo}#${g.number}`;
+    const url = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(g.url || '') ? g.url : null;
+    const opts = Array.isArray(p.options) ? p.options : ['act', 'decline'];
+    const what = g.action === 'merge' ? 'merge' : g.action === 'comment' ? 'comment on' : { APPROVE: 'approve', REQUEST_CHANGES: 'request changes on', COMMENT: 'post a review on' }[g.event] || 'act on';
+    const pr = [g.title && esc(g.title), g.author && `by @${esc(g.author)}`, g.base && `into ${esc(g.base)}`, g.head && `at <span class="mono">${esc(String(g.head).slice(0, 7))}</span>`, g.action === 'merge' && esc(g.method || 'merge')].filter(Boolean).join(' · ');
+    return `<div class="ask-card" data-pending="${esc(p.id)}">
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">for @${esc(p.from?.name || '?')}’s ask · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
+        ${pr ? `<div class="gh-pr">${pr}</div>` : ''}
+        ${p.text ? `<div class="q">${esc(p.text)}</div>` : g.action === 'review' ? '<div class="gh-quiet">No words: an approval on its own.</div>' : ''}
+        ${p.signed ? `<div class="gh-quiet">Signed “${esc(p.signed)}”.</div>` : ''}
+        <div class="ask-actions">
+          <button class="modal-primary" data-decide="act">${esc(g.button || 'Do it on GitHub')}</button>
+          ${opts.includes('comment') ? '<button class="set-button" data-decide="comment">Post as a comment instead</button>' : ''}
+          <button class="set-button" data-decide="decline">Don’t</button>
+          <span class="saved-note" data-note></span>
+        </div>
+      </div>`;
   }
 
   function wirePage() {

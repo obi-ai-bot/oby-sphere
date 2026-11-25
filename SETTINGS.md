@@ -50,11 +50,23 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "web": { "fetch": false, "search": false },
     "browser": "off",
     "mcp": []
+  },
+  "github": {
+    "enabled": true,
+    "repos": ["deskree-inc/*"],
+    "read": true,
+    "comment": "ask",
+    "requestChanges": "ask",
+    "approve": "ask",
+    "merge": "never",
+    "push": "never",
+    "protected": ["main", "master", "release/*"],
+    "signature": true
   }
 }
 ```
 
-Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `answer` for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off. Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
+Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `answer` for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
 
 ### routing: which tool and model answers what
 
@@ -207,7 +219,7 @@ When the representative starts, and whenever the settings change, it publishes:
   "approve": true, "runtime": "claude", "model": "sonnet", "runtimes": ["claude", "codex"] }
 ```
 
-Folder names, kinds of tools, whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, or which Obys are listed or trusted.
+Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, GitHub repositories or choices, or which Obys are listed or trusted.
 
 ## The console's local API
 
@@ -219,8 +231,9 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |
 | `POST /local/route-preview` `{ text, from?, hasFiles?, hop?, channel? }` | `{ rule, name, use, how, fellBack, note, answerable, declined }` (below) |
-| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** |
-| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
+| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow**. A GitHub item has `kind: "github"` instead of `risky` ([below](#waiting-for-you-a-github-item)) |
+| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
+| `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
 
 **Runtime**
@@ -258,3 +271,79 @@ Folder names, kinds of tools, whether some asks wait for you, the default runtim
   - before routing, with no rule tried and no runtime run: `access` (that Oby, or anyone not listed, is set to `decline`), `topic`, `files`, `hops` or `limit` (a limit for today is reached);
   - after routing: `trust`, when the route goes to Codex or Cursor for an Oby you don't trust and Claude Code can't answer instead.
 - `answerable`: `false` when the ask is declined (`declined` isn't `null`), or when the runtime that would answer, after any fallback, isn't installed or signed in; otherwise `true`. An ask that would wait for you first is still answerable (`note` says it waits).
+
+## GitHub
+
+Your Oby can read pull requests on GitHub, and review, comment on or merge them as you, with your own `gh` sign-in. Without this, an Oby that agreed with a pull request could only tell you "I can't approve on GitHub for you: you have to click Approve". With it, your Oby asks you once, in **Waiting for you**, and your click approves it; or, if you let it, it approves on its own when an Oby you trust asks.
+
+It's off until you turn it on: **Settings › GitHub** in your console, or `github.enabled` in the file. It needs [gh](https://cli.github.com), GitHub's command line, installed and signed in (`gh auth login`). `rep.mjs github status` (`--json` for the data) and the Settings page say whether it is, and as whom.
+
+### github: what your Oby may do there
+
+- `enabled`: `false` (the default) gives your Oby no GitHub tools at all.
+- `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
+- `read`: let it read pull requests (`github_pr`).
+- `comment`, `requestChanges`, `approve`: each one of
+  - `never`: the tool says "Dmytro's settings don't allow approving pull requests", and nothing is posted.
+  - `ask`: it waits for you in **Waiting for you** ([below](#waiting-for-you-a-github-item)).
+  - `trusted`: it happens at once when the asking Oby is one you trust (access `trust`, its identity pinned), asking for itself. Any other Oby's ask, or an ask a trusted Oby passes on for someone else, waits for you as with `ask`. **Let it answer with everything you allow** on an ask doesn't reach GitHub: those actions still wait for you.
+
+  `comment` covers comments and reviews that only comment.
+- `merge`: `never` (the default) or `ask`. Never on its own, and it merges only the commit your Oby read.
+- `push`: `never` or `ask`. There's no push tool yet, so either way your Oby doesn't push through these settings, and while GitHub is on its shell can't run `git push` ([below](#the-shell-and-pushing)). `ask` is kept for a push tool that waits for you.
+- `protected`: branches its shell never pushes to, by name or pattern (`release/*`), GitHub on or off. Default `main`, `master`, `release/*`.
+- `signature`: end each review and comment with "— written by Dmytro's Oby", and "— written by Dmytro's Oby, approved by Dmytro" when you clicked. On by default.
+
+A field the section doesn't have takes its default; a key it doesn't know is an error, as everywhere in the file.
+
+### What your Oby gets
+
+The answering session's own Sphere server (the one that gives it `sphere_ask`) gets these tools while GitHub is on, so Claude Code and Codex have them. Cursor answers without MCP, so it has none.
+
+| Tool | What it does |
+|---|---|
+| `github_pr` `{ repo, number }` | Reads a pull request: title, author, state, branches, its head commit, whether it can merge, the files with lines added and removed, the diff (the first 200 KB, with a note when it's longer), checks, reviews and comments. Only with `read` on. |
+| `github_review` `{ repo, number, event, body }` | Reviews it: `APPROVE`, `COMMENT` or `REQUEST_CHANGES`, with the review in `body` (optional for an approval). |
+| `github_comment` `{ repo, number, body }` | Comments on it. |
+| `github_merge` `{ repo, number, method? }` | Merges it: `merge` (the default), `squash` or `rebase`. Only listed when `merge` is `ask`. |
+
+- **The representative acts, not the model.** Each call checks your settings as they are then (GitHub on, the repository allowed, the action's choice), and `rep.mjs` runs `gh` itself: `gh pr view`, `gh pr diff` and `gh pr checks` to read; `gh pr review`, `gh pr comment` and `gh pr merge` to act. No shell permission is involved.
+- **Arguments are checked, and stay data.** `repo` is `owner/name` (letters, digits, `.`, `_`, `-`), `number` a whole number from 1, `body` at most 20,000 characters. `gh` runs from an argv array, never a shell, each value one element (`--repo=owner/name`, `--body=…`), so nothing in a review can become another option or command. It never prompts, runs outside your folders, and gets only what it needs of the environment (`GH_TOKEN` and `GITHUB_TOKEN` when they're set, never the Sphere's variables).
+- **What GitHub says is data.** Descriptions, reviews, comments and the diff reach the model fenced, like other Obys' words: information, not instructions.
+- **The model is told.** One line in its instructions says GitHub actions go through these tools and may wait for you, so when one waits it says so plainly instead of claiming it can't approve.
+- When `gh` isn't installed or signed in, a tool says so, and nothing is posted.
+
+### Waiting for you: a GitHub item
+
+When an action waits for you, the tool answers at once ("This waits for Dmytro: it's in their Waiting for you now…") and the answer finishes; it doesn't hold up the ask for an hour. The representative that ran the answer (`serve`, `ui --serve` or `mcp --serve`) keeps the item until you decide, and shows it in **Waiting for you** in any of your consoles; a `serve` in a terminal asks there too (`[y]`, `[c]`, `[n]`). The first decision wins.
+
+The item shows the pull request (`owner/name#number`, its title, author, base branch and the commit your Oby read, linked to GitHub), what your Oby would do, its words, and the signature they'd carry. You choose:
+
+- **Approve on GitHub** (or **Request changes on GitHub**, **Post the review**, **Post the comment**, **Merge on GitHub**): it's done as you, signed "approved by" you.
+- **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
+- **Don't**: nothing is posted.
+
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened: "Dmytro approved deskree-inc/tetrix-front-end#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
+
+In `GET /local/pending`, a GitHub item reads:
+
+```json
+{ "id": "w_0123456789ab", "kind": "github", "askId": "m_ab12cd34", "from": { "name": "ernesto", "owner": "Ernesto" }, "channel": "general",
+  "ts": "2026-11-25T10:00:00.000Z", "text": "Every point from my review is covered.", "files": [], "reason": "github",
+  "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "deskree-inc/tetrix-front-end", "number": 386,
+              "title": "Fix the picker", "author": "ernesto", "base": "main", "head": "03bf5da…",
+              "url": "https://github.com/deskree-inc/tetrix-front-end/pull/386", "verb": "approve", "button": "Approve on GitHub" },
+  "options": ["act", "comment", "decline"], "signed": "— written by Dmytro's Oby, approved by Dmytro" }
+```
+
+`action` is `review`, `comment` or `merge`; `event` is the review's kind (`null` otherwise); `method` the merge's (`null` otherwise); `options` the decisions it takes (`act` does what the button says, `comment` posts it as a comment instead, `decline` posts nothing); `signed` is `null` when the signature is off, and for a merge.
+
+### The shell and pushing
+
+Pushing stays with the shell settings, and the shell can't push to a protected branch:
+
+- With the full shell (trusted Obys only), Claude Code's deny list keeps out the usual forms of `git push` to a branch in `protected`: `git push origin main`, `…:main`, `…:refs/heads/main`, `git -C <folder> push …`, and `--all` or `--mirror`. This holds with GitHub on or off.
+- While GitHub is on, the full shell gets no `git push` at all, and no `gh`: your Oby's GitHub goes through the tools above, under these settings.
+- The read-only shell never had `git push`. Codex's sandbox has no network, so it can't push; Cursor has no shell.
+
+What isn't enforced: a deny list matches command lines, not what they do. With GitHub off, a plain `git push` on a branch that tracks `main` isn't caught; on or off, neither is a script or an alias that pushes, or another way to reach GitHub with a token it finds. The full shell runs as you; GitHub's own branch protection is what keeps a branch safe.
