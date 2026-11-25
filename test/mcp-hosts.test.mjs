@@ -327,8 +327,15 @@ describe('MCP hosts', () => {
     assert.equal(list.result.resultType, 'complete');
     assert.equal(list.result._meta['io.modelcontextprotocol/serverInfo'].name, 'obysphere');
     for (const n of MAIN_TOOLS) assert.ok(list.result.tools.some((t) => t.name === n), n);
+    // server/discover and the lists must say how long they may be cached (2026-07-28, server/utilities/caching)
+    const hints = { ttlMs: 0, cacheScope: 'private' };
+    for (const [what, r] of [['server/discover', d], ['tools/list', list], ['resources/list', await s.request('rl', 'resources/list', { _meta: META() })], ['prompts/list', await s.request('pl', 'prompts/list', { _meta: META() })]]) {
+      assert.deepEqual({ ttlMs: r.result.ttlMs, cacheScope: r.result.cacheScope }, hints, what);
+    }
+    assert.equal((await s.request('rl0', 'resources/list', {})).result.ttlMs, undefined, 'not in the handshake era');
     const agents = await s.request(2, 'tools/call', { name: 'sphere_agents', arguments: {}, _meta: META() });
     assert.equal(agents.result.resultType, 'complete');
+    assert.equal(agents.result.ttlMs, undefined, 'a tool call is not cached');
     assert.match(text(agents), /"handle": "bob"/);
     assert.equal((await s.request(3, 'ping', { _meta: META() })).result.resultType, 'complete');
     const old = await s.request(4, 'tools/list', { _meta: META('1900-01-01') });

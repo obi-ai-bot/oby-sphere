@@ -1620,6 +1620,10 @@ const MCP_LEGACY = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']; // 
 const MCP_VERSIONS = [...MCP_MODERN, ...MCP_LEGACY];
 const MCP_META = 'io.modelcontextprotocol/';
 const MCP_SERVER_INFO = { name: 'obysphere', version: '0.1.0' }; // what initialize says too
+// 2026-07-28: these results must carry caching hints. 0 (stale at once) and private: they name
+// you and your folders, and the tools can change while rep.mjs runs.
+const MCP_CACHEABLE = new Set(['server/discover', 'tools/list', 'resources/list', 'prompts/list', 'resources/templates/list', 'resources/read']);
+const MCP_CACHE_HINTS = { ttlMs: 0, cacheScope: 'private' };
 
 // `rep.mjs mcp-config --host <app>` (mcpConfig hands over here)
 async function mcpHostConfig() {
@@ -1728,7 +1732,7 @@ function mcpYaml(obj, indent = '') {
 function mcpHost(instructions) {
   const inflight = new Set(); // requests taken and not answered yet, by id
   const cancelled = new Set();
-  const modern = new Set(); // requests that named a version: their results say resultType and serverInfo
+  const modern = new Map(); // requests that named a version, by id → method: their results say resultType and serverInfo
   const tokens = new Map(); // progress token → request
   const batches = []; // { want: ids still to answer, got: answers }
   const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -1751,7 +1755,8 @@ function mcpHost(instructions) {
     inflight.delete(id);
     for (const [t, r] of tokens) if (r === id) tokens.delete(t);
     if (cancelled.delete(id)) return void modern.delete(id); // the app stopped waiting for it
-    if (modern.delete(id) && isObj(o.result)) o = { ...o, result: { resultType: 'complete', ...o.result, _meta: { ...(isObj(o.result._meta) ? o.result._meta : {}), [MCP_META + 'serverInfo']: MCP_SERVER_INFO } } };
+    const method = modern.get(id);
+    if (modern.delete(id) && isObj(o.result)) o = { ...o, result: { resultType: 'complete', ...(MCP_CACHEABLE.has(method) ? MCP_CACHE_HINTS : {}), ...o.result, _meta: { ...(isObj(o.result._meta) ? o.result._meta : {}), [MCP_META + 'serverInfo']: MCP_SERVER_INFO } } };
     const b = batches.find((x) => x.want.has(id));
     if (!b) return raw(o);
     b.want.delete(id);
@@ -1803,7 +1808,7 @@ function mcpHost(instructions) {
     if (msg.method === 'tools/call' && meta.progressToken !== undefined) tokens.set(String(meta.progressToken), id);
     const version = meta[MCP_META + 'protocolVersion'];
     if (version === undefined) return false; // the handshake's way, served as before (server/discover isn't a method there)
-    modern.add(id);
+    modern.set(id, msg.method);
     let answer = null;
     if (!MCP_VERSIONS.includes(version)) answer = error(msg.id, -32022, 'Unsupported protocol version', { supported: MCP_VERSIONS, requested: version });
     else if (!isObj(meta[MCP_META + 'clientCapabilities'])) answer = error(msg.id, -32602, `Invalid params: _meta needs ${MCP_META}clientCapabilities`);
