@@ -128,7 +128,7 @@ A, then B, one pull request per step. Each step leaves main working and document
   - with `join: "invites"`, the join key no longer joins but still watches;
   - invites survive a restart on both stores;
   - `rep.mjs join` takes the link on stdin, and refuses an invite link given as an argument;
-  - the Invites page and the switch are in the console's admin markup, for admins only (as `test/admin.test.mjs` checks Policy and Admins).
+  - the Invites page and the switch are in the console's admin markup, for admins only (as `test/admin.test.mjs` checks the Admins and Members pages).
 - **Docs**: API.md (the three endpoints, `x-sphere-invite` on `POST /api/join`, the `join` field, `invite_required`, and a row in "Who can call what"), SECURITY.md (a row for someone holding an invite, and what a leaked one gives), README.md ("Admins and policy"), docs/DEPLOY.md ("The two keys") and CHANGELOG.md.
 - **Depends on**: 0.3.0's admins as members. Until the owner answers question 6, invites last 7 days and don't hold; until question 1 is answered, every Sphere stays on `join: "key"`.
 
@@ -189,7 +189,13 @@ A, then B, one pull request per step. Each step leaves main working and document
 
 ### 8. GitHub sign-in (optional; waits on question 4)
 
-Only if the owner wants GitHub enough for the relay to hold people's GitHub tokens: Option C for GitHub alone, the relay a confidential client, the flow's state in the log, and the token dropped once `GET /user` and `GET /user/orgs` have answered. It needs its own pass over SECURITY.md first.
+Only if the owner wants GitHub enough for the relay to hold people's GitHub tokens: Option C for GitHub alone. It bends "no keys in URLs" (the code comes back to the relay in a URL query, and the platform's request logs keep it), so it needs its own pass over SECURITY.md first.
+
+- **server.mjs**: a GitHub entry in `SPHERE_SIGNIN`, with a client secret the relay keeps (a confidential client). `GET /api/signin/github/start` and `GET /api/signin/github/callback`: `state` and PKCE checked, the code exchanged once, `GET /user` and `GET /user/orgs` called, and the token dropped as soon as they answer. The flow's state, with only hashes of its secrets, goes in the log, so any instance on Vercel finishes it. The relay never logs the callback's URL. An invite or a domain invite may name a GitHub organization instead of a domain.
+- **rep.mjs**: `join --signin github` opens the relay's start page, then polls with a secret only it holds and collects the grant, which it sends with the join.
+- **Tests**: against a fake GitHub on loopback: a wrong `state` is refused; a code and a grant work once; the token is in no response, log entry or audit event; a member outside the named organization is refused.
+- **Docs**: SECURITY.md (what the relay holds and for how long, and the code in a URL), docs/DEPLOY.md ("Sign-in": registering a GitHub OAuth app), API.md and CHANGELOG.md.
+- **Depends on**: steps 5 and 6, and step 7 for organization invites.
 
 Later, outside this plan: the inviting admin's Oby signing the new member's id, handle and keys (Option A, "A malicious relay operator"), and rejoining from a new computer with the same account (#128).
 
