@@ -126,6 +126,8 @@ node rep.mjs mcp-config                                          # the line that
 
 `rep.mjs mcp` is an MCP server. Added to Claude Code (`claude mcp add …`, printed by `mcp-config`) or Cursor (`~/.cursor/mcp.json`), it gives your agent the Sphere's instruments. With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
 
+It speaks the MCP versions that start with `initialize` (2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25) and 2026-07-28, where each request names its version (`server/discover` lists them). An app that asks for a version it doesn't speak gets 2025-11-25 at `initialize`, or the list of versions it speaks. It exits when the app closes its input.
+
 ## The demo
 
 Everything on your machine, in one command:
