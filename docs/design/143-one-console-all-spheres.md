@@ -30,7 +30,7 @@ What 0.3.0 (now on main) adds that matters:
 - Every console writes its address to `<profile>/notify/console.json` when it starts (`notifyConsoleUrl()`).
 - Notifications are per profile, each with its own settings: desktop, the console's tab, Claude Code, phone (ntfy) and Slack. Titles say who and what (`NOTIFY_TITLE`: `@bob asks your Oby`), not which Sphere. A notification's link opens that profile's console (`consoleLink()`, from that address). The console's tab title counts what waits in its own profile only (`(2) Acme · Obysphere`). `inbox --hook` already covers up to five profiles (unless `--profile` or `OBYSPHERE_PROFILE` names one), and names each one's Sphere and console.
 - Waiting for you also holds the GitHub actions your settings say to ask you about (`kind: "github"` in `GET /local/pending`), in the same `pending/` folder.
-- Admins are members: admin power comes with the token the console already holds, so no admin key in the browser.
+- Admins are members: admin power comes with the token the console already holds. The admin key goes through the page once, for a claim (**Admin access…**), and the browser doesn't keep it.
 - `join` keeps the invite link, join key included, in `profile.json`, and the console hands it to its own page for **Invite member** (`GET /local/invite`).
 - After 0.3.0, main also has a default profile: `obysphere profiles use <name>` (kept in `.default-profile` beside the profiles) picks the one that commands, `obysphere open` among them, and the Claude Code plugin use when nothing names one.
 
@@ -134,26 +134,27 @@ Steps 1 to 4 make option A complete. Step 5 is optional, and steps 6 to 8 are op
 Steps 6 to 8, option B, wait on question 4. Each depends on the one before, and step 7 reuses step 1's switcher.
 
 6. **Per-profile state inside rep.mjs.** No change in behaviour.
-   - rep.mjs: `policyCache` and `noticed` become maps keyed by profile, and `sphereSealed()` takes the profile. `ui()` becomes `consoleFor(p, { port, hosts })`, which returns a request handler with its own state (file keys, uploads waiting for their message, the agents, the pair file). `ui()` still makes one server for one profile with it. `loadProfile()` takes the name, and only the commands read `opt`.
+   - rep.mjs: `policyCache`, `noticed` and `notifyState.failed` (a way that failed, said once in the log) become keyed by profile, and `sphereSealed()` takes the profile. `ui()` becomes `consoleFor(p, { port, hosts })`, which returns a request handler with its own state (file keys, uploads waiting for their message, the agents, the pair file). `ui()` still makes one server for one profile with it. `loadProfile()` takes the name, and only the commands read `opt`.
    - Docs: none beyond CHANGELOG.md.
    - Tests: nothing new to see, so the existing suites are the check (smoke, sealing, notify, console-polish, GitHub). Step 7's tests cover two profiles in one process.
 
 7. **`rep.mjs ui --all`: one process, one port, every profile.**
-   - rep.mjs: `ui --all [--port 4851]` builds a fixed table when it starts: `<profile>.localhost:<port>` for each profile, each with its own `consoleFor()`. `localhost`, `127.0.0.1` and `[::1]` on that port go to the default profile, or get 421 when there's none. Every request picks its profile once, by `Host`, from that table; there's no profile parameter anywhere. With `--serve`, `startRep()` runs once per profile (`serveWhenReachable()`). A profile that fails (settings that don't pass, a Sphere that can't be reached) is logged under its name, and the others go on. A profile joined later needs a restart. Each profile still writes its own address to `notify/console.json`, so notification links follow.
+   - rep.mjs: `ui --all [--port <port>]` listens on one port: by default the first free one from 4851 up that no profile's `service.json` holds (picked as `consolePort()` picks), since a profile's own service may still run on 4851. It builds a fixed table when it starts: `<profile>.localhost:<port>` for each profile, each with its own `consoleFor()`. `localhost`, `127.0.0.1` and `[::1]` on that port go to the default profile, or get 421 when there's none. Every request picks its profile once, by `Host`, from that table; there's no profile parameter anywhere. With `--serve`, `startRep()` runs once per profile (`serveWhenReachable()`). A profile that fails (settings that don't pass, a Sphere that can't be reached) is logged under its name, and the others go on. A profile joined later needs a restart. Each profile still writes its own address to `notify/console.json`, so notification links follow.
    - `/local/profiles` answers from memory.
-   - obysphere.mjs: `obysphere console [--port 4851]` runs it in the terminal, and `obysphere help` lists it.
+   - obysphere.mjs: `obysphere console [--port <port>]` runs it in the terminal, and `obysphere help` lists it.
    - Docs: README (The console: one process for all your profiles), SETTINGS.md (the local API with `--all`), SECURITY.md (one process holds every profile's token, keys and invite link; the profile is tied to the `Host` in one place).
    - Tests, in `test/console-all.test.mjs`, with two profiles, two relays (one sealed, one not) and one `ui --all`:
      - every route (the page, `/api/*`, `/api/stream`, `/local/*`, a file) at A's address answers for A only, and at B's for B: `GET /api/info` names A's agent as `me`, and `/local/settings` is A's file;
      - a `Host` that isn't in the table gets 421, and `localhost:<port>` is the default profile;
+     - with a profile's `service.json` holding 4851, `ui --all` takes another port;
      - a plain ask in sealed A is refused, and one in B is answered;
      - `Clear-Site-Data` comes once per pair, at each address;
      - B's settings broken: A still answers.
 
 8. **One background service.**
-   - obysphere.mjs: `obysphere start --together` installs one service (`com.obysphere.console`, or `obysphere-console.service`) that runs `rep.mjs ui --all --serve` on one port, kept in `<profiles>/console-service.json`, and removes the services per profile. `obysphere start --apart` goes back. `status`, `open`, `logs`, `restart`, `update` (`restartServices()`) and `doctor` know both. Each profile's address moves to the shared port, and the browser starts it clean there (`Clear-Site-Data`, as for any new pair).
+   - obysphere.mjs: `obysphere start --together` installs one service (`com.obysphere.all.console`, or `obysphere.all-console.service`: a profile's name has no dot, so it can't clash with a profile's own service, as `com.obysphere.console` would for a profile named `console`) that runs `rep.mjs ui --all --serve` on one port, kept in `<profiles>/console-service.json`, and removes the services per profile. `obysphere start --apart` goes back. `status`, `open`, `logs`, `restart`, `update` (`restartServices()`) and `doctor` know both. Each profile's address moves to the shared port, and the browser starts it clean there (`Clear-Site-Data`, as for any new pair).
    - Docs: README (Get started, The console), SECURITY.md (Installing and updating: the background service).
-   - Tests, in `test/cli.test.mjs` with `OBYSPHERE_SERVICE_DRYRUN`: `--together` writes one service file and removes the others; `--apart` puts them back on their old ports; `status` and `open` give each profile's address on the shared port; `update` restarts the one service.
+   - Tests, in `test/cli.test.mjs` with `OBYSPHERE_SERVICE_DRYRUN`: `--together` writes one service file and removes the others, also with a profile named `console`; `--apart` puts them back on their old ports; `status` and `open` give each profile's address on the shared port; `update` restarts the one service.
 
 Nothing in this plan links your Obys across Spheres: question 5 belongs to #46, and every step keeps them unlinked, as now.
 
