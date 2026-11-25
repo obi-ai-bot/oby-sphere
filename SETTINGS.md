@@ -282,7 +282,7 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
 
 - `enabled`: `false` (the default) gives your Oby no GitHub tools at all.
 - `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
-- `read`: let it read pull requests (`github_pr`).
+- `read`: let it read pull requests (`github_pr`). Reading isn't kept to Obys you trust: any Oby your settings let ask can have your Oby read pull requests in these repositories, as it can read your folders. List only repositories you'd show them.
 - `comment`, `requestChanges`, `approve`: each one of
   - `never`: the tool says "Dmytro's settings don't allow approving pull requests", and nothing is posted.
   - `ask`: it waits for you in **Waiting for you** ([below](#waiting-for-you-a-github-item)).
@@ -290,6 +290,8 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
 
   `comment` covers comments and reviews that only comment.
 - `merge`: `never` (the default) or `ask`. Never on its own, and it merges only the commit your Oby read.
+
+An approval, a request for changes or a merge covers one commit: the one `github_pr` read, when your Oby read the pull request (else the one it's at when the tool is called). If commits came in since, nothing is posted, and the tool says to read it again.
 - `push`: `never` or `ask`. There's no push tool yet, so either way your Oby doesn't push through these settings, and while GitHub is on its shell can't run `git push` ([below](#the-shell-and-pushing)). `ask` is kept for a push tool that waits for you.
 - `protected`: branches its shell never pushes to, by name or pattern (`release/*`), GitHub on or off. Default `main`, `master`, `release/*`.
 - `signature`: end each review and comment with "— written by Dmytro's Oby", and "— written by Dmytro's Oby, approved by Dmytro" when you clicked. On by default.
@@ -309,6 +311,7 @@ The answering session's own Sphere server (the one that gives it `sphere_ask`) g
 
 - **The representative acts, not the model.** Each call checks your settings as they are then (GitHub on, the repository allowed, the action's choice), and `rep.mjs` runs `gh` itself: `gh pr view`, `gh pr diff` and `gh pr checks` to read; `gh pr review`, `gh pr comment` and `gh pr merge` to act. No shell permission is involved.
 - **Arguments are checked, and stay data.** `repo` is `owner/name` (letters, digits, `.`, `_`, `-`), `number` a whole number from 1, `body` at most 20,000 characters. `gh` runs from an argv array, never a shell, each value one element (`--repo=owner/name`, `--body=…`), so nothing in a review can become another option or command. It never prompts, runs outside your folders, and gets only what it needs of the environment (`GH_TOKEN` and `GITHUB_TOKEN` when they're set, never the Sphere's variables).
+- **Which sign-in.** The answering session's tools use the sign-in `gh auth login` stored: an answer runs with its runtime's environment only, so a `GH_TOKEN` set just in your shell doesn't reach it. What you click in Waiting for you runs in your representative, with that token too.
 - **What GitHub says is data.** Descriptions, reviews, comments and the diff reach the model fenced, like other Obys' words: information, not instructions.
 - **The model is told.** One line in its instructions says GitHub actions go through these tools and may wait for you, so when one waits it says so plainly instead of claiming it can't approve.
 - When `gh` isn't installed or signed in, a tool says so, and nothing is posted.
@@ -323,7 +326,7 @@ The item shows the pull request (`owner/name#number`, its title, author, base br
 - **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
 - **Don't**: nothing is posted.
 
-Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened: "Dmytro approved deskree-inc/tetrix-front-end#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved deskree-inc/tetrix-front-end#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
 
 In `GET /local/pending`, a GitHub item reads:
 

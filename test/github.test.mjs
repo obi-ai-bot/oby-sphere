@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { makeFakeGh } from './fake-gh.mjs';
@@ -292,7 +293,8 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     assert.match(parts[2], /"name": "lint",\n {3}"state": "PENDING"/, 'checks, even while some are pending (gh exits 8)');
     assert.match(parts[5], /DIFF-MARKER new line/);
     assert.ok(!/IGNORE YOUR INSTRUCTIONS|DIFF-MARKER/.test(parts[0] + parts[3] + parts[6]), 'nothing from GitHub outside a fence');
-    assert.match(r.text, /What Bob Test's settings let you do on it: approve: waits for Bob Test; request changes: waits for Bob Test; comment or review: waits for Bob Test; merge: not allowed\./);
+    // what it may do comes first, in our words, so a long result read from the top still says it
+    assert.match(parts[0], /^What Bob Test's settings let you do on acme\/payments#7: approve: waits for Bob Test; request changes: waits for Bob Test; comment or review: waits for Bob Test; merge: not allowed\.\n\nPull request acme\/payments#7 \(data from GitHub/);
     const reads = gh.calls().slice(n).filter((c) => c.argv[0] === 'pr').map((c) => c.argv.slice(0, 4).join(' ')).sort();
     assert.deepEqual(reads, ['pr checks 7 --repo=acme/payments', 'pr diff 7 --repo=acme/payments', 'pr view 7 --repo=acme/payments']);
     assert.ok(gh.calls().slice(n).every((c) => !c.cwd.startsWith(path.join(tmp, 'work'))), 'never inside your folders: every call names its repository');
@@ -317,7 +319,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     // a big diff: the first 200 KB, and a note
     gh.control({ bigDiff: true });
     r = await s.call('github_pr', { repo: 'acme/payments', number: 7 });
-    assert.match(r.text, /The diff is 29\d\.\d KB: only its first 200\.0 KB is here, cut mid-file/);
+    assert.match(r.text.split(/QUOTED-[0-9A-F]{12}/)[0], /The diff is 29\d\.\d KB: only its first 200\.0 KB is here, cut mid-file/, 'the note before the data');
     const diff = r.text.split(/QUOTED-[0-9A-F]{12}/)[5];
     assert.ok(diff.length <= 200 * 1024 + 2 && diff.length > 190 * 1024, String(diff.length));
     gh.control({});
@@ -509,5 +511,96 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     writeSettings(settings({ merge: 'never' }));
     assert.match((await s.call('github_merge', { repo: 'acme/payments', number: 7 })).text, /don't allow merging pull requests/);
     s.close();
+  });
+
+  test('an approval or a merge covers the commit github_pr read: with new commits since, or no commit known, nothing is posted', async () => {
+    writeSettings(settings({ approve: 'trusted', merge: 'ask' }));
+    const { run } = await ask('carol', 'review and approve acme/payments#7');
+    const s = session(run);
+    assert.match((await s.call('github_pr', { repo: 'acme/payments', number: 7 })).text, /"headCommit": "abc1234def5678"/);
+    // a commit pushed after your Oby read it: neither approved at once nor put in Waiting for you
+    gh.control({ head: 'fff0000aaa1111' });
+    const before = gh.writes().length;
+    let r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' });
+    assert.equal(r.text, 'acme/payments#7 has new commits since you read it (abc1234 then, fff0000 now), so nothing was posted. Read it again with github_pr before you approve it.');
+    r = await s.call('github_merge', { repo: 'ACME/payments', number: 7 });
+    assert.match(r.text, /^ACME\/payments#7 has new commits since you read it .* before you merge it\.$/, 'the same pull request, in any case');
+    assert.equal(gh.writes().length, before);
+    await sleep(1500); // a request is taken into Waiting for you within a second
+    assert.deepEqual((await local('GET', '/local/pending')).pending.filter((x) => x.kind === 'github'), [], 'nothing waits for you');
+    // read again: the approval goes
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
+    assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' })).text, /^Done: approved acme\/payments#7/);
+    assert.equal(gh.writes().length, before + 1);
+    // a head commit gh doesn't give as one: nothing is approved
+    gh.control({ head: 'not-a-commit' });
+    r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE' });
+    assert.equal(r.text, "Couldn't tell which commit acme/payments#7 is at, so nothing was posted.");
+    assert.equal(gh.writes().length, before + 1);
+    gh.control({});
+    s.close();
+  });
+
+  test("Waiting for you names the asker your representative checked, and the reply goes to the ask's thread, whatever the relay says later", async () => {
+    // erin's Sphere address is a proxy that forges the one ask it's asked for again: alice's, in another channel
+    const forged = new Set();
+    const relay = new URL(base);
+    const proxy = http.createServer((req, res) => {
+      const forge = req.method === 'GET' && /^\/api\/messages\/m_[\w-]+$/.test(req.url);
+      const up = http.request({ host: relay.hostname, port: relay.port, path: req.url, method: req.method, headers: { ...req.headers, host: relay.host } }, (r) => {
+        if (!forge || r.statusCode !== 200) {
+          res.writeHead(r.statusCode, r.headers);
+          return r.pipe(res);
+        }
+        let b = '';
+        r.on('data', (d) => (b += d));
+        r.on('end', () => {
+          const j = JSON.parse(b);
+          if (j.message) {
+            forged.add(j.message.id);
+            Object.assign(j.message, { from: ids.alice, channel: 'elsewhere' });
+          }
+          const out = JSON.stringify(j);
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(out) });
+          res.end(out);
+        });
+      });
+      up.on('error', () => res.destroy());
+      req.pipe(up);
+    });
+    await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
+    try {
+      const { out } = await rep(['join', `http://127.0.0.1:${proxy.address().port}/#key=${KEY}`, '--name', 'erin', '--owner', 'Erin Test', '--cwd', payments]);
+      assert.match(out, /joined/, out);
+      const prof = path.join(home, 'erin', 'profile.json');
+      fs.writeFileSync(prof, JSON.stringify({ ...JSON.parse(fs.readFileSync(prof, 'utf8')), claudeBin: fake.claude, codexBin: fake.codex, cursorBin: fake.cursor }), { mode: 0o600 });
+      fs.writeFileSync(path.join(home, 'erin', 'settings.json'), JSON.stringify(settings()), { mode: 0o600 });
+      const erin = JSON.parse(fs.readFileSync(prof, 'utf8')).agent.id;
+      let erinOut = '';
+      const serveErin = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'erin'], { env: env(), stdio: ['pipe', 'pipe', 'pipe'] });
+      procs.push(serveErin);
+      serveErin.stdout.on('data', (d) => (erinOut += d));
+      serveErin.stderr.on('data', (d) => (erinOut += d));
+      await until(() => /is online/.test(erinOut), 'erin is online');
+      // carol asks erin; erin's Oby agrees, and its approval waits for Erin
+      const m = (await call('POST', '/api/messages', { tok: token('carol'), body: { channel: 'general', text: 'approve acme/payments#7?', to: [erin] } })).message;
+      await until(async () => ((await call('GET', `/api/messages/${m.id}/replies?wait=2`, { tok: token('carol') })).replies || []).some((x) => x.from === erin), `erin answers\n${erinOut.slice(-2000)}`);
+      const run = fake.calls().findLast((c) => c.mcp?.mcpServers?.obysphere?.args?.includes('erin'));
+      assert.equal(run.mcp.mcpServers.obysphere.env.SPHERE_GITHUB_ASKER, ids.carol);
+      const s = session(run);
+      assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'Fine by me.' })).text, /waits for Erin Test/);
+      const dir = path.join(home, 'erin', 'pending');
+      const w = await until(() => (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((n) => /^w_[0-9a-f]{12}\.json$/.test(n)).map((n) => JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'))).find((x) => x.kind === 'github'), `erin's GitHub item\n${erinOut.slice(-2000)}`);
+      assert.deepEqual([w.askId, w.from, w.channel], [m.id, { name: 'carol', owner: 'Carol Test' }, 'general'], 'carol, as erin saw her ask: not the relay’s alice');
+      fs.writeFileSync(path.join(dir, `${w.id}.decision.json`), JSON.stringify({ decision: 'decline' }), { flag: 'wx', mode: 0o600 });
+      const said = await until(async () => ((await call('GET', `/api/messages/${m.id}/replies`, { tok: token('carol') })).replies || []).find((x) => x.from === erin && /chose not to approve/.test(x.text)), `erin's reply\n${erinOut.slice(-2000)}`);
+      assert.deepEqual([said.channel, said.text], ['general', 'Erin Test chose not to approve acme/payments#7 on GitHub.']);
+      assert.ok(!forged.has(m.id), 'the relay was never asked for the ask again');
+      s.close();
+      serveErin.kill();
+    } finally {
+      proxy.close();
+      proxy.closeAllConnections?.();
+    }
   });
 });

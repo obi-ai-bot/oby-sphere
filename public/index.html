@@ -2700,7 +2700,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const st = SET.github;
     if (!st) return SET.githubFailed ? 'Couldn’t check gh on this Mac.' : 'Checking gh…';
     const gh = st.gh || {};
-    if (!gh.installed) return `gh, GitHub’s command line, isn’t installed. Install it in Terminal:${ghCmd(gh.install || 'brew install gh')}`;
+    if (!gh.installed) return /^https:\/\//.test(gh.install || '') ? `gh, GitHub’s command line, isn’t installed. Install it from <a href="${esc(gh.install)}" target="_blank" rel="noopener noreferrer">${esc(gh.install.replace(/^https:\/\//, ''))}</a>.` : `gh, GitHub’s command line, isn’t installed. Install it in Terminal:${ghCmd(gh.install || 'brew install gh')}`;
     if (gh.signedIn === true) return `<span class="status"><span class="status-dot is-online"></span></span> Signed in to GitHub${gh.login ? ` as ${esc(gh.login)}` : ''}${gh.version ? ` · gh ${esc(gh.version)}` : ''}. Your Oby acts with this sign-in.`;
     if (gh.signedIn === false) return `gh isn’t signed in. Sign in in Terminal:${ghCmd(gh.signIn || 'gh auth login')}`;
     return `Couldn’t tell whether gh is signed in. To sign in, in Terminal:${ghCmd('gh auth login')}`;
