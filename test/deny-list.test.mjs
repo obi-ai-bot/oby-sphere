@@ -97,6 +97,7 @@ const SAMPLES = [
   ['/home/sam/.m2/settings.xml', SECRET],
   ['/home/sam/.m2/settings-security.xml', SECRET],
   ['/home/sam/.gradle/gradle.properties', SECRET],
+  ['/home/sam/app/.m2/settings.xml', SECRET], // in a .m2 folder anywhere, as CI setups keep one
   ['/home/sam/.cargo/credentials.toml', SECRET],
   ['/home/sam/.gem/credentials', SECRET],
   // clouds and clusters
