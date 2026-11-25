@@ -4,8 +4,9 @@
 //   node test/fake-upstash.mjs [port] [token]     (or import { startFakeUpstash })
 import http from 'node:http';
 
-export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0 } = {}) {
+export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0, down = false } = {}) {
   const kv = new Map(); // key -> { v, exp }
+  let isDown = down; // while down, every connection is dropped: a network error, as on a blip
   const live = (k) => {
     const e = kv.get(k);
     if (e && e.exp && e.exp <= Date.now()) {
@@ -121,6 +122,7 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
   };
 
   const server = http.createServer((req, res) => {
+    if (isDown) return req.socket.destroy();
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', async () => {
@@ -155,6 +157,7 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
         token,
         kv,
         commands: () => commands,
+        setDown: (v) => { isDown = !!v; },
         close: () => new Promise((r) => server.close(r)),
       }),
     ),

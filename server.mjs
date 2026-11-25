@@ -744,14 +744,27 @@ function redisStore() {
     return run;
   };
 
+  // A network error (no HTTP reply) is retried for commands that are safe to send twice; a write
+  // (EVAL appends to the log) isn't, since the first try may have landed.
+  const RETRY_SAFE = new Set(['LRANGE', 'LLEN', 'GET', 'ZRANGEBYSCORE', 'ZADD', 'ZREMRANGEBYSCORE']);
+  async function redisFetch(url, body, retry) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${CFG.redisToken}`, 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(15000) });
+      } catch (e) {
+        if (!retry || attempt >= 2) throw e;
+        await new Promise((r) => setTimeout(r, 150 * (attempt + 1) ** 2));
+      }
+    }
+  }
   async function call(cmd) {
-    const r = await fetch(CFG.redisUrl, { method: 'POST', headers: { authorization: `Bearer ${CFG.redisToken}`, 'content-type': 'application/json' }, body: JSON.stringify(cmd) });
+    const r = await redisFetch(CFG.redisUrl, JSON.stringify(cmd), RETRY_SAFE.has(cmd[0]));
     const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     if (j.error) throw new Error(`redis ${cmd[0]}: ${j.error}`);
     return j.result;
   }
   async function pipeline(cmds) {
-    const r = await fetch(CFG.redisUrl + '/pipeline', { method: 'POST', headers: { authorization: `Bearer ${CFG.redisToken}`, 'content-type': 'application/json' }, body: JSON.stringify(cmds) });
+    const r = await redisFetch(CFG.redisUrl + '/pipeline', JSON.stringify(cmds), false); // INCR: not safe to send twice
     const j = await r.json().catch(() => null);
     if (!Array.isArray(j)) throw new Error(`redis pipeline: HTTP ${r.status}`);
     for (const x of j) if (x.error) throw new Error(`redis pipeline: ${x.error}`);
@@ -1338,11 +1351,21 @@ server.maxConnections = 4096;
 
 let readyErr = null;
 let startInfo = null;
-const ready = init().catch((e) => {
-  readyErr = e;
-  console.error(`\n  The Sphere could not start: ${e.message}\n`);
-  if (IS_MAIN) process.exit(1);
-});
+let startedAt = 0;
+let restarting = null;
+const start = () => {
+  startedAt = Date.now();
+  return init().then(
+    () => { readyErr = null; },
+    (e) => {
+      readyErr = e;
+      console.error(`\n  The Sphere could not start: ${e.message}\n`);
+      if (IS_MAIN) process.exit(1);
+    },
+  );
+};
+let ready = start();
+const RESTART_MS = 2000;
 
 // The request handler: `node server.mjs` serves it; on Vercel, api/sphere.mjs exports it.
 export async function handle(req, res) {
@@ -1356,6 +1379,13 @@ export async function handle(req, res) {
   if (isHttps(req)) res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   try {
     await ready;
+    // A start that failed (a network blip to Redis on a cold start) is tried again, at most every
+    // RESTART_MS, instead of failing every request until the platform recycles this instance.
+    // init() can run again: the store resumes from what it has applied, and the writes compare first.
+    if (readyErr && !IS_MAIN) {
+      if (!restarting && Date.now() - startedAt >= RESTART_MS) restarting = ready = start();
+      if (restarting) await restarting.finally(() => { restarting = null; });
+    }
     if (readyErr) throw err(503, 'unavailable', `The Sphere could not start: ${readyErr.message}`);
     await route(req, res, url);
   } catch (e) {

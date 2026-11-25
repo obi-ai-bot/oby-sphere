@@ -76,3 +76,30 @@ test('streams end before the time limit; presence holds across the reconnect', a
   assert.equal(au.filter((e) => e.type === 'offline').length, 0, 'no offline between reconnects');
   assert.ok(agents.find((a) => a.id === j.agent.id), 'listed');
 });
+
+test('a start that failed on a network error is tried again, not kept until the instance is recycled', async () => {
+  const flaky = await startFakeUpstash({ down: true });
+  const port = await freePort();
+  const url = (p) => `http://127.0.0.1:${port}/api/sphere?__path=${encodeURIComponent(p)}`;
+  const harness = `import http from 'node:http'; const { default: handler } = await import(${JSON.stringify(pathToFileURL(path.join(HERE, '..', 'api', 'sphere.mjs')).href)}); http.createServer((q, s) => handler(q, s)).listen(${port}, '127.0.0.1');`;
+  const f = spawn(process.execPath, ['--input-type=module', '-e', harness], {
+    env: { ...process.env, VERCEL: '1', KV_REST_API_URL: flaky.url, KV_REST_API_TOKEN: flaky.token, SPHERE_KEY: KEY, SPHERE_ADMIN_KEY: ADMIN },
+    stdio: 'ignore',
+  });
+  try {
+    let first;
+    for (let i = 0; i < 80 && !first; i++) {
+      try { first = await fetch(url('/healthz')); } catch { await sleep(100); }
+    }
+    assert.equal(first.status, 503);
+    assert.match((await first.json()).error, /could not start/);
+    flaky.setDown(false);
+    await sleep(2100);
+    const again = await fetch(url('/healthz'));
+    assert.equal(again.status, 200, 'the next request after the pause starts it again');
+    assert.equal((await again.json()).store, 'redis');
+  } finally {
+    f.kill();
+    await flaky.close();
+  }
+});
