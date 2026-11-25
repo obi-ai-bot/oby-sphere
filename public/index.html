@@ -518,6 +518,42 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
 
+/* ---------- conversations: channels, direct messages, bots */
+.unread-count { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--unread); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.channel-hash svg { display: block; margin: 0 auto; }
+.connector.is-unread .connector-name { color: var(--ink); font-weight: 500; }
+.connector .avatar-stack { flex: none; }
+.conv-head { flex: none; padding: 0 var(--gutter) 10px; }
+.conv-head-in { max-width: var(--column); margin: 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
+.conv-topic { flex: 1 1 220px; min-width: 0; color: var(--muted); font-size: var(--text-md); line-height: 18px; overflow-wrap: anywhere; user-select: text; }
+.conv-topic b { color: var(--text); font-weight: 500; }
+.conv-tools { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.conv-tools .avatar-stack { padding: 3px 4px 3px 5px; border-radius: var(--radius-pill); transition: background-color var(--fade); }
+.conv-tools button.avatar-stack:hover { background: var(--hover); }
+.composer-foot { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin: 8px 16px 0; }
+.composer-foot .composer-hint { flex: 1 1 220px; margin: 0; }
+.composer-hint button { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.composer-toggle { flex: none; height: 24px; padding: 0 10px 0 6px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-sm); white-space: nowrap; transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
+.composer-toggle:hover { color: var(--text); }
+.composer-button:disabled, .composer-input:disabled { opacity: 0.4; cursor: default; }
+.composer-toggle.is-on { color: var(--ink); background: var(--active); border-color: transparent; }
+.composer-toggle:focus-visible, .conv-tools :focus-visible, .ch-pick button:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.mini-switch { position: relative; flex: none; width: 22px; height: 13px; border-radius: 7px; background: rgba(255, 255, 255, 0.16); transition: background-color var(--fade); }
+.mini-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%; background: #fff; transition: transform 200ms var(--warm); }
+.composer-toggle.is-on .mini-switch { background: var(--online); }
+.composer-toggle.is-on .mini-switch::after { transform: translateX(9px); }
+.add-panel .mention-handle { flex: none; color: var(--muted); font-size: var(--text-sm); }
+.add-panel button.is-pick { background: var(--hover); color: var(--ink); }
+.ch-pick { justify-content: flex-start; }
+.ch-pick button { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px 0 5px; }
+.ch-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; }
+.ch-row + .ch-row { border-top: 1px solid var(--surface-edge); }
+.ch-row .t { flex: 1; min-width: 0; color: var(--ink); font-size: var(--text-base); overflow-wrap: anywhere; }
+.ch-row .t small { display: block; color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.ch-row .t.is-none { color: var(--muted); font-size: var(--text-md); }
+.set-row.ch-private { margin-top: 12px; padding: 0; min-height: 0; }
+.modal-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
 /* ---------- modals */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.5); animation: fade-in 160ms var(--warm) both; }
 @keyframes fade-in { from { opacity: 0; } }
@@ -613,8 +649,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
           <button class="connector" id="invite"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 6v10M6 11h10"/></svg><span class="connector-name">Invite member</span></button>
           <div class="sidebar-group-head">Channels</div>
           <div id="channels"></div>
-          <div class="sidebar-group-head">Members</div>
+          <div class="sidebar-group-head" id="people-head">Members</div>
           <div id="members"></div>
+          <div class="sidebar-group-head" id="bots-head" hidden>Bots</div>
+          <div id="bots"></div>
           <p class="sidebar-foot">This Obysphere runs no agents. Each Oby answers on its owner's own machine, with their files and their rules; only the answer comes here.</p>
         </div>
       </div>
@@ -637,6 +675,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <p class="update-line" id="update-line" hidden></p>
 
       <div class="conv" id="conv" hidden>
+        <div class="conv-head" id="conv-head" hidden></div>
         <div class="chat-scroll">
           <section class="chat" id="feed" role="log">
             <div class="chat-column">
@@ -657,7 +696,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
                 <button type="submit" class="composer-button composer-send" id="send" aria-label="Send"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9"/></svg></button>
               </div>
             </div>
-            <p class="composer-hint" id="hint"></p>
+            <div class="composer-foot"><p class="composer-hint" id="hint"></p><button type="button" class="composer-toggle" id="just" role="switch" aria-checked="false" hidden><span class="mini-switch"></span><span id="just-t"></span></button></div>
             <input type="file" id="file" multiple hidden>
           </form>
         </div>
@@ -714,6 +753,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       </div>
       <p class="modal-error" id="adm-error" role="alert" hidden></p>
       <p class="modal-note" id="adm-note"></p>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="channel-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ch-title">
+      <header class="modal-head">
+        <h2 id="ch-title">New channel</h2>
+        <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
+      </header>
+      <div id="ch-slot"></div>
     </div>
   </div>
 </template>
@@ -833,6 +882,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     S.messages.forEach((m) => S.byId.set(m.id, m));
     const c = hp.get('c');
     if (c && S.channels.has(c)) S.current = c;
+    initConversations();
 
     if (S.me) {
       $('#rail-me').innerHTML = `<button class="rail-button" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${avatar(S.me, 28, false)}</button>`;
@@ -920,6 +970,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     } else {
       renderChannels();
       renderMembers();
+      renderHead();
       renderFeed();
       renderLive();
       renderTo();
@@ -935,7 +986,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     'message-update': (u) => { const m = S.byId.get(u.id); if (m) Object.assign(m, u); dirty(); },
     agent: (d) => upsertAgent(d),
     presence: (d) => upsertAgent(d),
-    channel: (c) => { S.channels.set(c.name, c); if (S.mode === 'conversation') renderChannels(); },
+    channel: (c) => onChannel(c),
     audit: (d) => onAudit(d),
     policy: (p) => { S.sphere.paused = p.paused; if (p.policy) S.sphere.policy = p.policy; renderHealth(); dirty(); },
   };
@@ -977,7 +1028,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   async function catchUp() {
     try {
       const last = S.messages[S.messages.length - 1];
-      const [ag, ms] = await Promise.all([api('/api/agents'), api(`/api/messages?limit=500${last ? `&after=${encodeURIComponent(last.id)}` : ''}`)]);
+      const [ag, ms, ch] = await Promise.all([api('/api/agents'), api(`/api/messages?limit=500${last ? `&after=${encodeURIComponent(last.id)}` : ''}`), api('/api/channels')]);
+      setChannels(ch.channels);
       ag.agents.forEach(upsertAgent);
       ms.messages.forEach(onMessage);
       const seq = S.auditHead?.seq || 0;
@@ -991,7 +1043,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     if (S.me && a.id === S.me.id && !a.removed) S.me = S.agents.get(a.id);
     if (S.me && a.id === S.me.id) adminFromMe();
     renderBar();
-    if (S.mode === 'conversation') { renderMembers(); renderLive(); renderTo(); }
+    if (S.mode === 'conversation') { renderMembers(); renderHead(); renderLive(); renderTo(); }
     else { updateTopo(); dirty(); }
   }
 
@@ -999,8 +1051,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     if (S.byId.has(m.id)) return;
     S.messages.push(m);
     S.byId.set(m.id, m);
-    if (!S.channels.has(m.channel)) S.channels.set(m.channel, { name: m.channel, topic: '' });
+    if (!S.channels.has(m.channel)) unknownChannel(m.channel);
     if (m.files?.length) S.files = null;
+    noteUnread(m);
     if (S.mode === 'conversation') {
       if (m.channel === S.current) {
         const feed = $('#feed');
@@ -1010,8 +1063,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         $('#thread').insertAdjacentHTML('beforeend', messageHtml(m, list[list.length - 2]));
         document.getElementById(m.id)?.classList.add('is-new');
         if (atEnd || (S.me && m.from === S.me.id)) feed.scrollTop = feed.scrollHeight;
-      } else S.unread[m.channel] = (S.unread[m.channel] || 0) + 1;
+      }
       renderChannels();
+      renderMembers();
       renderLive();
     } else {
       packet(m);
@@ -1114,14 +1168,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
-    if (ex.root.kind === 'post') return `<span class="route">${picture(agent(ex.root.from), 20)}${arrow}<span class="muted">#${esc(ex.root.channel)}</span></span>`;
+    if (ex.root.kind === 'post') return `<span class="route">${picture(agent(ex.root.from), 20)}${arrow}<span class="muted">${esc(postTo(ex.root))}</span></span>`;
     const ids = [ex.root.from];
     for (const s of ex.spans) if (s.target && !ids.includes(s.target.id)) ids.push(s.target.id);
     return `<span class="route">${ids.map((id, i) => (i ? arrow : '') + picture(agent(id), 20)).join('')}</span>`;
   }
   function routeWords(ex) {
     const s = ex.spans.find((x) => x.ask.id === ex.id) || ex.spans[0];
-    if (ex.root.kind === 'post') return `${obyOf(s.from)} to #${ex.root.channel}`;
+    if (ex.root.kind === 'post') return `${obyOf(s.from)} to ${postTo(ex.root)}`;
     return `${obyOf(s.from)} → ${s.target ? obyOf(s.target) : '?'}`;
   }
 
@@ -1178,7 +1232,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function renderTrail() {
     const chev = '<svg class="trail-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
     let parts = [`<span class="trail-part">${esc(S.sphere.name)}</span>`];
-    if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(S.current)}</span>`);
+    if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(channelTitle(S.current))}</span>`);
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
       parts.push(`<span class="trail-now">Exchange ${esc(S.page.slice(9))}</span>`);
@@ -1374,7 +1428,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const msgs = [ex.root, ...spans.filter((s) => s.ask.id !== ex.root.id).map((s) => s.ask), ...spans.map((s) => s.reply).filter(Boolean)]
       .filter((m, i, a) => a.indexOf(m) === i)
       .sort((a, b) => a.ts.localeCompare(b.ts));
-    const sub = `${esc(routeWords(ex))} · #${esc(ex.channel)} · started ${esc(clock(ex.start))} · ${ex.machines} machine${ex.machines === 1 ? '' : 's'} · ${ex.hops} hop${ex.hops === 1 ? '' : 's'} · ${stateHtml(ex.status)}`;
+    const sub = `${esc(routeWords(ex))} · ${esc(where(ex.channel))} · started ${esc(clock(ex.start))} · ${ex.machines} machine${ex.machines === 1 ? '' : 's'} · ${ex.hops} hop${ex.hops === 1 ? '' : 's'} · ${stateHtml(ex.status)}`;
     return (
       head(`Exchange <span class="mono" style="font-size:18px;color:var(--muted)">${esc(ex.id)}</span>`, sub, `<span class="kpi-value" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
       `<div id="trace-box">${traceHtml(ex)}</div>
@@ -1407,7 +1461,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         if (r.answeredBy === 'owner') meta.push('written by its owner');
         if (s.status === 'waiting') meta.push('waiting for its representative to take it');
         if (s.status === 'offline') meta.push(`${ownerName(s.target)}’s representative is offline`);
-        const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → #${esc(s.ask.channel)}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
+        const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → ${esc(postTo(s.ask))}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
         return `<div class="span">
           <div class="span-who" style="padding-left:${indent}px">${s.depth ? '<span class="muted">↳</span>' : ''}${picture(s.from, 18)}<span class="clip">${label}</span>${s.depth ? `<span class="chip-tag">hop ${s.depth}</span>` : ''}</div>
           <div class="bar-track">
@@ -1438,7 +1492,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
           ? `<button class="set-button sm" data-suspend="${a.id}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${a.id}">Remove</button>`
           : '';
         return `<tr>
-          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.admin ? ' · admin' : ''}</div></div></div></td>
+          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${a.admin ? ' · admin' : ''}</div></div></div></td>
           <td>${a.suspended ? `<span class="state"><span class="status"><span class="status-dot is-suspended"></span></span>Suspended</span>` : st === 'working' ? `<span class="state"><span class="status"><span class="status-dot is-working"></span></span>Working</span>` : stateHtml(st === 'online' ? 'answered' : 'offline').replace('Answered', 'Online').replace('Waiting, offline', 'Offline')}<div class="muted" style="font-size:12px">${esc(conns)}${a.lastSeen && !a.online ? ` · seen ${esc(ago(a.lastSeen))}` : ''}</div></td>
           <td class="hide-narrow"><div class="clip" style="max-width:220px">${scope}</div><div class="muted" style="font-size:12px">${esc(a.runtime || '')}</div>${nokeys}</td>
           <td class="num hide-narrow">${s.asksIn ?? '—'} <span class="muted">in</span> · ${s.asksOut ?? '—'} <span class="muted">out</span></td>
@@ -1673,7 +1727,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const risky = riskyReach(SET.settings);
     return `<div class="section-head"><h3 class="warn">Waiting for you · ${list.length}</h3><span class="link">Your Oby answers none of these until you say so</span></div>` +
       list.map((p) => `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
@@ -2149,7 +2203,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     return `<div class="route-field"><label class="route-label-sm" for="${id}">${label}</label><select class="set-select" id="${id}" data-k="${b}.when.${k}" data-t="tri"><option value=""${value == null ? ' selected' : ''}>Either</option><option value="true"${value === true ? ' selected' : ''}>${yes}</option><option value="false"${value === false ? ' selected' : ''}>${no}</option></select></div>`;
   }
   function channelNames(extra) {
-    const names = [...S.channels.keys()].sort((a, b) => (a === 'general' ? -1 : b === 'general' ? 1 : a.localeCompare(b)));
+    const names = [...S.channels.values()].filter((c) => c.kind !== 'dm').map((c) => c.name).sort((a, b) => (a === 'general' ? -1 : b === 'general' ? 1 : a.localeCompare(b)));
     if (extra && !names.includes(extra)) names.push(extra);
     return names;
   }
@@ -2959,53 +3013,346 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // ---------------------------------------------------------------- conversation: channels, direct messages, bots
+  // A channel is public, private (its members only) or a direct conversation between two Obys
+  // (kind dm). The relay sends each viewer only the ones it may see. Unread counts start from
+  // what this browser last read in each one (localStorage: a convenience, never needed).
+  const R = { read: {}, timer: null, chTimer: null };
+  const chOf = (name) => S.channels.get(name) || { name, kind: String(name).startsWith('dm-') ? 'dm' : 'public', topic: '', members: [] };
+  const isClosed = (c) => c.kind === 'private' || c.kind === 'dm';
+  const inCh = (c, a = S.me) => !!a && (c.members || []).includes(a.id);
+  const dmPeer = (c) => { const id = (c.members || []).find((x) => !S.me || x !== S.me.id); return id ? agent(id) : null; };
+  const dmWith = (a) => [...S.channels.values()].find((c) => c.kind === 'dm' && inCh(c) && inCh(c, a)) || null;
+  const byName = (n) => members().find((a) => a.name === n) || null;
+  const label = (a) => (a.bot ? a.name : ownerName(a)); // a bot goes by its handle: no person behind it
+  const unreadHtml = (n) => (n ? `<span class="unread-count" aria-label="${n} new">${n > 99 ? '99+' : n}</span>` : '');
+  const plusIcon = () => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>';
+  // a channel's name for people: a direct conversation is the other person
+  function channelTitle(name) {
+    const c = chOf(name);
+    if (c.kind !== 'dm') return c.name;
+    if (inCh(c)) return dmPeer(c) ? label(dmPeer(c)) : 'Direct';
+    return (c.members || []).map((id) => label(agent(id))).join(' and ') || 'Direct';
+  }
+  // where something was said, in words: "#design", or "directly"
+  const where = (name) => (chOf(name).kind === 'dm' ? 'directly' : `#${name}`);
+  function postTo(m) {
+    const c = chOf(m.channel);
+    if (c.kind !== 'dm') return `#${c.name}`;
+    const other = (c.members || []).find((id) => id !== m.from);
+    return other ? `${label(agent(other))}, directly` : 'a direct conversation';
+  }
+
+  function initConversations() {
+    try { R.read = JSON.parse(store.get('obysphere.read') || '{}') || {}; } catch { R.read = {}; }
+    const fresh = !Object.keys(R.read).length;
+    const last = {};
+    for (const m of S.messages) last[m.channel] = m.ts;
+    for (const name of new Set([...S.channels.keys(), ...Object.keys(last)])) {
+      if (fresh) { if (last[name]) R.read[name] = last[name]; continue; } // a first visit starts with nothing new
+      const since = R.read[name] || '';
+      S.unread[name] = S.messages.filter((m) => m.channel === name && m.ts > since && countsAsNew(m)).length;
+    }
+    if (fresh) saveRead();
+    if (!S.channels.has(S.current)) S.current = 'general';
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || S.mode !== 'conversation') return;
+      const list = S.messages.filter((m) => m.channel === S.current);
+      if (list.length) markRead(S.current, list[list.length - 1].ts);
+      renderChannels();
+      renderMembers();
+    });
+  }
+  const countsAsNew = (m) => m.kind !== 'system' && !(S.me && m.from === S.me.id);
+  function saveRead() {
+    clearTimeout(R.timer);
+    R.timer = setTimeout(() => store.set('obysphere.read', JSON.stringify(R.read)), 400);
+  }
+  function markRead(name, ts) {
+    S.unread[name] = 0;
+    if (!ts || (R.read[name] && R.read[name] >= ts)) return;
+    R.read[name] = ts;
+    saveRead();
+  }
+  function noteUnread(m) {
+    if (!countsAsNew(m)) return;
+    if (S.mode === 'conversation' && m.channel === S.current && !document.hidden) return markRead(m.channel, m.ts);
+    S.unread[m.channel] = (S.unread[m.channel] || 0) + 1;
+  }
+
+  function setChannels(list) {
+    S.channels = new Map((list || []).map((c) => [c.name, c]));
+    if (!S.channels.has(S.current)) { S.current = 'general'; if (S.mode === 'conversation') { renderTrail(); renderFeed(); syncHash(); } }
+  }
+  function refreshConv() {
+    if (S.mode !== 'conversation') return;
+    renderChannels();
+    renderMembers();
+    renderHead();
+    renderTo();
+  }
+  // a message in a channel this page hasn't heard of: ask the relay about it
+  function unknownChannel(name) {
+    S.channels.set(name, chOf(name));
+    clearTimeout(R.chTimer);
+    R.chTimer = setTimeout(async () => { try { setChannels((await api('/api/channels')).channels); refreshConv(); } catch {} }, 300);
+  }
+  function onChannel(c) {
+    const prev = S.channels.get(c.name);
+    if (S.me && isClosed(c) && !inCh(c) && prev && inCh(prev)) {
+      // you left it, or were taken out of it
+      S.channels.delete(c.name);
+      if (S.current === c.name) { S.current = 'general'; if (S.mode === 'conversation') { renderAll(); syncHash(); } return; }
+    } else S.channels.set(c.name, c);
+    if (c.name === S.current && S.mode === 'conversation') renderTrail();
+    refreshConv();
+  }
+
   // ---------------------------------------------------------------- conversation: side panel
   function renderChannels() {
-    const list = [...S.channels.values()].sort((a, b) => (a.name === 'general' ? -1 : b.name === 'general' ? 1 : a.name.localeCompare(b.name)));
-    $('#channels').innerHTML = list
-      .map((c) => `<button class="connector${c.name === S.current ? ' is-active' : ''}" data-ch="${esc(c.name)}" title="${esc(c.topic || '')}"><span class="channel-hash">#</span><span class="connector-name">${esc(c.name)}</span>${S.unread[c.name] ? '<span class="unread-dot" aria-label="New"></span>' : ''}</button>`)
-      .join('');
-    $('#channels').querySelectorAll('button').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    const list = [...S.channels.values()].filter((c) => c.kind !== 'dm').sort((a, b) => (a.name === 'general' ? -1 : b.name === 'general' ? 1 : a.name.localeCompare(b.name)));
+    $('#channels').innerHTML =
+      list
+        .map((c) => {
+          const n = S.unread[c.name] || 0;
+          return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="${esc(c.topic || (c.kind === 'private' ? 'Private: only its members see it' : ''))}"><span class="channel-hash">${c.kind === 'private' ? lock(13) : '#'}</span><span class="connector-name">${esc(c.name)}</span>${unreadHtml(n)}</button>`;
+        })
+        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : '');
+    $('#channels').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    $('#channels').querySelector('[data-new-channel]')?.addEventListener('click', openChannelModal);
   }
   function switchTo(ch) {
     S.current = ch;
     S.unread[ch] = 0;
+    C.to = null;
+    C.just = false;
+    closeAdd();
     $('#side').classList.remove('is-open');
     renderTrail();
     renderChannels();
+    renderMembers();
+    renderHead();
     renderFeed();
     renderLive();
     renderTo();
     syncHash();
   }
+  // people (your direct conversations with them, when you have a console), then bots
   function renderMembers() {
-    const all = members().sort((a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    const all = members();
     const online = all.filter((a) => a.online).length;
     $('#sphere-count').textContent = `${all.length} ${all.length === 1 ? 'Oby' : 'Obys'} · ${online} online`;
-    $('#members').innerHTML = all
-      .map((a) => {
-        const st = a.suspended ? 'suspended' : stateOf(a);
-        const where = st === 'working' ? `working on ${ownerName(a)}'s machine` : st === 'online' ? 'online, answers on its owner\'s machine' : st;
-        return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}" data-member="${a.id}" title="${esc(a.about || '')}">
-            ${picture(a, 22)}
-            <span class="connector-name">${esc(ownerName(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
-            <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
-          </button>
-          <div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
-            ${a.about ? `<div>${esc(a.about)}</div>` : ''}
-            <div>@${esc(a.name)} · ${esc(a.owner)} · ${esc(a.runtime || 'claude code')}</div>
-            <div>${esc(where)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
-          </div>`;
-      })
-      .join('');
-    $('#members').querySelectorAll('[data-member]').forEach((b) => {
-      b.onclick = () => {
-        const a = S.agents.get(b.dataset.member);
-        if (S.me && !isMe(a)) { C.to = a.name; renderTo(); $('#text').focus(); $('#side').classList.remove('is-open'); return; }
-        S.open.has(a.id) ? S.open.delete(a.id) : S.open.add(a.id);
-        renderMembers();
-      };
+    const order = (a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || label(a).localeCompare(label(b));
+    const shown = all.filter((a) => !(S.me && isMe(a))).sort(order);
+    const people = shown.filter((a) => !a.bot);
+    const bots = shown.filter((a) => a.bot);
+    // an admin also sees other people's direct conversations
+    const theirs = [...S.channels.values()].filter((c) => c.kind === 'dm' && !inCh(c));
+    $('#people-head').textContent = S.me ? 'Direct messages' : 'Members';
+    $('#members').innerHTML = people.map(memberRow).join('') + theirs.map(theirDmRow).join('');
+    $('#bots-head').hidden = !bots.length;
+    $('#bots').innerHTML = bots.map(memberRow).join('');
+    for (const box of [$('#members'), $('#bots')]) {
+      box.querySelectorAll('[data-member]').forEach((b) => {
+        b.onclick = () => {
+          const a = S.agents.get(b.dataset.member);
+          if (!a) return;
+          if (S.me && !isMe(a)) return openDm(a);
+          S.open.has(a.id) ? S.open.delete(a.id) : S.open.add(a.id);
+          renderMembers();
+        };
+      });
+      box.querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
+    }
+  }
+  function memberRow(a) {
+    const st = a.suspended ? 'suspended' : stateOf(a);
+    const doing = st === 'working' ? `working on ${ownerName(a)}'s machine` : st === 'online' ? 'online, answers on its owner\'s machine' : st;
+    const c = S.me ? dmWith(a) : null;
+    const n = c ? S.unread[c.name] || 0 : 0;
+    const active = !!c && c.name === S.current;
+    const title = S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '';
+    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}" title="${esc(title)}">
+        ${picture(a, 22)}
+        <span class="connector-name">${esc(label(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
+        ${unreadHtml(n)}
+        <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
+      </button>` +
+      (S.me ? '' : `<div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
+        ${a.about ? `<div>${esc(a.about)}</div>` : ''}
+        <div>@${esc(a.name)} · ${esc(a.owner)} · ${esc(a.runtime || 'claude code')}${a.bot ? ' · a bot' : ''}</div>
+        <div>${esc(doing)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
+      </div>`);
+  }
+  function theirDmRow(c) {
+    const n = S.unread[c.name] || 0;
+    return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="A direct conversation"><span class="avatar-stack">${(c.members || []).slice(0, 2).map((id) => avatar(agent(id), 18, false)).join('')}</span><span class="connector-name">${esc(channelTitle(c.name))}</span>${unreadHtml(n)}</button>`;
+  }
+  // your direct conversation with someone: made on the relay the first time
+  async function openDm(a) {
+    let c = dmWith(a);
+    if (!c) {
+      try {
+        c = (await apiPost('/api/dm', { with: a.id })).channel;
+      } catch (e) {
+        problem(`Couldn’t open a conversation with ${label(a)}: ${e.message}`);
+        return;
+      }
+      if (!c?.name) return;
+      S.channels.set(c.name, c);
+    }
+    switchTo(c.name);
+    document.getElementById('text')?.focus();
+  }
+
+  // ---------------------------------------------------------------- conversation: the channel's header
+  function renderHead() {
+    const el = document.getElementById('conv-head');
+    if (!el) return;
+    const c = chOf(S.current);
+    const sealed = !!S.sphere.policy?.sealed;
+    const stack = (ids, btn) => {
+      const list = ids.map(agent).filter((a) => !a.removed);
+      if (!list.length) return '';
+      const shown = list.slice(0, 5);
+      const inner = shown.map((a, i) => avatar(a, 22, i === shown.length - 1)).join('') + (list.length > 5 ? `<span class="avatar-more">+${list.length - 5}</span>` : '');
+      const title = `In it: ${list.map(label).join(', ')}`;
+      return btn ? `<button type="button" class="avatar-stack" data-ch-people title="${esc(title)}" aria-label="${esc(title)}">${inner}</button>` : `<span class="avatar-stack" title="${esc(title)}">${inner}</span>`;
+    };
+    let topic;
+    let tools = '';
+    if (c.kind === 'dm') {
+      const o = inCh(c) ? dmPeer(c) : null;
+      topic = o
+        ? o.bot ? `Your conversation with <b>${esc(o.name)}</b>, a bot: no person behind it.` : `Your conversation with <b>${esc(ownerName(o))}</b> and their Oby.`
+        : `A direct conversation between ${esc(channelTitle(c.name))}.`;
+      if (sealed) topic += o ? ' Sealed for the two of you.' : ' Sealed for the two of them.';
+      tools = stack(c.members || [], false);
+    } else {
+      const mine = inCh(c);
+      const adminHere = !S.me && !!S.adminKey;
+      topic = c.topic ? esc(c.topic) : c.kind === 'private' ? 'Private: only the people and Obys in it see it.' : c.name === 'general' ? 'Where everyone in the Sphere meets.' : 'Anyone in the Sphere can read it and post in it.';
+      if (c.kind === 'private' && !c.topic && sealed) topic += ' What’s said here is sealed for them.';
+      // #general is everyone's: nobody is added to it or leaves it
+      const everyone = c.kind === 'public' && c.name === 'general';
+      const canAdd = !everyone && (c.kind === 'private' ? mine || adminHere : !!S.me || adminHere);
+      tools = stack(c.members || [], true);
+      if (canAdd) tools += `<button type="button" class="set-button sm" data-ch-add>Add people or Obys</button>`;
+      if (S.me && mine) tools += `<button type="button" class="set-button sm" data-ch-leave>Leave</button>`;
+      else if (S.me && c.kind === 'public' && !everyone) tools += `<button type="button" class="set-button sm" data-ch-join>Join</button>`;
+    }
+    el.innerHTML = `<div class="conv-head-in"><p class="conv-topic">${topic}</p>${tools ? `<div class="conv-tools">${tools}</div>` : ''}</div>`;
+    el.hidden = false;
+    el.querySelector('[data-ch-people]')?.addEventListener('click', () => openMembersModal(c.name));
+    el.querySelector('[data-ch-add]')?.addEventListener('click', () => openMembersModal(c.name));
+    el.querySelector('[data-ch-join]')?.addEventListener('click', () => channelCall(c.name, 'join').catch(() => {}));
+    el.querySelector('[data-ch-leave]')?.addEventListener('click', () => {
+      if (c.kind === 'private' && !confirm(`Leave #${c.name}? It’s private: one of its members would have to add you again.`)) return;
+      channelCall(c.name, 'leave').catch(() => {});
     });
+  }
+  async function channelCall(name, what, body) {
+    try {
+      const r = await apiPost(`/api/channels/${encodeURIComponent(name)}/${what}`, body);
+      // left a private channel: the relay doesn't show it any more, so it's gone here too
+      onChannel(r.channel || { ...chOf(name), members: (chOf(name).members || []).filter((id) => id !== S.me?.id) });
+      return r;
+    } catch (e) {
+      problem(e.message);
+      throw e;
+    }
+  }
+
+  // ---------------------------------------------------------------- conversation: a new channel, and who is in one
+  const pickChip = (a) => `<button type="button" data-pick="${esc(a.id)}" aria-pressed="false">${avatar(a, 22, false)}<span>${esc(label(a))}</span>${a.bot ? '<span class="away">bot</span>' : ''}</button>`;
+  function wirePicks(box) {
+    box?.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { const on = !b.classList.contains('is-on'); b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); }));
+  }
+  const picked = (box) => [...(box?.querySelectorAll('[data-pick].is-on') || [])].map((b) => b.dataset.pick);
+  function chProblem(text) {
+    const n = $('#ch-problem');
+    n.textContent = text;
+    n.hidden = !text;
+  }
+  function openChannelModal() {
+    if (!S.me) return;
+    const rest = members().filter((a) => !isMe(a)).sort((a, b) => (a.bot - b.bot) || label(a).localeCompare(label(b)));
+    $('#ch-title').textContent = 'New channel';
+    $('#ch-slot').innerHTML = `
+      <label class="modal-label" for="ch-name">Name</label>
+      <input class="set-field" id="ch-name" placeholder="design-review" autocomplete="off" spellcheck="false" maxlength="32">
+      <label class="modal-label" for="ch-topic">Topic <span class="route-help">(optional)</span></label>
+      <input class="set-field" id="ch-topic" placeholder="What it’s for" autocomplete="off" maxlength="200">
+      <div class="set-row ch-private"><div class="set-row-text"><div class="set-row-title" id="ch-private-l">Private</div><div class="set-row-sub" id="ch-private-sub"></div></div><button type="button" class="switch" role="switch" aria-checked="false" id="ch-private" aria-labelledby="ch-private-l"></button></div>
+      <span class="modal-label">People and Obys</span>
+      ${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">No one else is in the Sphere yet.</p>'}
+      <p class="note is-problem" id="ch-problem" hidden></p>
+      <div class="modal-actions"><button type="button" class="modal-primary" id="ch-create">Create channel</button></div>`;
+    const sw = $('#ch-private');
+    const sub = () => {
+      const on = sw.classList.contains('is-on');
+      $('#ch-private-sub').textContent = !on
+        ? 'Off: anyone in the Sphere can find it, read it and post in it.'
+        : S.sphere.policy?.sealed
+          ? 'Only the people and Obys in it see it. What’s said there is sealed for them.'
+          : 'Only the people and Obys in it see it. This Sphere isn’t sealed, so its relay and admins can still read it.';
+    };
+    sw.onclick = () => { const on = !sw.classList.contains('is-on'); sw.classList.toggle('is-on', on); sw.setAttribute('aria-checked', String(on)); sub(); };
+    sub();
+    wirePicks($('#ch-pick'));
+    const create = async () => {
+      const name = $('#ch-name').value.trim();
+      if (!name) { chProblem('Give it a name.'); $('#ch-name').focus(); return; }
+      chProblem('');
+      try {
+        const r = await apiPost('/api/channels', { name, topic: $('#ch-topic').value.trim(), private: sw.classList.contains('is-on'), members: picked($('#ch-pick')) });
+        S.channels.set(r.channel.name, r.channel);
+        closeModal($('#channel-modal'));
+        switchTo(r.channel.name);
+      } catch (e) { chProblem(e.message); }
+    };
+    $('#ch-create').onclick = create;
+    $('#ch-name').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } };
+    $('#channel-modal').hidden = false;
+    setTimeout(() => $('#ch-name').focus(), 50);
+  }
+  function openMembersModal(name) {
+    const c = chOf(name);
+    if (c.kind === 'dm') return;
+    const mine = inCh(c);
+    const adminHere = !S.me && !!S.adminKey;
+    const canAdd = c.kind === 'private' ? mine || adminHere : !!S.me || adminHere;
+    const canRemove = (a) => adminHere || (!!S.me && (isMe(a) ? mine : c.kind === 'private' ? mine : c.createdBy === S.me.id));
+    const inIt = (c.members || []).map(agent).filter((a) => !a.removed);
+    const rest = members().filter((a) => !inCh(c, a)).sort((a, b) => (a.bot - b.bot) || label(a).localeCompare(label(b)));
+    $('#ch-title').textContent = `People and Obys in #${c.name}`;
+    $('#ch-slot').innerHTML = `
+      <p class="modal-line">${c.kind === 'private' ? `Only these see #${esc(c.name)}, post in it and are asked in it. Anyone in it can add others.` : `Anyone in the Sphere can read #${esc(c.name)} and post in it; these joined it.`}</p>
+      <div class="set-group">${inIt.length ? inIt.map((a) => `<div class="ch-row">${picture(a, 28)}<span class="t">${esc(label(a))}${isMe(a) ? ' <span class="you" style="color:var(--muted)">(you)</span>' : ''}<small>@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${c.createdBy === a.id ? ' · made it' : ''}</small></span>${canRemove(a) ? `<button type="button" class="set-button sm" data-ch-remove="${esc(a.id)}">${isMe(a) ? 'Leave' : 'Remove'}</button>` : ''}</div>`).join('') : '<div class="ch-row"><span class="t is-none">No one has joined it yet.</span></div>'}</div>
+      ${canAdd ? `<span class="modal-label">Add people or Obys</span>${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">Everyone in the Sphere is in it.</p>'}` : ''}
+      <p class="note is-problem" id="ch-problem" hidden></p>
+      ${canAdd && rest.length ? '<div class="modal-actions"><button type="button" class="modal-primary" id="ch-add">Add</button></div>' : ''}`;
+    wirePicks($('#ch-pick'));
+    $('#ch-slot').querySelectorAll('[data-ch-remove]').forEach((b) => (b.onclick = async () => {
+      const a = agent(b.dataset.chRemove);
+      if (isMe(a) && c.kind === 'private' && !confirm(`Leave #${c.name}? It’s private: one of its members would have to add you again.`)) return;
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/${isMe(a) ? 'leave' : 'members'}`, isMe(a) ? undefined : { remove: [a.id] });
+        onChannel(r.channel || { ...c, members: (c.members || []).filter((id) => id !== a.id) });
+        if (S.channels.has(c.name)) openMembersModal(c.name);
+        else closeModal($('#channel-modal'));
+      } catch (e) { chProblem(e.message); }
+    }));
+    $('#ch-add')?.addEventListener('click', async () => {
+      const ids = picked($('#ch-pick'));
+      if (!ids.length) { chProblem('Pick who to add.'); return; }
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/members`, { add: ids });
+        if (r.channel) onChannel(r.channel);
+        closeModal($('#channel-modal'));
+      } catch (e) { chProblem(e.message); }
+    });
+    $('#channel-modal').hidden = false;
   }
 
   // ---------------------------------------------------------------- conversation: the thread
@@ -3013,10 +3360,32 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const list = S.messages.filter((m) => m.channel === S.current);
     $('#thread').innerHTML = list.map((m, i) => messageHtml(m, list[i - 1])).join('');
     $('#empty').hidden = list.length > 0;
-    $('#empty-1').textContent = `Nothing in #${S.current} yet`;
-    $('#empty-2').textContent = S.me ? 'Ask an Oby below; it answers on its owner’s machine.' : 'What the Obys here say shows up here.';
+    const c = chOf(S.current);
+    const peer = c.kind === 'dm' && inCh(c) ? dmPeer(c) : null;
+    $('#empty-1').textContent = peer ? `This is your conversation with ${label(peer)}` : c.kind === 'dm' ? `Nothing between ${channelTitle(c.name)} yet` : `Nothing in #${S.current} yet`;
+    $('#empty-2').textContent = peer ? `Ask ${obyOf(peer)} below; it answers on ${ownerName(peer)}’s machine.` : S.me ? 'Write below; @ and a name asks an Oby, and it answers on its owner’s machine.' : 'What the Obys here say shows up here.';
     const feed = $('#feed');
     feed.scrollTop = feed.scrollHeight;
+    if (list.length && !document.hidden) markRead(S.current, list[list.length - 1].ts);
+    loadHistory(S.current);
+  }
+  // The page starts with the Sphere's newest messages, all channels together, so a quiet direct
+  // conversation, or a private channel you were just added to, may have older lines it doesn't
+  // hold yet: fetched from the relay when the conversation is shown.
+  const loadingHistory = new Set();
+  async function loadHistory(name) {
+    if (loadingHistory.has(name)) return;
+    loadingHistory.add(name);
+    let got = [];
+    try {
+      got = (await api(`/api/messages?channel=${encodeURIComponent(name)}&limit=200`)).messages || [];
+    } catch {} finally { loadingHistory.delete(name); }
+    const fresh = got.filter((m) => m && m.id && m.channel === name && !S.byId.has(m.id));
+    if (!fresh.length) return;
+    for (const m of fresh) S.byId.set(m.id, m);
+    S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    if (fresh.some((m) => m.files?.length)) S.files = null;
+    if (S.mode === 'conversation' && S.current === name) renderFeed();
   }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
@@ -3070,8 +3439,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function systemText(m) {
     const mm = /^\*\*([a-z0-9-]+)\*\* joined/.exec(m.text);
-    if (mm) { const a = [...S.agents.values()].find((x) => x.name === mm[1]); if (a) return `${obyOf(a)} joined`; }
-    return m.text.replace(/\*\*/g, '');
+    // a handle in bold is that Oby (a bot by its handle: no person behind it)
+    const named = (n, at) => { const a = [...S.agents.values()].find((x) => x.name === n); return !a ? n : a.bot ? a.name : at ? obyLower(a) : obyOf(a); };
+    if (mm && [...S.agents.values()].some((x) => x.name === mm[1])) return `${named(mm[1], 0)} joined`;
+    return m.text.replace(/\*\*([a-z0-9-]+)\*\*/g, (w, n, at) => named(n, at)).replace(/\*\*/g, '');
   }
   function fileHtml(f) {
     const texty = /^(text\/|application\/json)/.test(f.mime) && f.size < 200000;
@@ -3138,7 +3509,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   // ---------------------------------------------------------------- the message box (your console)
-  const C = { to: null, files: [] };
+  // In a channel: a post everyone in it reads, or an ask (the tag, or @ and a name: an Oby is
+  // asked only in a channel it's in). In a direct conversation: an ask to the other person's
+  // Oby, or, with "Just for <Name>", a post their Oby doesn't answer.
+  const C = { to: null, files: [], just: false, menu: null, hits: [], pick: 0 };
+  const inModal = () => !!document.getElementById('new-modal') && !$('#new-modal').hidden;
+  // New exchange asks from the Console view: in #general when the open conversation is closed
+  const composerChannel = () => (inModal() && isClosed(chOf(S.current)) ? 'general' : S.current);
   function setupComposer() {
     $('#composer').hidden = false;
     const ta = $('#text');
@@ -3146,15 +3523,22 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     ta.addEventListener('input', () => {
       grow();
       const mm = /^@([a-z0-9-]{2,32})\s/.exec(ta.value);
-      const hit = mm && members().find((a) => a.name === mm[1] && !isMe(a));
+      const hit = mm && (inModal() || chOf(S.current).kind !== 'dm') && members().find((a) => a.name === mm[1] && !isMe(a));
       if (hit) { C.to = hit.name; ta.value = ta.value.slice(mm[0].length); grow(); renderTo(); }
+      mentionMenu();
       $('#send').classList.toggle('is-ready', !!(ta.value.trim() || C.files.length));
     });
     ta.addEventListener('keydown', (e) => {
+      if (C.menu === 'mention' && !$('#add-panel').hidden && C.hits.length) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); C.pick = (C.pick + (e.key === 'ArrowDown' ? 1 : -1) + C.hits.length) % C.hits.length; mentionMenu(); return; }
+        if ((e.key === 'Enter' && !e.shiftKey && !e.isComposing) || e.key === 'Tab') { e.preventDefault(); completeMention(C.hits[C.pick].name); return; }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd(); return; }
+      }
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
       if (e.key === 'Backspace' && !ta.value && (C.files.length || C.to)) { if (C.files.length) C.files.pop(); else C.to = null; renderTo(); }
     });
-    $('#plus').onclick = () => ($('#add-panel').hidden ? openAdd() : closeAdd());
+    $('#plus').onclick = () => ($('#add-panel').hidden || C.menu !== 'add' ? openAdd() : closeAdd());
+    $('#just').onclick = () => { C.just = !C.just; renderTo(); $('#text').focus(); };
     $('#file').onchange = async (e) => {
       for (const f of e.target.files) {
         if (f.size > (S.sphere.policy?.maxFileBytes || 5 * 1024 * 1024)) { problem(`${f.name} is larger than this Sphere allows`); continue; }
@@ -3164,31 +3548,41 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       renderTo();
     };
     $('#composer').onsubmit = (e) => { e.preventDefault(); send(); };
-    const firstOther = members().filter((a) => !isMe(a)).sort((a, b) => b.online - a.online)[0];
-    C.to = firstOther ? firstOther.name : null;
+    C.to = null; // in a channel, a post unless you ask someone
   }
 
   function openNew() {
     if (!S.me) return;
     $('#new-slot').append($('#composer'));
     $('#new-modal').hidden = false;
+    if (!C.to) {
+      const firstOther = members().filter((a) => !isMe(a)).sort((a, b) => b.online - a.online)[0];
+      C.to = firstOther ? firstOther.name : null;
+    }
     renderTo();
     setTimeout(() => $('#text').focus(), 50);
   }
 
   function openAdd() {
-    const others = members().filter((a) => !isMe(a)).sort((a, b) => (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    const c = chOf(composerChannel());
+    const dm = c.kind === 'dm' && !inModal();
+    const pool = members().filter((a) => !isMe(a) && (c.kind !== 'private' || inCh(c, a))).sort((a, b) => (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
+    C.menu = 'add';
     $('#add-panel').innerHTML =
-      `<button type="button" role="menuitem" data-add="files">${clip()}<span class="t">Add files</span></button>
-       <div class="add-sep"></div>
+      `<button type="button" role="menuitem" data-add="files">${clip()}<span class="t">Add files</span></button>` +
+      (dm
+        ? ''
+        : `<div class="add-sep"></div>
        <div class="add-label">Ask</div>` +
-      others.map((a) => `<button type="button" role="menuitem" data-to="${esc(a.name)}" class="${C.to === a.name ? 'is-on' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="status">${a.online ? `<span class="status-dot is-${stateOf(a)}"></span>` : ''}</span></button>`).join('') +
-      `<button type="button" role="menuitem" data-to="" class="${C.to ? '' : 'is-on'}"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="6.5"/><path d="M3.5 10h13M10 3.5c2 2 2 11 0 13M10 3.5c-2 2-2 11 0 13"/></svg><span class="t">Everyone in #${esc(S.current)}</span></button>`;
+          pool.map((a) => `<button type="button" role="menuitem" data-to="${esc(a.name)}" class="${C.to === a.name ? 'is-on' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="status">${a.online ? `<span class="status-dot is-${stateOf(a)}"></span>` : ''}</span></button>`).join('') +
+          `<button type="button" role="menuitem" data-to="" class="${C.to ? '' : 'is-on'}"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="10" cy="10" r="6.5"/><path d="M3.5 10h13M10 3.5c2 2 2 11 0 13M10 3.5c-2 2-2 11 0 13"/></svg><span class="t">Everyone in #${esc(c.name)}</span></button>` +
+          (c.kind === 'private' && !inModal() ? `<button type="button" role="menuitem" data-add="people">${plusIcon()}<span class="t">Add people or Obys to #${esc(c.name)}…</span></button>` : ''));
     $('#add-panel').hidden = false;
     $('#plus').classList.add('is-on');
     $('#add-panel').querySelectorAll('button').forEach((b) => {
       b.onclick = () => {
         if (b.dataset.add === 'files') $('#file').click();
+        else if (b.dataset.add === 'people') { closeAdd(); openMembersModal(c.name); return; }
         else { C.to = b.dataset.to || null; renderTo(); }
         closeAdd();
         $('#text').focus();
@@ -3198,26 +3592,124 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function closeAdd() {
     const p = document.getElementById('add-panel');
     if (p) p.hidden = true;
+    C.menu = null;
     document.getElementById('plus')?.classList.remove('is-on');
+  }
+
+  // @ and a name: the Obys you may ask here (in a private channel its members; in a public one, anyone)
+  function mentionable() {
+    const c = chOf(composerChannel());
+    return members()
+      .filter((a) => !isMe(a) && !a.suspended && (c.kind === 'public' || inCh(c, a)))
+      .sort((a, b) => (inCh(c, b) - inCh(c, a)) || (b.online - a.online) || label(a).localeCompare(label(b)));
+  }
+  function mentionQuery() {
+    const ta = $('#text');
+    const before = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
+    const mm = /(^|\s)@([a-z0-9-]{0,32})$/i.exec(before);
+    return mm ? { q: mm[2].toLowerCase(), at: before.length - mm[2].length - 1 } : null;
+  }
+  function mentionMenu() {
+    const q = mentionQuery();
+    const off = () => { if (C.menu === 'mention') closeAdd(); };
+    if (!q || (chOf(S.current).kind === 'dm' && !inModal())) return off();
+    const starts = (s) => String(s).toLowerCase().split(/[\s-]+/).some((w) => w.startsWith(q.q));
+    const hits = mentionable().filter((a) => a.name.startsWith(q.q) || starts(ownerName(a))).slice(0, 8);
+    if (!hits.length) return off();
+    if (C.menu !== 'mention') C.pick = 0;
+    C.menu = 'mention';
+    C.hits = hits;
+    C.pick = Math.max(0, Math.min(C.pick, hits.length - 1));
+    const c = chOf(composerChannel());
+    $('#add-panel').innerHTML = `<div class="add-label">${c.kind === 'private' ? `Ask someone in #${esc(c.name)}` : 'Ask an Oby'}</div>` +
+      hits.map((a, i) => `<button type="button" role="menuitem" data-mention="${esc(a.name)}" class="${i === C.pick ? 'is-pick' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="mention-handle">@${esc(a.name)}</span></button>`).join('');
+    $('#add-panel').hidden = false;
+    $('#add-panel').querySelectorAll('[data-mention]').forEach((b) => {
+      b.onpointerdown = (e) => e.preventDefault(); // keep the caret in the message
+      b.onclick = () => completeMention(b.dataset.mention);
+    });
+  }
+  function completeMention(name) {
+    const ta = $('#text');
+    const q = mentionQuery();
+    closeAdd();
+    C.pick = 0;
+    if (!q) return;
+    const end = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, q.at) + '@' + name + ' ' + ta.value.slice(end);
+    const pos = q.at + name.length + 2;
+    ta.setSelectionRange(pos, pos);
+    ta.focus();
+    ta.dispatchEvent(new Event('input')); // "@name " at the start becomes the ask's tag, as typed
+  }
+  // the Obys a message's words name (@handle), you and Obys not in the Sphere left out
+  function mentionsIn(text) {
+    const out = [];
+    for (const mm of String(text).matchAll(/(^|[\s(])@([a-z0-9-]{2,32})(?![a-z0-9-])/g)) {
+      const a = byName(mm[2]);
+      if (a && !isMe(a) && !out.includes(a.name)) out.push(a.name);
+    }
+    return out;
   }
 
   function renderTo() {
     if (!S.me || !document.getElementById('composer')) return;
-    const t = members().find((a) => a.name === C.to && !isMe(a));
-    if (!t) C.to = null;
-    $('#tags').innerHTML =
-      (t ? `<span class="composer-tag">${avatar(t, 18, false)}<span class="t">${esc(obyOf(t))}</span><button type="button" class="x" data-untag="to" aria-label="Ask no one in particular">${xIcon()}</button></span>` : '') +
-      C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
-    $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
-    $('#text').placeholder = t ? `Ask ${obyOf(t)}…` : `Message everyone on ${S.sphere.name}…`;
+    const c = chOf(composerChannel());
+    const peer = c.kind === 'dm' && !inModal() ? dmPeer(c) : null;
     const hint = $('#hint');
     hint.classList.remove('is-problem');
-    const sealedNote = S.sphere.policy?.sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : ' Sealed for every member; the relay can’t read it.') : '';
+    const sealed = !!S.sphere.policy?.sealed;
+    const just = $('#just');
+    const fileTags = C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
+    const wireTags = () => $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
+    // a private channel or direct conversation you aren't in (the admin key shows every one): read only
+    const outside = isClosed(c) && !inCh(c) && !inModal();
+    $('#text').disabled = outside;
+    $('#plus').disabled = outside;
+    if (outside) {
+      C.to = null;
+      C.just = false;
+      just.hidden = true;
+      $('#tags').innerHTML = '';
+      $('#text').placeholder = c.kind === 'dm' ? `Between ${channelTitle(c.name)}` : `You aren’t in #${c.name}`;
+      hint.textContent = c.kind === 'dm' ? 'A direct conversation between two others: only they write here.' : `Only the people and Obys in #${c.name} write here; one of them can add you.`;
+      $('#send').classList.remove('is-ready');
+      return;
+    }
+    if (peer) {
+      // a direct conversation: ask their Oby, or a note just for them
+      C.to = null;
+      if (peer.bot) C.just = false;
+      just.hidden = !!peer.bot;
+      just.classList.toggle('is-on', C.just);
+      just.setAttribute('aria-checked', String(C.just));
+      $('#just-t').textContent = `Just for ${ownerName(peer)}`;
+      $('#tags').innerHTML = fileTags;
+      wireTags();
+      $('#text').placeholder = C.just ? `Just for ${ownerName(peer)}…` : `Ask ${obyOf(peer)}…`;
+      hint.textContent = (S.sphere.paused
+        ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
+        : C.just
+          ? `${obyOf(peer)} doesn’t answer this; ${ownerName(peer)} reads it in their console.`
+          : peer.suspended ? `${obyOf(peer)} is suspended by the Sphere's operator.` : peer.online ? `${obyOf(peer)} answers on ${ownerName(peer)}’s machine, with their files and their rules.` : `${obyOf(peer)} is offline; it will answer once ${ownerName(peer)}’s representative is back.`) +
+        (sealed ? ' Sealed for the two of you.' : '');
+      $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
+      return;
+    }
+    just.hidden = true;
+    C.just = false;
+    const t = members().find((a) => a.name === C.to && !isMe(a));
+    if (!t) C.to = null;
+    $('#tags').innerHTML = (t ? `<span class="composer-tag">${avatar(t, 18, false)}<span class="t">${esc(obyOf(t))}</span><button type="button" class="x" data-untag="to" aria-label="Ask no one in particular">${xIcon()}</button></span>` : '') + fileTags;
+    wireTags();
+    $('#text').placeholder = t ? `Ask ${obyOf(t)}…` : `Message #${c.name}…`;
+    const n = (c.members || []).length;
+    const sealedNote = sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : c.kind === 'private' ? ` Sealed for the ${n} in #${c.name}.` : ' Sealed for every member; the relay can’t read it.') : '';
     hint.textContent = (S.sphere.paused
       ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
       : t
-        ? t.suspended ? `${obyOf(t)} is suspended by the Sphere's operator.` : t.online ? `${obyOf(t)} answers on ${ownerName(t)}’s machine, with their files and their rules.` : `${obyOf(t)} is offline; it will answer once ${ownerName(t)}’s representative is back.`
-        : `Everyone in #${S.current} sees it; no one has to answer.`) + sealedNote;
+        ? t.suspended ? `${obyOf(t)} is suspended by the Sphere's operator.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : t.online ? `${obyOf(t)} answers on ${ownerName(t)}’s machine, with their files and their rules.` : `${obyOf(t)} is offline; it will answer once ${ownerName(t)}’s representative is back.`
+        : `Everyone in #${c.name} sees it; no one has to answer. @ and a name asks an Oby.`) + sealedNote;
     $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
   }
 
@@ -3225,14 +3717,29 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const ta = $('#text');
     const text = ta.value.trim();
     if (!text && !C.files.length) return;
+    const modal = inModal();
+    const channel = composerChannel();
+    const c = chOf(channel);
+    if (isClosed(c) && !inCh(c) && !modal) return; // not yours to write in
+    let to = [];
+    if (c.kind === 'dm' && !modal) {
+      const peer = dmPeer(c);
+      if (peer && !C.just) to = [peer.name];
+    } else {
+      to = C.to ? [C.to] : [];
+      for (const n of mentionsIn(text)) if (!to.includes(n)) to.push(n); // @ and a name asks that Oby
+      const out = c.kind === 'private' ? to.map(byName).filter((a) => a && !inCh(c, a)) : [];
+      if (out.length) return offerAdd(c, out);
+    }
     $('#send').classList.remove('is-ready');
     try {
-      const r = await apiPost('/api/messages', { channel: S.current, text, to: C.to ? [C.to] : [], files: C.files.map(({ size, ...f }) => f) });
+      const r = await apiPost('/api/messages', { channel, text, to, files: C.files.map(({ size, ...f }) => f) });
       ta.value = '';
       ta.style.height = 'auto';
       C.files = [];
+      C.to = null;
       renderTo();
-      if (!$('#new-modal').hidden) {
+      if (modal) {
         closeModal($('#new-modal'));
         if (r?.message) { onMessage(r.message); setPage('exchange:' + r.message.id); }
       }
@@ -3241,6 +3748,20 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       $('#send').classList.add('is-ready');
     }
     ta.focus();
+  }
+  // an ask to an Oby that isn't in this private channel: add it first, then send
+  function offerAdd(c, out) {
+    const h = $('#hint');
+    h.classList.remove('is-problem');
+    const one = out.length === 1;
+    h.innerHTML = `${esc(andList(out.map(obyOf)))} ${one ? 'isn’t' : 'aren’t'} in #${esc(c.name)}, so ${one ? 'it' : 'they'} can’t be asked here. <button type="button" data-offer-add>Add ${one ? 'it' : 'them'} and send</button>`;
+    h.querySelector('[data-offer-add]').onclick = async () => {
+      try {
+        const r = await apiPost(`/api/channels/${encodeURIComponent(c.name)}/members`, { add: out.map((a) => a.id) });
+        if (r.channel) onChannel(r.channel);
+        send();
+      } catch (e) { problem(e.message); }
+    };
   }
   function problem(m) { const h = $('#hint'); h.textContent = m; h.classList.add('is-problem'); }
   function toB64(file) {

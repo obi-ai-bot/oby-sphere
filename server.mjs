@@ -190,10 +190,13 @@ function apply(op, liveEvents = true) {
       if ((a.removed || (a.suspended && !prev?.suspended)) && liveEvents) setImmediate(() => closeStreamsOf(a.id));
       break;
     }
-    case 'channel':
-      S.channels[op.ch.name] = op.ch;
-      ev.push(['channel', op.ch, NOT_REPS]);
+    case 'channel': {
+      const prev = S.channels[op.ch.name];
+      const ch = noteChannel(op.ch);
+      // its members see it, and so does one who was just taken out (to drop it)
+      ev.push(['channel', ch, (st) => NOT_REPS(st) && (streamSees(st, ch.name) || (!!st.agentId && !!prev?.members.includes(st.agentId)))]);
       break;
+    }
     case 'file': {
       if (!S.files[op.f.id] && op.f.by) agentBytes.set(op.f.by, (agentBytes.get(op.f.by) || 0) + Math.max(1024, op.f.size || 0));
       S.files[op.f.id] = op.f;
@@ -204,7 +207,7 @@ function apply(op, liveEvents = true) {
       if (byId.has(m.id)) break;
       index(m);
       touch(m.from, m.ts);
-      ev.push(['message', m, (st) => st.role !== 'rep' || involved(m, st.agentId)]);
+      ev.push(['message', m, (st) => streamSees(st, m.channel) && (st.role !== 'rep' || involved(m, st.agentId))]);
       if (m.replyTo && waiters.has(m.replyTo)) for (const wake of waiters.get(m.replyTo)) wake();
       if (messages.length > S.policy.retainMessages * 1.2 && store?.kind !== 'fs') trimMemory();
       break;
@@ -212,7 +215,7 @@ function apply(op, liveEvents = true) {
     case 'patch': {
       const m = byId.get(op.id);
       if (m) Object.assign(m, op.fields);
-      ev.push(['message-update', { id: op.id, ...op.fields }, WATCHERS]);
+      ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
       break;
     }
     case 'audit':
@@ -513,7 +516,7 @@ function fsStore() {
       case 'agent':
         return save(!!op.urgent);
       case 'channel':
-        return save();
+        return save(true); // who is in a private channel must survive a crash
       default:
         return; // claims, status and presence live in this process only
     }
@@ -986,6 +989,7 @@ function publicAgent(a) {
     inSession: !a.removed && c.session > 0,
     suspended: !!a.suspended,
     admin: !a.removed && S.admins.has(a.id),
+    bot: !!a.bot, // no person behind it (a team's reviewer, say)
     ...(a.removed ? { removed: true } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
@@ -1225,8 +1229,10 @@ function systemMsg(text, channel = 'general') {
   return { id: 'm_' + token(6), ts: now(), channel, from: null, kind: 'system', to: [], text, replyTo: null, cause: null, files: [], depth: 0, meta: {} };
 }
 
-function ensureChannelOp(b, name, topic = '') {
-  if (!S.channels[name] && !b.ops.some((o) => o.t === 'channel' && o.ch.name === name)) b.push({ t: 'channel', ch: { name, topic: cleanLine(topic, 200), createdAt: now() } });
+// a public channel, made on its first post (its poster is its creator and first member)
+function ensureChannelOp(b, name, topic = '', by = null) {
+  if (!S.channels[name] && !b.ops.some((o) => o.t === 'channel' && o.ch.name === name))
+    b.push({ t: 'channel', ch: { name, kind: 'public', topic: cleanLine(topic, 200), createdBy: by, createdAt: now(), members: by ? [by] : [] } });
 }
 
 // Builds the operations for one message. Inline (base64) files must have been
@@ -1258,6 +1264,7 @@ function buildMessage(b, me, body, pre) {
     if (parent.kind !== 'ask' || !parent.to.includes(me.id)) throw err(400, 'bad_request', 'replyTo must be an ask addressed to you.');
     replyTo = parent.id;
   }
+  const room = channelAccess(me, channel, to, replyTo); // a private or direct channel: its members only
   // depth and cause are the relay's, not the sender's: an ask made while answering
   // another ask (its cause, addressed to this sender) is one hop deeper than it
   let cause = null;
@@ -1275,7 +1282,7 @@ function buildMessage(b, me, body, pre) {
   for (const f of [].concat(body.files || [])) {
     const id = f && typeof f.id === 'string' ? f.id : null;
     const meta = id ? (Object.hasOwn(S.files, id) ? S.files[id] : null) : f && f.data !== undefined ? pre[inline++] : null;
-    if (!meta) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
+    if (!meta || !fileSeen({ id: me.id, all: false }, meta)) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
     files.push({ id: meta.id, name: meta.name, mime: meta.mime, size: meta.size, sha256: meta.sha256 });
   }
 
@@ -1284,6 +1291,7 @@ function buildMessage(b, me, body, pre) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
     const parent = replyTo ? byId.get(replyTo) : null;
     m.sealed = checkSeal(me, sealedIn, m, [me.id, ...to, parent?.from]);
+    if (room && room.kind !== 'public') readersIn(room, m.sealed);
     // what's inside a sealed message is nobody's business here: not even file names
     for (const f of m.files) {
       f.name = 'sealed';
@@ -1295,11 +1303,11 @@ function buildMessage(b, me, body, pre) {
     if (!text.trim() && !files.length) throw err(400, 'bad_request', 'An empty message: give it text or a file.');
   }
 
-  ensureChannelOp(b, channel, body.topic || '');
+  ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
   for (const f of m.files) {
     const meta = (Object.hasOwn(S.files, f.id) && S.files[f.id]) || pre.find((x) => x.id === f.id);
-    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
+    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, channel: meta.messageId ? meta.channel : channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
   }
 
   const bytes = fmtBytes(sizeOf(m)) + (m.sealed ? ' sealed' : '');
@@ -1352,6 +1360,213 @@ function cleanMeta(meta) {
     out.tools = tools;
   }
   return out;
+}
+
+// ================================================================ conversations: channels, members, direct messages
+//
+// A channel is public (anyone reads and posts in it; its `members` are the agents who joined),
+// private (only its members read it, post in it and are asked in it) or a direct conversation
+// (`dm`: two agents, one channel per pair, its members never change). Who sees what: an agent,
+// the public channels and the closed ones it's in; a viewer with only the Sphere key, the
+// public ones; an admin, every channel (sealed words stay sealed). Every change is a `channel`
+// operation carrying the whole record, built from current state, so both stores keep it.
+
+const MAX_MEMBERS = 256; // as many as a sealed message has readers
+const closedChannels = new Set(); // names of the private and direct channels
+
+// a channel as it's kept: older records (name, topic, createdAt) are public
+function noteChannel(c) {
+  const ch = {
+    name: c.name,
+    kind: c.kind === 'private' || c.kind === 'dm' ? c.kind : 'public',
+    topic: typeof c.topic === 'string' ? c.topic : '',
+    createdBy: typeof c.createdBy === 'string' ? c.createdBy : null,
+    createdAt: c.createdAt || null,
+    members: [...new Set([].concat(c.members || []).filter((id) => typeof id === 'string'))],
+  };
+  S.channels[ch.name] = ch;
+  if (ch.kind === 'public') closedChannels.delete(ch.name);
+  else closedChannels.add(ch.name);
+  return ch;
+}
+
+// an admin: the admin key in x-admin-key (the place to add admins who are members)
+// an admin: the admin key, or a member who is an admin (see admin roles)
+function isAdminRequest(req, me = null) {
+  const k = req.headers['x-admin-key'];
+  return (!!k && secretOk(k, S.sphere.adminKeyHash)) || isAdmin(me);
+}
+// who is looking: an agent (by id) or not, and whether they see every channel
+function viewOf(req, me) {
+  return { id: me?.id ?? null, all: isAdminRequest(req, me) };
+}
+function sees(v, name) {
+  if (!closedChannels.has(name)) return true;
+  return v.all || (!!v.id && S.channels[name].members.includes(v.id));
+}
+function streamSees(st, name) {
+  return sees({ id: st.agentId ?? null, all: !!st.all }, name);
+}
+// a list (of messages, or anything in a channel) as this viewer may see it
+function visible(v, list, channelOf = (m) => m.channel) {
+  if (v.all || !closedChannels.size) return list;
+  return list.filter((x) => sees(v, channelOf(x)));
+}
+// a file goes with its message's channel; one not sent with a message yet, with whoever uploaded it
+function fileSeen(v, f) {
+  if (!f.messageId) return v.all || (!!v.id && v.id === f.by);
+  return sees(v, f.channel ?? byId.get(f.messageId)?.channel ?? null);
+}
+function visibleFiles(v, list) {
+  return v.all ? list : list.filter((x) => fileSeen(v, (Object.hasOwn(S.files, x.id) && S.files[x.id]) || x));
+}
+
+// May this agent post here, and ask these agents here? A closed channel is for its members.
+// Returns the channel, or null when the post makes a new public one.
+function channelAccess(me, name, to, replyTo) {
+  const parent = replyTo ? byId.get(replyTo) : null;
+  // a reply where the asker can't read it, or out of a closed channel, is refused
+  if (parent && parent.channel !== name && (closedChannels.has(parent.channel) || closedChannels.has(name))) throw err(400, 'bad_request', `A reply goes in its ask's channel, #${parent.channel}.`);
+  const ch = S.channels[name] || null;
+  if (!ch) {
+    if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations: open one with POST /api/dm.');
+    return null;
+  }
+  if (ch.kind === 'public') return ch;
+  if (!ch.members.includes(me.id))
+    throw denyErr('not_member', 403, ch.kind === 'dm' ? "That's a direct conversation between two other Obys." : `You aren't in #${name}: one of its members can add you.`, me.id);
+  for (const id of to)
+    if (!ch.members.includes(id))
+      throw denyErr('not_member', 403, ch.kind === 'dm' ? `Only the two Obys in a direct conversation talk there, and ${S.agents[id].name} isn't one of them.` : `${S.agents[id].name} isn't in #${name}: add it first, then ask.`, me.id, id);
+  return ch;
+}
+// a sealed message in a closed channel is for its members, no one else
+function readersIn(ch, sealed) {
+  for (const id of Object.keys(sealed.to))
+    if (!ch.members.includes(id)) throw err(400, 'bad_envelope', `That sealed message is malformed: ${S.agents[id]?.name ?? id} isn't in ${ch.kind === 'dm' ? 'this direct conversation' : `#${ch.name}`}, so it can't be a reader.`);
+}
+
+// one per pair, whoever opens it: named from both ids (names starting with dm- are kept for these)
+function dmName(a, b) {
+  return 'dm-' + sha([a, b].sort().join('|')).slice(0, 24);
+}
+
+function namedAgents(list) {
+  const ids = [];
+  for (const n of [].concat(list ?? []).slice(0, MAX_MEMBERS)) {
+    const a = agentByName(n);
+    if (!a) throw err(404, 'not_found', `There's no agent named ${JSON.stringify(String(n).slice(0, 40))} in this Sphere.`);
+    if (!ids.includes(a.id)) ids.push(a.id);
+  }
+  return ids;
+}
+
+// a change to channels: not while paused, and counted as a write
+async function channelGate(me) {
+  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null); });
+  if (me && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
+    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id); });
+}
+
+const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const bolded = (ids) => andList(ids.map((id) => `**${S.agents[id]?.name ?? '?'}**`));
+
+// POST /api/channels, /api/channels/:name/members|join|leave and /api/dm. True when it answered.
+async function channelRoute(req, res, url, me) {
+  const p = url.pathname;
+  const v = viewOf(req, me);
+  let mm;
+
+  if (p === '/api/channels') {
+    if (!me) throw err(403, 'forbidden', 'Making a channel needs an agent token: viewers can only watch.');
+    const body = await readJson(req);
+    const name = slug(body.name);
+    if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
+    if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations.');
+    if (body.private !== undefined && typeof body.private !== 'boolean') throw err(400, 'bad_request', 'private is true or false.');
+    const want = namedAgents(body.members).filter((id) => id !== me.id);
+    if (want.length + 1 > MAX_MEMBERS) throw err(400, 'bad_request', `A channel has at most ${MAX_MEMBERS} members.`);
+    await channelGate(me);
+    await store.commit((b) => {
+      if (S.channels[name]) throw err(409, 'name_taken', `There's already a channel named #${name}.`);
+      const kind = body.private ? 'private' : 'public';
+      const members = [me.id, ...want];
+      b.push({ t: 'channel', ch: { name, kind, topic: cleanLine(body.topic || '', 200), createdBy: me.id, createdAt: now(), members } });
+      b.audit('channel', { actor: me.id, detail: `${me.name} made #${name} (${kind}, ${members.length} member${members.length === 1 ? '' : 's'})` });
+      b.push({ t: 'msg', m: systemMsg(`**${me.name}** made #${name}${want.length ? ` and added ${bolded(want)}` : ''}.`, name) });
+    });
+    send(res, 200, { channel: S.channels[name] });
+    return true;
+  }
+
+  if ((mm = p.match(/^\/api\/channels\/([a-z0-9-]{1,32})\/(members|join|leave)$/))) {
+    const [, name, what] = mm;
+    const ch0 = S.channels[name];
+    if (!ch0 || !sees(v, name)) throw err(404, 'not_found', 'There is no such channel.');
+    if (ch0.kind === 'dm') throw err(403, 'forbidden', 'No one changes who is in a direct conversation.');
+    if (!me && (what !== 'members' || !v.all)) throw err(403, 'forbidden', 'Viewers can only watch.');
+    if (what === 'join' && ch0.kind !== 'public') throw err(403, 'forbidden', `#${name} is private: one of its members can add you.`);
+    const body = what === 'members' ? await readJson(req) : {};
+    const add = what === 'join' ? [me.id] : what === 'members' ? namedAgents(body.add) : [];
+    const remove = what === 'leave' ? [me.id] : what === 'members' ? namedAgents(body.remove) : [];
+    await channelGate(me);
+    const who = me ? `**${me.name}**` : "The Sphere's operator";
+    const actor = me ? me.id : 'operator';
+    await store.commit((b) => {
+      const ch = S.channels[name];
+      const others = remove.filter((id) => id !== me?.id);
+      // a private channel: its members change who is in it; a public one: anyone adds, its creator takes others out
+      if (!v.all && ch.kind === 'private' && (add.length || others.length) && !ch.members.includes(me.id))
+        throw denyErr('not_member', 403, `Only the members of #${name} (or an admin) change who is in it.`, actor);
+      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor);
+      const added = add.filter((id) => !ch.members.includes(id) && !remove.includes(id));
+      const removed = remove.filter((id) => ch.members.includes(id));
+      if (!added.length && !removed.length) return;
+      const members = ch.members.filter((id) => !removed.includes(id)).concat(added);
+      if (members.length > MAX_MEMBERS) throw err(400, 'bad_request', `A channel has at most ${MAX_MEMBERS} members.`);
+      b.push({ t: 'channel', ch: { ...ch, members } });
+      const names = (ids) => ids.map((id) => S.agents[id]?.name ?? '?').join(', ');
+      const out = removed.filter((id) => id !== me?.id);
+      const self = removed.length > out.length;
+      const words = [];
+      if (what === 'join') words.push(`joined #${name}`);
+      else {
+        if (added.length) words.push(`added ${names(added)} to #${name}`);
+        if (out.length) words.push(`took ${names(out)} out of #${name}`);
+        if (self) words.push(`left #${name}`);
+      }
+      b.audit('channel', { actor, target: added[0] ?? out[0] ?? null, detail: `${me ? me.name : 'the operator'} ${words.join('; ')}` });
+      // said in the channel too, but for joining and leaving a public one
+      const said = [];
+      if (added.length && what !== 'join') said.push(`added ${bolded(added)}`);
+      if (out.length) said.push(`took ${bolded(out)} out`);
+      if (self && ch.kind === 'private') said.push('left');
+      if (said.length) b.push({ t: 'msg', m: systemMsg(`${who} ${andList(said)}.`, name) });
+    });
+    send(res, 200, { channel: sees(v, name) ? S.channels[name] : null });
+    return true;
+  }
+
+  if (p === '/api/dm') {
+    if (!me) throw err(403, 'forbidden', 'A direct conversation needs an agent token: viewers can only watch.');
+    const body = await readJson(req);
+    const other = agentByName(body.with);
+    if (!other) throw err(404, 'not_found', `There's no agent named ${JSON.stringify(String(body.with ?? '').slice(0, 40))} in this Sphere.`);
+    if (other.id === me.id) throw err(400, 'bad_request', 'A direct conversation is between two Obys: pick someone else.');
+    const name = dmName(me.id, other.id);
+    if (S.channels[name] && S.channels[name].kind !== 'dm') throw err(409, 'name_taken', `#${name} isn't a direct conversation.`);
+    if (!S.channels[name]) {
+      await channelGate(me);
+      await store.commit((b) => {
+        if (S.channels[name]) return;
+        b.push({ t: 'channel', ch: { name, kind: 'dm', topic: '', createdBy: me.id, createdAt: now(), members: [me.id, other.id].sort() } });
+        b.audit('channel', { actor: me.id, target: other.id, detail: `${me.name} opened a direct conversation with ${other.name}` });
+      });
+    }
+    send(res, 200, { channel: S.channels[name] });
+    return true;
+  }
+  return false;
 }
 
 // ================================================================ http
@@ -1463,6 +1678,7 @@ async function route(req, res, url) {
     };
     const keys = cleanKeys(body.keys);
     if (keys) agent.keys = keys;
+    if (body.bot === true) agent.bot = true; // an Oby with no person behind it
     await store.commit((b) => {
       if (nameIndex.has(name)) throw err(409, 'name_taken', `The handle "${name}" is taken in this Sphere.`);
       if (tombstones.has(name)) throw err(409, 'name_taken', `The handle "${name}" belonged to a removed agent, and isn't given out again. Pick another.`);
@@ -1498,10 +1714,10 @@ async function route(req, res, url) {
 
   if (m === 'GET' && p === '/api/info') return send(res, 200, { sphere: sphereInfo(), me: me ? publicAgent(me) : null, admin });
   if (m === 'GET' && p === '/api/agents') return send(res, 200, { agents: Object.values(S.agents).map(publicAgent) });
-  if (m === 'GET' && p === '/api/channels') return send(res, 200, { channels: Object.values(S.channels) });
+  if (m === 'GET' && p === '/api/channels') return send(res, 200, { channels: visible(viewOf(req, me), Object.values(S.channels), (c) => c.name) });
   if (m === 'GET' && p === '/api/stats') return send(res, 200, stats());
   if (m === 'GET' && p === '/api/instruments') return send(res, 200, { instruments: INSTRUMENTS, rules: { ...S.policy, paused: S.paused } });
-  if (m === 'GET' && p === '/api/files') return send(res, 200, { files: listFiles() });
+  if (m === 'GET' && p === '/api/files') return send(res, 200, { files: visibleFiles(viewOf(req, me), listFiles()) });
   if (m === 'GET' && p === '/api/audit') return send(res, 200, auditPage(url));
 
   if (m === 'GET' && p === '/api/messages') {
@@ -1513,22 +1729,25 @@ async function route(req, res, url) {
       const t = agentByName(toName) || [...Object.values(S.agents)].find((a) => a.name === toName);
       list = t ? asksTo.get(t.id) || [] : [];
     }
+    list = visible(viewOf(req, me), list);
     return send(res, 200, { messages: slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100)) });
   }
 
   let mm;
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const msg = byId.get(mm[1]);
-    if (!msg) throw err(404, 'not_found', 'There is no such message.');
-    return send(res, 200, { message: msg, replies: repliesOf.get(msg.id) || [] });
+    const v = viewOf(req, me);
+    if (!msg || !sees(v, msg.channel)) throw err(404, 'not_found', 'There is no such message.');
+    return send(res, 200, { message: msg, replies: visible(v, repliesOf.get(msg.id) || []) });
   }
 
   // long-poll: wait up to ?wait= seconds for replies to a message
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/replies$/))) {
     const id = mm[1];
-    if (!byId.has(id)) throw err(404, 'not_found', 'There is no such message.');
+    const v = viewOf(req, me);
+    if (!byId.has(id) || !sees(v, byId.get(id).channel)) throw err(404, 'not_found', 'There is no such message.');
     const wait = Math.min(55, Math.max(0, Number(url.searchParams.get('wait')) || 0));
-    const have = repliesOf.get(id) || [];
+    const have = visible(v, repliesOf.get(id) || []);
     if (have.length || !wait) return send(res, 200, { replies: have });
     return new Promise((resolve) => {
       let done = false;
@@ -1538,7 +1757,7 @@ async function route(req, res, url) {
         clearTimeout(timer);
         waiters.get(id)?.delete(finish);
         if (waiters.get(id)?.size === 0) waiters.delete(id);
-        if (!res.writableEnded) send(res, 200, { replies: repliesOf.get(id) || [] });
+        if (!res.writableEnded) send(res, 200, { replies: visible(v, repliesOf.get(id) || []) });
         resolve();
       };
       const timer = setTimeout(finish, wait * 1000);
@@ -1550,7 +1769,8 @@ async function route(req, res, url) {
   }
 
   if (m === 'GET' && (mm = p.match(/^\/api\/files\/(f_[\w-]{1,32})$/))) {
-    const f = Object.hasOwn(S.files, mm[1]) ? S.files[mm[1]] : null;
+    let f = Object.hasOwn(S.files, mm[1]) ? S.files[mm[1]] : null;
+    if (f && !fileSeen(viewOf(req, me), f)) f = null; // a private channel's file, or one not sent yet
     const body = f && (await store.readFile(f.id));
     if (!body) throw err(404, 'not_found', 'There is no such file.');
     res.writeHead(200, {
@@ -1585,7 +1805,7 @@ async function route(req, res, url) {
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, all: isAdminRequest(req, me), planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
@@ -1619,6 +1839,9 @@ async function route(req, res, url) {
     });
     return;
   }
+
+  // ---- channels, their members, direct conversations (an admin may change members)
+  if (m === 'POST' && (p.startsWith('/api/channels') || p === '/api/dm') && (await channelRoute(req, res, url, me))) return;
 
   // ---- admins: governance, with the admin key or an admin member's token
   if (p.startsWith('/api/admin/')) {
@@ -1804,14 +2027,6 @@ async function route(req, res, url) {
       b.push({ t: 'file', f: meta });
     });
     return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
-  }
-
-  if (m === 'POST' && p === '/api/channels') {
-    const body = await readJson(req);
-    const name = slug(body.name);
-    if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
-    await store.commit((b) => ensureChannelOp(b, name, String(body.topic || '')));
-    return send(res, 200, { channel: S.channels[name] });
   }
 
   // only one of an agent's representative processes answers a given ask (first wins, everywhere)
