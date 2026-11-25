@@ -76,7 +76,7 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
       case 'RPUSH': {
         const l = list(a[0]);
         l.push(...a.slice(1));
-        kv.set(a[0], { type: 'list', v: l, exp: 0 });
+        kv.set(a[0], { type: 'list', v: l, exp: live(a[0])?.exp ?? 0 }); // as in Redis, a push keeps the key's expiry
         return l.length;
       }
       case 'LRANGE': {

@@ -123,6 +123,16 @@ const snapshotOf = (prefix) => {
 
 // ---------------------------------------------------------------- #126: compaction
 
+test('the fake keeps a list\'s expiry across pushes, as Redis does (a snapshot list is written in batches)', async () => {
+  const send = async (cmd) => (await (await fetch(fake.url, { method: 'POST', headers: { authorization: `Bearer ${fake.token}` }, body: JSON.stringify(cmd) })).json()).result;
+  await send(['RPUSH', 'ttl:list', 'a']);
+  await send(['EXPIRE', 'ttl:list', '3600']);
+  await send(['RPUSH', 'ttl:list', 'b']);
+  assert.ok(fake.kv.get('ttl:list').exp > 0, 'a push keeps the expiry');
+  assert.equal(await send(['PERSIST', 'ttl:list']), 1);
+  await send(['DEL', 'ttl:list']);
+});
+
 const C = 'c:'; // the compaction Sphere's prefix
 let A, B, behind; // two writers, and an instance that sleeps through compactions
 let alice, bob;
@@ -359,6 +369,14 @@ test('a compacted Redis Sphere exports one position: snapshot and tail, counts i
   assert.deepEqual(ms, ma);
   assert.deepEqual((await numbers(s.base)).counts, want.counts, 'the counts of messages folded away travel too');
   await s.stop();
+  // the file store compacted its log at that start: its tally line keeps the counts across a restart
+  const log = fs.readFileSync(path.join(dir('fs4'), 'messages.jsonl'), 'utf8').trim().split('\n');
+  assert.ok(JSON.parse(log.at(-1)).tally, 'the compacted log ends with a tally');
+  assert.equal(log.filter((l) => JSON.parse(l).id).length, RETAIN);
+  const again = await relay({ ...fsEnv(dir('fs4')), SPHERE_ADMIN_KEY: ADMIN });
+  assert.deepEqual((await numbers(again.base)).counts, want.counts, 'the same counts after a restart');
+  await chainOk(again.base);
+  await again.stop();
   for (const x of [A, B, behind]) await x.stop();
 });
 
