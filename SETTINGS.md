@@ -241,6 +241,8 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 | `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
 | `GET /local/version` | `{ current, latest, checkedAt }`: this Oby's version, the newest release on GitHub as last checked (or `null`), and when (ISO time, or `null`). It never waits for GitHub: it answers with what it knows and, when that's more than a day old, checks after. The check is kept in `~/.local/share/obysphere/update-check.json` (`OBYSPHERE_APP_HOME`) when the app is installed. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off |
+| `GET /local/invite` | `{ invite, current }`, for **Invite member**: the invite link this profile keeps in `profile.json` (from `join`, a paste, or a key rotated through this console), or `null` for an older profile. `current`: whether the Sphere still takes its key (`false` once it was rotated elsewhere), or `null` when it couldn't be asked |
+| `PUT /local/invite` `{ invite }` | The invite link (or just its key), checked with the Sphere (the key goes to it in `x-sphere-key`, as a viewer's would), then kept: `{ invite, current: true }`. 400 `{ error, field: "invite" }` when it has no key or the Sphere doesn't take it; 502 when the Sphere can't be asked |
 
 **Runtime**
 

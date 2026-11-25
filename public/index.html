@@ -74,6 +74,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .rail-sep { width: 20px; height: 1px; background: var(--line); }
 .rail-button::after { content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; z-index: 40; padding: 4px 8px; border: 1px solid var(--surface-edge); border-radius: 6px; background: var(--surface); color: var(--text); font-size: var(--text-sm); white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-4px, -50%); transition: opacity 160ms var(--warm), transform 160ms var(--warm); }
 .rail-button:hover::after { opacity: 1; transform: translate(0, -50%); transition-delay: 600ms; }
+/* a touch screen keeps "hover" after a tap: the view switch's names would stay over the panel (console-polish) */
+@media (hover: none) { .rail-button::after { content: none; } }
 .sphere-tile { position: relative; width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: #000; color: var(--ink); font-size: 13px; font-weight: 600; }
 .sphere-tile::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
 
@@ -137,10 +139,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 /* too little room for both: the page name alone */
 @container trail (max-width: 180px) { .trail-part, .trail-chev { display: none; } }
 .bar-end { flex: none; display: flex; align-items: center; gap: 10px; }
-.modes { flex: none; height: 30px; padding: 2px; display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); }
-.modes button { height: 24px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); color: var(--muted); font-size: var(--text-md); transition: color var(--fade), background-color var(--fade); }
-.modes button:hover { color: var(--text); }
-.modes button.is-on { background: var(--active); color: var(--ink); }
 .pill-button { height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); background: var(--ink); color: var(--bg); font-size: var(--text-md); font-weight: 500; transition: opacity var(--fade); }
 .pill-button:hover { opacity: 0.9; }
 .conv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -441,7 +439,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .folder-row .p .folder-tag .set-tag { margin-left: 0; }
 
 /* Settings v2: set-* for the page, route-* for what answers what (the Instruments page owns .rule) */
-.set-root { max-width: 880px; }
+/* the page is as wide as the others (.page); its long fields and lines keep a readable width (console-polish) */
+.set-root { max-width: none; }
+.set-root :is(.set-row-sub, .set-lead, .route-summary, .note, .set-area, .route-field.is-wide > .set-field, .route-try-row) { max-width: 720px; }
+.set-root .route-head > .set-field { max-width: 480px; }
+.set-root .route-head > .set-field + .icon-button { margin-left: auto; }
+.set-root #set-folder-new { max-width: 560px; }
 .set-root :is(.set-select, .set-field, .set-area, .set-button, .switch, .icon-button, .chips-pick button):focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
 .set-root .set-row { flex-wrap: wrap; row-gap: 0; }
 /* a stacked row is one column: wrapping would size its children at their narrowest (the add-folder row grew to two lines' height) */
@@ -586,6 +589,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .code-row .set-button { position: absolute; top: 6px; right: 6px; height: 26px; padding: 0 10px; font-size: var(--text-sm); }
 .modal-primary { height: 32px; padding: 0 14px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: var(--text-base); font-weight: 500; }
 .modal-note { margin-top: 12px; color: var(--muted); font-size: var(--text-sm); line-height: 17px; }
+/* Invite member: one text for their AI agent, the skill, the commands by hand (console-polish) */
+.inv-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; }
+.inv-text:focus-visible, .inv-hand > summary:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.inv-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.inv-actions .modal-primary { min-width: 184px; }
+.inv-paste { display: flex; gap: 8px; }
+.inv-paste .set-field { flex: 1; min-width: 0; }
+.inv-hand { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--surface-edge); }
+.inv-hand > summary { width: fit-content; display: flex; align-items: center; gap: 8px; border-radius: 4px; color: var(--item); font-size: var(--text-md); font-weight: 500; list-style: none; cursor: default; }
+.inv-hand > summary::-webkit-details-marker { display: none; }
+.inv-hand > summary::before { content: ''; width: 6px; height: 6px; margin: 0 1px 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--fade); }
+.inv-hand[open] > summary::before { margin-bottom: 4px; transform: rotate(45deg); }
+@media (max-width: 420px) { .inv-paste { flex-direction: column; } }
 .gate { height: 100vh; display: grid; place-items: center; padding: 24px; }
 .gate form { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .gate h2 { margin-top: 8px; color: var(--ink); font-size: 17px; font-weight: 600; }
@@ -625,7 +641,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   .sidebar.is-open { transform: none; }
   .panel-toggle { display: grid; }
   .titlebar { padding-left: 8px; }
-  .trail .trail-part, .trail .trail-chev, .bar-end .avatar-stack, .modes .lbl { display: none; }
+  .trail .trail-part, .trail .trail-chev, .bar-end .avatar-stack { display: none; }
   :root { --gutter: 16px; --column: 100%; }
   .page { padding: 8px 16px 40px; }
   .trace-axis, .span { grid-template-columns: 120px minmax(0, 1fr) 56px; gap: 8px; padding-left: 12px; padding-right: 12px; }
@@ -653,8 +669,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       <nav class="rail">
         <button class="rail-button is-on" id="rail-sphere" data-tip="Obysphere"><span class="sphere-tile" id="tile">O</span></button>
         <div class="rail-sep"></div>
-        <button class="rail-button" id="rail-console" data-tip="Console"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
-        <button class="rail-button" id="rail-conv" data-tip="Conversation"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
+        <button class="rail-button" id="rail-console" data-tip="Console" aria-label="Console" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
+        <button class="rail-button" id="rail-conv" data-tip="Conversation" aria-label="Conversation" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
         <div class="rail-foot" id="rail-me"></div>
       </nav>
       <div class="sidebar-content">
@@ -687,10 +703,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <div class="bar-end">
           <span id="bar-avatars"></span>
           <button class="pill-button" id="new-exchange" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>New exchange</button>
-          <div class="modes" role="tablist" aria-label="View">
-            <button role="tab" data-mode="console"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg><span class="lbl">Console</span></button>
-            <button role="tab" data-mode="conversation"><svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg><span class="lbl">Conversation</span></button>
-          </div>
           <span id="bar-account"></span>
         </div>
       </header>
@@ -737,17 +749,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <h2 id="inv-title">Invite member</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
       </header>
-      <p class="modal-line">Their Oby runs on their own machine and answers with their files and their rules; only its answers come here. They need Node 22 or later and Claude Code (or Codex, or Cursor).</p>
-      <span class="modal-label">1. Install the obysphere command: no sudo, it stays in their home folder</span>
-      <div class="code-row" data-cmd="get"></div>
-      <span class="modal-label">2. Join, choosing the folder their Oby may read</span>
-      <div class="code-row" data-cmd="join"></div>
-      <span class="modal-label">3. Go online: it runs in the background and starts again at login</span>
-      <div class="code-row" data-cmd="start"></div>
-      <span class="modal-label">4. See the Sphere, signed in as them</span>
-      <div class="code-row" data-cmd="open"></div>
-      <p class="modal-note">For Claude Code, <code class="tok-code">obysphere mcp-config</code> prints the one line to add; then “Who's in the Sphere?”</p>
-      <p class="modal-note">Without installing: get one file with <code class="tok-code">curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs</code>, join with <code class="tok-code">node rep.mjs join …</code> (the same flags), and go online with <code class="tok-code">node rep.mjs serve</code>.</p>
+      <div id="inv-body"></div>
     </div>
   </div>
 
@@ -929,7 +931,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       m.querySelectorAll('[data-close]').forEach((b) => (b.onclick = () => closeModal(m)));
     });
     $('#toggle').onclick = () => $('#side').classList.toggle('is-open');
-    document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
     $('#rail-console').onclick = () => setMode('console');
     $('#rail-conv').onclick = () => setMode('conversation');
     $('#new-exchange').onclick = openNew;
@@ -949,6 +950,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     m.hidden = true;
     if (m.id === 'new-modal') { $('#composer-home').append($('#composer')); closeAdd(); }
     if (m.id === 'admin-modal') { $('#adm-key').value = ''; $('#adm-error').hidden = true; }
+    if (m.id === 'invite-modal') closeInvite();
   }
 
   function setMode(mode) {
@@ -982,7 +984,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     $('#side-conv').hidden = con;
     $('#rail-console').classList.toggle('is-on', con);
     $('#rail-conv').classList.toggle('is-on', !con);
-    document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('is-on', b.dataset.mode === S.mode));
+    $('#rail-console').setAttribute('aria-pressed', String(con));
+    $('#rail-conv').setAttribute('aria-pressed', String(!con));
     $('#new-exchange').hidden = !(con && S.me);
     renderBar();
     renderTrail();
@@ -4112,26 +4115,178 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     });
   }
 
-  // ---------------------------------------------------------------- Invite member
-  function openInvite() {
-    const origin = (S.sphere.publicUrl || (CONSOLE ? CONSOLE.sphere : location.origin)).replace(/\/+$/, '');
-    const key = CONSOLE ? '<the Sphere key>' : S.key;
-    const insecure = /^http:\/\//.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(origin) ? ' --insecure' : '';
-    const cmds = {
-      get: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh`,
-      join: `obysphere join "${origin}/#key=${key}"${insecure} --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <folder it may read>`,
-      start: `obysphere start`,
-      open: `obysphere open`,
-    };
-    document.querySelectorAll('[data-cmd]').forEach((el) => {
-      const text = cmds[el.dataset.cmd];
-      el.innerHTML = `<pre class="ss-code">${esc(text)}</pre><button class="set-button" type="button">Copy</button>`;
-      $('button', el).onclick = async (ev) => {
-        try { await navigator.clipboard.writeText(text); ev.target.textContent = 'Copied'; } catch { ev.target.textContent = 'Select it'; }
-        setTimeout(() => (ev.target.textContent = 'Copy'), 1400);
-      };
-    });
+  // ---------------------------------------------------------------- Invite member (console-polish)
+  // The main thing is one text your teammate pastes into their AI agent (Claude Code, Codex or
+  // Cursor), which installs Obysphere, joins and opens their console. The plugin's skill is the
+  // other way, and the commands by hand (inviteCommands) are folded away below. The invite link
+  // holds the join key: a deployed page opened with the key has it (S.key); your console asks your
+  // rep for the one it keeps (GET /local/invite), and when there's none, or the key was rotated
+  // elsewhere, you paste it once and the rep keeps it. The key never goes in a URL query or the relay.
+  const REPO = 'obi-ai-bot/oby-sphere';
+  const INSTALL_CMD = `curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sh`;
+  const INV = { key: null, seq: 0 }; // key: pasted in a console whose rep.mjs can't keep it (this page only)
+
+  // the key in an invite link (#key=…, or ?key=…), or a bare key: as rep.mjs reads it
+  function inviteKeyOf(s) {
+    const t = String(s ?? '').trim();
+    if (!t || t.length > 2000) return null;
+    const m = /[#?&]key=([^&#\s]*)/.exec(t);
+    let k = t;
+    if (m) { try { k = decodeURIComponent(m[1]); } catch { return null; } }
+    else if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return null; // a link with no key in it
+    return /^[\x21-\x7e]{22,256}$/.test(k) ? k : null;
+  }
+  // where a teammate reaches the Sphere: its public address when it has one, else the one we use.
+  // The address comes from the relay and goes into a shell command, and a URL's host may hold
+  // " $ ( ) { } , ` ; so only a plain host name, IPv4 or [IPv6] is taken; else a placeholder
+  function inviteOrigin() {
+    for (const u of [S.sphere.publicUrl, CONSOLE ? CONSOLE.sphere : location.origin]) {
+      try {
+        const x = new URL(u);
+        if ((x.protocol === 'https:' || x.protocol === 'http:') && /^(?:[a-z0-9_-]+\.)*[a-z0-9_-]+$|^\[[0-9a-f:.]+\]$/i.test(x.hostname)) return x.origin;
+      } catch {}
+    }
+    return 'https://<the Sphere’s address>';
+  }
+  // the key as the link carries it: ! ' ( ) * encoded too (a ! inside "…" is history expansion in bash and zsh)
+  const keyParam = (key) => encodeURIComponent(key).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const inviteLinkOf = (key) => `${inviteOrigin()}/#key=${keyParam(key)}`;
+  function insecureFlag(link) {
+    try {
+      const u = new URL(link);
+      const h = u.hostname.replace(/^\[|\]$/g, '');
+      const loopback = h === 'localhost' || h.endsWith('.localhost') || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+      return u.protocol === 'http:' && !loopback ? ' --insecure' : '';
+    } catch { return ''; }
+  }
+  // the one text for their AI agent. Nothing in it comes from the relay but the link (checked
+  // above): the Sphere's name, which the relay picks, would be words an agent with a shell reads
+  function inviteText(link) {
+    return [
+      `Help me join our team's Obysphere, where our AI agents work together. Each of us has an Oby there: an agent that runs on our own machine, with our own files and rules.`,
+      '',
+      `If you're Claude Code, ask me to type /plugin marketplace add ${REPO}, then /plugin install obysphere@obysphere, and use its join-a-sphere skill with the invite link below.`,
+      '',
+      'Otherwise, install the Obysphere CLI (it needs Node 22 or later):',
+      INSTALL_CMD,
+      '',
+      'Ask me for my name, a short handle (like "alice") and the one folder my Oby may read. Then join with this invite link:',
+      `obysphere join "${link}"${insecureFlag(link)} --name <handle> --owner "<my name>" --cwd <that folder>`,
+      '',
+      'Then run obysphere start, so my Oby answers from this machine, and obysphere open to open my console.',
+      '',
+      'Keep this link inside our team: anyone who has it can join.',
+    ].join('\n');
+  }
+
+  // the same, by hand: [what it does, the command]. Kept apart from the text above, so the CLI's commands change here only.
+  function inviteCommands(link, flag = '') {
+    const who = '--name <handle> --owner "<Their Name>"';
+    return [
+      ['1. Install the Obysphere CLI (it needs Node 22 or later)', INSTALL_CMD],
+      ['2. Join, choosing the folder their Oby may read', `obysphere join "${link}"${flag} ${who} --about "<what their Oby knows>" --cwd <folder it may read>`],
+      ['3. Go online in the background, so others can ask them', 'obysphere start'],
+      ['4. Open their console, signed in as them', 'obysphere open'],
+      ['Or with nothing installed: one file, then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
+    ];
+  }
+
+  async function openInvite() {
+    const seq = ++INV.seq;
     $('#invite-modal').hidden = false;
+    if (!CONSOLE) return paintInvite({ key: S.key });
+    if (INV.key) return paintInvite({ key: INV.key, unkept: true });
+    $('#inv-body').innerHTML = '<p class="modal-line">Getting your invite link…</p>';
+    let r = null, failed = null;
+    try { r = await local('GET', '/local/invite'); } catch (e) { failed = e; }
+    if (seq !== INV.seq || $('#invite-modal').hidden) return; // closed, or opened again, meanwhile
+    if (failed) return paintInvite({ ask: failed.status === 404 ? 'old' : 'error', error: failed.message });
+    const key = inviteKeyOf(r.invite);
+    paintInvite(key && r.current !== false ? { key } : { ask: key ? 'rotated' : 'none' });
+  }
+  // closed: the link leaves the page's DOM, and a slow answer doesn't paint it back
+  function closeInvite() {
+    INV.seq++;
+    $('#inv-body').innerHTML = '';
+  }
+
+  const INVITE_ASK = {
+    none: 'Your console doesn’t have this Sphere’s invite link yet. Paste it once: the link you joined with, or a newer one from the Sphere’s admin. It stays on this machine, beside your Oby’s token.',
+    rotated: 'The invite link your console kept no longer opens this Sphere: its key was rotated. Paste the current one, and your console keeps it instead.',
+    old: 'This console’s rep.mjs is older than this page, so it can’t hand on the invite link. Paste the link here to fill in the text this time, or update rep.mjs so your console keeps it.',
+  };
+  function paintInvite({ key = null, ask = 'none', error = '', unkept = false }) {
+    const body = $('#inv-body');
+    const link = key ? inviteLinkOf(key) : null;
+    const copies = [];
+    const row = (text) => { copies.push(text); return `<div class="code-row"><pre class="ss-code">${esc(text)}</pre><button class="set-button" type="button" data-inv-copy="${copies.length - 1}" data-label="Copy">Copy</button></div>`; };
+    let html;
+    if (link) {
+      html = `<p class="modal-line">Send this to your teammate. They paste it into their AI agent (Claude Code, Codex or Cursor), which sets up their Oby: on their own machine, with their files and their rules.</p>
+        <pre class="ss-code inv-text" tabindex="0" aria-label="The text for their AI agent">${esc(inviteText(link))}</pre>
+        <div class="inv-actions"><button class="modal-primary" type="button" data-inv-main data-label="Copy for your AI agent">Copy for your AI agent</button>${unkept ? '<span class="saved-note">For now only: update rep.mjs so your console keeps the link.</span>' : ''}</div>
+        <span class="modal-label">Or with the skill, in Claude Code</span>
+        <p class="modal-line">They run <code class="tok-code">/plugin marketplace add ${esc(REPO)}</code>, then <code class="tok-code">/plugin install obysphere@obysphere</code>, and ask Claude Code to join with this link. Its join-a-sphere skill does the rest.</p>
+        ${row(link)}`;
+    } else {
+      const words = ask === 'error' ? `Your console couldn’t get its invite link (${error}). Paste it here instead.` : INVITE_ASK[ask] || INVITE_ASK.none;
+      html = `<p class="modal-line">${esc(words)}</p>
+        <form class="inv-paste" id="inv-paste" autocomplete="off"><input class="set-field" name="link" placeholder="https://…/#key=…" aria-label="This Sphere’s invite link" aria-describedby="inv-err" autocomplete="off" spellcheck="false"><button class="modal-primary">Keep it</button></form>
+        <p class="note is-problem" id="inv-err" role="alert" hidden></p>`;
+    }
+    html += `<details class="inv-hand"><summary>Do it by hand</summary>` +
+      inviteCommands(link || '<invite link>', insecureFlag(inviteOrigin())).map(([label, cmd]) => `<span class="modal-label">${esc(label)}</span>${row(cmd)}`).join('') +
+      `<p class="modal-note">With the plugin, Claude Code has the Sphere’s instruments; without it, <code class="tok-code">obysphere mcp-config</code> prints the line that adds them.</p></details>
+      <p class="modal-note">The link holds this Sphere’s key: anyone who has it can join and watch. Keep it inside your team.</p>`;
+    body.innerHTML = html;
+    const main = body.querySelector('[data-inv-main]');
+    if (main) main.onclick = () => copyText(inviteText(link), main, body.querySelector('.inv-text'));
+    body.querySelectorAll('[data-inv-copy]').forEach((b) => (b.onclick = () => copyText(copies[Number(b.dataset.invCopy)], b, b.previousElementSibling)));
+    const form = body.querySelector('#inv-paste');
+    if (form) { form.onsubmit = keepInvite; form.link.focus(); }
+    else main?.focus();
+  }
+
+  async function keepInvite(e) {
+    e.preventDefault();
+    const form = e.target;
+    const v = form.link.value.trim();
+    const key = inviteKeyOf(v);
+    const fail = (words) => {
+      const err = $('#inv-err');
+      err.textContent = words; err.hidden = false;
+      form.link.classList.add('set-invalid'); form.link.setAttribute('aria-invalid', 'true'); form.link.focus();
+    };
+    if (!key) return fail('That isn’t an invite link: it looks like https://…/#key=…');
+    const btn = form.querySelector('button');
+    btn.disabled = true;
+    const seq = INV.seq;
+    try {
+      const r = await local('PUT', '/local/invite', { invite: v });
+      if (seq === INV.seq) paintInvite({ key: inviteKeyOf(r.invite) || key });
+    } catch (x) {
+      if (seq !== INV.seq) return;
+      if (x.status === 404) { INV.key = key; return paintInvite({ key, unkept: true }); } // an older rep.mjs: this page only
+      btn.disabled = false;
+      fail(sentence(String(x.message).replace(/^invite:\s*/, '')));
+    }
+  }
+
+  // the clipboard when there is one; else the text is selected (and copied the old way where that works)
+  async function copyText(text, btn, from) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+    if (!ok && from) {
+      const range = document.createRange();
+      range.selectNodeContents(from);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try { ok = document.execCommand('copy'); } catch {}
+    }
+    btn.textContent = ok ? 'Copied' : 'Selected: copy it';
+    clearTimeout(btn.copyTimer);
+    btn.copyTimer = setTimeout(() => (btn.textContent = btn.dataset.label || 'Copy'), 1600);
   }
 
   // ---------------------------------------------------------------- a newer Oby (GET /local/version; rep.mjs checks once a day)

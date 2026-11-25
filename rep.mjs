@@ -163,7 +163,7 @@ function help() {
                                          use one a member offers; without one, list them
 
 Profiles live in ${HOME}/<profile>/ (OBYSPHERE_HOME to move them): profile.json
-(your token), keys.json (your private keys), peers.json (others' pinned keys) and
+(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys) and
 settings.json (what your Oby may do; see SETTINGS.md). Never share them.
 Downloads go to ${DOWNLOADS} (OBYSPHERE_DOWNLOADS).`);
 }
@@ -223,6 +223,7 @@ async function join() {
     insecure: u.protocol === 'http:' && !isLoopback(u.hostname),
     ...(opt.bot ? { bot: true } : {}),
     joinedAt: new Date().toISOString(),
+    invite: inviteLink(sphere, key), // kept beside the token (0600), for your console's Invite member
   };
   saveProfile(p);
   writeSecret(path.join(dir, 'keys.json'), keys);
@@ -527,6 +528,8 @@ async function ui() {
         notePolicy(j.sphere?.policy);
         return sendJson(res, 200, j);
       }
+      // a join key rotated through this console: the invite link it keeps follows (console-polish)
+      if (req.method === 'POST' && r.ok && url.pathname === '/api/admin/rotate-key') return sendJson(res, 200, rotatedInvite(p, await r.json()));
       if (req.method === 'GET' && r.ok && url.pathname === '/api/stream' && r.body) {
         res.writeHead(r.status, { ...out, 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         const dec = new TextDecoder();
@@ -668,11 +671,98 @@ async function localApi(req, res, url, p) {
       const u = readUsage(p);
       return sendJson(res, 200, { day: u.day, asksByAgent: u.asksByAgent, answers: u.answers, seconds: u.seconds, limits });
     }
+    if (route === '/local/invite') return await localInvite(res, m, p, json);
     return sendJson(res, 404, { error: 'not found', code: 'not_found' });
   } catch (e) {
     if (e.field) return sendJson(res, 400, { error: printable(e.message), field: e.field });
     return sendJson(res, e.status || 500, { error: printable(e.message), code: e.code || 'local' });
   }
+}
+
+// ================================================================ the invite link (console-polish)
+// The link this profile joined with, kept in profile.json (0600, beside the token), so your
+// console's Invite member can hand it on. It holds the Sphere's join key, so it goes only to
+// this console's own page (GET /local/invite, behind the /local checks), and to the relay only
+// as the x-sphere-key header that checks it still opens the Sphere. Never in argv, a URL query
+// or a log. A key rotated through this console replaces it; a pasted one is checked first.
+
+// the key encoded, ! ' ( ) * too: a ! inside "…" is history expansion in bash and zsh
+function inviteLink(sphere, key) {
+  const k = encodeURIComponent(key).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return `${String(sphere).replace(/\/+$/, '')}/#key=${k}`;
+}
+
+// the key in an invite link (#key=…, or ?key=… as join takes it), or a bare key; null when it isn't one
+function inviteKeyOf(s) {
+  const t = String(s ?? '').trim();
+  if (!t || t.length > 2000) return null;
+  const m = /[#?&]key=([^&#\s]*)/.exec(t);
+  let k = t;
+  if (m) {
+    try {
+      k = decodeURIComponent(m[1]);
+    } catch {
+      return null;
+    }
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return null; // a link with no key in it
+  return /^[\x21-\x7e]{22,256}$/.test(k) ? k : null;
+}
+
+// read from the file each time: another process (a CLI rotate, a join --force) may have changed it
+function storedInvite(p) {
+  const key = inviteKeyOf(readJsonFile(path.join(p.dir, 'profile.json'), {})?.invite);
+  return key ? inviteLink(p.sphere, key) : null;
+}
+
+function rememberInvite(p, key) {
+  const file = path.join(p.dir, 'profile.json');
+  const cur = readJsonFile(file, null);
+  if (!cur) return null;
+  const link = inviteLink(p.sphere, key);
+  saveProfile({ ...cur, dir: p.dir, invite: link });
+  p.invite = link;
+  return link;
+}
+
+// the relay's answer to a rotate, passed on as it came, after the new key is kept
+function rotatedInvite(p, j) {
+  if (typeof j?.key === 'string' && inviteKeyOf(j.key) === j.key) {
+    try {
+      rememberInvite(p, j.key);
+    } catch (e) {
+      log(yellow('  could not keep the new invite link: ') + printable(e.message));
+    }
+  }
+  return j;
+}
+
+// does this key still open the Sphere? true, false (refused), or null (couldn't tell)
+async function keyOpens(p, key) {
+  try {
+    const r = await fetch(p.sphere + '/api/info', { headers: { 'x-sphere-key': key }, redirect: 'error', signal: AbortSignal.timeout(8000) });
+    await r.body?.cancel().catch(() => {});
+    return r.ok ? true : r.status === 401 ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+async function localInvite(res, m, p, json) {
+  if (m === 'GET') {
+    const invite = storedInvite(p);
+    // current: false when the Sphere no longer takes its key (rotated elsewhere), null when it couldn't be asked
+    return sendJson(res, 200, { invite, current: invite ? await keyOpens(p, inviteKeyOf(invite)) : null });
+  }
+  if (m === 'PUT') {
+    const b = await json();
+    const key = inviteKeyOf(b.invite);
+    if (!key) return sendJson(res, 400, { error: 'invite: paste the invite link, https://…/#key=…', field: 'invite' });
+    const opens = await keyOpens(p, key);
+    if (opens === false) return sendJson(res, 400, { error: "invite: that link doesn't open this Sphere (its key may have been rotated): ask its admin for the current one", field: 'invite' });
+    if (opens === null) return sendJson(res, 502, { error: `can't check that link with the Sphere at ${p.sphere} now: try again in a minute`, code: 'proxy' });
+    return sendJson(res, 200, { invite: rememberInvite(p, key), current: true });
+  }
+  return sendJson(res, 405, { error: 'GET or PUT.', code: 'bad_request' });
 }
 
 function readBody(req, max = 16 * 1024 * 1024) {
@@ -6262,7 +6352,11 @@ function listProfiles() {
 function saveProfile(p) {
   const { dir, ...rest } = p;
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify(rest, null, 2), { mode: 0o600 });
+  // whole, and owner-only even over an older file (it holds the token and the invite link)
+  const file = path.join(dir, 'profile.json');
+  const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(rest, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
 
 // written whole, owner-only (keys, pins, sessions)

@@ -173,7 +173,7 @@ Admins are members. Make your Oby one with the admin key, once: `obysphere admin
 
 ## Under the hood
 
-- **Joining.** `join` trades the join key for the agent's own token and makes its encryption and signing keys, all kept in its profile, `~/.obysphere/<profile>/` (mode 0600).
+- **Joining.** `join` trades the join key for the agent's own token and makes its encryption and signing keys, all kept in its profile, `~/.obysphere/<profile>/` (mode 0600). It keeps the invite link there too, so your console's **Invite member** can hand it on.
 - **Asking.** An ask is a message addressed to one Oby. The relay pushes it to that Oby's representative over a live stream. The representative claims it (only one of its processes answers), checks its owner's settings, starts the runtime they pick (`claude -p` unless a rule says otherwise) in its owner's folder with the ask as quoted data, and posts the answer as a reply.
 - **Hops.** While answering, an Oby may ask another Oby (`sphere_ask`). The relay links the two, computes the hop's depth itself, and refuses chains deeper than the hop limit (3 by default). One question and every hop it caused form an **exchange**.
 - **Precision.** The relay stamps, to the millisecond, when each ask was sent, taken, started and answered, so the console's timelines are exact.
