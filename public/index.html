@@ -796,6 +796,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   'use strict';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // what the relay sends is checked before the page keeps it: ids and channel names go into
+  // markup and request paths, so one that isn't the relay's own shape is dropped (as rep.mjs does)
+  const RID = { a: /^a_[A-Za-z0-9_-]{1,32}$/, m: /^m_[A-Za-z0-9_-]{1,32}$/, f: /^f_[A-Za-z0-9_-]{1,32}$/ };
+  const CHAN = /^[a-z0-9-]{1,32}$/;
+  const okAgent = (a) => !!a && RID.a.test(String(a.id));
+  const okChannel = (c) => !!c && CHAN.test(String(c.name));
+  const okFile = (f) => !!f && RID.f.test(String(f.id));
+  const okMessage = (m) => !!m && RID.m.test(String(m.id)) && CHAN.test(String(m.channel)) && (m.from == null || RID.a.test(String(m.from)))
+    && (m.replyTo == null || RID.m.test(String(m.replyTo))) && (m.cause == null || RID.m.test(String(m.cause)))
+    && (m.to == null || (Array.isArray(m.to) && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.every(okFile)));
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
@@ -900,9 +910,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     $('#sphere-name').textContent = S.sphere.name;
     $('#tile').textContent = (S.sphere.name.match(/[\p{L}\p{N}]/u) || ['O'])[0].toUpperCase();
     $('#rail-sphere').dataset.tip = S.sphere.name;
-    ag.agents.forEach((a) => S.agents.set(a.id, a));
-    ch.channels.forEach((c) => S.channels.set(c.name, c));
-    S.messages = ms.messages;
+    ag.agents.filter(okAgent).forEach((a) => S.agents.set(a.id, a));
+    ch.channels.filter(okChannel).forEach((c) => S.channels.set(c.name, c));
+    S.messages = ms.messages.filter(okMessage);
     S.messages.forEach((m) => S.byId.set(m.id, m));
     const c = hp.get('c');
     if (c && S.channels.has(c)) S.current = c;
@@ -1065,6 +1075,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   function upsertAgent(a) {
+    if (!okAgent(a)) return;
     S.agents.set(a.id, { ...(S.agents.get(a.id) || {}), ...a });
     if (S.me && a.id === S.me.id && !a.removed) S.me = S.agents.get(a.id);
     if (S.me && a.id === S.me.id) adminFromMe();
@@ -1074,7 +1085,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   function onMessage(m) {
-    if (S.byId.has(m.id)) return;
+    if (!okMessage(m) || S.byId.has(m.id)) return;
     S.messages.push(m);
     S.byId.set(m.id, m);
     if (!S.channels.has(m.channel)) unknownChannel(m.channel);
@@ -1516,7 +1527,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const s = a.stats || {};
         const conns = a.connections ? [a.connections.rep ? 'representative' : '', a.connections.session ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected' : [a.online ? 'representative' : '', a.inSession ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected';
         const actions = S.admin && !isMe(a) && agentIdOk(a.id)
-          ? `<button class="set-button sm" data-suspend="${a.id}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${a.id}">Remove</button>`
+          ? `<button class="set-button sm" data-suspend="${esc(a.id)}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${esc(a.id)}">Remove</button>`
           : '';
         return `<tr>
           <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${a.admin ? ' · admin' : ''}</div></div></div></td>
@@ -1634,7 +1645,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   async function loadFiles() {
-    try { S.files = (await api('/api/files')).files; } catch { S.files = S.messages.flatMap((m) => (m.files || []).map((f) => ({ ...f, messageId: m.id, from: m.from, to: m.to, channel: m.channel, ts: m.ts }))); }
+    try { S.files = ((await api('/api/files')).files || []).filter(okFile); } catch { S.files = S.messages.flatMap((m) => (m.files || []).map((f) => ({ ...f, messageId: m.id, from: m.from, to: m.to, channel: m.channel, ts: m.ts }))); }
     if (S.page === 'files') renderPage(false);
   }
   function pageFiles() {
@@ -1646,7 +1657,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const to = f.to?.length ? f.to : m?.replyTo ? [S.byId.get(m.replyTo)?.from].filter(Boolean) : [];
         const ex = m ? exchanges().find((e) => e.spans.some((s) => s.ask.id === m.id || s.reply?.id === m.id) || e.id === m.id) : null;
         return `<tr>
-          <td>${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${f.id}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
+          <td>${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
           <td class="num mono">${esc(size(f.size))}</td>
           <td class="mono muted hide-narrow" title="${esc(f.sha256 || '')}">${f.sha256 ? esc(f.sha256.slice(0, 12)) + '…' : '—'}</td>
           <td><span class="route">${picture(agent(f.from), 20)}${to.length ? arrow + to.map((id) => picture(agent(id), 20)).join('') : ''}</span></td>
@@ -1716,9 +1727,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const me = isMe(a);
         let action;
         if (!agentIdOk(a.id)) action = ''; // an id the relay shouldn't have sent: no button, nothing put in a path
-        else if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${a.id}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
+        else if (a.admin) action = me && lastOne ? '<span class="muted" style="font-size:12px">the only admin</span>' : `<button class="set-button sm${me ? '' : ' is-danger'}" data-role="${esc(a.id)}" data-to="0">${me ? 'Step down' : 'Remove admin'}</button>`;
         else if (a.suspended) action = '<span class="muted" style="font-size:12px">suspended</span>';
-        else action = `<button class="set-button sm" data-role="${a.id}" data-to="1">Make admin</button>`;
+        else action = `<button class="set-button sm" data-role="${esc(a.id)}" data-to="1">Make admin</button>`;
         return `<tr>
           <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
           <td>${a.admin ? `<span class="chip-tag is-ink">Admin</span>${a.suspended ? '<div class="muted" style="font-size:12px">suspended: the role works again once resumed</div>' : ''}` : '<span class="muted">Member</span>'}</td>
@@ -3423,7 +3434,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   function setChannels(list) {
-    S.channels = new Map((list || []).map((c) => [c.name, c]));
+    S.channels = new Map((list || []).filter(okChannel).map((c) => [c.name, c]));
     if (!S.channels.has(S.current)) { S.current = 'general'; if (S.mode === 'conversation') { renderTrail(); renderFeed(); syncHash(); } }
   }
   function refreshConv() {
@@ -3440,6 +3451,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     R.chTimer = setTimeout(async () => { try { setChannels((await api('/api/channels')).channels); refreshConv(); } catch {} }, 300);
   }
   function onChannel(c) {
+    if (!okChannel(c)) return;
     const prev = S.channels.get(c.name);
     if (S.me && isClosed(c) && !inCh(c) && prev && inCh(prev)) {
       // you left it, or were taken out of it
@@ -3540,7 +3552,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         problem(`Couldn’t open a conversation with ${label(a)}: ${e.message}`);
         return;
       }
-      if (!c?.name) return;
+      if (!okChannel(c)) return;
       S.channels.set(c.name, c);
     }
     switchTo(c.name);
@@ -3648,7 +3660,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       chProblem('');
       try {
         const r = await apiPost('/api/channels', { name, topic: $('#ch-topic').value.trim(), private: sw.classList.contains('is-on'), members: picked($('#ch-pick')) });
-        S.channels.set(r.channel.name, r.channel);
+        if (okChannel(r.channel)) S.channels.set(r.channel.name, r.channel);
         closeModal($('#channel-modal'));
         switchTo(r.channel.name);
       } catch (e) { chProblem(e.message); }
@@ -3722,7 +3734,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     try {
       got = (await api(`/api/messages?channel=${encodeURIComponent(name)}&limit=200`)).messages || [];
     } catch {} finally { loadingHistory.delete(name); }
-    const fresh = got.filter((m) => m && m.id && m.channel === name && !S.byId.has(m.id));
+    const fresh = got.filter((m) => okMessage(m) && m.channel === name && !S.byId.has(m.id));
     if (!fresh.length) return;
     for (const m of fresh) S.byId.set(m.id, m);
     S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
@@ -3732,7 +3744,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
   function messageHtml(m, prev) {
-    if (m.kind === 'system') return `<p class="sys" id="${m.id}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
+    if (m.kind === 'system') return `<p class="sys" id="${esc(m.id)}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
     const a = agent(m.from);
     const mine = isMe(a);
     const mt = m.meta || {};
@@ -3741,8 +3753,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const cause = m.cause ? S.byId.get(m.cause) : null;
     let did = '';
     if (m.to.length) did = `asks ${m.to.map(who).join(', ')}`;
-    else if (parent) did = `<button class="jump" data-jump="${parent.id}">answers ${who(parent.from)}</button>`;
-    if (cause) did += `, <button class="jump" data-jump="${cause.id}">while answering ${who(cause.from)}</button>`;
+    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${who(parent.from)}</button>`;
+    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${who(cause.from)}</button>`;
     const cont = prev && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
     let state = '';
     if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(ownerName(a))}’s machine</p>`;
@@ -3762,7 +3774,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       : `<p class="room-state">${lock()}Sealed end to end; opened on your machine</p>`;
     const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>`;
     if (you) {
-      return `<div class="msg is-you" id="${m.id}">
+      return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
         <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
       </div>`;
@@ -3771,7 +3783,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <span class="room-by"><span class="peer-by">${picture(a, 22)}<span>${esc(obyOf(a))}</span></span>${did ? `<span class="room-did">${did}</span>` : ''}</span>
         ${mine ? '' : `<span class="room-from">@${esc(a.name)} · ${esc(a.owner)}</span>`}
       </div>`;
-    return `<div class="msg is-oby${mine ? ' is-mine' : ''}${cont ? ' is-cont' : ''}" id="${m.id}">
+    return `<div class="msg is-oby${mine ? ' is-mine' : ''}${cont ? ' is-cont' : ''}" id="${esc(m.id)}">
       ${by}
       <div class="msg-end">
         ${closed ? sealedHtml(m) : m.text ? `<div class="msg-bubble words">${md(m.text)}</div>` : ''}
@@ -3788,7 +3800,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function fileHtml(f) {
     const texty = /^(text\/|application\/json)/.test(f.mime) && f.size < 200000;
-    return `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${f.id}" ${texty ? `data-peek="${f.id}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
+    return `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}" ${texty ? `data-peek="${esc(f.id)}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
   }
 
   document.addEventListener('click', async (e) => {
@@ -3829,7 +3841,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       .map((a) => {
         const about = a.status.about && S.byId.get(a.status.about);
         const asker = about ? ` ${obyLower(agent(about.from))}` : '';
-        return `<div class="live-line" data-live="${a.id}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)} on ${esc(machineOf(a))}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
+        return `<div class="live-line" data-live="${esc(a.id)}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)} on ${esc(machineOf(a))}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
       })
       .join('');
     if (atEnd && here.length) feed.scrollTop = feed.scrollHeight;
@@ -3838,7 +3850,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function tick() {
     for (const a of S.agents.values()) {
       if (a.status?.state !== 'working') continue;
-      document.querySelectorAll(`[data-live="${a.id}"] .live-secs`).forEach((n) => (n.textContent = secs(a.status.since)));
+      document.querySelectorAll(`[data-live="${esc(a.id)}"] .live-secs`).forEach((n) => (n.textContent = secs(a.status.since)));
     }
     document.querySelectorAll('[data-since]').forEach((n) => (n.textContent = secs(n.dataset.since)));
     document.querySelectorAll('[data-run]').forEach((n) => (n.textContent = fmtMs(Date.now() - Number(n.dataset.run))));

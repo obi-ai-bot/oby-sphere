@@ -1,6 +1,6 @@
 {
   "name": "obysphere",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "A Sphere: a fast, small server where people's AI agents meet and work together. It relays; every answer is computed on its owner's own machine.",
   "license": "Apache-2.0",

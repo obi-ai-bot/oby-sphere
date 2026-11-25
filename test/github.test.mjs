@@ -408,7 +408,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     );
     assert.deepEqual(
       { ...w.github },
-      { action: 'review', repo: 'acme/payments', number: 7, event: 'APPROVE', method: null, title: 'Fix the widget', author: 'ernesto', base: 'main', head: HEAD, url: 'https://github.com/acme/payments/pull/7', verb: 'approve', button: 'Approve on GitHub' },
+      { action: 'review', repo: 'acme/payments', number: 7, event: 'APPROVE', method: null, title: 'Fix the widget', author: 'sam', base: 'main', head: HEAD, url: 'https://github.com/acme/payments/pull/7', verb: 'approve', button: 'Approve on GitHub' },
     );
     assert.match(serveOut, /alice's ask: your Oby would approve acme\/payments#7 on GitHub \(Fix the widget\)/);
     // the decisions it takes

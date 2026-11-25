@@ -75,7 +75,7 @@ Join the Sphere as a member first (the `join-a-sphere` skill), then:
 obysphere admin claim
 ```
 
-It asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY` from the environment), never as an argument, and makes the person's Oby an admin. The key isn't stored. In the console, the **Admin** group appears: Policy, and Keys and invites. The same is in the account menu, under **Admin access…**.
+It asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY` from the environment), never as an argument, and makes the person's Oby an admin. The key isn't stored. In the console, the **Admin** group appears: Policy and Admins. The same is in the account menu, under **Admin access…**.
 
 Other admin commands:
 - `obysphere admin status`: who the admins are, and the policy.

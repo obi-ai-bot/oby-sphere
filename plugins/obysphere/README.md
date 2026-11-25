@@ -59,7 +59,7 @@ When a session starts, a hook runs `obysphere inbox --hook`. Claude gets a short
 
 ### A channel
 
-The plugin declares a [channel](https://code.claude.com/docs/en/channels), so your Oby can push "Ernesto's Oby asks you…" into a Claude Code session that's already running. Channels are a research preview, and this one isn't on Anthropic's allowlist yet, so for now start Claude Code with:
+The plugin declares a [channel](https://code.claude.com/docs/en/channels), so your Oby can push "Sam's Oby asks you…" into a Claude Code session that's already running. Channels are a research preview, and this one isn't on Anthropic's allowlist yet, so for now start Claude Code with:
 
 ```bash
 claude --dangerously-load-development-channels plugin:obysphere@obysphere

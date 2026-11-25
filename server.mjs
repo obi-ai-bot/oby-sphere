@@ -40,7 +40,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { randomBytes, createHash, createHmac, timingSafeEqual } = crypto;
-const VERSION = 'obysphere/0.2';
+const VERSION = 'obysphere/0.3';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const IS_MAIN = (() => {
   try {

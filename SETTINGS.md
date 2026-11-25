@@ -55,7 +55,7 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
   },
   "github": {
     "enabled": true,
-    "repos": ["deskree-inc/*"],
+    "repos": ["acme/*"],
     "read": true,
     "comment": "ask",
     "requestChanges": "ask",
@@ -334,16 +334,16 @@ The item shows the pull request (`owner/name#number`, its title, author, base br
 - **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
 - **Don't**: nothing is posted.
 
-Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved deskree-inc/tetrix-front-end#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved acme/web#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
 
 In `GET /local/pending`, a GitHub item reads:
 
 ```json
-{ "id": "w_0123456789ab", "kind": "github", "askId": "m_ab12cd34", "from": { "name": "ernesto", "owner": "Ernesto" }, "channel": "general",
+{ "id": "w_0123456789ab", "kind": "github", "askId": "m_ab12cd34", "from": { "name": "sam", "owner": "Sam" }, "channel": "general",
   "ts": "2026-11-25T10:00:00.000Z", "text": "Every point from my review is covered.", "files": [], "reason": "github",
-  "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "deskree-inc/tetrix-front-end", "number": 386,
-              "title": "Fix the picker", "author": "ernesto", "base": "main", "head": "03bf5da…",
-              "url": "https://github.com/deskree-inc/tetrix-front-end/pull/386", "verb": "approve", "button": "Approve on GitHub" },
+  "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "acme/web", "number": 386,
+              "title": "Fix the picker", "author": "sam", "base": "main", "head": "4f2c9e1…",
+              "url": "https://github.com/acme/web/pull/386", "verb": "approve", "button": "Approve on GitHub" },
   "options": ["act", "comment", "decline"], "signed": "— written by Dmytro's Oby, approved by Dmytro" }
 ```
 
@@ -389,7 +389,7 @@ A file without `notify` gets exactly these. It stays version 2, and nothing is w
 
 `content`, for `phone` and `slack`:
 
-- `summary` (the default): who, and what kind ("@ernesto asks your Oby"), with "Open your console". Never the words.
+- `summary` (the default): who, and what kind ("@sam asks your Oby"), with "Open your console". Never the words.
 - `full`: also the words, up to 600 characters. In Slack they're escaped, so nobody's words can mention `@channel` or a person, or hide a link behind other words (a bare address still shows as a link).
 
 The two addresses are secrets: anyone who has one can post to you. They stay in settings.json (0600) and are never sent to the Sphere. Your console shows them masked (`hooks.slack.com/services/…abcd`), and a masked one sent back unchanged keeps the one stored. `rep.mjs settings --json` masks them too. Only `https://` addresses are taken (`http://` only for this machine), and none with a user name or password in it.

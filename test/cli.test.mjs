@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { startFakeGitHub, buildApp, release, sha256, makeFakeVercel } from './fake-cli.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).version; // this checkout's version
 const ROOT = fs.realpathSync(path.join(HERE, '..'));
 const CLI = path.join(ROOT, 'obysphere.mjs');
 const REP = path.join(ROOT, 'rep.mjs');
@@ -322,7 +323,7 @@ describe('update and install.sh, from a fake GitHub', () => {
     assert.match(none.stderr, /no release yet.*--channel main/);
 
     gh.release = release('9.9.0', apps['9.9.0']);
-    assert.match((await cli(['update', '--check'], env)).stdout, /9\.9\.0 is out \(you have 0\.2\.0\): obysphere update/);
+    assert.match((await cli(['update', '--check'], env)).stdout, new RegExp(`9\\.9\\.0 is out \\(you have ${PKG_VERSION.replaceAll(".", "\\.")}\\): obysphere update`));
     assert.ok(!fs.existsSync(path.join(app, '9.9.0')), '--check downloads nothing');
 
     const first = await cli(['update'], env);
@@ -494,7 +495,7 @@ describe('server deploy vercel, with a fake vercel', () => {
   });
 
   test('without Redis it stops before deploying; the keys are made once and reach vercel on stdin', async () => {
-    const r = await cli(['server', 'deploy', 'vercel', '--project', 'team-sphere', '--scope', 'deskree', '--name', 'Team Sphere'], env);
+    const r = await cli(['server', 'deploy', 'vercel', '--project', 'team-sphere', '--scope', 'acme-team', '--name', 'Team Sphere'], env);
     assert.equal(r.code, 1, r.out);
     assert.match(r.stderr, /No Redis store is connected to team-sphere yet/);
     assert.match(r.stderr, /Upstash/);
@@ -503,11 +504,11 @@ describe('server deploy vercel, with a fake vercel', () => {
     assert.ok(keys.SPHERE_KEY.length >= 22 && keys.SPHERE_ADMIN_KEY.length >= 22 && keys.SPHERE_KEY !== keys.SPHERE_ADMIN_KEY);
     const calls = vercel.calls();
     assert.deepEqual(calls.map((c) => c.argv), [
-      ['link', '--yes', '--project', 'team-sphere', '--scope', 'deskree'],
-      ['env', 'ls', 'production', '--scope', 'deskree'],
-      ['env', 'add', 'SPHERE_KEY', 'production', '--sensitive', '--scope', 'deskree'],
-      ['env', 'add', 'SPHERE_ADMIN_KEY', 'production', '--sensitive', '--scope', 'deskree'],
-      ['env', 'add', 'SPHERE_NAME', 'production', '--sensitive', '--scope', 'deskree'],
+      ['link', '--yes', '--project', 'team-sphere', '--scope', 'acme-team'],
+      ['env', 'ls', 'production', '--scope', 'acme-team'],
+      ['env', 'add', 'SPHERE_KEY', 'production', '--sensitive', '--scope', 'acme-team'],
+      ['env', 'add', 'SPHERE_ADMIN_KEY', 'production', '--sensitive', '--scope', 'acme-team'],
+      ['env', 'add', 'SPHERE_NAME', 'production', '--sensitive', '--scope', 'acme-team'],
     ]);
     assert.deepEqual(calls.slice(2).map((c) => c.stdin), [keys.SPHERE_KEY, keys.SPHERE_ADMIN_KEY, 'Team Sphere']);
     assert.ok(!calls.some((c) => secretsIn(c.argv.join(' '))), 'no key in any argument');
@@ -523,7 +524,7 @@ describe('server deploy vercel, with a fake vercel', () => {
     const before = vercel.calls().length;
     const keys = readJson(keysFile());
     vercel.set({ redis: true });
-    const r = await cli(['server', 'deploy', 'vercel', '--project', 'team-sphere', '--scope', 'deskree', '--name', 'Team Sphere'], env);
+    const r = await cli(['server', 'deploy', 'vercel', '--project', 'team-sphere', '--scope', 'acme-team', '--name', 'Team Sphere'], env);
     assert.equal(r.code, 0, r.out);
     const calls = vercel.calls().slice(before);
     assert.deepEqual(calls.map((c) => c.argv.slice(0, 2)), [['link', '--yes'], ['env', 'ls'], ['deploy', '--prod']], 'the variables are set once');
@@ -531,14 +532,14 @@ describe('server deploy vercel, with a fake vercel', () => {
     assert.deepEqual(readJson(keysFile()), keys, 'the same keys');
     const rec = readJson(path.join(app, 'servers', 'team-sphere.json'));
     assert.equal(rec.project, 'team-sphere');
-    assert.equal(rec.scope, 'deskree');
+    assert.equal(rec.scope, 'acme-team');
     assert.equal(rec.url, relayBase);
     assert.equal(rec.deployment, 'https://team-sphere-abc123.vercel.app');
     assert.equal(rec.version, '1.2.3');
     assert.ok(!secretsIn(JSON.stringify(rec)), 'no secrets in the record');
     assert.ok(r.stdout.includes(`${relayBase}/#key=<SPHERE_KEY from that file>`));
     assert.ok(r.stdout.includes(keysFile()));
-    assert.match(r.stdout, /It answers: relay 0\.2, fs store/);
+    assert.match(r.stdout, /It answers: relay 0\.3, fs store/);
     assert.ok(!secretsIn(r.out), 'no key printed');
   });
 
@@ -552,7 +553,7 @@ describe('server deploy vercel, with a fake vercel', () => {
     const st = await cli(['server', 'status'], env);
     assert.equal(st.code, 0, st.out);
     assert.match(st.stdout, /team-sphere/);
-    assert.match(st.stdout, /up · relay 0\.2 · fs store/);
+    assert.match(st.stdout, /up · relay 0\.3 · fs store/);
     const down = await cli(['server', 'status', 'http://127.0.0.1:9'], env);
     assert.equal(down.code, 1);
     assert.match(down.stdout, /doesn't answer/);
@@ -616,13 +617,13 @@ describe('status, open and the version check, against a local relay', () => {
 
   test('status: running or not, the console, the Sphere, versions and updates', async () => {
     let s = JSON.parse((await cli(['status', '--json'], env)).stdout);
-    assert.equal(s.client, '0.2.0');
+    assert.equal(s.client, PKG_VERSION);
     assert.equal(s.profiles.length, 1);
     assert.deepEqual(
       { profile: s.profiles[0].profile, running: s.profiles[0].running, reachable: s.profiles[0].relay.reachable, relay: s.profiles[0].relay.version, versions: s.profiles[0].versions },
-      { profile: 'alice', running: false, reachable: true, relay: '0.2', versions: 'same' },
+      { profile: 'alice', running: false, reachable: true, relay: '0.3', versions: 'same' },
     );
-    assert.match((await cli(['status'], env)).stdout, /not running: obysphere start[\s\S]*reachable · relay 0\.2[\s\S]*they match/);
+    assert.match((await cli(['status'], env)).stdout, /not running: obysphere start[\s\S]*reachable · relay 0\.3[\s\S]*they match/);
     assert.equal((await cli(['open'], env)).code, 1);
 
     // the console running (as its service would run it)
@@ -661,16 +662,16 @@ describe('status, open and the version check, against a local relay', () => {
     const doc = await cli(['doctor'], env);
     assert.match(doc.stdout, /Node \d+/);
     assert.match(doc.stdout, /alice[\s\S]*console running at/);
-    assert.match(doc.stdout, /9\.9\.9 is out \(you have 0\.2\.0\)/);
+    assert.match(doc.stdout, new RegExp(`9\\.9\\.9 is out \\(you have ${PKG_VERSION.replaceAll(".", "\\.")}\\)`));
   });
 
   test("the console's GET /local/version: what's known now, checked once a day in the background", async () => {
     const get = (p, headers = { 'x-obysphere-console': '1' }) => fetch(`http://127.0.0.1:${p}/local/version`, { headers }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
     assert.equal((await get(port, {})).status, 403);
     fs.rmSync(path.join(h, 'app', 'update-check.json'), { force: true });
-    assert.deepEqual(await get(port), { status: 200, current: '0.2.0', latest: null, checkedAt: null }); // OBYSPHERE_NO_UPDATE_CHECK
+    assert.deepEqual(await get(port), { status: 200, current: PKG_VERSION, latest: null, checkedAt: null }); // OBYSPHERE_NO_UPDATE_CHECK
     fs.writeFileSync(path.join(h, 'app', 'update-check.json'), JSON.stringify({ latest: '9.9.9', checkedAt: '2026-11-25T10:00:00.000Z' }));
-    assert.deepEqual(await get(port), { status: 200, current: '0.2.0', latest: '9.9.9', checkedAt: '2026-11-25T10:00:00.000Z' });
+    assert.deepEqual(await get(port), { status: 200, current: PKG_VERSION, latest: '9.9.9', checkedAt: '2026-11-25T10:00:00.000Z' });
 
     // with the check on: the first answer doesn't wait for GitHub; the next has it; then no more asking
     const gh = await startFakeGitHub();

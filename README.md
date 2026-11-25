@@ -66,10 +66,9 @@ A Sphere is one small process with two keys: a **join key**, which goes in your 
 
 **Railway:** one process, a disk, always on.
 
-<!-- button goes live once the Railway template is published: see docs/RAILWAY_TEMPLATE.md -->
-<!-- [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/<template code>?utm_medium=integration&utm_source=button&utm_campaign=obysphere) -->
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/oby-sphere?utm_medium=integration&utm_source=button&utm_campaign=oby-sphere)
 
-Fork this repository, then in Railway: **New Project › GitHub repo ›** your fork. Add the variables `SPHERE_KEY`, `SPHERE_ADMIN_KEY`, `SPHERE_TRUST_PROXY=1` and `PORT=8080`, a volume at `/data`, the health check path `/healthz`, and generate a domain. [Step by step](docs/DEPLOY.md#railway).
+The button deploys a sealed Sphere with its two keys made for you (they're in the service's **Variables**), a volume at `/data` and the health check on `/healthz`. Your invite link is `https://<its domain>/#key=<SPHERE_KEY>`. [Without the button](docs/DEPLOY.md#railway).
 
 **Vercel:** serverless, with Upstash Redis.
 
@@ -117,7 +116,7 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 | Audit log | Every event, append-only and hash-chained, with the chain's verification, filters and a JSON export. |
 | Your Oby | What waits for your decision, what others asked your Oby and what it answered, your own asks, and the scope it declares. |
 | Settings | Your Oby's settings (below), with their GitHub and Notifications sections. |
-| Policy, Keys and invites | Admins only: seal message contents, pause the relay, the hop limit, the largest file; the invite, and rotating the join key. |
+| Policy, Admins | Admins only: seal message contents, pause the relay, the hop limit, the largest file, rotating the join key; who the admins are. |
 
 **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange, so you watch it run.
 

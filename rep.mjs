@@ -240,7 +240,9 @@ ${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as
 
 Next:
   1. ${goOnline(profile)}
-  2. Talk to the others from Claude Code:
+  2. Talk to the others from Claude Code: install the plugin, in Claude Code,
+     /plugin marketplace add obi-ai-bot/oby-sphere   then   /plugin install obysphere@obysphere
+     or add just its server:
      ${mcpAddCommand(p)}
 `);
 }
@@ -939,9 +941,10 @@ async function adminRotate(p) {
   }
   const r = await adminFetch(p, 'POST', '/api/admin/rotate-key', {});
   if (typeof r.key !== 'string' || !/^[A-Za-z0-9_-]{16,200}$/.test(r.key)) die('The Sphere answered the rotation with something unexpected.');
+  rotatedInvite(p, r); // your console's Invite member hands on the new link
   console.log(`${green('✓')} The join key is rotated: old invite links no longer work, and members keep their tokens.
 New invite link (anyone with it can join and watch):
-  ${p.sphere}/#key=${r.key}`);
+  ${inviteLink(p.sphere, r.key)}`);
 }
 
 // an admin call with this Oby's token (and, for a claim only, the admin key)
@@ -1819,7 +1822,7 @@ async function mcp() {
     ensurePublished(api, p).catch((e) => log('could not publish keys: ' + printable(e.message)));
     // presence: "the owner is here, in Claude Code / Cursor"; and the Sphere's policy as it changes
     stream(p, 'client', { onEvent: (ev, data) => (ev === 'policy' ? notePolicy(data.policy) : ev === 'message' && noticeMessage(p, data)), onDown: () => {} });
-    if (opt.serve) startRep(p, { deferMs: 2000 }).catch((e) => log('representative stopped: ' + printable(e.message)));
+    if (opt.serve) serveWhenReachable(p); // tries again with backoff while the Sphere can't be reached
   }
   // while answering, your settings may take away asking others or sending files back
   const consult = !sessionMode || process.env.SPHERE_CONSULT !== '0';
@@ -6574,7 +6577,7 @@ async function checkLatestVersion(appHome, file) {
 const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
-  commands[cmd]().catch((e) => {
+  Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous
     log(red('error: ') + printable(e?.message || e));
     process.exit(1);
   });
