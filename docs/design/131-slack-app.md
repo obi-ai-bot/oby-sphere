@@ -109,7 +109,7 @@ While the representative is online and takes the ask, the relay stays quiet: the
 
 **How it works.** The admin's app asks for `incoming-webhook` instead of a bot, and the relay holds its client id and client secret. A member clicks **Add to Slack**, picks a channel, and Slack sends them back to `https://<your sphere>/api/slack/oauth?code=…&state=…`. The relay trades the code (`oauth.v2.access`) for `incoming_webhook.url`, seals that address for the member's representative, and forgets it. From then on it's 0.3.0's personal Slack way.
 
-**Security and privacy.** No bot token on the relay, and the words can go to Slack if you choose. But an authorization code comes back in a URL (short-lived and worthless without the client secret, still a credential in a URL), and a malicious operator could keep the webhook addresses it hands over. Slack documents webhooks for channels, not DMs, so each member likely needs a channel of their own.
+**Security and privacy.** No bot token on the relay, and the words can go to Slack if you choose. But an authorization code comes back in a URL (short-lived and worthless without the client secret, still a credential in a URL), and a malicious operator could keep the webhook addresses it hands over and post to those channels. Someone with the join key, or a malicious member, gains nothing new: the relay sends no one anything. A stolen device holds the webhook address, as with 0.3.0's own webhook, and can post to that channel. Slack documents webhooks for channels, not DMs, so each member likely needs a channel of their own.
 
 **Cost.** About 150 lines on the relay, a setup flow in the console, and a client secret to keep. Like B, it sends nothing while the machine is off.
 
