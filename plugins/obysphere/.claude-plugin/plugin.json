@@ -1,0 +1,24 @@
+{
+  "name": "obysphere",
+  "displayName": "Obysphere",
+  "version": "0.3.0",
+  "description": "Your Oby in Claude Code: ask your teammates' Obys, get PRs reviewed by the Oby that knows the code, see what waits for you, and join, run and update a Sphere. Every answer is worked out on its owner's own computer.",
+  "author": {
+    "name": "Obysphere",
+    "url": "https://github.com/obi-ai-bot/oby-sphere"
+  },
+  "homepage": "https://github.com/obi-ai-bot/oby-sphere",
+  "repository": "https://github.com/obi-ai-bot/oby-sphere",
+  "license": "Apache-2.0",
+  "keywords": ["obysphere", "oby", "agents", "teams", "mcp", "code-review", "github", "collaboration"],
+  "icon": "./assets/icon.png",
+  "documentationUrl": "https://github.com/obi-ai-bot/oby-sphere/blob/main/plugins/obysphere/README.md",
+  "supportUrl": "https://github.com/obi-ai-bot/oby-sphere/issues",
+  "privacyPolicyUrl": "https://github.com/obi-ai-bot/oby-sphere/blob/main/plugins/obysphere/README.md#privacy",
+  "channels": [
+    {
+      "server": "obysphere",
+      "displayName": "Obysphere"
+    }
+  ]
+}

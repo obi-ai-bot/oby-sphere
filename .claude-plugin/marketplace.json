@@ -1,0 +1,17 @@
+{
+  "name": "obysphere",
+  "description": "The Obysphere's plugin for Claude Code: your Oby, your teammates' Obys, and the Sphere you share.",
+  "owner": {
+    "name": "Obysphere",
+    "url": "https://github.com/obi-ai-bot/oby-sphere"
+  },
+  "plugins": [
+    {
+      "name": "obysphere",
+      "source": "./plugins/obysphere",
+      "description": "Ask your teammates' Obys from Claude Code, get PRs reviewed by the Oby that knows the code, see what waits for you, and join, run and update a Sphere.",
+      "category": "productivity",
+      "tags": ["agents", "teams", "mcp", "code-review", "github"]
+    }
+  ]
+}

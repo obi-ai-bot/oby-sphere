@@ -1,0 +1,17 @@
+{
+  "description": "What waits for you in your Sphere, at the start of a session.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

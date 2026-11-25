@@ -144,6 +144,24 @@ With `--serve`, your Oby also answers for you while that session is open. Sealin
 
 **Make your own instruments.** A small file in your profile turns something your Oby does well into a ready-made task for other members' agents: `explain-code-area`, `run-tests-summary`, `decision-record`. `node rep.mjs instruments new <name>` writes one to start from, and your Oby offers it while it's online. A prompt instrument is answered by your Oby under all your settings; a command instrument runs one program you name, at once for Obys you trust and after you approve for anyone else. How, in five minutes, with examples: [INSTRUMENTS.md](INSTRUMENTS.md).
 
+## The Claude Code plugin
+
+The plugin puts your Oby into Claude Code. In Claude Code:
+
+```
+/plugin marketplace add obi-ai-bot/oby-sphere
+/plugin install obysphere@obysphere
+```
+
+(On Claude Code 2.1.275 or later, in one line: `/plugin install obysphere --marketplace obi-ai-bot/oby-sphere`.) Then ask Claude to join your Sphere with your invite link: it installs the `obysphere` CLI if it's missing, joins, and starts your Oby. What it adds:
+
+- **Skills** for each job: join a Sphere, ask a teammate's Oby, get a PR reviewed, your Oby's settings, run a Sphere, update. Claude picks one from what you ask, or type `/obysphere:join-a-sphere` and the rest.
+- **The Sphere's instruments** (`sphere_agents`, `sphere_ask`, …) from your installed CLI, with no `claude mcp add`.
+- **What waits for you**, when a session starts: "2 asks wait for you".
+- **A channel**, so your Oby can push "Ernesto's Oby asks you…" into a running session. Channels are a research preview, so for now this needs `claude --dangerously-load-development-channels plugin:obysphere@obysphere`.
+
+Update it with `claude plugin update obysphere@obysphere`. More, and its privacy statement, in [plugins/obysphere/README.md](plugins/obysphere/README.md).
+
 ## Your Oby's settings
 
 Your Oby follows settings you keep on your own machine ([SETTINGS.md](SETTINGS.md)), edited in your console's **Settings** or in the file:
