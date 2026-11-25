@@ -48,22 +48,72 @@ const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force
 const DEFAULT_ALLOW = [];
 const FOLDER_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 const RISKY = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch'];
+
+// ===== deny-list: the files an answer never reads (#125)
+// One table makes all three lists, so they can't drift apart: SECRET_DENY (Claude Code's
+// Read deny rules), SECRET_GLOBS (the shell sandbox's denyRead) and SECRETISH (this file's
+// own checks: what sphere_attach may send, which folders settings take). Each entry is a
+// name anywhere under a folder: `*` is any run of characters inside one name, a `/` joins
+// names, and a trailing `/` is a folder and everything in it. A name that matches a folder
+// hides what's inside it too. SECRETISH ignores case; the rules and globs are spelled as
+// these files usually are. "secret" and "credential" in a name count only for config
+// formats, so secret_test.go and secrets.md stay readable. test/deny-list.test.mjs checks
+// that the three lists agree.
+const SECRET_CONFIG = ['json', 'yaml', 'yml', 'toml', 'ini', 'properties', 'xml', 'conf', 'cfg'];
+const SECRET_FILES = [
+  // first, the list as it was before #125, in its order
+  '.env*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'id_ecdsa*', '.npmrc', '.pypirc', 'credentials*',
+  '.ssh/', '.aws/', '.gnupg/', '.git-credentials', '.netrc', '.docker/config.json', '.kube/',
+  // environment files: prod.env, Wrangler's .dev.vars, act's .secrets (.envrc is .env*)
+  '*.env', '.dev.vars*', '.secrets',
+  // keys, keystores and certificates with their private keys, password stores, VPN profiles
+  'id_dsa*', '*.p12', '*.pfx', '*.p8', '*.jks', '*.keystore', '*.ppk', '*.kdbx', '*.ovpn', '.password-store/',
+  // registries, build tools and CLIs that keep tokens (credentials* already has .cargo, .gem, Terraform's credentials.tfrc.json)
+  '.yarnrc.yml', '_netrc', '.gitcookies', '.dockercfg', '.config/gh/', '.composer/auth.json', '.config/composer/auth.json', '.m2/settings*.xml', '.gradle/gradle.properties',
+  // clouds and clusters
+  '.azure/', '.config/gcloud/', '.boto', '.s3cfg', '*accessKeys.csv', 'rootkey.csv',
+  '*service-account*.json', '*service_account*.json', '*serviceAccount*.json',
+  'kubeconfig', '*.kubeconfig', 'kubeconfig*.yaml', 'kubeconfig*.yml',
+  // infrastructure state and variables
+  '*.tfstate', '*.tfstate.*', '*.tfvars', '*.tfvars.json', '.terraformrc', 'terraform.rc', '.vault-token',
+  // databases and web servers
+  '.pgpass', 'pgpass.conf', '.my.cnf', '.mylogin.cnf', '.htpasswd',
+  // names that say so, in config formats: k8s/db-secret.yaml, secrets.json, client_secret_….json, application_default_credentials.json
+  ...SECRET_CONFIG.flatMap((ext) => [`*secret*.${ext}`, `*credential*.${ext}`]),
+];
+// the same files in your home folder, named for the sandbox as well (besides the ones it always had)
+const SECRET_HOME = [
+  '.azure', '.config/gcloud', '.password-store', '.boto', '.s3cfg', '.dockercfg', '.gitcookies', '.yarnrc.yml', '.vault-token', '.terraformrc',
+  '.terraform.d/credentials.tfrc.json', '.cargo/credentials', '.cargo/credentials.toml', '.gem/credentials', '.composer/auth.json', '.config/composer/auth.json',
+  '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf',
+];
+const SECRET_LISTS = (() => {
+  const glob = (n) => (n.endsWith('/') ? `**/${n}**` : `**/${n}`);
+  const part = (s) => s.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^\\\\/]*');
+  const re = (n) => n.replace(/\/$/, '').split('/').map(part).join('[\\\\/]');
+  return {
+    deny: SECRET_FILES.map((n) => `Read(${glob(n)})`),
+    globs: SECRET_FILES.map(glob),
+    regex: new RegExp(`(^|[\\\\/])(${SECRET_FILES.map(re).join('|')})($|[\\\\/])`, 'i'),
+  };
+})();
+// ===== end of deny-list
+
 const SECRET_DENY = [
-  'Read(**/.env*)', 'Read(**/*.pem)', 'Read(**/*.key)', 'Read(**/id_rsa*)', 'Read(**/id_ed25519*)', 'Read(**/id_ecdsa*)', 'Read(**/.npmrc)', 'Read(**/.pypirc)',
-  'Read(**/credentials*)', 'Read(**/.ssh/**)', 'Read(**/.aws/**)', 'Read(**/.gnupg/**)', 'Read(**/.git-credentials)', 'Read(**/.netrc)', 'Read(**/.docker/config.json)',
-  'Read(**/.kube/**)', 'Read(**/.obysphere*/*/keys.json)', 'Read(**/.obysphere*/*/profile.json)', 'Read(**/.obysphere*/*/peers.json)',
+  ...SECRET_LISTS.deny, // the secret files: the deny-list table above
+  'Read(**/.obysphere*/*/keys.json)', 'Read(**/.obysphere*/*/profile.json)', 'Read(**/.obysphere*/*/peers.json)',
   `Read(/${HOME}/*/keys.json)`, `Read(/${HOME}/*/profile.json)`, `Read(/${HOME}/*/peers.json)`,
   // your notification addresses (a Slack webhook, an ntfy topic) and what they were told
   'Read(**/.obysphere*/*/settings.json)', 'Read(**/.obysphere*/*/notify/**)', `Read(/${HOME}/*/settings.json)`, `Read(/${HOME}/*/notify/**)`,
 ];
-const SECRETISH = /(^|[\\/])(\.env[^\\/]*|\.ssh|\.aws|\.gnupg|\.kube|\.netrc|\.git-credentials|id_rsa[^\\/]*|id_ed25519[^\\/]*|id_ecdsa[^\\/]*|[^\\/]*\.pem|[^\\/]*\.key|credentials[^\\/]*|\.npmrc|\.pypirc)($|[\\/])|[\\/]\.docker[\\/]config\.json$/i;
+const SECRETISH = SECRET_LISTS.regex; // the deny-list table above
 // a writable folder still never gets these written: secrets, and files that run code or steer tools later
 const EDIT_DENY = [
   'Edit(**/.env*)', 'Edit(**/*.pem)', 'Edit(**/*.key)', 'Edit(**/.ssh/**)', 'Edit(**/.git/**)', 'Edit(**/.claude/**)', 'Edit(**/.mcp.json)', 'Edit(**/.cursor/**)',
   'Edit(**/.vscode/**)', 'Edit(**/.idea/**)', 'Edit(**/.husky/**)', 'Edit(**/.npmrc)', 'Edit(**/.obysphere*/**)',
 ];
 // the same secrets for the shell's sandbox (shell: read), where they hold for every command, `grep -r` included
-const SECRET_GLOBS = ['**/.env*', '**/*.pem', '**/*.key', '**/id_rsa*', '**/id_ed25519*', '**/id_ecdsa*', '**/.npmrc', '**/.pypirc', '**/credentials*', '**/.ssh/**', '**/.aws/**', '**/.gnupg/**', '**/.git-credentials', '**/.netrc', '**/.docker/config.json', '**/.kube/**'];
+const SECRET_GLOBS = SECRET_LISTS.globs; // the deny-list table above
 
 // ---- your Oby's settings (SETTINGS.md): settings.json in the profile folder
 const SETTINGS_VERSION = 2;
@@ -1582,7 +1632,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
         allowUnsandboxedCommands: false,
         autoAllowBashIfSandboxed: false,
         filesystem: {
-          denyRead: [...SECRET_GLOBS, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json'].map((d) => path.join(home, d))],
+          denyRead: [...SECRET_GLOBS, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d))],
           denyWrite: m.folders.map((f) => f.path),
         },
         network: { allowedDomains: [] },
