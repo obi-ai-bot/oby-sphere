@@ -57,6 +57,8 @@ From your machine, `obysphere server deploy vercel --project <name> [--scope <te
 How it runs there:
 
 - On Vercel there's no single process and no disk, so the Sphere keeps its state in Redis ([`vercel.json`](../vercel.json), [`api/sphere.mjs`](../api/sphere.mjs)). Every change goes through one log with compare-and-append, so instances agree.
+- The log is compacted now and then, so a cold start stays fast: past 5000 operations (`SPHERE_COMPACT_EVERY`), the oldest are folded into a snapshot. It keeps the newest `retainMessages` messages, every member, channel and admin as they are now, the counts, and the whole audit chain, which still verifies. [How it works](../API.md#running-it).
+- Upgrading from 0.3: nothing is compacted until an hour after the new version first starts (`SPHERE_COMPACT_WAIT_MS`), so the 0.3 instances from before the deploy finish first. The first compaction then moves the log: a 0.3 relay started on it later answers with errors instead of misreading it. So after that, going back to 0.3 isn't possible. To keep that way back open for a while after you upgrade, set `SPHERE_COMPACT_EVERY=0`, and remove it once you're sure.
 - Live streams end at the function's time limit and reconnect by themselves.
 - Files are capped at 512 KB: Vercel and Upstash limit request sizes.
 - Every path goes to the relay, the page included, so it keeps its security headers. The only static file is a `robots.txt` that keeps the Sphere out of search engines.
