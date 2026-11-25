@@ -115,8 +115,10 @@ describe('MCP protocol', () => {
       const r = await rep(['join', `${base}/#key=${KEY}`, '--name', n, '--owner', `${n[0].toUpperCase()}${n.slice(1)} Test`, '--cwd', work], h);
       assert.match(r.out, /joined/, r.out + r.err);
     }
-    // sam's Oby has GitHub on, merging included: its answering session lists every GitHub tool
-    fs.writeFileSync(path.join(solo, 'sam', 'settings.json'), JSON.stringify({ version: 2, machine: { folders: [{ path: work, write: false }] }, github: { enabled: true, repos: ['octo-org/*'], merge: 'ask' }, notify: { desktop: false } }), { mode: 0o600 });
+    // sam's Oby has GitHub on, merging included: its answering session lists every GitHub tool.
+    // Its channel is off (notify.claude), so its own session answers server/discover; alice's
+    // channel is on, the default.
+    fs.writeFileSync(path.join(solo, 'sam', 'settings.json'), JSON.stringify({ version: 2, machine: { folders: [{ path: work, write: false }] }, github: { enabled: true, repos: ['octo-org/*'], merge: 'ask' }, notify: { desktop: false, claude: false } }), { mode: 0o600 });
   });
 
   after(async () => {
@@ -223,14 +225,17 @@ describe('MCP protocol', () => {
 
   // ---------------------------------------------------------------- 2026-07-28: a version on every request
 
+  // sam's own session: the channel is off, so it answers server/discover
+  const samSession = () => session(['--profile', 'sam'], {}, solo);
+
   test('2026-07-28: server/discover, a version on every request, resultType, caching hints', async () => {
-    const s = session();
+    const s = samSession();
     const d = await s.request('d', 'server/discover', { _meta: META() });
     assert.equal(d.result.resultType, 'complete');
     assert.deepEqual(d.result.supportedVersions, [MODERN, '2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
     assert.deepEqual(d.result.capabilities, { tools: {} }, 'no channel: 2026-07-28 has none');
     assert.deepEqual(d.result._meta[SERVER_INFO], { name: 'obysphere', version: '0.1.0' });
-    assert.match(d.result.instructions, /"alice"/);
+    assert.match(d.result.instructions, /"sam"/);
     assert.doesNotMatch(d.result.instructions, /channel source/);
     const list = await s.request(1, 'tools/list', { _meta: META() });
     assert.equal(list.result.resultType, 'complete');
@@ -267,11 +272,35 @@ describe('MCP protocol', () => {
   });
 
   test('a client of both eras: no version, no server/discover; then the handshake, and both at once', async () => {
-    const s = session();
+    const s = samSession();
     assert.equal((await s.request(1, 'server/discover', {})).error.code, -32601, 'a probe without a version falls back');
-    assert.equal((await init(s, 2)).result.protocolVersion, '2025-11-25');
+    const r = await init(s, 2);
+    assert.equal(r.result.protocolVersion, '2025-11-25');
+    assert.equal(r.result.capabilities.experimental, undefined, "sam's channel is off");
     const d = await s.request(3, 'server/discover', { _meta: META() });
     assert.equal(d.result.resultType, 'complete');
+    await done(s);
+  });
+
+  test("with the channel on, server/discover isn't answered, so an app of both eras starts with initialize and gets the channel", async () => {
+    // An app that speaks both eras probes with server/discover and stays on 2026-07-28 when it's
+    // answered, or when it gets a 2026-07-28 error (-32022, -32602). Claude Code then turns the
+    // channel off. "Method not found" sends it to initialize, as 0.3.0 did.
+    const s = session();
+    for (const [id, meta] of [['d1', META()], ['d2', META('1900-01-01')], ['d3', META(MODERN, null)], ['d4', META(20260728)]]) {
+      const r = await s.request(id, 'server/discover', { _meta: meta });
+      assert.equal(r.error?.code, -32601, `${id}: ${JSON.stringify(r)}`);
+      assert.equal(r.result, undefined);
+    }
+    const r = await init(s, 1);
+    assert.equal(r.result.protocolVersion, '2025-11-25');
+    assert.deepEqual(r.result.capabilities.experimental, { 'claude/channel': {} }, 'the channel, as in 0.3.0');
+    assert.match(r.result.instructions, /<channel source="obysphere"/);
+    // a request that names 2026-07-28 without the probe is still served that way
+    const list = await s.request(2, 'tools/list', { _meta: META() });
+    assert.equal(list.result.resultType, 'complete');
+    assert.equal(list.result.cacheScope, 'private');
+    for (const n of YOUR_TOOLS) assert.ok(list.result.tools.some((t) => t.name === n), n);
     await done(s);
   });
 
