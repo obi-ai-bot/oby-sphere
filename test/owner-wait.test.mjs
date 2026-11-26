@@ -277,7 +277,7 @@ describe('a terminal serve asks too', () => {
   test('[a] always answer @x, only where Always answer applies', () => {
     assert.match(fn, /\$\{always \? `\$\{bold\('\[a\]'\)\} always answer @\$\{asker\} {3}` : ''\}/);
     assert.match(fn, /d === 'a' && always \? 'always'/);
-    assert.match(SRC, /askInTerminal\(w\.id, asker, ac\.signal, risky, always\)/);
+    assert.match(SRC, /askInTerminal\(w\.id, asker, ac\.signal, risky, always, stuck\)/);
   });
 });
 

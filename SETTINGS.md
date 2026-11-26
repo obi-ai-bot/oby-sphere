@@ -66,7 +66,7 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "protected": ["main", "master", "release/*"],
     "signature": true
   },
-  "availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false }
+  "availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false, "askOwner": true }
 }
 ```
 
@@ -113,7 +113,7 @@ The Settings page's **Try an ask** shows which rule, runtime and model would ans
 A runtime can stop answering for a while: Claude Code reaches its usage limit, an API key runs out of credit, the provider rate-limits it, or it's signed out. Your Oby reads why from the run's result, and the asker never sees the runtime's own error text, a path or your plan: only plain words.
 
 ```json
-"availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false }
+"availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false, "askOwner": true }
 ```
 
 - `whenUnable`, what happens to the ask (**Settings › Answers › When your runtime can't answer**):
@@ -127,6 +127,7 @@ A runtime can stop answering for a while: Claude Code reaches its usage limit, a
   - `decline`: the asker is told at once: "I can't answer this one right now."
 - `holdHours`: whole hours from 1 to 168, 24 when the file doesn't say. It's how old an ask may be, counted from when it was asked, and your Oby still answers it: a held ask that gets older than that, or an ask that came while your Oby was offline and is older by the time it's back, gets a short reply instead of an answer.
 - `showReason`: `false` (the default) shows askers only when your Oby can answer again ("can answer after 15:00"); `true` also says why: "out of AI usage", "rate-limited" or "signed out".
+- `askOwner`: `true` (the default) lets your Oby hand you an ask it can't answer alone (**Ask me when it can't answer alone**). When an ask needs something it can't reach from your machine (GitHub, the web, a shell, files outside its folders, an account), a decision only you can make, or the asker wants it to check with you, its answering session calls `sphere_ask_owner` with a short note on what's asked and what's missing. What it wrote then isn't sent. The ask comes to **Waiting for you** with that note, you're notified ("Your Oby needs you for @alice's ask"), and the asker sees it waits for you, until when, as with *Ask me first*. You answer it yourself, let your Oby try again (after changing what it may reach, say; it can't hand the same ask back), or decline. No decision in time and the asker reads "@you's Oby asked its owner about this, and they didn't answer in time." Once per ask, at most 3 of one asker's asks a day, never for an ask passed on from another ask or an instrument's use, and never with Cursor. `false`: your Oby says plainly what it would need instead.
 
 A rate limit is first tried again after 30 seconds, 2 minutes and 5 minutes, within the answer's time limit, before any of this applies.
 
