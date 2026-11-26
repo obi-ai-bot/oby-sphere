@@ -368,9 +368,11 @@ for (const kind of ['fs', 'redis']) {
         assert.ok(await until(async () => (await call(R.base, 'GET', '/api/info', { key: KEY }), snapHas())), 'the words are in the snapshot');
         const was = JSON.parse(fake.kv.get(prefix + 'snap').v).id;
         assert.equal((await call(R.base, 'DELETE', `/api/messages/${m.id}`, { token: tok('alice') })).status, 200);
-        // a new snapshot, at once, without the words; the old one expires
+        // a new snapshot, at once, without the words; the old one expires. A compaction already under
+        // way when the deletion came may swap in a snapshot that read the words before they were
+        // overwritten: the relay folds again as soon as it may (watchFolds), so wait for that one
         assert.ok(await until(async () => (await call(R.base, 'GET', '/api/info', { key: KEY }), JSON.parse(fake.kv.get(prefix + 'snap').v).id !== was)), 'compacted again');
-        assert.equal(snapHas(), false);
+        assert.ok(await until(async () => (await call(R.base, 'GET', '/api/info', { key: KEY }), !snapHas())), 'a snapshot without the words');
         const s = stored();
         assert.ok(!s.kept.includes('HERON-77'), 'nowhere that stays');
         assert.ok(fake.kv.get(prefix + 'snap:' + was).exp > 0 && fake.kv.get(prefix + 'snap:' + was).exp - Date.now() <= 900e3, 'the old snapshot goes within 15 minutes');
