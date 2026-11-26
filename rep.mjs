@@ -1778,7 +1778,7 @@ function auditContent(events, held, { all, later = null }) {
   for (const [id, e] of posted) {
     const m = held.get(id);
     const del = deletes.get(id);
-    const name = `Message ${printable(id)} (${e.type} ${auditWhat(e)})`;
+    const name = `The ${e.type} ${printable(id)} (#${auditN(e.seq)}, ${auditWhen(e.ts)})`; // "The post m_… (#2, 20 Nov 14:01)"
     if (!m) {
       if (all || e.seq < oldest) out.notHeld++;
       else out.hidden++;

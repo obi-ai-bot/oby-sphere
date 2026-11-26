@@ -403,7 +403,7 @@ describe('audit export and verify on the fs store', () => {
         const r = await verifyJson(m, ['--profile', 'alice']);
         assert.equal(r.code, 1, r.out);
         assert.equal(r.j.failure.kind, 'content');
-        assert.match(r.j.failure.message, new RegExp(`^Message ${id} \\(post #[\\d,]+ .*\\) isn't what was recorded when it was posted: it was changed since\\.$`));
+        assert.match(r.j.failure.message, new RegExp(`^The post ${id} \\(#[\\d,]+, \\d+ \\w{3} \\d\\d:\\d\\d\\) isn't what was recorded when it was posted: it was changed since\\.$`));
         const human = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
         assert.match(human.stdout, /The chain itself checks: #1 to #2,5\d\d\./);
         // the file has no messages to compare: it still checks
@@ -651,7 +651,7 @@ describe('deleted messages, against logs built by hand', () => {
   test('a tombstone with no delete event, or one with another content hash, fails', async () => {
     let r = await check(base(), [tomb(msgA), msgB]);
     assert.equal(r.code, 1, r.out);
-    assert.match(r.j.failure.message, /Message m_aaaa0001 \(post #2 .*\) is shown as deleted, but the log has no delete event for it/);
+    assert.match(r.j.failure.message, /^The post m_aaaa0001 \(#2, \d+ \w{3}( \d{4})? \d\d:\d\d\) is shown as deleted, but the log has no delete event for it/);
     r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgB) })], [tomb(msgA), msgB]);
     assert.equal(r.code, 1, r.out);
     assert.equal(r.j.failure.kind, 'content');
@@ -665,7 +665,7 @@ describe('deleted messages, against logs built by hand', () => {
     let r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [msgA, msgB]);
     assert.equal(r.code, 1, r.out);
     assert.equal(r.j.failure.seq, 4);
-    assert.match(r.j.failure.message, /Message m_aaaa0001 .* was deleted \(#4\), but the relay still serves its words\./);
+    assert.match(r.j.failure.message, /^The post m_aaaa0001 \(#2, .*\) was deleted \(#4\), but the relay still serves its words\./);
     r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [{ ...tomb(msgA), text: 'A thing I said' }, msgB]);
     assert.equal(r.code, 1, r.out);
     assert.match(r.j.failure.message, /still serves its words/);
@@ -692,7 +692,7 @@ describe('deleted messages, against logs built by hand', () => {
     let r = await check(base(), [tomb(msgA), msgB], { more: [ev('post', { ref: 'm_dddd0004', content: contentHash(msgB) })] });
     assert.equal(r.code, 1, r.out);
     assert.equal(r.j.failure.kind, 'content');
-    assert.match(r.j.failure.message, /Message m_aaaa0001 \(post #2 .*\) is shown as deleted, but the log has no delete event for it/);
+    assert.match(r.j.failure.message, /^The post m_aaaa0001 \(#2, \d+ \w{3}( \d{4})? \d\d:\d\d\) is shown as deleted, but the log has no delete event for it/);
     r = await check(base(), [msgA, msgB, { ...tomb(msgA), id: 'm_eeee0005' }]);
     assert.equal(r.code, 1, r.out);
     assert.match(r.j.failure.message, /Message m_eeee0005 is shown as deleted, but the log never recorded it being posted and deleted\./);
