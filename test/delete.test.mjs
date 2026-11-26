@@ -99,11 +99,13 @@ const call = async (base, method, url, { token, key, admin, body } = {}) => {
   return { status: r.status, ...(await r.json().catch(() => ({}))) };
 };
 
-// the live events one stream gets, as [event, data]
+// the live events one stream gets, as [event, data]; `ready` once the relay holds the stream
+// (it answers with the stream's headers only after adding it)
 function listen(base, headers) {
   const got = [];
   const ac = new AbortController();
-  fetch(base + '/api/stream', { headers, signal: ac.signal })
+  const open = fetch(base + '/api/stream', { headers, signal: ac.signal });
+  open
     .then(async (r) => {
       const dec = new TextDecoder();
       let buf = '';
@@ -120,7 +122,7 @@ function listen(base, headers) {
       }
     })
     .catch(() => {});
-  return { got, close: () => ac.abort() };
+  return { got, ready: open.then((r) => assert.equal(r.status, 200)), close: () => ac.abort() };
 }
 
 // a rep.mjs command to its end (async: the fake Upstash lives in this process)
@@ -187,7 +189,7 @@ for (const kind of ['fs', 'redis']) {
     test('alice deletes her post: a tombstone everywhere, its file gone, its words nowhere in storage', async () => {
       const viewer = listen(R.base, { 'x-sphere-key': KEY });
       const bobRep = listen(R.base, { authorization: `Bearer ${tok('bob')}` });
-      await sleep(200);
+      await Promise.all([viewer.ready, bobRep.ready]);
       const words = `Wrong channel: the WALRUS-${kind}-81 plan`;
       const fileWords = `WALRUS-FILE-${kind}-82 inside`;
       const posted = await call(R.base, 'POST', '/api/messages', { token: tok('alice'), body: { text: words, files: [{ name: 'walrus.txt', data: Buffer.from(fileWords).toString('base64') }] } });
@@ -220,8 +222,7 @@ for (const kind of ['fs', 'redis']) {
       const reuse = await call(R.base, 'POST', '/api/messages', { token: tok('alice'), body: { text: 'again', files: [{ id: fid }] } });
       assert.equal(reuse.status, 404, "a deleted message's file can't be sent again");
 
-      // the words, the file and its bytes, nowhere in storage
-      await sleep(200);
+      // the words, the file and its bytes, nowhere in storage: at once, as the deletion answered
       const s = stored();
       for (const w of [`WALRUS-${kind}-81`, `WALRUS-FILE-${kind}-82`, Buffer.from(fileWords).toString('base64')]) assert.ok(!s.kept.includes(w), `${w} left storage`);
       if (kind === 'fs') assert.equal(fs.existsSync(path.join(dir, 'files', fid)), false);
@@ -249,7 +250,7 @@ for (const kind of ['fs', 'redis']) {
 
     test('alice deletes her ask and her Oby’s reply; bob can’t claim or answer a deleted ask', async () => {
       const bobRep = listen(R.base, { authorization: `Bearer ${tok('bob')}` });
-      await sleep(200);
+      await bobRep.ready;
       const ask = (await call(R.base, 'POST', '/api/messages', { token: tok('alice'), body: { text: `Are you free? OTTER-${kind}-91`, to: ['bob'] } })).message;
       const ask2 = (await call(R.base, 'POST', '/api/messages', { token: tok('alice'), body: { text: `Claimed already. OTTER-${kind}-92`, to: ['bob'] } })).message;
       assert.equal((await call(R.base, 'POST', `/api/messages/${ask2.id}/claim`, { token: tok('bob'), body: { instance: 'b1' } })).ok, true);
@@ -440,7 +441,6 @@ for (const kind of ['fs', 'redis']) {
         assert.equal(r.status, 200);
         assert.equal('sealed' in r.message, false, 'nothing that was inside');
       }
-      await sleep(200);
       for (const m of list) assert.ok(!text().includes(m.sealed.ct), 'the envelope left storage');
       assert.equal((await fetch(`${R.base}/api/files/${fileId}`, { headers: { 'x-sphere-key': KEY } })).status, 404);
       const au = await call(R.base, 'GET', '/api/audit?limit=1000', { key: KEY });
