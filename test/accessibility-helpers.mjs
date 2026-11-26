@@ -97,8 +97,13 @@ export function spokenText(content) {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+// a control the console's own helper names: ctlName(label, labelledby) writes aria-label or
+// aria-labelledby (a test checks that every call gives it one or the other)
+const byCtlName = (tag) => /\$\{ctlName\(/.test(tag);
+
 // a button's accessible name, or null: aria-label, aria-labelledby, or its words
 export function buttonName(src, t) {
+  if (byCtlName(t.tag)) return '(named by ctlName)';
   if (attr(t.tag, 'aria-label')) return attr(t.tag, 'aria-label');
   if (attr(t.tag, 'aria-labelledby')) return `(labelled by ${attr(t.tag, 'aria-labelledby')})`;
   const close = src.indexOf(`</${t.name}>`, t.end);
@@ -109,6 +114,7 @@ export function buttonName(src, t) {
 
 // a field's label, or null: aria-label, aria-labelledby, <label for=its id>, or a <label> around it
 export function fieldLabel(src, t, whole = PAGE) {
+  if (byCtlName(t.tag)) return '(named by ctlName)';
   if (attr(t.tag, 'aria-label') || attr(t.tag, 'aria-labelledby')) return attr(t.tag, 'aria-label') || `(labelled by ${attr(t.tag, 'aria-labelledby')})`;
   const id = attr(t.tag, 'id');
   if (id && whole.includes(`for="${id}"`)) return `(label for ${id})`;
@@ -130,6 +136,34 @@ export function fnSource(name, src = SCRIPT) {
     else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
   }
   throw new Error(`${name} has no end`);
+}
+
+// a `const name = …;` out of the script: from its name to the ';' that ends it, outside strings,
+// template literals and brackets
+export function constSource(name, src = SCRIPT) {
+  const m = new RegExp(`\\n\\s*const ${name} = `).exec(src);
+  if (!m) throw new Error(`const ${name} isn't in the page`);
+  let depth = 0;
+  for (let i = m.index + m[0].length; i < src.length; ) {
+    const c = src[i];
+    if (c === '\'' || c === '"') { i = stringEnd(src, i); continue; }
+    if (c === '`') { i = templateEnd(src, i); continue; }
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (c === ';' && depth === 0) return src.slice(m.index + 1, i + 1).trim();
+    i++;
+  }
+  throw new Error(`const ${name} has no end`);
+}
+// what each call passes as its object ("ctlSwitch({ on, labelledby: … })"): the literal's text
+export function callArgs(name, src = SCRIPT) {
+  const out = [];
+  for (const m of src.matchAll(new RegExp(`(?<![\\w.])${name}\\(\\{`, 'g'))) {
+    if (/function\s*$/.test(src.slice(Math.max(0, m.index - 10), m.index))) continue; // its own declaration
+    const open = m.index + m[0].length - 1;
+    out.push(src.slice(open, exprEnd(src, open + 1)));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- colour

@@ -127,8 +127,8 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 The console works with a keyboard and with a screen reader.
 
-- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, and through menus and the @ list. A dialog keeps the focus until Escape closes it, then gives it back.
-- **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, and Console and Conversation are tabs. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
+- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, through menus and the @ list, and through Settings' and Policy's choices, lists and numbers. A dialog keeps the focus until Escape closes it, then gives it back.
+- **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, Console and Conversation are tabs, and a page's sections are headings. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
 - **Contrast.** Text and controls meet WCAG 2.2 AA: 4.5:1 for text, 3:1 for field edges and the focus ring. The console follows macOS's Increase contrast and Windows' contrast themes, and reduced motion.
 
 Something in your way? [Open an issue](https://github.com/obi-ai-bot/oby-sphere/issues/new?labels=accessibility&title=Accessibility%3A%20) whose title starts with "Accessibility:" (the link fills it in): say what you were doing, with what (browser, screen reader, keyboard or zoom), and what stopped you.

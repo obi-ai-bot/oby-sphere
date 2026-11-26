@@ -218,6 +218,7 @@ describe('the page', () => {
       apiPost: (url, body) => new Promise((resolve) => saves.push({ url, body, resolve })),
       applyPolicy: (r) => { ctx.S.sphere.policy = r.policy; },
       renderPage: () => {},
+      a11ySay: () => {}, a11yForget: () => {}, // (#137: what a screen reader hears)
     };
     vm.runInNewContext(`${src}\nthis.polStep = polStep; this.polShown = polShown; this.POL = POL;`, ctx);
     const plain = (o) => JSON.parse(JSON.stringify(o)); // made in the page's own context
@@ -255,6 +256,7 @@ describe('the page', () => {
       renders: 0,
       renderPage: () => { ctx.renders++; },
       applyPolicy: (r) => { ctx.S.sphere.policy = r.policy; },
+      a11ySay: () => {}, a11yForget: () => {}, // (#137: what a screen reader hears)
       ...extra,
     };
     vm.runInNewContext(`${src}\nObject.assign(this, { polStep, polShown, polRotate, pagePolicy, POL });`, ctx);

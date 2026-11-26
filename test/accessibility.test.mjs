@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {
   PAGE, STYLE, TEMPLATE, SCRIPT,
-  tags, attr, hasAttr, buttonName, fieldLabel, fnSource,
+  tags, attr, hasAttr, buttonName, fieldLabel, fnSource, constSource, callArgs,
   cssRules, themes, resolve, parseColor, tokenColor, over, ratio,
   h, fakeDocument, cssEscape,
 } from './accessibility-helpers.mjs';
@@ -70,8 +70,22 @@ describe('names and labels', () => {
         if (!fieldLabel(src, t)) missing.push(`${where}: ${t.tag.slice(0, 120)}`);
       }
     }
-    assert.ok(seen > 35, `found only ${seen} fields`);
+    // (most of Settings' fields are the console's own controls now: their test is below)
+    assert.ok(seen > 15, `found only ${seen} fields`);
     assert.deepEqual(missing, []);
+  });
+
+  test("every call to the console's own controls names it: a label, or the row title it's labelled by", () => {
+    const unnamed = [];
+    let seen = 0;
+    for (const name of ['ctlDropdown', 'ctlSegmented', 'ctlSwitch', 'ctlStepper', 'ctlTime', 'ctlChips', 'ctlToggle']) {
+      for (const args of callArgs(name)) {
+        seen++;
+        if (!/[{,]\s*(label|labelledby)\b/.test(args)) unnamed.push(`${name}(${args.slice(0, 100)})`);
+      }
+    }
+    assert.ok(seen > 25, `found only ${seen} calls`);
+    assert.deepEqual(unnamed, []);
   });
 
   test('a placeholder is never the only label', () => {
@@ -88,7 +102,10 @@ describe('names and labels', () => {
     for (const [where, src] of both) {
       for (const t of tags(src, ['[a-z][a-z0-9]*'])) {
         const role = attr(t.tag, 'role');
-        if (['tab', 'switch', 'menuitem', 'option'].includes(role) && t.name !== 'button') wrong.push(`${where}: ${role} on a ${t.name}`);
+        if (['tab', 'switch', 'menuitem', 'radio'].includes(role) && t.name !== 'button') wrong.push(`${where}: ${role} on a ${t.name}`);
+        // an option is a button the focus moves to, or an item of a list its button or field points at
+        if (role === 'option' && !['button', 'li'].includes(t.name)) wrong.push(`${where}: option on a ${t.name}`);
+        if (role === 'spinbutton' && !(t.name === 'input' || attr(t.tag, 'tabindex') === '0')) wrong.push(`${where}: a spinbutton you can't reach: ${t.tag.slice(0, 90)}`);
         if (role === 'img' && !attr(t.tag, 'aria-label')) wrong.push(`${where}: a picture without words: ${t.tag.slice(0, 90)}`);
         // a div, span, p or pre has no role of its own, so a label on it is ignored (or refused)
         if (['div', 'span', 'p', 'pre'].includes(t.name) && attr(t.tag, 'aria-label') && !role) wrong.push(`${where}: aria-label on a plain ${t.name}: ${t.tag.slice(0, 90)}`);
@@ -96,8 +113,6 @@ describe('names and labels', () => {
       }
     }
     assert.deepEqual(wrong, []);
-    // the Policy page's switches say whether they're on
-    for (const k of ['data-pause', 'data-seal']) assert.match(fn('pagePolicy'), new RegExp(`${k} \\$\\{dis\\} role="switch" aria-checked="\\$\\{`));
   });
 
   test('a table column of buttons has a header for screen readers', () => {
@@ -105,6 +120,8 @@ describe('names and labels', () => {
       assert.ok(!/<th><\/th>/.test(fn(f)), `${f}: an empty header`);
       assert.match(fn(f), /<th><span class="sr-only">Actions<\/span><\/th>/);
     }
+    assert.match(fn('pageFiles'), /<th class="hide-phone"><span class="sr-only">Exchange<\/span><\/th>/);
+    assert.ok(!/<th[^>]*><\/th>/.test(SCRIPT), 'no header without words');
   });
 
   test("a table's hidden header stays inside the table's own scroll, so the page never scrolls sideways", () => {
@@ -198,6 +215,28 @@ describe('landmarks, tabs and keyboard paths', () => {
     assert.match(fn('boot'), /<span class="rail-button" role="img" aria-label="You: \$\{esc\(S\.me\.owner\)\} \(\$\{esc\(S\.me\.name\)\}\)"/);
   });
 
+  test("a page's sections are headings one level under its title", () => {
+    // h1 the page (head()), h2 its sections, as Settings' are; the side panel's groups are h3 under its h2
+    assert.match(fn('head'), /<h1 class="page-title"/);
+    assert.ok(!/<div class="section-head"><h[13-6]/.test(SCRIPT), 'a section is an h2');
+    assert.ok((SCRIPT.match(/<div class="section-head"><h2/g) || []).length >= 10);
+    assert.ok(cssRules().some((r) => r.selector === '.section-head h2'), 'and looks as before');
+    assert.match(fn('renderSettings'), /<h2 class="set-sec-title"/);
+  });
+
+  test('a picture the page draws is hidden from screen readers, or has words', () => {
+    const loud = [];
+    let seen = 0;
+    for (const [where, src] of both) {
+      for (const t of tags(src, ['svg'])) {
+        seen++;
+        if (attr(t.tag, 'aria-hidden') !== 'true' && !(attr(t.tag, 'role') === 'img' && attr(t.tag, 'aria-label'))) loud.push(`${where}: ${t.tag.slice(0, 100)}`);
+      }
+    }
+    assert.ok(seen > 30, `found only ${seen} pictures`);
+    assert.deepEqual(loud, []);
+  });
+
   test('a skip link comes first, and lands on the page or the message box', () => {
     const first = /<div class="window">\s*<a class="skip-link" id="skip" href="#page">Skip to the content<\/a>/;
     assert.match(TEMPLATE, first);
@@ -261,11 +300,13 @@ describe('live updates', () => {
     assert.match(attr(r.tag, 'class'), /\bsr-only\b/);
     assert.ok(r.at > windowEnd, 'outside .window');
     assert.match(STYLE, /\.sr-only \{ position: absolute !important; width: 1px; height: 1px;/);
+    // once said, its words go after a while, so reading to the end of the page doesn't find old news
+    assert.match(fn('a11ySetup'), /A11Y\.clear = setTimeout\(\(\) => \{ if \(region\.textContent === text\) region\.textContent = ''; \}, 10000\)/);
   });
 
   test('the map, the live log and the messages have names and roles, and stay quiet themselves', () => {
     const ov = fn('renderOverview');
-    assert.match(ov, /id="topo" role="group" aria-labelledby="map-title" aria-describedby="map-about"/);
+    assert.match(ov, /<span id="map-title">Map<\/span>[\s\S]*id="topo" role="group" aria-labelledby="map-title"/);
     assert.match(fn('buildTopo'), /<svg class="edges" id="edges" aria-hidden="true">/);
     assert.match(fn('buildTopo'), /id="nodes" role="list"/);
     assert.match(fn('updateTopo'), /<div class="node is-\$\{st\}" role="listitem"/);
@@ -273,9 +314,16 @@ describe('live updates', () => {
     assert.match(ov, /id="log" role="log" aria-labelledby="log-title" aria-live="off" tabindex="0"/);
     // the thread: a log too (browser tests find it by that role), quiet for the same reason
     assert.match(TEMPLATE, /<section class="chat" id="feed" role="log" aria-label="Messages" aria-live="off" tabindex="-1">/);
-    // what ticks every second (seconds, KPIs) is never in a polite region of its own
-    const polite = [...PAGE.matchAll(/<[a-z]+\b[^>]*aria-live="polite"[^>]*>/g)].map((m) => attr(m[0], 'id') || attr(m[0], 'class'));
-    assert.deepEqual(polite.sort(), ['a11y-status', 'set-row-sub notify-note', 'set-try-out', 'settings-state'].sort());
+    // what ticks every second (seconds, KPIs) is never in a polite region of its own; the only others
+    // are Settings' own, which speak when you change something there
+    const polite = [...PAGE.matchAll(/<[a-z]+\b[^>]*(?:aria-live="polite"|role="status")[^>]*>/g)].map((m) => attr(m[0], 'id') || attr(m[0], 'class'));
+    assert.deepEqual(polite.sort(), ['a11y-status', 'route-undo', 'set-row-sub notify-note', 'set-try-out', 'settings-state'].sort());
+    // the pages a busy Sphere redraws by themselves have none: their news goes through the voice
+    // (the Overview's live log is a quiet log: aria-live="off")
+    for (const f of ['pagePolicy', 'polNoteHtml', 'pageMembers', 'pageInstruments', 'auditHead', 'auditResults', 'renderOverview', 'updateKpis']) {
+      assert.doesNotMatch(fn(f), /aria-live="(polite|assertive)"|role="(status|alert)"/, f);
+    }
+    assert.match(fn('polNote'), /a11ySay\(bad \? 'problem' : 'note', text\)/, "Policy's Saved, or what went wrong");
   });
 
   test('every live change reaches the voice', () => {
@@ -476,11 +524,15 @@ describe('contrast (WCAG 2.2 AA), from the CSS tokens', () => {
   test('the old faint greys are gone', () => {
     const rule = (sel) => cssRules().find((r) => r.selector === sel && !r.media);
     assert.equal(rule('.group-none p').decl.color, 'var(--muted)', 'an empty conversation says so legibly');
-    // offline rows and map nodes dim their pictures, not their words
-    assert.ok(!cssRules().some((r) => /^\.oby-row\.is-offline$|^\.node\.is-offline$/.test(r.selector) && r.decl.opacity), 'no row-wide opacity');
+    // offline rows, map nodes and an away Oby's instruments dim their pictures, not their words
+    const dimmed = cssRules().filter((r) => /\.oby-row\.is-offline|\.node\.is-offline|\.inst-row\.is-dim/.test(r.selector) && r.decl.opacity);
+    for (const r of dimmed) assert.match(r.selector, /(\.owner-avatar|svg|\.status|\.pic|\.inst-pic)\b[^,]*\)?$/, `${r.selector}: only pictures go faint`);
     assert.equal(rule('.oby-row.is-offline .connector-name').decl.color, 'var(--muted)');
-    // fields have an edge you can see
-    for (const sel of ['.set-field', '.set-select', '.set-area', '.composer-field']) assert.match(rule(sel).decl.border, /var\(--field-edge\)/, sel);
+    assert.equal(rule('.inst-row.is-dim :is(.inst-name, .inst-line)').decl.color, 'var(--muted)');
+    // fields, and anything you pick a value from, have an edge you can see (3:1)
+    for (const sel of ['.set-field', '.set-select', '.set-area', '.composer-field', '.ctl-dd-btn', '.ctl-search', '.ctl-step', '.ctl-time', '.ctl-chips', '.pol-step', '.pol-dd-b', '.au-search input', '.au-drop', '.au-menu-search']) {
+      assert.match(rule(sel).decl.border, /var\(--field-edge\)/, sel);
+    }
     // a link inside someone's words is underlined, not told apart by colour alone
     assert.match(rule('.tok-url').decl['text-decoration'], /^underline/);
   });
@@ -495,42 +547,66 @@ describe('visible focus', () => {
     assert.ok(ring, 'a :focus-visible rule for everything');
     assert.equal(ring.decl.outline, '2px solid var(--focus)');
     // it comes after the rules that set outline: none on fields, so it wins for keyboard focus
-    const at = STYLE.indexOf(':focus-visible { outline: 2px solid var(--focus)');
-    for (const sel of ['.set-field {', '.set-select {', '.set-area {']) assert.ok(STYLE.indexOf(sel) < at, sel);
+    const at = STYLE.indexOf('\n:focus-visible { outline: 2px solid var(--focus)');
+    assert.ok(at > 0);
+    for (const sel of ['.set-field {', '.set-select {', '.set-area {', '.ctl-search {', '.au-search input {', '.au-menu-search {']) assert.ok(STYLE.indexOf(sel) < at, sel);
+    // every ring the stylesheet draws is in the focus colour (Increase contrast and themes change one token)
+    const other = rules.filter((r) => /:focus(-visible)?\b/.test(r.selector) && /^\d+px solid /.test(r.decl.outline || '') && !/var\(--focus\)/.test(r.decl.outline) && !/forced-colors/.test(r.media));
+    assert.deepEqual(other.map((r) => `${r.selector}: ${r.decl.outline}`), []);
   });
 
   test('nothing takes the ring away without showing focus some other way', () => {
     const bare = rules.filter((r) => /:focus-visible/.test(r.selector) && /^(0|none)$/.test(r.decl.outline || '') && !/forced-colors/.test(r.media));
-    assert.deepEqual(bare.map((r) => r.selector), ['.composer-input:focus-visible'], 'only the message box, whose rounded box shows it');
+    assert.deepEqual(bare.map((r) => r.selector), [
+      '.composer-input:focus-visible', // the message box: its rounded box shows it
+      ':is(.ctl-step-in, .ctl-time input, .ctl-chips-field):focus-visible', // a field made of parts: its box has the ring
+    ]);
     const box = rules.find((r) => r.selector === '.composer-field:hover, .composer-field:focus-within');
     assert.equal(box.decl['border-color'], 'var(--field-edge-on)');
+    const parts = rules.find((r) => /^:is\(\.ctl-step, \.ctl-time, \.ctl-chips\):has\(/.test(r.selector));
+    assert.ok(parts && parts.decl.outline === '2px solid var(--focus)', 'the stepper, the time and the chips show the ring on their box');
     // menus show the ring inside their items rather than hiding it
-    for (const sel of ['.add-panel button:hover, .add-panel button:focus-visible', '.account-menu button:hover, .account-menu button:focus-visible']) {
+    for (const sel of ['.add-panel button:hover, .add-panel button:focus-visible', '.account-menu button:hover, .account-menu button:focus-visible', '.au-opt:hover, .au-opt:focus-visible']) {
       const r = rules.find((x) => x.selector === sel);
       assert.ok(r && !/^(0|none)$/.test(r.decl.outline || ''), sel);
       assert.equal(r.decl['outline-offset'], '-2px');
     }
+    // a list that keeps the focus on its button or field (aria-activedescendant): its active option has the ring
+    const active = rules.find((r) => r.selector.includes('.ctl-opt.is-active') && r.decl.outline);
+    assert.ok(active && /\.pol-menu:focus-visible li\.is-active/.test(active.selector) && active.decl.outline === '2px solid var(--focus)', 'Settings and Policy dropdowns, and the @ list');
   });
 
   test("Windows' contrast themes keep the state of switches and the chosen item", () => {
     const fc = rules.filter((r) => /forced-colors: active/.test(r.media));
     assert.ok(fc.some((r) => /\.switch::after/.test(r.selector) && /CanvasText/.test(r.decl.background)));
-    assert.ok(fc.some((r) => /\.connector\.is-active/.test(r.selector) && /Highlight/.test(r.decl.outline)));
+    const chosen = fc.find((r) => /\.connector\.is-active/.test(r.selector) && /Highlight/.test(r.decl.outline));
+    assert.ok(chosen);
+    // and the chosen one of the console's own controls: a segment, a pressed toggle, a section, a filter, a list's option
+    for (const x of ['.ctl-seg [aria-checked="true"]', '.ctl-toggle[aria-pressed="true"]', '.set-nav-in button.is-on', '.au-drop.is-on', '.ctl-opt.is-active', '.pol-menu li.is-active']) assert.ok(chosen.selector.includes(x), x);
   });
 });
 
 // ---------------------------------------------------------------- markup the script builds, rendered
 
 // a page function run on its own, with made-up data: anything it calls that isn't given returns ''
-function render(names, call, given = {}) {
+// (consts: the page's `const` declarations it needs too, as they are)
+function render(names, call, given = {}, consts = []) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const base = { esc, ...given };
   const ctx = vm.createContext(new Proxy(base, {
     has: () => true,
     get: (o, k) => (k in o ? o[k] : k === Symbol.unscopables ? undefined : k in globalThis ? globalThis[k] : () => ''),
   }));
-  vm.runInContext(`${names.map(fn).join('\n')}\nthis.__out = (${call});`, ctx);
+  vm.runInContext(`${consts.map((c) => constSource(c)).join('\n')}\n${names.map(fn).join('\n')}\nthis.__out = (${call});`, ctx);
   return base.__out;
+}
+// every id an aria-labelledby or aria-describedby names is in the same markup
+function idsFound(html) {
+  const missing = [];
+  for (const m of html.matchAll(/aria-(?:labelledby|describedby|controls)="([^"]+)"/g)) {
+    for (const id of m[1].split(/\s+/)) if (!html.includes(`id="${id}"`)) missing.push(id);
+  }
+  return missing;
 }
 
 describe('the markup, rendered', () => {
@@ -540,6 +616,17 @@ describe('the markup, rendered', () => {
       E: e, clock: () => '12:01:02', routeWords: () => 'Your Oby → Bob Test’s Oby', STATUS_WORDS: {}, fmtMs: () => '5ms',
     });
     assert.match(html, /<button type="button" class="row-open" aria-label="Open the exchange at 12:01:02: Your Oby asks Bob Test’s Oby">12:01:02<\/button>/);
+  });
+
+  test('a route of pictures says who asked whom in words', () => {
+    const who = { a_me: 'Your Oby', a_bob: 'Bob Test’s Oby', a_sam: 'Sam Test’s Oby' };
+    const given = { agent: (id) => ({ id }), obyOf: (a) => who[a.id], picture: () => '<span aria-hidden="true">·</span>', arrow: '<svg aria-hidden="true"></svg>', postTo: () => '#general' };
+    const ask = render(['route'], 'route(E)', { ...given, E: { root: { kind: 'ask', from: 'a_me' }, spans: [{ target: { id: 'a_bob' } }, { target: { id: 'a_sam' } }] } });
+    assert.match(ask, /<span class="sr-only">Your Oby asks Bob Test’s Oby, then Sam Test’s Oby<\/span><\/span>$/);
+    const post = render(['route'], 'route(E)', { ...given, E: { root: { kind: 'post', from: 'a_bob' }, spans: [] } });
+    assert.match(post, /<span class="sr-only">Bob Test’s Oby posted <\/span><svg aria-hidden="true"><\/svg><span class="muted">#general<\/span>/);
+    // Files: from whom to whom
+    assert.match(fn('pageFiles'), /<span class="sr-only">\$\{esc\(obyOf\(agent\(f\.from\)\) \+ \(to\.length \? ` to \$\{to\.map\(\(id\) => obyOf\(agent\(id\)\)\)\.join\(', '\)\}` : ''\)\)\}<\/span>/);
   });
 
   test("a member's row says its state in words; an unread count says what it counts", () => {
@@ -569,25 +656,132 @@ describe('the markup, rendered', () => {
     assert.match(nav.innerHTML, /<span class="connector-name">Your Oby<\/span><span class="needs" title="2 waiting for you">2<span class="sr-only"> waiting for you<\/span><\/span>/);
   });
 
-  test('Policy: the switches say whether they are on, the choices are named', () => {
-    const html = render(['pagePolicy'], 'pagePolicy()', {
-      S: { admin: true, adminKey: null, me: null, sphere: { paused: true, policy: { sealed: true, maxDepth: 3, maxFileBytes: 5242880 } } },
-      head: (t, s) => `<h1>${t}</h1>${s}`, size: (n) => `${n} B`, CONSOLE: null,
-    });
-    assert.match(html, /data-pause  role="switch" aria-checked="false" aria-label="Accept new messages"/, 'paused: not accepting');
-    assert.match(html, /data-seal  role="switch" aria-checked="true" aria-label="Seal message contents"/);
-    assert.match(html, /data-policy="maxDepth"  aria-label="Agents asking agents"/);
-    assert.match(html, /data-policy="maxFileBytes"  aria-label="Largest file"/);
+  // Policy, as #151 made it editable: switches, steppers and dropdowns of its own (pol-*)
+  const policyHtml = (policy, notes = new Map()) => render(['pagePolicy', 'polSections', 'polControl', 'polNoteHtml'], '(POL.notes = NOTES, pagePolicy())', {
+    S: { admin: true, sphere: { paused: true, store: 'file', policy } }, document: { activeElement: null }, NOTES: notes,
+    head: (t, s) => `<h1>${t}</h1><p>${s}</p>`,
+  }, ['POL', 'POL_MB', 'polSize', 'polCount', 'polPerMin', 'polSaved', 'polShown', 'polId', 'polRowHtml']);
+  const POLICY = { sealed: true, maxDepth: 3, maxFileBytes: 5242880, maxFilesPerMessage: 10, maxAgentBytes: 104857600, retainMessages: 2000, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 10, statusPerMin: 120, mePerMin: 30 } };
+
+  test('Policy: each switch says whether it is on, each stepper and dropdown is named by its row', () => {
+    const html = policyHtml(POLICY);
+    assert.match(html, /<button class="switch" data-pause data-pol-f="paused" role="switch" aria-checked="false" aria-label="Accept new messages" aria-describedby="pol-s-paused">/, 'paused: not accepting');
+    assert.match(html, /<button class="switch is-on" data-seal data-pol-f="sealed" role="switch" aria-checked="true" aria-label="Seal message contents" aria-describedby="pol-s-sealed">/);
+    // what Off does is the switch's description
+    assert.match(html, /<div class="set-row-sub" id="pol-s-paused">Off pauses the Sphere/);
+    // a stepper: a spinbutton you reach with Tab, named by its row's title, with its range and value
+    assert.match(html, /<div class="set-row-title" id="pol-t-maxDepth">Obys asking Obys<\/div>/);
+    assert.match(html, /role="spinbutton" tabindex="0" data-pol-f="maxDepth" aria-labelledby="pol-t-maxDepth" aria-describedby="pol-s-maxDepth" aria-valuemin="0" aria-valuemax="10" aria-valuenow="3">3</);
+    assert.match(html, /id="pol-s-maxDepth">How many times one question may be passed on\. 0 turns it off\.</, 'what 0 means');
+    // its − and + are named, and left out of Tab (the arrow keys step it)
+    assert.match(html, /tabindex="-1" aria-label="Obys asking Obys: less"/);
+    assert.match(html, /tabindex="-1" aria-label="Obys asking Obys: more"/);
+    // a dropdown: its name is its row's title and the value it has
+    assert.match(html, /aria-haspopup="listbox" aria-expanded="false" aria-labelledby="pol-t-maxFileBytes pol-v-maxFileBytes"><span class="pol-dd-v" id="pol-v-maxFileBytes">5 MB<\/span>/);
+    assert.deepEqual(idsFound(html), []);
+    const spin = (html.match(/role="spinbutton"/g) || []).length, dd = (html.match(/aria-haspopup="listbox"/g) || []).length;
+    assert.ok(spin >= 2 && dd >= 8, `${spin} steppers, ${dd} dropdowns`);
+    // its notes are words beside the control; the voice says them (polNote), so a row has no status region of its own
+    const saved = policyHtml(POLICY, new Map([['maxDepth', { text: 'Saved', bad: false }]]));
+    assert.match(saved, /<span class="pol-note" data-pol-note="maxDepth">Saved<\/span>/);
+    assert.doesNotMatch(saved, /role="status"|aria-live/);
   });
 
-  test('the audit log filters say which one is on', () => {
-    const html = render(['pageAudit'], 'pageAudit()', {
-      S: { audit: [], auditFilter: 'traffic', auditVerified: true, auditHead: { seq: 0, hash: '' } },
-      AUDIT_FILTERS: { all: null, traffic: [], denials: [] }, head: (t, s, r) => `<h1>${t}</h1>${s}${r}`,
+  test("the audit log: a named search, dropdowns that say what they pick, and a list that holds only options", () => {
+    const consts = ['AUDIT_GROUPS', 'AUDIT_GROUP_WORDS', 'AUDIT_TIMES', 'AU', 'AU_ARIA', 'auditNameOf'];
+    const S = { audit: [{ seq: 1, ts: new Date().toISOString(), type: 'join', detail: 'bob joined' }], agents: new Map(), auditVerified: true, auditHead: { seq: 1, hash: 'h' } };
+    const given = { S, label: (a) => a.owner, head: (t, s, r) => `<h1>${t}</h1><p>${s}</p>${r || ''}`, clock: () => '12:00:00', xIcon: () => '<svg aria-hidden="true"></svg>' };
+    const page = render(['pageAudit', 'auditPick', 'auditOptions', 'auditHead', 'auditResults', 'auditFilter'], '(AU.loaded = true, pageAudit())', given, [...consts, 'auditFiltering', 'auditShown', 'auditExportLabel']);
+    assert.match(page, /<div class="au-tools" role="search">/);
+    assert.match(page, /<input type="text" id="au-q" placeholder="Search events" aria-label="Search events"/);
+    assert.match(page, /data-au-clear aria-label="Clear the search"/);
+    for (const [k, words] of [['type', 'Event type: All events'], ['member', 'Member: Everyone'], ['time', 'Time: Any time']]) {
+      assert.match(page, new RegExp(`data-au-pick="${k}"><button type="button" class="au-drop" aria-haspopup="listbox" aria-expanded="false" aria-label="${words}">`), k);
+    }
+    assert.match(page, /<div class="table-wrap" role="region" aria-label="Events" tabindex="0"><table class="table au-table">/);
+    // the menu: its Find field sits above the listbox; the listbox holds the options (and their group's name)
+    const menu = /pick\.insertAdjacentHTML\('beforeend', `([^\n]*)\n([^\n]*)\n([^\n]*)/.exec(fn('wireAuditPick'));
+    assert.ok(menu, 'the menu');
+    const markup = menu.slice(1).join('\n');
+    assert.match(markup, /^<div class="au-menu">\$\{find \? `<input class="au-menu-search" placeholder="Find" aria-label="Find \$\{key === 'type' \? 'an' : 'a'\} \$\{AU_ARIA\[key\]\.toLowerCase\(\)\}"[^`]*` : ''\}<div class="au-list" role="listbox" aria-label="\$\{AU_ARIA\[key\]\}">/);
+    assert.match(markup, /<button type="button" class="au-opt" role="option" data-v="\$\{esc\(o\.v\)\}" aria-selected="\$\{o\.v === AU\[key\]\}">/);
+    assert.match(markup, /<\/div><p class="au-none" hidden>No match<\/p><\/div>`\);$/, 'No match: after the listbox, not in it');
+  });
+
+  test("an instrument a member offers says, in words, whose it is and whether that Oby is there", () => {
+    const a = { id: 'a_bob', name: 'bob', owner: 'Bob Test', online: false };
+    const html = render(['offeredRow', 'instRow', 'instInputs'], 'offeredRow({ a: A, i: I })', {
+      A: a, I: { name: 'deploy', description: 'Deploys the app.', kind: 'prompt', inputSchema: {} },
+      S: { messages: [] }, INST: { open: new Set() }, stateOf: () => 'offline', obyOf: (x) => `${x.owner}’s Oby`, isMe: () => false,
+      picture: () => '<span class="owner-avatar" aria-hidden="true">BT</span>', firstSentence: (t) => t, instChevron: '',
     });
-    assert.match(html, /<div class="filters" role="group" aria-label="Show events">/);
-    assert.match(html, /data-filter="traffic" class="is-on" aria-pressed="true">Traffic/);
-    assert.match(html, /data-filter="all" class="" aria-pressed="false">All/);
+    assert.match(html, /<button class="inst-head has-pic"[^>]*aria-expanded="false" aria-controls="inst-more-o_a_bob_deploy"><span class="inst-pic" title="Bob Test’s Oby, offline"><span class="owner-avatar" aria-hidden="true">BT<\/span><span class="sr-only">Bob Test’s Oby, offline: <\/span><\/span><span class="inst-name">deploy<\/span>/);
+    assert.match(html, /class="inst-row is-dim"/);
+  });
+});
+
+// ---------------------------------------------------------------- the console's own controls (#151), rendered
+
+// a control run on its own: its markup, as the page writes it
+function control(call) {
+  return render(['ctlDropdown', 'ctlDdInner', 'ctlDdChips', 'ctlSegmented', 'ctlSwitch', 'ctlToggle', 'ctlStepper', 'ctlTime', 'ctlChips', 'ctlChipsInner', 'ctlInfo'], call, {}, ['CTL', 'ctlSame', 'ctlName', 'ctlAttrs', 'CTL_CHEV', 'CTL_X', 'ctlOptLabel']);
+}
+
+describe("the console's own controls, as Settings uses them", () => {
+  test('a dropdown is a combobox for a listbox, named, collapsed until opened', () => {
+    const one = control(`ctlDropdown({ id: 'r-model', value: 'opus', options: [{ value: 'opus', label: 'Opus' }, { value: 'haiku', label: 'Haiku' }], label: 'Model', labelledby: 'r-model-l' })`);
+    assert.match(one, /<button type="button" class="ctl-dd-btn" id="r-model-btn" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="r-model-list" aria-labelledby="r-model-l"><span class="ctl-dd-val">Opus<\/span>/);
+    // with only a label, the label names it
+    assert.match(control(`ctlDropdown({ id: 'x', value: null, options: [], label: 'In' })`), /role="combobox"[^>]*aria-label="In"/);
+    // a list of picks: each pick's × says what it takes off; Add says what it adds to
+    const many = control(`ctlDropdown({ id: 'mcp', multiple: true, value: ['github'], options: [{ value: 'github', label: 'GitHub' }], label: 'Your MCP servers' })`);
+    assert.match(many, /<button type="button" class="ctl-chip-x" id="mcp-x0" data-ctl-x="0" aria-label="Remove GitHub">/);
+    assert.match(many, /role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="mcp-list" aria-label="Your MCP servers: Add"/);
+  });
+
+  test('the list it opens: options a screen reader is pointed at, a named listbox, a named search', () => {
+    const open = fn('ctlOpen');
+    assert.match(open, /<input class="ctl-search" id="\$\{esc\(id\)\}-q" role="combobox" aria-expanded="true" aria-controls="\$\{esc\(id\)\}-list" aria-autocomplete="list"[^>]*aria-label="\$\{esc\(`\$\{d\.searchWords\}: \$\{d\.label\}`\)\}">/);
+    assert.match(open, /<ul class="ctl-list" role="listbox" id="\$\{esc\(id\)\}-list" aria-label="\$\{esc\(d\.label \|\| 'Options'\)\}"\$\{d\.multiple \? ' aria-multiselectable="true"' : ''\}>/);
+    assert.match(fn('ctlActive'), /owner\?\.setAttribute\('aria-activedescendant', li\.id\)/, 'the button or the search points at the active option');
+    assert.match(fn('ctlListHtml'), /role="option" id="\$\{esc\(id\)\}-o\$\{i\}" data-i="\$\{i\}" aria-selected="\$\{on\}"/);
+    // Escape closes it and gives the focus back to its button; Tab closes it and moves on
+    assert.match(fn('ctlDdKey'), /e\.key === 'Escape'\) \{ e\.preventDefault\(\); e\.stopImmediatePropagation\(\); ctlClose\(root\); return; \}/);
+    assert.match(fn('ctlClose'), /if \(focus && root\.isConnected\) btn\?\.focus\(\)/);
+  });
+
+  test('a segmented control is a radio group: one Tab stop, the arrow keys move the choice', () => {
+    const seg = control(`ctlSegmented({ id: 'shell', value: 'read', options: [{ value: 'off', label: 'Off' }, { value: 'read', label: 'Read-only' }, { value: 'full', label: 'Any command' }], label: 'Shell', labelledby: 'shell-l' })`);
+    assert.match(seg, /<div class="ctl-seg" id="shell" data-ctl="seg" role="radiogroup" aria-labelledby="shell-l">/);
+    assert.deepEqual([...seg.matchAll(/role="radio" id="shell-\d" data-i="\d" aria-checked="(\w+)" tabindex="(-?\d)"/g)].map((m) => [m[1], m[2]]), [['false', '-1'], ['true', '0'], ['false', '-1']]);
+    for (const k of ['ArrowRight', 'ArrowLeft', 'Home', 'End']) assert.ok(fn('ctlSegKey').includes(`${k}:`), k);
+  });
+
+  test('a switch says whether it is on; a stepper and a time are spinbuttons; chips and tips are named', () => {
+    assert.match(control(`ctlSwitch({ on: true, labelledby: 'n-l' })`), /<button type="button" class="switch is-on" data-ctl="switch" role="switch" aria-checked="true" aria-labelledby="n-l">/);
+    // a click turns it and says so
+    assert.match(fn('ctlInit'), /root\.setAttribute\('aria-checked', String\(on\)\)/);
+    // "No limit" for 0 is what's said, not "0"
+    const step = control(`ctlStepper({ id: 'max', value: 0, zero: 'No limit', labelledby: 'max-l' })`);
+    assert.match(step, /<input class="ctl-step-in" id="max-in" role="spinbutton" inputmode="numeric" autocomplete="off" aria-labelledby="max-l" aria-valuemin="0" aria-valuemax="100000" aria-valuenow="0" aria-valuetext="No limit"/);
+    assert.match(step, /data-step="-1" tabindex="-1" aria-label="Fewer"/);
+    const time = control(`ctlTime({ id: 'q', value: '22:00', label: 'Quiet from' })`);
+    assert.match(time, /role="group" aria-label="Quiet from"/);
+    assert.match(time, /id="q-h" role="spinbutton"[^>]*aria-label="Quiet from, hour" aria-valuemin="0" aria-valuemax="23" aria-valuenow="22"/);
+    assert.match(time, /id="q-m" role="spinbutton"[^>]*aria-label="Quiet from, minutes" aria-valuemin="0" aria-valuemax="59" aria-valuenow="0"/);
+    const chips = control(`ctlChips({ id: 'b', values: ['main'], label: 'Protected branches', placeholder: 'Add a branch' })`);
+    assert.match(chips, /<input class="ctl-chips-field" id="b-in" aria-label="Protected branches: add" placeholder="Add a branch"/);
+    assert.match(chips, /aria-label="Remove main"/);
+    assert.match(control(`ctlToggle({ id: 't', label: 'With files' })`), /<button type="button" class="ctl-toggle" id="t" data-ctl="toggle" aria-pressed="false">With files<\/button>/);
+    assert.match(control(`ctlInfo('A few words more')`), /<button type="button" class="ctl-info" data-ctl="info" aria-label="A few words more"/);
+  });
+
+  test("Settings: its section list is navigation that says where you are, and each section is named by its title", () => {
+    const page = fn('renderSettings');
+    assert.match(page, /<nav class="set-nav" aria-label="Settings sections">/);
+    assert.match(page, /aria-current="true"/);
+    assert.match(page, /<section class="set-sec set-sec-\$\{k\}" id="set-sec-\$\{k\}" aria-labelledby="set-sec-\$\{k\}-t">/);
+    assert.match(page, /<h2 class="set-sec-title" id="set-sec-\$\{k\}-t" tabindex="-1">/);
   });
 });
 
@@ -679,13 +873,23 @@ describe('focus, found again after a redraw', () => {
     assert.match(fn('renderNav'), /if \(!a11yDraw\(\$\('#nav'\), /);
     const page = fn('renderPage');
     assert.match(page, /const draw = \(html\) => \(drawn = a11yDraw\(el, html\)\);/);
-    for (const p of ['pageExchange', 'pageTraffic', 'pageMembers', 'pageInstruments', 'pageFiles', 'pageAudit', 'pagePolicy', 'pageAdmins', 'pageYou']) assert.match(page, new RegExp(`draw\\(${p}\\(`), p);
+    for (const p of ['pageExchange', 'pageTraffic', 'pageMembers', 'pageFiles', 'pageAudit', 'pagePolicy', 'pageAdmins', 'pageYou']) assert.match(page, new RegExp(`draw\\(${p}\\(`), p);
     assert.ok(!/el\.innerHTML =/.test(page), 'every page goes through it');
+    // Instruments compares its own markup the same way (#151), and keeps an open row and the keyboard
+    assert.match(page, /renderInstruments\(el, fresh\);/);
+    assert.match(fn('renderInstruments'), /if \(fresh \|\| html !== INST\.html \|\| !el\.querySelector\(':scope > \.inst-page'\)\) el\.innerHTML = INST\.html = html;/);
     // a page left as it is isn't wired again (Policy's switches would toggle twice)
     assert.match(page, /if \(!drawn\) return;\s*if \(!fresh\) \$\('#console-scroll'\)\.scrollTop = keep;\s*wirePage\(\);/);
     assert.match(page, /if \(a11yDraw\(\$\('#you-rest'\), youRest\(\)\)\) wirePage\(\);/);
     assert.match(fn('renderOverview'), /a11yDraw\(\$\('#ov-head'\), head\(/);
-    assert.match(fn('renderOverview'), /a11yDraw\(\$\('#ov-recent'\), exchangeTable\(ex, true\)\);/);
+    assert.match(fn('renderOverview'), /a11yDraw\(\$\('#ov-recent'\), exchangeTable\(ex\)\);/);
+    // Overview's numbers, and the audit log's results and header as live events come in
+    assert.match(fn('updateKpis'), /if \(!a11yDraw\(k, cards\.join\(''\)\)\) return;/);
+    assert.match(fn('updateAudit'), /a11yDraw\(box, auditResults\(\)\);\s*if \(top\) a11yDraw\(top, auditHead\(\)\);/);
+    // so wiring a part again must never add a second listener (Export would export twice)
+    assert.doesNotMatch(fn('wireAuditResults'), /addEventListener/);
+    // a value shown before it's saved (Policy's stepper and dropdown) is drawn again when it wasn't saved
+    assert.match(fn('polSave'), /a11yForget\(\$\('#page'\)\);[^\n]*\n\s*if \(S\.page === 'policy'\) renderPage\(false\);/);
     assert.match(fn('renderChannels'), /if \(!a11yDraw\(\$\('#channels'\),[\s\S]*\)\) return;/);
     assert.match(fn('renderMembers'), /a11yDraw\(\$\('#members'\), [\s\S]*a11yDraw\(\$\('#bots'\), /);
   });
