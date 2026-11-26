@@ -973,6 +973,13 @@ function redisStore() {
   const msgAt = new Map();
   const fileAt = new Map();
   let forceAt = 0;
+  // a cut by count (keeping messages) brings the next compaction forward too, but at most once an
+  // hour, by the snapshot's own time (`at` in its pointer), so a busy Sphere doesn't compact at
+  // every cut: `countAt` is the position a compaction must reach, `countWait` when this instance
+  // looks again
+  let countAt = 0;
+  let countWait = 0;
+  const snapOld = (ptr) => !(Date.now() - Date.parse(ptr?.at) < CUT_EVERY_MS); // none yet, or an hour old
   const noteAt = (op, pos) => {
     if (op.t === 'msg' && op.m?.id) msgAt.set(op.m.id, pos);
     else if (op.t === 'file' && op.f?.id) {
@@ -980,6 +987,7 @@ function redisStore() {
       if (!l) fileAt.set(op.f.id, [pos]);
       else if (!l.includes(pos)) l.push(pos);
     } else if ((op.t === 'delete' || op.t === 'expire') && op.soon) forceAt = Math.max(forceAt, pos + 1);
+    else if (op.t === 'expire' && op.why === 'count') countAt = Math.max(countAt, pos + 1);
     // a deletion whose message was still in the tail: a compaction that read it before it was
     // overwritten, and swapped in after, would keep its words (see watchFolds)
     if (op.t === 'delete' && !op.soon && msgAt.get(op.id) >= base) folding.set(pos, msgAt.get(op.id));
@@ -1219,10 +1227,10 @@ function redisStore() {
     return { raw: raw || '', ptr, entries };
   }
   // rarely: when the tail is longer than both SPHERE_COMPACT_EVERY and the snapshot; sooner when a
-  // deletion or a cut must leave the snapshot (forceAt)
+  // deletion or a cut must leave the snapshot (forceAt), or a cut by count the log (countAt, hourly)
   function maybeCompact() {
     if (compacting || CFG.compactEvery === Infinity || Date.now() < compactAfter || !compactionReady()) return;
-    if (!(forceAt > base) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    if (!(forceAt > base) && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
     compacting = true;
     compact()
       .catch((e) => {
@@ -1234,6 +1242,15 @@ function redisStore() {
       });
   }
   async function compact() {
+    // a cut by count alone: not within the hour after the last compaction (one GET, then not again till then)
+    if (!(forceAt > base) && applied - base < Math.max(CFG.compactEvery, snapCount)) {
+      const raw = await call(['GET', K.snap]);
+      const ptr = raw ? parsePtr(raw) : null;
+      if (!snapOld(ptr)) {
+        countWait = Date.parse(ptr.at) + CUT_EVERY_MS;
+        return false;
+      }
+    }
     // the position, and the counts there (messages folded away still count), taken together. First a
     // cut to exactly retainMessages (keeping messages): the fold then drops no message a cut didn't
     // remove, so every message after the last cut is still held
@@ -1244,7 +1261,7 @@ function redisStore() {
     const read = await readOps(at.pos);
     if (!read) return false;
     snapCount = read.ptr.count;
-    if (!(forceAt > read.ptr.pos) && at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
+    if (!(forceAt > read.ptr.pos) && !(countAt > read.ptr.pos && snapOld(read.raw ? read.ptr : null)) && at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
     const folded = foldOps(read.entries, at.retain);
     folded.push([at.pos - 1, at.tally]);
     const id = token(9);
@@ -2172,9 +2189,10 @@ function buildDelete(b, me, m) {
 // why: 'days' | 'count' | 'uploads', upto: the newest message it removes (in log order) or
 // null, at, files: the file ids it removes }, and an `expire` audit event (API.md). The file
 // store rewrites messages.jsonl at once; on Redis a cut's messages leave the log at the next
-// compaction, which a cut by time, or one a policy change makes, brings forward (soon).
+// compaction, which every cut brings forward: a cut by time, or one a policy change makes, at
+// once (soon); a cut by count within the hour after the last compaction (countAt).
 
-const CUT_EVERY_MS = 3600e3; // cuts by time, and of uploads never sent: at most once an hour
+const CUT_EVERY_MS = 3600e3; // cuts by time, and of uploads never sent: at most once an hour; compactions for cuts by count, too
 const UPLOAD_KEEP_MS = 864e5; // an upload never sent with a message goes after a day
 const cuts = { days: 0, uploads: 0, looked: 0 }; // when the log last cut by time, and uploads (from the log); when this process last looked for old uploads
 

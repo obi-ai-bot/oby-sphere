@@ -294,3 +294,56 @@ test('an older Sphere, from before keepDays, keeps messages with no time limit',
     await R.stop();
   }
 });
+
+// On Redis a cut's messages leave the log at the next compaction, which every cut brings forward:
+// one by count, once the snapshot is an hour old, so a busy Sphere doesn't compact at every cut.
+test('on Redis, a cut by count brings the compaction forward, at most once an hour', { timeout: 60000 }, async () => {
+  const procs = new Set();
+  const fake = await startFakeUpstash({ latencyMs: 1 });
+  const prefix = 'countcut:';
+  const env = { SPHERE_STORE: 'redis', UPSTASH_REDIS_REST_URL: fake.url, UPSTASH_REDIS_REST_TOKEN: fake.token, SPHERE_REDIS_PREFIX: prefix, SPHERE_COMPACT_EVERY: '100000', SPHERE_COMPACT_WAIT_MS: '0' };
+  // what stays in Redis (an old snapshot list that expires is left for instances still reading it)
+  const stored = () => [...fake.kv].filter(([k, e]) => k.startsWith(prefix) && !e.exp).map(([, e]) => (Array.isArray(e.v) ? e.v.join('\n') : String(e.v))).join('\n');
+  const snap = () => (fake.kv.get(prefix + 'snap') ? JSON.parse(fake.kv.get(prefix + 'snap').v) : null);
+  const R = await relay(env, procs);
+  try {
+    const alice = await call(R.base, 'POST', '/api/join', { body: { key: KEY, name: 'alice', owner: 'Alice' } });
+    assert.equal((await call(R.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { retainMessages: 100 } })).status, 200);
+    const texts = new Map();
+    const post = async (n, tag) => {
+      for (let i = 0; i < n; i++) {
+        const r = await call(R.base, 'POST', '/api/messages', { token: alice.token, body: { text: `${tag}-${i}-end` } });
+        assert.equal(r.status, 200);
+        texts.set(r.message.id, r.message.text);
+      }
+    };
+    const lastCut = async (base) => (await call(base, 'GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'expire').at(-1);
+    // past the newest 100 by 20: a cut, and with no snapshot yet, the compaction it brings forward
+    await post(125, 'PIPIT');
+    assert.match((await lastCut(R.base)).detail, /past the newest 100 removed/);
+    assert.ok(await until(async () => (await call(R.base, 'GET', '/api/info', { key: KEY }), !!snap() && !stored().includes('PIPIT-0-end'))), 'compacted: the cut messages left the log');
+    assert.ok(stored().includes('PIPIT-124-end'), 'the newest stay');
+    const first = snap().id;
+    // within the hour: the next cut waits (its messages hidden, still in the snapshot until then)
+    await post(25, 'WREN');
+    const cut = await lastCut(R.base);
+    const gone = texts.get(cut.ref);
+    assert.ok(gone, 'a message the second cut removed');
+    assert.equal((await call(R.base, 'GET', `/api/messages/${cut.ref}`, { admin: ADMIN })).status, 404);
+    for (let i = 0; i < 5; i++) await call(R.base, 'GET', '/api/info', { key: KEY });
+    await sleep(300); // a compaction would run in the background now: none does
+    assert.equal(snap().id, first, 'not compacted again within the hour');
+    assert.ok(stored().includes(gone), 'its words wait for the next compaction');
+    // an hour on (the snapshot's time moved back): the next instance to look compacts, and they leave
+    const e = fake.kv.get(prefix + 'snap');
+    e.v = JSON.stringify({ ...JSON.parse(e.v), at: new Date(Date.now() - 2 * 3600e3).toISOString() });
+    const B = await relay(env, procs);
+    assert.ok(await until(async () => (await call(B.base, 'GET', '/api/info', { key: KEY }), snap().id !== first)), 'compacted again');
+    assert.ok(!stored().includes(gone), 'gone from the log');
+    assert.equal((await call(B.base, 'GET', '/api/audit?limit=1000', { key: KEY })).verified, true);
+    await B.stop();
+  } finally {
+    await R.stop();
+    await fake.close();
+  }
+});
