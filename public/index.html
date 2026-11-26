@@ -2913,7 +2913,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   // a chips input: a list of words or phrases. Enter or a comma adds what's typed, × or Backspace
-  // in the empty field takes one off; a pasted list is split at its commas
+  // in the empty field takes one off; a pasted list is split at its commas and line breaks
   function ctlChips({ id, values = [], label = '', placeholder = '', max = 200, each = 80, attrs = '' }) {
     CTL.data.set(id, { value: [...values], max, each });
     return `<div class="ctl-chips" id="${esc(id)}" data-ctl="chips"${ctlAttrs(attrs)}><span class="ctl-chips-list">${ctlChipsInner(id)}</span><input class="ctl-chips-field" id="${esc(id)}-in" aria-label="${esc(`${label}: add`)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false" enterkeyhint="done" maxlength="${each * 4}"></div>`;
@@ -2950,6 +2950,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const n = CTL.data.get(root.id).value.length;
       if (n) { e.preventDefault(); ctlChipsRemove(root, n - 1); f.focus(); }
     }
+  }
+  // a pasted list, one a line: a one-line field would run the lines together into one, so each
+  // line is added as its own, with what was typed around the caret
+  function ctlChipsPaste(root, f, text) {
+    const at = f.selectionStart ?? f.value.length, to = f.selectionEnd ?? at;
+    ctlChipsAdd(root, (f.value.slice(0, at) + text + f.value.slice(to)).split(/[\r\n]+/).join(','));
+    f.value = '';
   }
 
   // an (i) tip: a few words more, on hover or focus
@@ -3023,6 +3030,14 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         t.value = rest.trimStart();
       }
     }, true);
+    document.addEventListener('paste', (e) => {
+      const t = e.target;
+      if (!t.classList?.contains('ctl-chips-field')) return;
+      const text = e.clipboardData?.getData('text/plain') || '';
+      if (!/[\r\n]/.test(text)) return; // one line: pasted as typed, and a comma in it splits it
+      e.preventDefault();
+      ctlChipsPaste(t.closest('[data-ctl]'), t, text);
+    });
     document.addEventListener('focusout', (e) => {
       const t = e.target;
       const root = t.closest?.('[data-ctl]');

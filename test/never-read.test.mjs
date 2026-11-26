@@ -501,6 +501,27 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     const old = ctx.render({ settings: { machine: { neverRead: ['x.db'] } }, neverReadBuiltIn: null });
     assert.match(old, /<span class="ctl-chip-t">x\.db<\/span>/);
     assert.doesNotMatch(old, /set-always/);
+    // a pasted list, one name a line: a name a line. A one-line field would run the lines together
+    // into one name (Chrome puts spaces between them), which would hide none of the files
+    assert.match(fnSource('ctlInit'), /addEventListener\('paste', \(e\) => \{[\s\S]*?if \(!\/\[\\r\\n\]\/\.test\(text\)\) return;[\s\S]*?e\.preventDefault\(\);\s*ctlChipsPaste\(t\.closest\('\[data-ctl\]'\), t, text\);/);
+    vm.runInContext(
+      [
+        'class CustomEvent { constructor(type, init) { this.type = type; this.detail = init.detail; } }',
+        ...['ctlEmit', 'ctlChipsAdd', 'ctlChipsPaste'].map(fnSource),
+        'this.paste = ctlChipsPaste;',
+      ].join('\n'),
+      ctx,
+    );
+    ctx.render({ settings: { machine: { neverRead: ['*.sqlite'] } }, neverReadBuiltIn: ['.env*'] });
+    const sent = [];
+    const list = { innerHTML: '' };
+    const root = { id: 'set-machine-neverRead', querySelector: () => list, dispatchEvent: (ev) => sent.push(JSON.parse(JSON.stringify(ev.detail.value))) };
+    // pasted at the caret, after "notes/" already typed; blank lines and a repeat left out
+    const f = { value: 'notes/', selectionStart: 6, selectionEnd: 6 };
+    ctx.paste(root, f, 'private-*.md\r\ncustomers/\n\n*.sqlite\nledger-*.xlsx\n');
+    assert.deepEqual(sent, [['*.sqlite', 'notes/private-*.md', 'customers/', 'ledger-*.xlsx']]);
+    assert.equal(f.value, '', 'the field is emptied');
+    assert.match(list.innerHTML, /<span class="ctl-chip-t">ledger-\*\.xlsx<\/span>/);
     // adding a folder that a name would hide: taken back off, and said by the add field
     const add = fnSource('addFolder');
     assert.match(add, /\/\^machine\\\.neverRead\/\.test\(dotted\(SET\.error\.field \|\| ''\)\) && \/would hide your whole folder\//);

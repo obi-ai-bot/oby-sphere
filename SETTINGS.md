@@ -211,7 +211,7 @@ Inside your folders, an answer never reads secret files: `.env` files (`.env.loc
 
 #### Your own: `neverRead`
 
-A folder you share may hold files that aren't secrets by name but are yours alone: a database, customer lists, private notes. Name them in `machine.neverRead`, or add them one at a time in your console's **Settings › This computer › Never read**:
+A folder you share may hold files that aren't secrets by name but are yours alone: a database, customer lists, private notes. Name them in `machine.neverRead`, or in your console's **Settings › This computer › Never read** (type a name and press Enter, or paste a list, one name a line):
 
 ```json
 "neverRead": ["*.sqlite", "customers/", "notes/private-*.md"]
