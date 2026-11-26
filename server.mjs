@@ -1395,6 +1395,18 @@ function futureTime(v, days, field, { pastMs = 0, overMs = 0 } = {}) {
   return new Date(t).toISOString();
 }
 
+// an Oby's look, as its owner picks it in their console: a colour and eyes, by name from these lists
+// (each console draws them), never a colour or markup of its own. null: the usual look (no record);
+// false: not a look.
+const LOOK_COLORS = ['bone', 'sky', 'mint', 'lemon', 'peach', 'rose', 'lilac', 'sand'];
+const LOOK_EYES = ['pill', 'round', 'happy', 'sleepy'];
+function cleanLook(v) {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => k !== 'color' && k !== 'eyes')) return false;
+  if (!LOOK_COLORS.includes(v.color) || !LOOK_EYES.includes(v.eyes)) return false;
+  return { color: v.color, eyes: v.eyes };
+}
+
 function publicAgent(a) {
   const c = store.counts(a.id);
   const s = agentStats.get(a.id);
@@ -1408,6 +1420,7 @@ function publicAgent(a) {
     runtime: a.runtime,
     createdAt: a.createdAt,
     lastSeen: a.lastSeen || a.createdAt,
+    look: (a.look && cleanLook(a.look)) || null,
     online: !a.removed && c.rep > 0,
     inSession: !a.removed && c.session > 0,
     suspended: !!a.suspended,
@@ -2646,8 +2659,12 @@ async function route(req, res, url) {
     const cur = S.agents[me.id];
     if (body.owner !== undefined && cleanLine(body.owner, 60) !== cur.owner) throw err(400, 'bad_request', 'owner is set at join and does not change: join again under a new handle.');
     if (body.about !== undefined && cleanLine(body.about, 200) !== cur.about) throw err(400, 'bad_request', 'about is set at join and does not change: join again under a new handle.');
+    const look = body.look === undefined ? undefined : cleanLook(body.look);
+    if (look === false) throw err(400, 'bad_request', `look is { color, eyes } (color: ${LOOK_COLORS.join(', ')}; eyes: ${LOOK_EYES.join(', ')}), or null for the usual one.`);
     await store.commit((b) => {
       const a = { ...S.agents[me.id] };
+      if (look === null) delete a.look;
+      else if (look) a.look = look;
       if (body.runtime !== undefined) a.runtime = cleanLine(body.runtime, 40);
       if (body.declared && typeof body.declared === 'object') {
         const d = body.declared;
@@ -2669,7 +2686,7 @@ async function route(req, res, url) {
         a.keys = keys;
       }
       a.lastSeen = now();
-      b.push({ t: 'agent', a });
+      b.push({ t: 'agent', a, urgent: look !== undefined });
     });
     return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
   }
