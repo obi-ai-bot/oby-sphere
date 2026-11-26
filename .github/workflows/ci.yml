@@ -1,6 +1,7 @@
 # Syntax, the relay's tests (both stores, sealing, the Vercel entry; no Claude and no network
-# needed), the Docker image building and answering its health check, and the background service
-# on Windows (its own test file only, with the real Task Scheduler too).
+# needed), the Docker image building and answering its health check, the background service
+# on Windows (its own test file only, with the real Task Scheduler too), and the console in a
+# real browser (Playwright, Chromium and axe-core, installed in that job only).
 name: CI
 
 on:
@@ -68,3 +69,39 @@ jobs:
         run: node --test test/windows-service.test.mjs
         env:
           OBYSPHERE_TEST_REAL_SCHTASKS: '1'
+
+  browser:
+    name: Console in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_VERSION: '1.64.1' # the same as test/browser-helpers.mjs
+      AXE_VERSION: '4.10.2' # the same as test/browser-helpers.mjs
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # for this job only: package.json keeps no dependencies, and no lockfile is written
+      - run: npm install --no-save playwright@"$PLAYWRIGHT_VERSION" axe-core@"$AXE_VERSION"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+      # Chromium comes from the cache when it's there; its system libraries are installed each time
+      - run: npx playwright install --with-deps chromium
+      - name: The console at desktop and phone width, and axe-core on every page
+        run: node --test test/browser-tests.test.mjs
+        env:
+          OBYSPHERE_BROWSER_TESTS: '1'
+          OBYSPHERE_BROWSER_ARTIFACTS: ${{ runner.temp }}/browser-artifacts
+      - name: Screenshots and traces of what failed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-tests
+          path: ${{ runner.temp }}/browser-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
