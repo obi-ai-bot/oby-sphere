@@ -980,9 +980,25 @@ function redisStore() {
       if (!l) fileAt.set(op.f.id, [pos]);
       else if (!l.includes(pos)) l.push(pos);
     } else if ((op.t === 'delete' || op.t === 'expire') && op.soon) forceAt = Math.max(forceAt, pos + 1);
+    // a deletion whose message was still in the tail: a compaction that read it before it was
+    // overwritten, and swapped in after, would keep its words (see watchFolds)
+    if (op.t === 'delete' && !op.soon && msgAt.get(op.id) >= base) folding.set(pos, msgAt.get(op.id));
     if (op.t === 'expire') {
       for (const id of msgAt.keys()) if (!byId.has(id)) msgAt.delete(id);
       for (const id of fileAt.keys()) if (!Object.hasOwn(S.files, id)) fileAt.delete(id);
+    }
+  };
+  // deletion position -> its message's position, until a snapshot covers the deletion
+  const folding = new Map();
+  // base moved past a deleted message but not past its deletion: that snapshot may hold its words,
+  // so the next one comes as soon as it may
+  const watchFolds = () => {
+    for (const [at, mp] of folding) {
+      if (base > at) folding.delete(at);
+      else if (base > mp) {
+        forceAt = Math.max(forceAt, at + 1);
+        folding.delete(at);
+      }
     }
   };
   let pres = { at: 0, map: new Map() };
@@ -1027,6 +1043,7 @@ function redisStore() {
     for (;;) {
       const r = await call(['EVAL', READ_LUA, ...LOG_KEYS, String(applied), '200'], true); // a read: safe to send twice
       base = Number(r[0]);
+      if (folding.size) watchFolds(); // deleting messages
       if (r.length < 2) {
         await loadSnapshot(); // compaction: behind the compacted part, the snapshot, then the tail
         continue;
@@ -1242,6 +1259,7 @@ function redisStore() {
       return false;
     }
     base = Math.max(base, at.pos);
+    if (folding.size) watchFolds(); // deleting messages: one this snapshot may have read before its deletion
     snapCount = folded.length;
     logBytes = bytes + Math.max(0, logBytes - at.bytes); // the snapshot, and what this instance applied after it
     return true;

@@ -1216,7 +1216,7 @@ async function adminStatus(p) {
           sphere: cleanLine(sphere?.name, 80),
           you: { handle: p.agent.name, admin: admin === true, role: me?.admin === true },
           admins: admins.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60), suspended: !!a.suspended })),
-          policy: { sealed: !!pol.sealed, paused: !!sphere?.paused, maxDepth: Number(pol.maxDepth) || 0, maxFileBytes: Number(pol.maxFileBytes) || 0 },
+          policy: { sealed: !!pol.sealed, paused: !!sphere?.paused, maxDepth: Number(pol.maxDepth) || 0, maxFileBytes: Number(pol.maxFileBytes) || 0, keepDays: Number(pol.keepDays) || 0 },
         },
         null,
         2,
@@ -2201,6 +2201,7 @@ function sweepAsks(p) {
   try {
     for (const n of fs.readdirSync(pendingDir(p))) if (/^left-m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(pendingDir(p), n)).mtimeMs < Date.now() - 8 * 864e5) fs.rmSync(path.join(pendingDir(p), n), { force: true });
   } catch {}
+  listWithdrawn(p); // deleted messages: asks taken back go from Waiting for you after a few minutes
   sweepNotify(p);
 }
 

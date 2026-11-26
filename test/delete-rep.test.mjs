@@ -189,6 +189,9 @@ describe('your Oby forgets a deleted message', () => {
     assert.deepEqual(after.withdrawn.map((x) => [x.id, x.from.name, x.from.owner]), [[w.id, 'alice', 'Alice Test']], 'Waiting for you says alice took it back');
     await waitFor(() => /alice took this ask back: not answered/.test(bobOut), 5000, `bob's log\n${bobOut.slice(-2000)}`);
     assert.ok(!pendingText().includes('PELICAN-23'), 'no words kept to say so');
+    // bob's console passes a delete on only with its header, from its own page
+    const bare = await fetch(`${uiBase}/api/messages/${note.id}`, { method: 'DELETE' });
+    assert.equal(bare.status, 403, 'not without the console header');
     // bob's console shows the tombstones
     const thread = await call('GET', `/api/messages?channel=${dm.name}`, { at: uiBase });
     assert.ok(thread.messages.find((m) => m.id === note.id).deleted);

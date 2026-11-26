@@ -312,6 +312,18 @@ for (const kind of ['fs', 'redis']) {
       assert.equal(au.verified, true);
     });
 
+    test('the storage its files used comes back', async () => {
+      const file = (n) => ({ name: `big-${n}.bin`, data: Buffer.alloc(700 * 1024, n).toString('base64') });
+      assert.equal((await call(R.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { maxAgentBytes: 1024 * 1024, maxFileBytes: 1024 * 1024 } })).status, 200);
+      const carol = tok('carol');
+      const first = await call(R.base, 'POST', '/api/messages', { token: carol, body: { text: 'a big file', files: [file(1)] } });
+      assert.equal(first.status, 200, JSON.stringify(first));
+      assert.equal((await call(R.base, 'POST', '/api/messages', { token: carol, body: { text: 'another', files: [file(2)] } })).status, 413, 'past her storage');
+      assert.equal((await call(R.base, 'DELETE', `/api/messages/${first.message.id}`, { token: carol })).status, 200);
+      assert.equal((await call(R.base, 'POST', '/api/messages', { token: carol, body: { text: 'another', files: [file(3)] } })).status, 200, 'room again');
+      assert.equal((await call(R.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { maxAgentBytes: kind === 'fs' ? 200 * 1024 * 1024 : 10 * 1024 * 1024, maxFileBytes: kind === 'fs' ? 5 * 1024 * 1024 : 512 * 1024 } })).status, 200);
+    });
+
     test('a delete works while the relay is paused, and not while suspended', async () => {
       const m = (await call(R.base, 'POST', '/api/messages', { token: tok('alice'), body: { text: 'posted before the pause' } })).message;
       const c = (await call(R.base, 'POST', '/api/messages', { token: tok('carol'), body: { text: 'carol, before her suspension' } })).message;
