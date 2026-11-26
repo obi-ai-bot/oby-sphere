@@ -393,7 +393,7 @@ async function awayState(p, api) {
 // what an asker reads about this Oby, as sphere_ask says it
 function askerSees(a) {
   const w = awayShown(a);
-  if (w) return `${awayWords(a, w)}. Their asks wait and are answered ${w.until ? 'then' : 'when you are back'}.`;
+  if (w) return `${awayWords(a, w, { withNote: true })}. Their asks wait and are answered ${w.until ? 'then' : 'when you are back'}.`;
   if (a.online) return `@${slug(a.name)} is online.`;
   return `${offlineWords(a)}. Their asks wait until it comes online.`;
 }
@@ -1532,7 +1532,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
 
       // too old, or past the asker's deadline: a short reply, and nothing runs
       const late = offline
-        ? `This ask came while @${p.agent.name}'s Oby was offline (from ${localWhen(offline.from)} to ${localWhen(offline.to)}) and is older than it answers now. Ask again if it still matters.`
+        ? `This ask came while @${p.agent.name}'s Oby was offline (for ${spanWords(Date.parse(offline.to) - Date.parse(offline.from))}) and, asked ${spanWords(Date.now() - Date.parse(msg.ts))} ago, is older than it answers now. Ask again if it still matters.`
         : expire
           ? `@${p.agent.name}'s Oby couldn't answer this one within ${expire} h. Ask again if it still matters.`
           : pastDeadline(msg)
@@ -2487,6 +2487,15 @@ function ownerWords(words, s) {
   return redactPaths(printable(words || ''), s).slice(0, 300);
 }
 
+// a length of time in words, for a reader in any time zone: "40 min", "5 h", "3 days"
+function spanWords(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'a while';
+  const min = Math.round(ms / 60e3);
+  if (min < 90) return `${Math.max(1, min)} min`;
+  const h = Math.round(ms / 3600e3);
+  return h < 48 ? `${h} h` : `${Math.round(ms / 864e5)} days`;
+}
+
 // a Sphere time, short and on this machine's clock (shortTime: "Nov 26, 18:02"); "18:02" alone
 // today, when asked
 function localWhen(iso, { today = false } = {}) {
@@ -2763,7 +2772,13 @@ async function awayLocalApi(m, res, p, json) {
   }
   if (b.note !== undefined && b.note !== null && typeof b.note !== 'string') return sendJson(res, 400, { error: 'note: words', field: 'note' });
   if (String(b.note || '').length > 120) return sendJson(res, 400, { error: 'note: at most 120 characters', field: 'note' });
-  return sendJson(res, 200, { away: (await setAway(p, { until, note: b.note || '', by: 'owner' }, client(p))).away });
+  try {
+    return sendJson(res, 200, { away: (await setAway(p, { until, note: b.note || '', by: 'owner' }, client(p))).away });
+  } catch (e) {
+    // a relay from before #160 has no /api/away: nothing was saved, and the words say why
+    if (/"Not found\."/.test(String(e.message))) return sendJson(res, 409, { error: "This Sphere's relay can't show an away yet: whoever runs the Sphere updates it (obysphere server update).", code: 'relay_too_old' });
+    throw e;
+  }
 }
 
 // ================================================================ MCP server
@@ -2963,10 +2978,11 @@ function awayShown(a) {
   return { until, note: cleanLine(w.note, 120) };
 }
 
-// "@bob can answer after Nov 27, 09:00 (note: "on holiday")", or "@bob is away" with no time.
-// The note is the owner's words (or the representative's "out of AI usage"): quoted, as data.
-function awayWords(a, w) {
-  const note = w.note ? ` (note: ${JSON.stringify(w.note)})` : '';
+// "@bob can answer after Nov 27, 09:00", or "@bob is away" with no time. The note is another
+// member's words: an asker's Claude reads it only inside sphere_agents' fenced data, so sphere_ask
+// and sphere_check only say there is one. `withNote` (your own `away`, about your own note) quotes it.
+function awayWords(a, w, { withNote = false } = {}) {
+  const note = !w.note ? '' : withNote ? ` (note: ${JSON.stringify(w.note)})` : ' (it left a note: sphere_agents shows it)';
   return w.until ? `@${slug(a.name)} can answer after ${shortTime(w.until)}${note}` : `@${slug(a.name)} is away${note}`;
 }
 

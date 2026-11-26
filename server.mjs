@@ -404,15 +404,16 @@ function account(m) {
     if (parent && parent.kind === 'ask' && parent.to.includes(m.from)) {
       const s = statsOf(m.from);
       if (m.meta?.error) s.errors++;
-      else if (m.meta?.declined) s.declined++;
+      else if (m.meta?.declined || m.meta?.expired) s.declined++; // an ask too old to answer is no answer
       else s.answered++;
       const earlier = repliesOf.get(parent.id) || [];
       const ms = Date.parse(m.ts) - Date.parse(parent.ts);
-      if (!earlier.some((r) => r.from === m.from)) {
+      // how fast an Oby answers: its answers only (an "expired" reply after a weekend offline isn't one)
+      if (!m.meta?.expired && !earlier.some((r) => r.from === m.from)) {
         s.samples.push(ms);
         if (s.samples.length > 200) s.samples.shift();
       }
-      if (!earlier.length) answerRing.push(ms);
+      if (!m.meta?.expired && !earlier.length) answerRing.push(ms);
     }
   }
 }
@@ -1045,11 +1046,16 @@ function awayOf(a) {
   return { until: w.until ?? null, note: w.note || '', since: w.since ?? null };
 }
 
-// a time in the next `days` days, as ISO, or a 400 naming the field
-function futureTime(v, days, field) {
-  const t = Date.parse(String(v));
-  if (!Number.isFinite(t) || t <= Date.now()) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
-  if (t > Date.now() + days * 864e5) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+// a time in the next `days` days, as ISO, or a 400 naming the field. `slackMs` forgives a sender's
+// clock that runs a little off the relay's: that much in the past counts as now, that much past the
+// limit as the limit.
+function futureTime(v, days, field, slackMs = 0) {
+  let t = Date.parse(String(v));
+  const now = Date.now();
+  const max = now + days * 864e5;
+  if (!Number.isFinite(t) || t <= now - slackMs || (!slackMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
+  if (t > max + slackMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+  t = Math.min(Math.max(t, now + 1000), max);
   return new Date(t).toISOString();
 }
 
@@ -1457,7 +1463,13 @@ function buildMessage(b, me, body, pre) {
   const m = { id: 'm_' + token(6), ts: now(), channel, from: me.id, kind: to.length ? 'ask' : replyTo ? 'reply' : 'post', to, text, replyTo, cause, files, depth, meta: cleanMeta(body.meta) };
   // how long the asker says the answer stays useful: plain metadata, like meta, and not covered
   // by a sealed message's signature. Only an ask has one.
-  if (body.neededBy != null && m.kind === 'ask') m.neededBy = futureTime(body.neededBy, 7, 'neededBy');
+  if (m.kind === 'ask') {
+    const mins = body.neededWithinMinutes;
+    if (mins != null) {
+      if (!Number.isInteger(mins) || mins < 1 || mins > 10080) throw err(400, 'bad_request', 'neededWithinMinutes is a whole number of minutes, 1 to 10080 (7 days).');
+      m.neededBy = new Date(Date.now() + mins * 60e3).toISOString(); // on the relay's clock, which every Oby reads it by
+    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', 120e3);
+  }
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
@@ -1492,7 +1504,7 @@ function buildMessage(b, me, body, pre) {
     const parent = byId.get(replyTo);
     const asker = parent?.from ? S.agents[parent.from] : null;
     const took = parent ? ` · ${((Date.parse(m.ts) - Date.parse(parent.ts)) / 1000).toFixed(1)}s` : '';
-    const how = m.meta.error ? ' · error' : m.meta.declined ? ' · declined' : m.meta.answeredBy === 'owner' ? ' · by its owner' : m.meta.model ? ` · ${m.meta.model}` : '';
+    const how = m.meta.expired ? ' · expired' : m.meta.error ? ' · error' : m.meta.declined ? ' · declined' : m.meta.answeredBy === 'owner' ? ' · by its owner' : m.meta.model ? ` · ${m.meta.model}` : '';
     b.audit('reply', { actor: me.id, target: asker?.id ?? null, ref: m.id, content, detail: `${me.name} → ${asker?.name ?? 'channel'} · ${bytes}${took}${how}${fileNote}` });
   } else {
     b.audit('post', { actor: me.id, ref: m.id, content, detail: `${me.name} · #${channel} · ${bytes}${fileNote}` });
@@ -2256,8 +2268,10 @@ async function route(req, res, url) {
       const was = awayOf(a);
       if (away) a.away = away;
       else delete a.away;
-      b.push({ t: 'agent', a, urgent: true });
-      if (away && (!was || was.until !== away.until)) b.audit('away', { actor: me.id, detail: `${a.name} is away until ${away.until ?? 'further notice'}` });
+      // saved at once when it starts or ends; a new time on an away that goes on (a representative's
+      // pause moves its time as it retries) rides the next save, and the audit log says away and back only
+      b.push({ t: 'agent', a, urgent: !was !== !away });
+      if (away && !was) b.audit('away', { actor: me.id, detail: `${a.name} is away until ${away.until ?? 'further notice'}` });
       else if (!away && was) b.audit('away', { actor: me.id, detail: `${a.name} is back` });
     });
     return send(res, 200, { agent: publicAgent(S.agents[me.id]) });

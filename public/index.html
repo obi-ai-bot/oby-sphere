@@ -812,8 +812,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 .panel-head .link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
 .panel-head .link:hover { color: var(--ink); }
 .mem-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mem-name .ink { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
-.mem-name .mem-handle, .mem-name .chip-tag { flex: none; }
+.mem-name .ink { min-width: 6ch; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+/* when the column is narrow the handle gives way first, so a name never shrinks to one letter */
+.mem-name .mem-handle { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-name .chip-tag { flex: none; }
 .mem-handle { font-size: var(--text-sm); }
 .mem-sub { color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
 .mem-sub.warn { color: var(--needs); }
@@ -3851,7 +3853,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       ${ctlSegmented({ id: 'set-availability-whenUnable', value: v, options: Object.entries(UNABLE_WORDS).map(([value, label]) => ({ value, label })), label: 'When your runtime can’t answer', labelledby: 'set-availability-l', attrs: 'data-k="availability.whenUnable"' })}
       <p class="route-sub-line" data-sub-for="availability.whenUnable">${esc(UNABLE_SUB[v])}</p>
       <div class="route-unable-rows">${otherRow}
-        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid('availability.holdHours')}-l">Longest hold, in hours</div><div class="set-row-sub">Also how old an ask your Oby still answers after being offline.</div></div><div class="set-row-ctl">${ctlStepper({ id: fid('availability.holdHours'), value: Number(a.holdHours) || AVAIL_DEFAULTS.holdHours, min: 1, max: 168, step: 1, labelledby: `${fid('availability.holdHours')}-l`, attrs: 'data-k="availability.holdHours"' })}</div></div>
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid('availability.holdHours')}-l">Gives up on an ask after, in hours</div><div class="set-row-sub">Counted from when it was asked: a held ask, or one that came while your Oby was offline, gets a short reply instead after that.</div></div><div class="set-row-ctl">${ctlStepper({ id: fid('availability.holdHours'), value: Number(a.holdHours) || AVAIL_DEFAULTS.holdHours, min: 1, max: 168, step: 1, labelledby: `${fid('availability.holdHours')}-l`, attrs: 'data-k="availability.holdHours"' })}</div></div>
         ${swRow('availability.showReason', !!a.showReason, 'Tell askers why', 'Such as “out of usage”. Off, they see only when your Oby can answer.')}
       </div>`;
   }

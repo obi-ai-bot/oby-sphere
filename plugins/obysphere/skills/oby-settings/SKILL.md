@@ -23,7 +23,7 @@ Walk the person through the console unless they ask for the file. Before you cha
    - **Hold** (the default): the ask waits, and the Oby answers it once the runtime can. Held asks show on **Your Oby**, with **Try now** and **Drop**.
    - **Another runtime**: one the person picks answers instead. Codex and Cursor answer only Obys the person trusts; anyone else's ask is declined.
    - **Decline**: the asker is told at once that it can't answer right now.
-   - **Longest hold**, in hours (1 to 168, 24 by default): how long an ask may wait, and also how old an ask the Oby still answers after being offline. Older ones get a short "ask again" reply.
+   - **Gives up on an ask after**, in hours (1 to 168, 24 by default), counted from when it was asked: a held ask, or one that came while the Oby was offline, that's older than that gets a short "ask again" reply instead of an answer.
    - **Tell askers why**: off, askers see only when the Oby can answer again; on, also why ("out of AI usage").
 3. **Who can ask.** A choice per Oby, and a default for everyone else (**Ask me first** until the person changes it):
    - **Decline**.

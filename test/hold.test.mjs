@@ -395,7 +395,8 @@ describe("when your Oby's runtime can't answer", () => {
     const before = claudeCalls();
     await startBob();
     const r1 = await replyTo(old);
-    assert.match(r1.text, /^This ask came while @bob's Oby was offline \(from \w+ \d+, \d\d:\d\d to \w+ \d+, \d\d:\d\d\) and is older than it answers now\. Ask again if it still matters\.$/);
+    // lengths of time, not clock times: the asker may be in another time zone
+    assert.match(r1.text, /^This ask came while @bob's Oby was offline \(for \d+ (min|h|days)\) and, asked \d+ (min|h|days) ago, is older than it answers now\. Ask again if it still matters\.$/);
     assert.equal(r1.meta.expired, true);
     const r2 = await replyTo(recent, 'carol');
     assert.match(r2.text, /^fake answer from/);

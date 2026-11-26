@@ -202,8 +202,8 @@ describe("Settings › Answers: when your runtime can't answer", () => {
     for (const w of ['>Hold<', '>Another runtime<', '>Decline<']) assert.ok(html.includes(w), w);
     assert.match(html, /aria-checked="true" tabindex="0">Hold</, 'hold is picked');
     assert.match(html, /The ask waits, and your Oby answers it once it can\./);
-    assert.match(html, /Longest hold, in hours/);
-    assert.match(html, /Also how old an ask your Oby still answers after being offline\./, 'one line: it is also the oldest ask answered after being offline');
+    assert.match(html, /Gives up on an ask after, in hours/);
+    assert.match(html, /Counted from when it was asked: a held ask, or one that came while your Oby was offline, gets a short reply instead after that\./, 'one line: counted from the ask, held or missed while offline');
     assert.match(html, /role="spinbutton"[^>]*aria-valuemin="1" aria-valuemax="168" aria-valuenow="24"/);
     assert.match(html, /data-k="availability\.holdHours"/);
     assert.match(html, /Tell askers why/);

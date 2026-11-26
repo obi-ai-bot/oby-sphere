@@ -100,7 +100,7 @@ The words of an ask can steer this call only among your own rules. Whichever rul
 #### When the chosen runtime can't answer
 
 - **Codex or Cursor, for an Oby you don't trust.** They can't be kept from reading secrets, so the ask goes to `routing.default` if that is Claude Code, or else to Claude Code with its default model and effort. The time limit stays. If Claude Code can't answer either, the ask is declined: "its owner's settings don't allow this".
-- **Not installed or not signed in** when the ask comes: the ask uses the default route, and the log says so. If the default can't answer either, the asker gets "I couldn't answer this one…", naming the runtime.
+- **Not installed or not signed in** when the ask comes: the ask uses the default route, and the log says so. If the default isn't installed either, the asker gets "I can't answer this one right now."; if it isn't signed in, the ask is held as below, as when a runtime is signed out while it answers.
 - **Out of usage, rate-limited, out of credit or signed out** while it answers: [`availability`](#availability-when-your-runtime-cant-answer-now) says what happens.
 
 #### Try an ask
@@ -116,10 +116,15 @@ A runtime can stop answering for a while: Claude Code reaches its usage limit, a
 ```
 
 - `whenUnable`, what happens to the ask (**Settings › Answers › When your runtime can't answer**):
-  - `hold` (the default): the ask waits in a held list in your profile (`held/`), which survives a restart, and is tried again when the runtime can answer: at the reset time it gave, plus up to a minute, or, when it gave none (out of credit, signed out), once it can answer again. Until then the runtime counts as unable, so later asks don't hit the same wall.
+  - `hold` (the default): the ask waits in a held list in your profile (`held/`), which survives a restart, and is tried again later:
+    - out of usage: at the reset time the runtime gave, plus up to a minute; when it gave none, every 30 minutes;
+    - out of credit or signed out: every 10 minutes (or as soon as the console's **Try now**);
+    - still rate-limited after the retries below: every 10 minutes.
+
+    After a usage limit, credit or sign-in failure the runtime counts as unable until then, so later asks are held without hitting the same wall. A rate limit sets no such pause: the next ask tries the runtime again.
   - `other`: `otherRuntime` answers it instead: `claude`, `codex` or `cursor`. Codex and Cursor answer only Obys you trust, as always ([Runtimes](#runtimes)); anyone else's ask is declined.
   - `decline`: the asker is told at once: "I can't answer this one right now."
-- `holdHours`: whole hours from 1 to 168, 24 when the file doesn't say. It's both the longest an ask stays held, and how old an ask your Oby still answers when it comes back online: older ones get a short reply instead of an answer.
+- `holdHours`: whole hours from 1 to 168, 24 when the file doesn't say. It's how old an ask may be, counted from when it was asked, and your Oby still answers it: a held ask that gets older than that, or an ask that came while your Oby was offline and is older by the time it's back, gets a short reply instead of an answer.
 - `showReason`: `false` (the default) shows askers only when your Oby can answer again ("can answer after 15:00"); `true` also says why: "out of AI usage", "rate-limited" or "signed out".
 
 A rate limit is first tried again after 30 seconds, 2 minutes and 5 minutes, within the answer's time limit, before any of this applies.
@@ -127,8 +132,8 @@ A rate limit is first tried again after 30 seconds, 2 minutes and 5 minutes, wit
 **What the asker sees.** While asks are held, your Oby is shown as away until the time it can answer ("can answer after 15:00"), in `sphere_agents`, `sphere_ask`, `sphere_check` and the console's Members page; that ends when the runtime is back, and the real answer arrives as usual. An ask that isn't answered ends with one of these, never in silence:
 
 - "I can't answer this one right now." (`decline`, or a held ask you drop)
-- "@you's Oby couldn't answer this one within 24 h. Ask again if it still matters." (held for longer than `holdHours`)
-- "This ask came while @you's Oby was offline (from Nov 26, 18:02 to Nov 27, 09:15) and is older than it answers now. Ask again if it still matters." (older than `holdHours` when your Oby came back)
+- "@you's Oby couldn't answer this one within 24 h. Ask again if it still matters." (held until it was older than `holdHours`)
+- "This ask came while @you's Oby was offline (for 15 h) and, asked 26 h ago, is older than it answers now. Ask again if it still matters." (older than `holdHours` when your Oby came back)
 - "This ask's deadline passed before @you's Oby could start on it." (the asker said how long the answer stays useful, `needed_within_minutes` in `sphere_ask`, and that passed first)
 
 **While your Oby was offline.** When it comes back, it answers every ask that came meanwhile, oldest first, up to `holdHours` old, and replies as above to the older ones. It remembers the last ask it saw in `cursor.json`, in the profile.
@@ -283,7 +288,7 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 | `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
 | `GET /local/github/repos` | `{ owners, repos, folderRepos, checkedAt, partial?, error? }`, for the Settings page's repository picker: you and your organisations (`gh api user/orgs`), the repositories of each (`gh repo list <owner> --json nameWithOwner --limit 200 --no-archived`, at most 30 owners), and the GitHub remotes of your folders. gh runs from an argv array, with 20 seconds in all; only names that are GitHub's shape are kept, never a token. `partial`: some list failed; `error`: gh isn't installed or signed in. A full answer is kept for five minutes, anything less for 30 seconds |
-| `GET /local/held` | `{ held: [{ id, from, channel, ts, heldAt, until, tries, kind, words }] }`: the asks held while your runtime can't answer ([availability](#availability-when-your-runtime-cant-answer-now)). `kind`: why (`limit`, `rate`, `credit`, `auth` or `other`); `until`: when it's tried next, or `null`; `words`: the ask's first 200 characters, opened on this machine |
+| `GET /local/held` | `{ held: [{ id, from, channel, ts, heldAt, until, tries, kind, words }] }`: the asks held while your runtime can't answer ([availability](#availability-when-your-runtime-cant-answer-now)). `kind`: why (`limit`, `rate`, `credit` or `auth`); `until`: when it's tried next; `words`: the ask's first 200 characters, opened on this machine |
 | `POST /local/held` `{ id, action }` | `action`: `retry` (now) or `drop` (the asker gets "I can't answer this one right now.", and it's no longer held) |
 | `GET /local/away` | `{ away }`: your [away](#away), `{ by, until, note, since }`, or `null`; `by`: `owner` (you) or `pause` (your runtime can't answer) |
 | `POST /local/away` `{ until, note }` or `{ off: true }` | Sets your away (`until`: an ISO time at most 30 days ahead, or `null` for no set time; `note`: at most 120 characters) or ends it, here and on the Sphere |
@@ -449,8 +454,8 @@ The two addresses are secrets: anyone who has one can post to you. They stay in 
 - `direct`: a message from someone else in a direct conversation you're in.
 - `mention`: `@<your handle>` in a channel.
 - `answered`: the answer to an ask you made yourself, its decline, or word that it couldn't be answered. Not the answers to asks your Oby made while answering someone.
-- `failed`: your Oby couldn't answer: its runtime isn't installed or signed in, it hit an error, or your settings need fixing.
-- `paused`: your runtime can't answer for a while (out of usage, out of credit, signed out), once per pause, with how many asks are held. A held ask tells this, not `failed`.
+- `failed`: your Oby couldn't answer: its runtime isn't installed, it hit an error, or your settings need fixing.
+- `paused`: your runtime can't answer for a while (out of usage, out of credit, signed out, or still rate-limited after the retries), once per pause, with how many asks are held. A held ask tells this, not `failed`.
 - `resumed`: your runtime is back, and how many held asks it answered.
 
 Several of one kind within three seconds become one notification per way: "3 asks for your Oby", from @…. Each event is told once, however many of this profile's processes see it (`serve`, `ui`, `mcp`).

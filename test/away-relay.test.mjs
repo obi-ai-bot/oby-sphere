@@ -104,20 +104,21 @@ describe('away and neededBy on the relay', () => {
     assert.ok([401, 403].includes((await call('POST', '/api/away', { key: KEY, body: { until: inMin(5) } })).status), 'not a viewer');
   });
 
-  test('off clears it; the audit log says away and back, never the note', async () => {
-    await call('POST', '/api/away', { tok: ag.bob.token, body: { until: inMin(30), note: 'secret plans' } });
+  test('off clears it; the audit log says away and back only (not each new time), never the note', async () => {
+    const before = (await call('GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'away').length;
+    for (const m of [30, 40, 50]) await call('POST', '/api/away', { tok: ag.bob.token, body: { until: inMin(m), note: 'secret plans' } });
     const r = await call('POST', '/api/away', { tok: ag.bob.token, body: { off: true } });
     assert.equal(r.agent.away, null);
     assert.equal((await agentOf('bob')).away, null);
-    const au = (await call('GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'away');
-    assert.ok(au.length >= 3, JSON.stringify(au));
-    assert.ok(au.some((e) => /^bob is away until \d{4}-/.test(e.detail)));
-    assert.ok(au.some((e) => e.detail === 'bob is away until further notice'));
-    assert.equal(au.at(-1).detail, 'bob is back');
+    const all = (await call('GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'away');
+    const au = all.slice(before);
+    assert.deepEqual(au.map((e) => e.detail.replace(/until .*/, 'until …')), ['bob is back'], 'bob was away already: three new times, one "back"');
+    assert.ok(all.some((e) => /^bob is away until \d{4}-/.test(e.detail)));
+    assert.equal(all.at(-1).detail, 'bob is back');
     assert.ok(au.every((e) => !/secret|holiday/.test(JSON.stringify(e))), 'no note in the audit log');
     // off again: nothing to say
     await call('POST', '/api/away', { tok: ag.bob.token, body: { off: true } });
-    assert.equal((await call('GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'away').length, au.length);
+    assert.equal((await call('GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'away').length, all.length);
   });
 
   test('an away ends by itself when its time has passed', async () => {
@@ -139,7 +140,16 @@ describe('away and neededBy on the relay', () => {
     assert.deepEqual(reply.message.meta, { error: true, expired: true, unable: false });
     const post = await call('POST', '/api/messages', { tok: ag.alice.token, body: { text: 'hello all', neededBy } });
     assert.equal(post.message.neededBy, undefined);
-    for (const [v, words] of [['soon', /neededBy is a time in the future/], [new Date(Date.now() - 1000).toISOString(), /neededBy is a time in the future/], [inMin(8 * 24 * 60), /at most 7 days ahead/]]) {
+    // a sender's clock a little off the relay's is forgiven: just past now is now, just past a week is a week
+    const nearlyNow = await call('POST', '/api/messages', { tok: ag.alice.token, body: { to: ['bob'], text: 'x', neededBy: new Date(Date.now() - 30e3).toISOString() } });
+    assert.ok(Date.parse(nearlyNow.message.neededBy) > Date.now() - 2000, nearlyNow.message.neededBy);
+    const aWeek = await call('POST', '/api/messages', { tok: ag.alice.token, body: { to: ['bob'], text: 'x', neededBy: new Date(Date.now() + 7 * 864e5 + 30e3).toISOString() } });
+    assert.ok(Date.parse(aWeek.message.neededBy) <= Date.now() + 7 * 864e5, 'clamped to a week');
+    // in minutes: on the relay's own clock
+    const mins = await call('POST', '/api/messages', { tok: ag.alice.token, body: { to: ['bob'], text: 'x', neededWithinMinutes: 30 } });
+    assert.ok(Math.abs(Date.parse(mins.message.neededBy) - (Date.now() + 30 * 60e3)) < 5000, mins.message.neededBy);
+    assert.equal((await call('POST', '/api/messages', { tok: ag.alice.token, body: { to: ['bob'], text: 'x', neededWithinMinutes: 0 } })).status, 400);
+    for (const [v, words] of [['soon', /neededBy is a time in the future/], [new Date(Date.now() - 5 * 60e3).toISOString(), /neededBy is a time in the future/], [inMin(8 * 24 * 60), /at most 7 days ahead/]]) {
       const r = await call('POST', '/api/messages', { tok: ag.alice.token, body: { to: ['bob'], text: 'x', neededBy: v } });
       assert.equal(r.status, 400);
       assert.match(JSON.stringify(r), words);
