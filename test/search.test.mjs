@@ -15,8 +15,14 @@
 // search and a click on a result send the relay nothing, and the query is in no URL; /local/search
 // refuses a call without the console's header or from another origin. Then `rep.mjs search`, with
 // the console running and without it, and sphere_search in your own session (missing from the one
-// that answers for others, untagged, so GET /api/stats counts none). Last, a relay that sends an
-// endless history is cut off at 20,000 messages. No model and no network. `npm test`.
+// that answers for others, untagged, so GET /api/stats counts none). Then what leaves the Sphere
+// leaves the index (#139), on a Sphere with alice, bob, carol and dan: a deletion at once while a
+// page is open; with none, one the catch-up's read of the history doesn't reach, through the audit
+// log; and a cut by count, at once with a page open and at the next catch-up without. Last, relays
+// the test plays: one that sends an endless history is cut off at 20,000 messages; one that sends a
+// page of deleted messages is read past it; one that sends messages older than it keeps them
+// (keepDays), never found; one whose audit log holds a cut and odd events. No model and no network.
+// `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -659,6 +665,166 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
   });
 });
 
+// ---------------------------------------------------------------- what leaves the Sphere leaves the index (#139)
+
+// a console page's live stream, open until it's destroyed
+function pageStream(consoleUrl) {
+  const u = new URL(consoleUrl);
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: '/api/stream', headers: { host: u.host, accept: 'text/event-stream' } }, (res) => {
+      res.on('data', () => {});
+      resolve(req);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// A Sphere on 127.0.0.1 with alice, bob, carol and dan; bob and carol have a private channel.
+// Alice's console reaches the relay through the proxy, which logs her requests; dan's goes
+// straight there, and no page of his ever opens its stream. Bob deletes his messages, and the
+// operator keeps only the newest 100.
+describe('what leaves the Sphere leaves the index: deletions and cuts, with a page open and with none', { timeout: 180000 }, () => {
+  let world, proxy, base, alice, dan, stream;
+  const at = {};
+  const id = {};
+  const KEY = 'join-key-search-gone-tests-0123456789';
+  const ADMIN = 'admin-key-search-gone-tests-0123456789';
+  const env = () => ({ TMPDIR: world.tmp });
+  const call = async (method, url, { tok, admin, body } = {}) => {
+    const h = {};
+    if (tok) h.authorization = `Bearer ${tok}`;
+    if (admin) h['x-admin-key'] = admin;
+    if (body !== undefined) h['content-type'] = 'application/json';
+    const r = await fetch(base + url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`${method} ${url}: ${r.status} ${JSON.stringify(j)}`);
+    return j;
+  };
+  const post = (who, channel, text) => call('POST', '/api/messages', { tok: at[who].token, body: { channel, text } }).then((j) => j.message);
+  const many = async (n, fn) => {
+    for (let i = 0; i < n; i += 25) await Promise.all(Array.from({ length: Math.min(25, n - i) }, (_, k) => fn(i + k)));
+  };
+  const loadAgent = (name) => {
+    const prof = JSON.parse(fs.readFileSync(path.join(world.home, name, 'profile.json'), 'utf8'));
+    at[name] = { id: prof.agent.id, token: prof.token };
+  };
+  const find = (who, q, extra = {}) => toConsole(who.url, { method: 'POST', path: '/local/search', headers: LOCAL, body: { q, ...extra } }).then((r) => r.json);
+  const openConsole = async (name) => {
+    const port = await freePort();
+    const proc = world.start(`${name}: rep.mjs ui`, 'rep.mjs', ['ui', '--profile', name, '--port', String(port)], { ...world.env(), ...env() });
+    await world.waitFor(proc, /your console for/);
+    const c = { url: `http://${name}.localhost:${port}/`, proc };
+    assert.equal((await toConsole(c.url)).status, 200); // a page loads: the history is read
+    return c;
+  };
+  const consoleStreams = () => proxy.streams().filter((u) => /role=console/.test(u));
+
+  before(async () => {
+    world = new World();
+    const port = await freePort();
+    world.sphere = { name: 'Gone Sphere', url: `http://127.0.0.1:${port}`, key: KEY, admin: ADMIN };
+    base = world.sphere.url;
+    world.relay = world.start('relay', 'server.mjs', ['--port', String(port), '--host', '127.0.0.1', '--data', path.join(world.tmp, 'relay'), '--name', 'Gone Sphere'], {
+      ...process.env,
+      HOME: world.userHome,
+      TMPDIR: world.tmp,
+      SPHERE_KEY: KEY,
+      SPHERE_ADMIN_KEY: ADMIN,
+      SPHERE_SEALED: '0',
+      SPHERE_STORE: 'fs',
+      SPHERE_WRITES_PER_MIN: '1000000',
+      SPHERE_ASKS_PER_MIN: '1000000',
+    });
+    await until(async () => (await fetch(base + '/healthz')).ok, 'the relay to start');
+    proxy = await startProxy(base);
+    await world.join('bob', 'Bob Test', 'Knows the payments service');
+    await world.join('carol', 'Carol Test', 'Knows the release notes');
+    await world.join('dan', 'Dan Test', 'Knows the design system');
+    world.sphere = { ...world.sphere, url: proxy.url };
+    await world.join('alice', 'Alice Test', 'Knows the support queue');
+    world.sphere = { ...world.sphere, url: base };
+    for (const n of ['alice', 'bob', 'carol', 'dan']) loadAgent(n);
+    await call('POST', '/api/channels', { tok: at.bob.token, body: { name: 'backroom', private: true, members: [at.carol.id] } });
+    id.albatross = (await post('bob', 'general', 'An albatross, the oldest note here.')).id;
+    await many(250, (i) => post(i % 2 ? 'carol' : 'bob', 'general', `Filler note ${i}, about nothing much.`));
+    alice = await openConsole('alice');
+    dan = await openConsole('dan');
+    for (const who of [alice, dan]) assert.equal((await find(who, 'albatross', { wait: true })).total, 1);
+    stream = await pageStream(alice.url);
+    await until(() => consoleStreams().length === 1, "alice's page stream to reach the relay");
+  });
+
+  after(async () => {
+    stream?.destroy();
+    await proxy?.close();
+    await world?.stop();
+  });
+
+  test('(a) with a page open, a message deleted on the Sphere leaves the index at once', async () => {
+    id.puffin = (await post('bob', 'general', 'A puffin, just now.')).id;
+    await until(async () => (await find(alice, 'puffin')).total === 1, 'the live message in the index');
+    await call('DELETE', `/api/messages/${id.puffin}`, { tok: at.bob.token });
+    await until(async () => (await find(alice, 'puffin')).total === 0, 'the deleted message out of the index');
+  });
+
+  test("(b) with no page open, a deletion the catch-up's read of the history doesn't reach leaves through the audit log", async () => {
+    // the page goes; the console's stream to the relay ends by the next thing the relay sends
+    stream.destroy();
+    await until(() => {
+      proxy.inject('nothing', {});
+      return !consoleStreams().length;
+    }, "the console's live stream to the relay to end");
+    // the oldest message, more than a page of history (200) back from the newest
+    await call('DELETE', `/api/messages/${id.albatross}`, { tok: at.bob.token });
+    await sleep(300);
+    assert.equal((await find(alice, 'albatross')).total, 1, 'no stream, no catch-up yet: still in the index');
+    const mark = proxy.log.length;
+    assert.equal((await toConsole(alice.url)).status, 200); // a page loads: a catch-up
+    const r = await find(alice, 'albatross', { wait: true });
+    assert.equal(r.total, 0, 'deleted, so not found');
+    assert.equal((await find(alice, '"filler note"')).total, 250);
+    const reads = proxy.log.slice(mark).map((x) => x.url);
+    assert.ok(reads.some((u) => /^\/api\/audit\?after=\d+&limit=1000$/.test(u)), `it read the audit log on from where it was: ${reads.join(' ')}`);
+    assert.ok(!reads.some((u) => /^\/api\/messages\?.*before=/.test(u)), `its read of the history stopped at the newest page: ${reads.join(' ')}`);
+  });
+
+  test("(c) a cut by count takes out what it removed: at once with a page open, else at the next catch-up, its newest message in a channel the reader isn't in", async () => {
+    stream = await pageStream(alice.url);
+    await until(() => consoleStreams().length === 1, "alice's page stream to reach the relay");
+    id.gannet = (await post('bob', 'general', 'A gannet, posted before the cut.')).id;
+    id.secret = (await post('bob', 'backroom', 'A secret plan for the backroom.')).id;
+    for (let i = 0; i < 100; i++) await post(i % 2 ? 'carol' : 'bob', 'general', `Kept note ${i}.`);
+    await until(async () => (await find(alice, '"kept note"')).total === 100, 'the newest posts in her index, live');
+    assert.equal((await find(dan, 'filler')).total, 250, "dan's index, before the cut");
+    const mark = proxy.log.length;
+    await call('POST', '/api/admin/policy', { admin: ADMIN, body: { retainMessages: 100 } });
+    // the relay keeps the newest 100; the newest it removed is bob's post in a channel alice and dan aren't in
+    const held = (await call('GET', '/api/messages?limit=1000', { tok: at.bob.token })).messages;
+    assert.deepEqual([held.length, held.every((m) => /^Kept note \d+\.$/.test(m.text))], [100, true]);
+    const cut = (await call('GET', '/api/audit?limit=1000', { tok: at.bob.token })).events.filter((e) => e.type === 'expire').at(-1);
+    assert.equal(cut?.ref, id.secret, JSON.stringify(cut));
+
+    // alice, her page open: the audit log's live event, with no catch-up
+    await until(async () => (await find(alice, 'filler')).total === 0, "the cut messages out of alice's index");
+    assert.equal((await find(alice, 'gannet')).total, 0);
+    assert.equal((await find(alice, '"kept note"')).total, 100, 'what the relay keeps stays');
+    const reads = proxy.log.slice(mark).map((x) => x.url);
+    assert.ok(!reads.some((u) => u.startsWith('/api/audit')), `no catch-up read the audit log: ${reads.join(' ')}`);
+    const asked = reads.filter((u) => /^\/api\/messages\/m_[\w-]+$/.test(u));
+    assert.ok(asked.length > 0 && asked.length <= 12, `it asked the relay about a few single messages, halving the index each time (${asked.length})`);
+
+    // dan, no page open: his next catch-up
+    await sleep(300);
+    assert.equal((await find(dan, 'filler')).total, 250, 'no stream, no catch-up yet: still in his index');
+    assert.equal((await toConsole(dan.url)).status, 200); // a page loads: a catch-up
+    assert.equal((await find(dan, 'filler', { wait: true })).total, 0, 'the cut messages out of his index');
+    assert.equal((await find(dan, '"kept note"')).total, 100);
+    assert.equal((await find(dan, 'albatross')).total, 0, 'and the one deleted while he had no page open');
+    assert.equal((await find(dan, 'secret')).total, 0);
+  });
+});
+
 // ---------------------------------------------------------------- a relay that never ends its history
 
 describe('a relay that sends an endless history', { timeout: 180000 }, () => {
@@ -803,5 +969,142 @@ describe('a relay that sends a page of deleted messages, and channels it listed 
     assert.equal(out.total, 51);
     assert.equal(out.readNow, undefined, 'read once: the next search says nothing of it');
     assert.ok(!/hadn't read/.test(second.out), second.out);
+  });
+});
+
+// ---------------------------------------------------------------- a relay whose clock and audit log the test sets (#139)
+
+// A relay played by the test, for what a real one can't be made to do here: send messages days
+// old, or an audit log with odd events in it. state.keepDays is its policy; state.history its
+// messages, oldest first; state.audit its audit log; state.singles the single messages it was
+// asked for (GET /api/messages/:id, which the index asks when it places a cut by asking).
+async function fakeRelay(world, name) {
+  const reader = { id: `a_${name}`, name, owner: `${name[0].toUpperCase()}${name.slice(1)} Test` };
+  const writer = { id: 'a_writer', name: 'writer', owner: 'Writer Test' };
+  const state = { keepDays: 0, history: [], audit: [], singles: [] };
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const send = (o, status = 200) => {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(o));
+    };
+    if (u.pathname === '/api/info') return send({ sphere: { name: 'Fake', policy: { sealed: false, keepDays: state.keepDays } }, me: reader });
+    if (u.pathname === '/api/agents') return send({ agents: [reader, writer] });
+    if (u.pathname === '/api/channels') return send({ channels: [{ name: 'general', kind: 'public', members: [] }] });
+    if (u.pathname === '/api/messages') {
+      const b = u.searchParams.get('before');
+      const hi = b ? state.history.findIndex((m) => m.id === b) : state.history.length;
+      const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 100);
+      return send({ messages: hi < 0 ? [] : state.history.slice(Math.max(0, hi - limit), hi) });
+    }
+    const one = /^\/api\/messages\/(m_[\w-]+)$/.exec(u.pathname);
+    if (one) {
+      state.singles.push(one[1]);
+      const m = state.history.find((x) => x.id === one[1]);
+      return m ? send({ message: m, replies: [] }) : send({ error: 'There is no such message.' }, 404);
+    }
+    if (u.pathname === '/api/audit') {
+      const seqs = state.audit.map((e) => e?.seq).filter(Number.isInteger);
+      const head = { seq: seqs.length ? Math.max(...seqs) : 0, hash: 'f'.repeat(64) };
+      const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 200);
+      const after = Number(u.searchParams.get('after'));
+      const events = u.searchParams.has('after') ? state.audit.filter((e) => !(Number.isInteger(e?.seq) && e.seq <= after)) : state.audit.slice(-limit);
+      return send({ events: events.slice(0, limit), head, verified: true, total: state.audit.length });
+    }
+    send({ error: 'not here' }, 404);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const dir = path.join(world.home, name);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ profile: name, sphere: url, sphereName: 'Fake', token: `${name}-token-0123456789`, agent: reader, cwd: world.tmp, runtime: 'claude', joinedAt: new Date().toISOString() }), { mode: 0o600 });
+  // its console, a page loaded (the history read), and no page stream ever
+  const port = await freePort();
+  const proc = world.start(`${name}: rep.mjs ui`, 'rep.mjs', ['ui', '--profile', name, '--port', String(port)], { ...world.env(), TMPDIR: world.tmp });
+  const note = (id, ts, text) => ({ id, ts, channel: 'general', from: writer.id, kind: 'post', to: [], text, files: [], depth: 0, replyTo: null, cause: null, meta: {} });
+  return {
+    state,
+    writer,
+    note,
+    console: { url: `http://${name}.localhost:${port}/`, proc },
+    async start() {
+      await world.waitFor(proc, /your console for/);
+      assert.equal((await toConsole(this.console.url)).status, 200);
+    },
+    find: (q, extra = {}) => toConsole(`http://${name}.localhost:${port}/`, { method: 'POST', path: '/local/search', headers: LOCAL, body: { q, ...extra } }).then((r) => r.json),
+    close: () => new Promise((r) => server.close(r)),
+  };
+}
+
+describe('a relay that keeps messages for a set time, and cuts them (fake relays: the test sets their clock and audit log)', { timeout: 120000 }, () => {
+  let world;
+  const relays = [];
+  before(() => {
+    world = new World();
+  });
+  after(async () => {
+    for (const r of relays) await r.close();
+    await world?.stop();
+  });
+  const ids = (r) => r.results.map((x) => x.id).sort();
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+
+  test('(d) a message older than the Sphere keeps them is never found, and leaves the index', async () => {
+    const relay = await fakeRelay(world, 'reader');
+    relays.push(relay);
+    relay.state.history.push(relay.note('m_heron10d', ago(10 * 864e5), 'A heron, ten days ago.'), relay.note('m_heron2d', ago(2 * 864e5), 'A heron, two days ago.'), relay.note('m_heron1h', ago(3600e3), 'A heron, an hour ago.'));
+    await relay.start();
+    assert.equal((await relay.find('heron', { wait: true })).total, 3, 'no time limit yet');
+    // seven days now: the relay hides the oldest from every read at once (this one still sends it,
+    // as one that lags would)
+    relay.state.keepDays = 7;
+    // a page reads the Sphere's info through the console, as it does when it loads: at once
+    assert.equal((await toConsole(relay.console.url, { path: '/api/info', headers: LOCAL })).status, 200);
+    let r = await relay.find('heron');
+    assert.deepEqual(ids(r), ['m_heron1h', 'm_heron2d'], 'not the one older than seven days');
+    assert.equal(r.searched, 2);
+    // the relay sends it again (a page reads the history): still not kept
+    assert.equal((await toConsole(relay.console.url, { path: '/api/messages?limit=50', headers: LOCAL })).status, 200);
+    await sleep(300);
+    assert.deepEqual(ids(await relay.find('heron')), ['m_heron1h', 'm_heron2d']);
+    // one day now, heard of only by the next catch-up (a page loads; nothing reads the info)
+    relay.state.keepDays = 1;
+    assert.equal((await toConsole(relay.console.url)).status, 200);
+    r = await relay.find('heron', { wait: true });
+    assert.deepEqual(ids(r), ['m_heron1h']);
+    assert.ok(Date.parse(r.oldest) > Date.now() - 864e5, `the oldest it holds is within the day: ${r.oldest}`);
+  });
+
+  test("(e) a cut whose newest message the index holds takes out it and everything before it; odd events take nothing else, and a cut message never comes back", async () => {
+    const relay = await fakeRelay(world, 'watcher');
+    relays.push(relay);
+    const t0 = Date.now() - 3600e3;
+    const kestrels = Array.from({ length: 20 }, (_, i) => relay.note(`m_k${i}`, new Date(t0 + i * 1000).toISOString(), `A kestrel, note ${i}.`));
+    relay.state.history.push(...kestrels);
+    relay.state.audit.push(...[1, 2, 3].map((seq) => ({ seq, ts: new Date(t0).toISOString(), type: 'post', actor: relay.writer.id, target: null, ref: `m_k${seq}`, detail: 'writer · #general', prev: '0'.repeat(64), hash: 'a'.repeat(64) })));
+    await relay.start();
+    assert.equal((await relay.find('kestrel', { wait: true })).total, 20);
+    // the relay cuts the oldest ten and deletes note 12; its audit log says so, among events that don't check
+    relay.state.history = kestrels.slice(10).map((m) => (m.id === 'm_k12' ? tombstoneOf(m) : m));
+    const ev = (seq, type, ref) => ({ seq, ts: new Date().toISOString(), type, actor: null, target: null, ref, detail: '', prev: '0'.repeat(64), hash: 'b'.repeat(64) });
+    relay.state.audit.push(
+      ev(4, 'post', 'm_k19'), // not a deletion
+      ev(5, 'delete', '../m_k15'), // not a message id
+      ev('six', 'delete', 'm_k16'), // no whole-number seq
+      null,
+      'not an event',
+      ev(6, 'expire', 'm_k9'), // the cut: note 9 and every one before it
+      ev(7, 'delete', 'm_k12'),
+      ev(8, 'expire', null), // uploads never sent: no message
+    );
+    assert.equal((await toConsole(relay.console.url)).status, 200); // a page loads: a catch-up
+    const r = await relay.find('kestrel', { wait: true });
+    assert.deepEqual(ids(r), ['m_k10', 'm_k11', 'm_k13', 'm_k14', 'm_k15', 'm_k16', 'm_k17', 'm_k18', 'm_k19'].sort());
+    assert.deepEqual(relay.state.singles, [], 'its own copy of note 9 placed the cut: it asked the relay nothing');
+    // a relay that sends a cut message again (a page reads the history) isn't believed
+    relay.state.history.unshift(kestrels[5]);
+    assert.equal((await toConsole(relay.console.url, { path: '/api/messages?limit=50', headers: LOCAL })).status, 200);
+    await sleep(300);
+    assert.equal((await relay.find('kestrel')).total, 9, 'note 5 stays out');
   });
 });

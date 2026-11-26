@@ -708,7 +708,7 @@ async function ui() {
     return list.map((m) => openForPage(m, amap));
   };
   // ===== search (#138): the index your Oby searches, in this process's memory only (see searchIndex)
-  const search = searchIndex(p, api, { open: (m, amap) => sec.open(m, amap), agents: agentsMap, known: () => agentsById, onFiles: (files) => files.forEach((f) => fileKeys.set(f.id, f)) });
+  const search = searchIndex(p, api, { open: (m, amap) => sec.open(m, amap), agents: agentsMap, known: () => agentsById, onFiles: (files) => files.forEach((f) => fileKeys.set(f.id, f)), onGone: (ids) => ids.forEach((id) => fileKeys.delete(id)) });
   let pageStreams = 0; // console pages with their live stream open: they keep the index up to date
   setInterval(() => pageStreams || search.idle(), SEARCH_CATCHUP_MS).unref();
   setInterval(() => search.rebuild(), SEARCH_REBUILD_MS).unref();
@@ -3903,17 +3903,20 @@ function readLocalFiles(list) {
 // the history back a page at a time (GET /api/messages?before=), each message opened as the page's
 // are (its signature checked against the sender's pinned keys). It's kept up to date from the
 // page's live stream and from what the page reads, by a catch-up at each page load and every few
-// minutes while no page is open, and it's rebuilt once a day, to drop what the relay no longer keeps.
-// It holds the newest 20,000 messages: for each, who, where and when, and the words of those it
-// could open. The rest are counted, never searched. A search reads only the index: the relay sees
-// no request, and never learns your words, or that you searched. Like the page, it covers the public
-// channels and the private and direct ones your Oby is in, for an admin too, whom the relay lets
-// read every channel. POST /local/search and /local/search/around answer the page; `rep.mjs search`
-// and sphere_search (your own session only, never the one that answers for you) ask them too,
-// untagged, or with no console running read the history once themselves, untagged (with a console
-// no page has loaded yet, their search starts its first read, and they say so). A message deleted on
-// the Sphere (#139: `deleted` on it, or a message-delete event) leaves the index as soon as the
-// console hears of it: at once while a page has its live stream open.
+// minutes while no page is open, and it's rebuilt once a day. It holds the newest 20,000 messages:
+// for each, who, where and when, and the words of those it could open. The rest are counted, never
+// searched. A search reads only the index: the relay sees no request, and never learns your words,
+// or that you searched. Like the page, it covers the public channels and the private and direct
+// ones your Oby is in, for an admin too, whom the relay lets read every channel. POST /local/search
+// and /local/search/around answer the page; `rep.mjs search` and sphere_search (your own session
+// only, never the one that answers for you) ask them too, untagged, or with no console running read
+// the history once themselves, untagged (with a console no page has loaded yet, their search starts
+// its first read, and they say so). What leaves the Sphere leaves the index too (#139). A deleted
+// message, and one a cut removed, go at once while a page has its live stream open (a
+// message-delete event, the audit log's events); otherwise at the next catch-up, at a page load or
+// within five minutes, which reads the audit log on from where the last one stopped. A message
+// older than the Sphere keeps them (policy.keepDays) is never shown, and leaves the index, as the
+// relay hides it at once.
 
 const SEARCH_CAP = 20000; // messages, the newest
 const SEARCH_PAGE = 200; // a page of history; halved when the relay can't answer one that big
@@ -4070,8 +4073,10 @@ function searchSnippet(text, terms, max = 220) {
 // ---- the index. open(m, agents): getSec(p).open; agents(force): a Map of the Sphere's agents,
 // asked of the relay (only while reading the history, or for a live message from a sender it
 // doesn't know yet); known(): the agents as last seen, which a search uses, never asking the relay;
-// onFiles(files): the file keys of a message it opened (the console decrypts files with them).
-function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
+// onFiles(files): the file keys of a message it opened (the console decrypts files with them);
+// onGone(ids): the ids of files whose message left the index (deleted, cut, kept no longer, or in
+// a channel you left).
+function searchIndex(p, api, { open, agents, known = null, onFiles = null, onGone = null }) {
   const me = p.agent.id;
   // the index searched: { list (in time order), byId, seen (every id it was given), walked (every id
   // a finished read of the history reached: they run unbroken back from the newest it read), chars, cut }
@@ -4086,7 +4091,10 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   let lastAgents = new Map();
   let channels = new Map();
   let channelsAt = 0;
+  let cursor = null; // the audit log (#139): the seq of the last event this index read (null: not known yet)
+  let line = null; // { ts, incl }: a cut (#139) removed every message before this time (and at it, when incl)
   const gone = new Set(); // deleted on the Sphere (#139): never indexed again
+  const cutsSeen = new Set(); // the refs of the cuts (#139) taken out already
   const asked = new Set(); // channels it asked the relay about once, on hearing of them
   const fresh = () => ({ list: [], byId: new Map(), seen: new Set(), walked: new Set(), chars: 0, cut: false });
   // a set of ids that keeps the newest SEARCH_READS (what a relay sends can't make it grow for ever)
@@ -4104,6 +4112,9 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   };
   const okName = (n) => typeof n === 'string' && /^[a-z0-9-]{1,32}$/.test(n);
   const channelOf = (c) => ({ name: c.name, kind: c.kind === 'private' || c.kind === 'dm' ? c.kind : 'public', members: Array.isArray(c.members) ? c.members.filter((id) => ID.a.test(String(id))) : [] });
+  // gone from the Sphere by its time (#139): older than it keeps messages (policy.keepDays, which the
+  // relay hides from every read at once), or at or before a cut it heard of. Never kept, or shown.
+  const expired = (ts) => (policyCache.keepDays > 0 && Date.parse(ts) < Date.now() - policyCache.keepDays * 864e5) || (!!line && (ts < line.ts || (line.incl && ts === line.ts)));
 
   async function loadChannels() {
     const { channels: list } = await api.get('/api/channels');
@@ -4169,7 +4180,24 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     const i = into.list.indexOf(e);
     if (i >= 0) into.list.splice(i, 1);
     into.chars -= e.text.length + e.hay.length;
+    if (onGone && e.files.length) onGone(e.files.map((f) => f.id));
   }
+  // every message pick(entry) is true of leaves both indexes (the one searched, and a rebuild under way)
+  function forget(pick) {
+    for (const into of [cur, next]) {
+      if (!into || !into.list.some(pick)) continue;
+      const out = into.list.filter(pick);
+      into.list = into.list.filter((e) => !pick(e));
+      for (const e of out) {
+        into.byId.delete(e.id);
+        into.chars -= e.text.length + e.hay.length;
+      }
+      const files = out.flatMap((e) => e.files.map((f) => f.id));
+      if (onGone && files.length) onGone(files);
+    }
+  }
+  // what the Sphere no longer keeps by its time: the oldest go first, so a look at the oldest is enough
+  const prune = () => [cur, next].some((ix) => ix?.list.length && expired(ix.list[0].ts)) && forget((e) => expired(e.ts));
 
   // one message the relay gave (checked first: the relay isn't trusted), in time order
   function add(into, m, amap) {
@@ -4181,7 +4209,7 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
       return;
     }
     if (!validMessage(m) || typeof m.ts !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(m.ts)) return;
-    if (gone.has(m.id) || into.byId.has(m.id) || m.from === null || m.kind === 'system' || !searchVisible(m.channel, ctx())) return;
+    if (gone.has(m.id) || into.byId.has(m.id) || m.from === null || m.kind === 'system' || expired(m.ts) || !searchVisible(m.channel, ctx())) return;
     let o;
     try {
       o = open(m, amap);
@@ -4269,6 +4297,106 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     if (!channel) for (const id of seen) remember(into.walked, id);
   }
 
+  // ---- what the history can't show (#139). A read of the history sees a deleted message as its
+  // tombstone only if it reaches that far back, and never sees what a cut removed. The audit log
+  // says both: a `delete` event names the message deleted; an `expire` event (a cut) names the
+  // newest message it removed, and every message before it in the relay's log went too. So each
+  // build and catch-up also reads the audit log on from the last event this index read, and the
+  // live stream's audit events are taken at once. The relay isn't trusted: an event only ever takes
+  // messages out, and only when it checks (a whole-number seq, a ref that is a message id).
+
+  // the Sphere's policy, for how long it keeps messages (with no page open, nothing else says)
+  const readPolicy = () => api.get('/api/info').then((j) => notePolicy(j?.sphere?.policy), () => {});
+  // where the audit log is now (null when it can't be read: an older relay has none)
+  async function auditHead() {
+    try {
+      const seq = (await api.get('/api/audit?limit=1'))?.head?.seq;
+      return Number.isSafeInteger(seq) && seq >= 0 ? seq : null;
+    } catch {
+      return null;
+    }
+  }
+  // the events after `cursor`, a page of 1,000 at a time, 100 pages at most (the rest next time).
+  // A cut it can't place yet (the relay didn't answer) stops the read there, for the next one.
+  async function readAudit() {
+    if (cursor == null) {
+      cursor = await auditHead();
+      return;
+    }
+    for (let n = 0; n < 100; n++) {
+      const j = await api.get(`/api/audit?after=${cursor}&limit=1000`);
+      const head = j?.head?.seq;
+      if (Number.isSafeInteger(head) && head >= 0 && head < cursor) {
+        cursor = head; // a new log: the Sphere was started again from nothing
+        return;
+      }
+      const events = Array.isArray(j?.events) ? j.events.slice(0, 1000) : [];
+      const from = cursor;
+      for (const e of events) {
+        if (!e || typeof e !== 'object' || !Number.isSafeInteger(e.seq) || e.seq < 1) continue;
+        await onAudit(e);
+        cursor = Math.max(cursor, e.seq);
+      }
+      if (events.length < 1000 || cursor === from) return;
+    }
+  }
+  // one audit event, from a read or the live stream
+  async function onAudit(e) {
+    const ref = typeof e.ref === 'string' && ID.m.test(e.ref) ? e.ref : null;
+    if (!ref) return;
+    if (e.type === 'delete') {
+      remember(gone, ref);
+      for (const ix of [cur, next]) drop(ix, ref);
+    } else if (e.type === 'expire' && !cutsSeen.has(ref)) {
+      await cutTo(ref);
+      remember(cutsSeen, ref);
+    }
+  }
+  // A cut removed `ref` and every message before it in the relay's log, which runs in time order.
+  // When the index holds `ref`, every message at or before its time leaves. When it doesn't (a
+  // message in a conversation you're not in, a deleted one, one older than the index), the oldest
+  // message the index holds that the relay still keeps is the line: every older one leaves. It's
+  // found by asking the relay for single messages, halving the index each time (a cut takes the
+  // oldest, so whatever is older than a message the relay keeps is kept too, and whatever is older
+  // than one it doesn't is gone). A message that isn't there, or an answer that doesn't hold it,
+  // counts as gone: what the relay says can take a message out, never keep one the cut removed.
+  async function cutTo(ref) {
+    const known = cur?.byId.get(ref) || next?.byId.get(ref);
+    if (known) return cutBefore({ ts: known.ts, incl: true });
+    const ix = cur?.list.length ? cur : next;
+    const list = ix ? ix.list.slice() : [];
+    if (!list.length || (await kept(list[0].id))) return;
+    let lo = 1;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (await kept(list[mid].id)) hi = mid;
+      else lo = mid + 1;
+    }
+    const out = new Set(list.slice(0, lo).map((e) => e.id));
+    forget((e) => out.has(e.id));
+    cutBefore(lo < list.length ? { ts: list[lo].ts, incl: false } : { ts: list[list.length - 1].ts, incl: true });
+  }
+  // does the relay still keep this message? 404: no; an answer it can't give: an error, tried again later
+  async function kept(id) {
+    const r = await api.raw(`/api/messages/${id}`);
+    if (!r.ok) await r.body?.cancel().catch(() => {});
+    if (r.status === 404) return false;
+    if (!r.ok) throw new Error(`the Sphere answered ${r.status}`);
+    const j = await r.json().catch(() => null);
+    return j?.message?.id === id;
+  }
+  // the line moves only forward; what's before it leaves now, and is never kept again
+  function cutBefore(l) {
+    if (!line || l.ts > line.ts || (l.ts === line.ts && l.incl)) line = l;
+    forget((e) => expired(e.ts));
+  }
+  // after a read of the history: the audit log, then what the Sphere no longer keeps by its time
+  async function afterRead() {
+    await readAudit().catch(() => {});
+    prune();
+  }
+
   const fail = (e) => (problem = cleanLine(e?.message || e, 300));
   // a new index, read from the start: the first one is searched as it fills; a later one (the day's
   // rebuild, or after a build that failed) replaces it once it's done
@@ -4279,16 +4407,21 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
       cur = into;
       building = true;
     } else next = into;
-    return queue(() =>
-      walk(into).then(
+    return queue(async () => {
+      await readPolicy();
+      // the first build reads the audit log from where it is as the read of the history begins:
+      // what came before, that read sees as tombstones, or not at all
+      if (cursor == null) cursor = await auditHead();
+      await walk(into).then(
         () => {
           if (next === into) cur = into;
           complete = true;
           problem = null;
         },
         fail,
-      ),
-    ).finally(() => {
+      );
+      await afterRead();
+    }).finally(() => {
       if (next === into) next = null;
       if (cur === into) building = false;
     });
@@ -4299,7 +4432,11 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     if (!complete) return build();
     if (busy) return chain;
     lastCatchUp = Date.now();
-    return queue(() => walk(cur, { stopAtKnown: true }).then(() => (problem = null), fail));
+    return queue(async () => {
+      await readPolicy();
+      await walk(cur, { stopAtKnown: true }).then(() => (problem = null), fail);
+      await afterRead();
+    });
   }
 
   // messages the page read, or a live one: opened and kept, once there's an index
@@ -4328,9 +4465,13 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     if (ev === 'message') offer([data]).catch(() => {});
     else if (ev === 'message-delete' || (ev === 'message-update' && data.deleted)) {
       if (!ID.m.test(String(data.id))) return;
-      gone.add(data.id);
+      remember(gone, data.id);
       for (const ix of [cur, next]) drop(ix, data.id);
     } else if (ev === 'channel') onChannel(data);
+    // the audit log as it grows (#139): a deletion at once, a cut after the read under way. The
+    // catch-ups still read every event in order: a cut taken here isn't placed twice.
+    else if (ev === 'audit' && data.type === 'delete') onAudit(data).catch(() => {});
+    else if (ev === 'audit' && data.type === 'expire') queue(() => onAudit(data)).catch(() => {});
   }
 
   // { results: [{ id, channel, ts, from, snippet, verified, files?, you?, with? }], total, searched,
@@ -4338,6 +4479,7 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   // older than the result `before` when it's given. `searched`: the messages the filters left that
   // it could open; `notOpenable`: those it couldn't (sealed for others, or before you joined).
   function search({ q, before = null, limit = SEARCH_LIMIT }) {
+    prune();
     const ix = cur || fresh();
     const c = ctx();
     const f = searchParse(q);
@@ -4351,7 +4493,7 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     const hits = [];
     for (let i = ix.list.length - 1; i >= 0; i--) {
       const e = ix.list[i];
-      if (!searchVisible(e.channel, c) || !searchKeep(e, scope)) continue;
+      if (!searchVisible(e.channel, c) || !searchKeep(e, scope) || expired(e.ts)) continue;
       if (!e.open) {
         out.notOpenable++;
         continue;
@@ -4381,9 +4523,10 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
 
   // the messages around a result in its conversation, from the index, as the page shows messages
   function around(id) {
+    prune();
     const e = cur?.byId.get(id);
-    if (!e || !searchVisible(e.channel, ctx())) return null;
-    const same = cur.list.filter((x) => x.channel === e.channel);
+    if (!e || expired(e.ts) || !searchVisible(e.channel, ctx())) return null;
+    const same = cur.list.filter((x) => x.channel === e.channel && !expired(x.ts));
     const k = same.indexOf(e);
     const part = same.slice(Math.max(0, k - SEARCH_AROUND), k + SEARCH_AROUND + 1);
     const shown = (x) => ({
