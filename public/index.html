@@ -98,8 +98,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .connector-count { flex: none; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .channel-hash { flex: none; width: 22px; text-align: center; color: var(--muted); }
 .unread-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--unread); }
-/* offline: the picture dims, the name goes grey (still 4.5:1) */
-.oby-row.is-offline > :is(.owner-avatar, svg, .status) { opacity: 0.45; }
+/* offline: the picture goes grey (an Oby face dims), the name too (still 4.5:1) */
+.oby-row.is-offline > :is(svg, .status) { opacity: 0.45; }
 .oby-row.is-offline .connector-name { color: var(--muted); }
 .oby-row .you { color: var(--muted); }
 .oby-more { margin: 2px 0 6px; padding: 0 10px 0 44px; color: var(--muted); font-size: var(--text-sm); line-height: 17px; user-select: text; display: none; }
@@ -122,6 +122,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .owner-avatar { position: relative; flex: none; display: grid; place-items: center; border-radius: 50%; color: rgba(255, 255, 255, 0.92); font-weight: 600; letter-spacing: 0.02em; }
 .owner-avatar-oby { position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; }
 .owner-avatar-oby svg { display: block; }
+/* an Oby that's away (offline, suspended): its picture goes grey, its letters still 4.5:1 (faded, they weren't) */
+:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .inst-row.is-dim) .owner-avatar { background: var(--chip-hover) !important; color: var(--muted); }
+:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .inst-row.is-dim) .owner-avatar-oby { opacity: 0.45; }
 .oby-badge-cut { fill: var(--bg); stroke: var(--bg); stroke-width: 5px; vector-effect: non-scaling-stroke; }
 .avatar-stack { display: flex; align-items: center; }
 .avatar-stack > * + * { margin-left: -6px; }
@@ -305,9 +308,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .node .pic { position: relative; border-radius: 50%; }
 .node.is-working .pic::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.6); animation: ring 1.6s ease-in-out infinite; }
 @keyframes ring { 0%, 100% { opacity: 0.15; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
-.node.is-offline .pic { opacity: 0.4; }
+.node:is(.is-offline, .is-suspended) .pic > svg { opacity: 0.4; }
 .node.is-offline .node-name { color: var(--muted); }
-.node.is-suspended .pic { opacity: 0.4; }
 .node-name { color: var(--ink); font-size: var(--text-md); font-weight: 500; line-height: 16px; }
 .node-where { color: var(--muted); font-size: 11px; line-height: 14px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .packet { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12); pointer-events: none; }
@@ -380,7 +382,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .inst-meta { grid-area: meta; color: var(--muted); font-size: var(--text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .inst-chev { grid-area: chev; color: var(--muted); transition: transform var(--fade); }
 .inst-row.is-open .inst-chev { transform: rotate(90deg); }
-.inst-row.is-dim .inst-pic { opacity: 0.55; }
+.inst-row.is-dim .inst-pic > svg { opacity: 0.55; }
 .inst-row.is-dim :is(.inst-name, .inst-line) { color: var(--muted); }
 .inst-more { margin: 0 10px 10px; padding: 10px 0 2px; border-top: 1px dashed var(--surface-edge); display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; font-size: var(--text-md); line-height: 19px; }
 .inst-more dt { color: var(--muted); }
@@ -483,7 +485,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .chips-pick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .chips-pick button { height: 32px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade); }
 .chips-pick button:hover { color: var(--text); }
-.chips-pick button.is-on { background: var(--active); color: var(--ink); border-color: transparent; }
+.chips-pick button.is-on { background: var(--active); color: var(--ink); border-color: var(--field-edge-on); }
 .chips-pick button .away { color: var(--muted); }
 .folder-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
 .folder-row + .folder-row { border-top: 1px solid var(--surface-edge); }
@@ -652,7 +654,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .ctl-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; max-width: 100%; padding: 2px; border-radius: 9px; background: rgba(255, 255, 255, 0.06); }
 .ctl-seg [role="radio"] { min-height: 28px; padding: 0 12px; border-radius: 7px; color: var(--text); font-size: var(--text-md); white-space: nowrap; transition: background-color var(--fade), color var(--fade); }
 .ctl-seg [role="radio"]:hover { color: var(--ink); }
-.ctl-seg [role="radio"][aria-checked="true"] { background: rgba(255, 255, 255, 0.16); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+.ctl-seg [role="radio"][aria-checked="true"] { background: rgba(255, 255, 255, 0.16); color: var(--ink); box-shadow: inset 0 0 0 1px var(--field-edge-on), 0 1px 2px rgba(0, 0, 0, 0.3); } /* its edge tells the choice at 3:1 */
 .ctl-seg [role="radio"]:disabled { opacity: 0.4; }
 .ctl-step { display: inline-flex; align-items: center; height: 32px; border: 1px solid var(--field-edge); border-radius: 8px; background: var(--field); transition: border-color var(--fade); }
 .ctl-step:focus-within { border-color: var(--field-edge-on); }
@@ -672,7 +674,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .ctl-chips-field::placeholder { color: var(--muted); }
 .ctl-toggle { height: 28px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--muted); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade); }
 .ctl-toggle:hover { color: var(--text); }
-.ctl-toggle[aria-pressed="true"] { background: var(--active); color: var(--ink); border-color: transparent; }
+.ctl-toggle[aria-pressed="true"] { background: var(--active); color: var(--ink); border-color: var(--field-edge-on); } /* on: an edge at 3:1, not a faint fill alone */
 .ctl-info { position: relative; flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line-strong); color: var(--muted); font: 600 10px/1 var(--font); vertical-align: 1px; transition: color var(--fade), border-color var(--fade); }
 .ctl-info:hover, .ctl-info:focus-visible { color: var(--ink); border-color: var(--field-edge-on); }
 .ctl-info::after { content: attr(data-tip); display: none; position: absolute; z-index: 60; top: calc(100% + 6px); left: 50%; width: max-content; max-width: min(260px, calc(100vw - 32px)); padding: 6px 10px; border: 1px solid var(--surface-edge); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); color: var(--text); font: 400 var(--text-sm)/16px var(--font); text-align: left; white-space: normal; pointer-events: none; transform: translateX(calc(-50% + var(--tip-dx, 0px))); }
@@ -1079,7 +1081,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- Oby's pictures (ObyFace.tsx)
   const OBY_PATH = 'M70.6738 1.4132C71.0781 0.099296 72.6571 -0.424821 73.7666 0.386834C76.0714 2.07339 80.0073 4.97625 82.921 7.12762C85.3816 8.94448 88.192 10.212 90.91 11.615C99.2785 15.935 105 24.6647 105 34.7316V68.7316C105 83.091 93.3594 94.7316 79 94.7316H26C11.6406 94.7316 0 83.091 0 68.7316V34.7316C8.34945e-07 24.3936 6.03367 15.4655 14.7715 11.2754C17.9651 9.74397 21.2856 8.39647 24.144 6.30517L32.2334 0.386834C33.3429 -0.424821 34.9219 0.099296 35.3262 1.4132L36.9257 6.61352C37.3129 7.87244 38.476 8.73156 39.7931 8.73156H66.2069C67.524 8.73156 68.6871 7.87245 69.0743 6.61352L70.6738 1.4132Z';
-  const AVATAR_COLORS = ['#3a5a8c', '#7a4a8c', '#2f7a6a', '#8c5a3a', '#8c3a52', '#5a6a2f', '#3a7a8c', '#6a4a3a'];
+  const AVATAR_COLORS = ['#3a5a8c', '#7a4a8c', '#2f7a6a', '#8c5a3a', '#8c3a52', '#5a6a2f', '#387688', '#6a4a3a']; // each keeps its letters at 4.5:1
   const djb2 = (s) => [...s].reduce((h, c) => ((h * 33) ^ c.charCodeAt(0)) >>> 0, 5381);
   function obyFace(size, badge = false, color = '#f1f1ee') {
     if (badge) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" overflow="visible" aria-hidden="true"><path class="oby-badge-cut" d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" stroke-linejoin="round"/><path d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" fill="${color}"/><rect x="7.4" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/><rect x="14" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/></svg>`;

@@ -524,10 +524,13 @@ describe('contrast (WCAG 2.2 AA), from the CSS tokens', () => {
   test('the old faint greys are gone', () => {
     const rule = (sel) => cssRules().find((r) => r.selector === sel && !r.media);
     assert.equal(rule('.group-none p').decl.color, 'var(--muted)', 'an empty conversation says so legibly');
-    // offline rows, map nodes and an away Oby's instruments dim their pictures, not their words
-    const dimmed = cssRules().filter((r) => /\.oby-row\.is-offline|\.node\.is-offline|\.inst-row\.is-dim/.test(r.selector) && r.decl.opacity);
-    for (const r of dimmed) assert.match(r.selector, /(\.owner-avatar|svg|\.status|\.pic|\.inst-pic)\b[^,]*\)?$/, `${r.selector}: only pictures go faint`);
+    // offline rows, map nodes and an away Oby's instruments dim their pictures, not their words: an
+    // Oby face (svg), a status dot or a picture's small Oby; a picture with letters goes grey instead (below)
+    const dimmed = cssRules().filter((r) => /is-offline|is-suspended|is-dim/.test(r.selector) && r.decl.opacity);
+    assert.ok(dimmed.length >= 4, dimmed.map((r) => r.selector).join(', '));
+    for (const r of dimmed) assert.match(r.selector, /(svg|\.status\)|\.owner-avatar-oby)$/, `${r.selector}: only pictures without letters go faint`);
     assert.equal(rule('.oby-row.is-offline .connector-name').decl.color, 'var(--muted)');
+    assert.equal(rule('.node.is-offline .node-name').decl.color, 'var(--muted)');
     assert.equal(rule('.inst-row.is-dim :is(.inst-name, .inst-line)').decl.color, 'var(--muted)');
     // fields, and anything you pick a value from, have an edge you can see (3:1)
     for (const sel of ['.set-field', '.set-select', '.set-area', '.composer-field', '.ctl-dd-btn', '.ctl-search', '.ctl-step', '.ctl-time', '.ctl-chips', '.pol-step', '.pol-dd-b', '.au-search input', '.au-drop', '.au-menu-search']) {
@@ -535,6 +538,44 @@ describe('contrast (WCAG 2.2 AA), from the CSS tokens', () => {
     }
     // a link inside someone's words is underlined, not told apart by colour alone
     assert.match(rule('.tok-url').decl['text-decoration'], /^underline/);
+  });
+
+  test("a picture's letters read at 4.5:1, in every colour it may have, and grey while its Oby is away", () => {
+    const rules = cssRules();
+    const letters = parseColor(rules.find((r) => r.selector === '.owner-avatar' && !r.media).decl.color);
+    const colors = vm.runInNewContext(`${constSource('AVATAR_COLORS')}; AVATAR_COLORS`);
+    assert.ok(colors.length >= 8);
+    for (const c of colors) { const back = parseColor(c).rgb; assert.ok(ratio(over(letters, back), back) >= 4.5, `${c}: ${ratio(over(letters, back), back).toFixed(2)}:1`); }
+    // away (offline or suspended), in the side panel, on the map and beside an instrument: a grey
+    // disc over the colour it's given inline, with grey letters (faded, they read at about 2.5:1)
+    const away = rules.find((r) => / \.owner-avatar$/.test(r.selector) && r.decl.background);
+    assert.ok(away, 'a rule for an away picture');
+    for (const x of ['.oby-row.is-offline', '.node.is-offline', '.node.is-suspended', '.inst-row.is-dim']) assert.ok(away.selector.includes(x), x);
+    assert.equal(away.decl.background, 'var(--chip-hover) !important');
+    assert.equal(away.decl.color, 'var(--muted)');
+    assert.ok(!away.decl.opacity);
+    for (const th of THEMES) {
+      const back = tokenColor('--chip-hover', th.tokens).rgb;
+      const r = ratio(over(tokenColor('--muted', th.tokens), back), back);
+      assert.ok(r >= 4.5, `${th.name}: ${r.toFixed(2)}:1`);
+    }
+  });
+
+  test('a chosen segment, a pressed toggle and a picked person show it with an edge at 3:1, not a faint fill alone', () => {
+    const rule = (sel) => cssRules().find((r) => r.selector === sel && !r.media);
+    const seg = rule('.ctl-seg [role="radio"][aria-checked="true"]');
+    assert.match(seg.decl['box-shadow'], /^inset 0 0 0 1px var\(--field-edge-on\),/);
+    assert.equal(rule('.ctl-toggle[aria-pressed="true"]').decl['border-color'], 'var(--field-edge-on)');
+    assert.equal(rule('.chips-pick button.is-on').decl['border-color'], 'var(--field-edge-on)');
+    // the segment's edge, against the track around it and the segment's own fill
+    for (const th of THEMES) {
+      for (const page of [tokenColor('--bg', th.tokens).rgb, tokenColor('--chip', th.tokens).rgb]) {
+        const track = over(parseColor(rule('.ctl-seg').decl.background), page);
+        const fill = over(parseColor(seg.decl.background), track);
+        const edge = over(tokenColor('--field-edge-on', th.tokens), fill);
+        assert.ok(ratio(edge, track) >= 3 && ratio(edge, fill) >= 3, `${th.name}: ${ratio(edge, track).toFixed(2)}:1, ${ratio(edge, fill).toFixed(2)}:1`);
+      }
+    }
   });
 });
 
