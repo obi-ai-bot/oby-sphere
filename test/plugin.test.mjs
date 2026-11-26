@@ -50,6 +50,8 @@ const CONTRACT = {
   github: { subs: { status: [] } },
   // added during the build (instruments)
   instruments: { subs: { new: [], list: [], check: [], remove: [] } },
+  // when an Oby can't answer (#160)
+  away: { flags: ['--until', '--note', '--off'] },
   // obysphere.mjs (cli)
   start: {},
   stop: {},

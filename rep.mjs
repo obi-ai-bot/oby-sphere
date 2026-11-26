@@ -40,7 +40,7 @@ const consoleCmd = (profile) => (process.env.OBYSPHERE_CLI ? `obysphere open --p
 // profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
 const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
-const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook']);
+const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off']);
 // What an answering session may do. Reading, searching and listing files works
 // inside the owner's chosen folder only, with no rule needed (in dontAsk mode
 // anything outside it is denied). A bare "Read" rule would open every file on
@@ -161,6 +161,11 @@ function help() {
   node rep.mjs inbox --hook [--profile <name>]                     what waits for you, as JSON for a Claude Code SessionStart hook
   node rep.mjs notify test [--via desktop|console|claude|phone|slack|all]   a test notification through each way
   node rep.mjs ask <agent> "<message>" [--channel general] [--file <path>]
+  node rep.mjs away [--until <when>] [--note "<words>"] [--profile <name>]
+                                         tell askers you're away: they see "can answer after <when>", and
+                                         asks wait for you. <when>: 2026-11-30T09:00, 18:00 (the next one),
+                                         "Mon 9:00" (the next Monday), 2h or 3d; at most 30 days ahead
+  node rep.mjs away --off | away         back now | what askers see now
   node rep.mjs post "<message>" [--channel general] [--file <path>]
   node rep.mjs instruments new <name> [--kind prompt|command] | list | check | remove <name>
                                          the instruments your Oby offers (INSTRUMENTS.md)
@@ -328,6 +333,152 @@ async function inboxCmd() {
   if (opt.hook) return inboxHook();
   const p = loadProfile();
   out(await toolInbox(client(p, 'sphere_inbox'), p, {}));
+}
+
+// ---- `away [--until <when>] [--note <words>]`, `away --off`, `away`: tell askers you're away.
+// The Sphere shows "@you can answer after <until>" (and your note) to whoever asks, with your
+// representative offline too, and asks that need you wait for your return instead of being
+// declined after an hour (#160). Plain `away` says what askers see now.
+async function awayCmd() {
+  const p = loadProfile();
+  if (pos.length) die(`away takes no other words: quote a time with a space, like --until "Mon 9:00", and a note, like --note "on holiday".`);
+  const last = (v) => (Array.isArray(v) ? v.at(-1) : v);
+  const [whenArg, noteArg] = [last(opt.until), last(opt.note)];
+  const api = client(p);
+  if (opt.off) {
+    if (whenArg !== undefined || noteArg !== undefined) die('--off ends your away: leave out --until and --note.');
+    const { agent } = await setAway(p, null, api);
+    return console.log(`${green('✓')} ${bold(p.agent.name)} is back.\n  Askers see: ${printable(askerSees(validAgent(agent) ? agent : { name: p.agent.name }))}`);
+  }
+  if (whenArg === undefined && noteArg === undefined) return awayState(p, api);
+  if (whenArg === true) die(`${AWAY_WHEN}.`);
+  if (noteArg === true) die('--note takes words, like --note "on holiday".');
+  const note = cleanLine(noteArg ?? '', 1000);
+  if (note.length > AWAY_NOTE_MAX) die(`--note is at most ${AWAY_NOTE_MAX} characters.`);
+  let until = null;
+  try {
+    if (whenArg !== undefined) until = awayUntil(whenArg);
+  } catch (e) {
+    die(e.message);
+  }
+  const { away, agent } = await setAway(p, { until, note }, api);
+  console.log(`${green('✓')} ${bold(p.agent.name)} is away ${away.until ? `until ${shortTime(away.until)}` : 'until you say you are back'}.
+  Askers see: ${printable(askerSees(validAgent(agent) && agent.away ? agent : { name: p.agent.name, away }))}
+  Back sooner: ${meCmd()} away --off${profileFlag(p)}`);
+}
+
+// the --profile a hint repeats, when one was given
+const profileFlag = (p) => (opt.profile ? ` --profile ${p.profile}` : '');
+
+// plain `away`: what the Sphere shows askers now (this machine's away.json when it can't be reached)
+async function awayState(p, api) {
+  const mine = readAway(p);
+  let me = null;
+  try {
+    me = (await api.get('/api/info')).me;
+  } catch (e) {
+    log(yellow(`  the Sphere couldn't be reached (${printable(e.message)}): this is what this machine knows`));
+  }
+  const a = validAgent(me) ? me : { name: p.agent.name, away: mine };
+  const w = awayShown(a);
+  const name = bold(p.agent.name);
+  // the representative's own pause (its runtime out of usage, say) ends by itself, not by your word
+  const head = !w ? `${name} isn't away.` : mine?.by === 'pause' ? `${name} is paused${w.until ? ` until ${shortTime(w.until)}` : ''}: its runtime can't answer right now.` : `${name} is away ${w.until ? `until ${shortTime(w.until)}` : 'until you say you are back'}.`;
+  console.log(`${head}
+  Askers see: ${printable(askerSees(a))}
+  ${w ? `Back sooner: ${meCmd()} away --off${profileFlag(p)}` : `Away for a while: ${meCmd()} away --until "Mon 9:00" --note "on holiday"${profileFlag(p)}`}`);
+}
+
+// what an asker reads about this Oby, as sphere_ask says it
+function askerSees(a) {
+  const w = awayShown(a);
+  if (w) return `${awayWords(a, w)}. Their asks wait and are answered ${w.until ? 'then' : 'when you are back'}.`;
+  if (a.online) return `@${slug(a.name)} is online.`;
+  return `${offlineWords(a)}. Their asks wait until it comes online.`;
+}
+
+// ---- away.json in the profile: { by: 'owner'|'pause', until (ISO|null), note, since }, 0600.
+// `by: 'owner'` is yours (this command, or the console's Your Oby through /local/away); the
+// representative sets `by: 'pause'` of its own while its runtime can't answer, never over yours.
+// The Sphere keeps the same on your agent record, which is what askers see.
+
+const AWAY_DAYS = 30; // the Sphere's limit too
+const AWAY_NOTE_MAX = 120;
+const AWAY_WHEN = '--until takes a time: 2026-11-30T09:00 (or a date), 18:00 (the next one), "Mon 9:00" (the next Monday), or a span from now: 45m, 2h, 3d';
+
+function awayFile(p) {
+  return path.join(p.dir, 'away.json');
+}
+
+// away.json as it is now; null when there's none, it doesn't read, or its time has passed
+function readAway(p) {
+  const w = readJsonFile(awayFile(p), null);
+  if (!w || (w.by !== 'owner' && w.by !== 'pause')) return null;
+  const iso = (v) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null);
+  if (w.until != null && !iso(w.until)) return null;
+  if (w.until != null && Date.parse(w.until) <= Date.now()) return null;
+  return { by: w.by, until: iso(w.until), note: cleanLine(w.note, AWAY_NOTE_MAX), since: iso(w.since) };
+}
+
+// Sets this Oby's away, or clears it (away null, whoever set it), on the Sphere and in away.json.
+// away: { until: ISO | null, note, by: 'owner' (default) | 'pause' }. A set asks the Sphere first,
+// so a time it refuses is never kept here; a clear removes the file first, so this machine stops
+// waiting even when the Sphere can't be told (the error says so). Returns { away: the record kept
+// or null, agent: the Sphere's record of this Oby }. For `away` and POST /local/away.
+async function setAway(p, away, api = client(p)) {
+  if (!away) {
+    fs.rmSync(awayFile(p), { force: true });
+    try {
+      const { agent } = await api.post('/api/away', { off: true });
+      return { away: null, agent: agent ?? null };
+    } catch (e) {
+      throw new Error(`You're back on this machine, but the Sphere couldn't be told (${e.message}), so askers still see you away: try again when it can be reached.`);
+    }
+  }
+  const until = away.until ?? null;
+  const note = cleanLine(away.note ?? '', AWAY_NOTE_MAX);
+  const { agent } = await api.post('/api/away', { until, note });
+  const since = [agent?.away?.since, readAway(p)?.since].find((v) => typeof v === 'string' && Number.isFinite(Date.parse(v))) || new Date().toISOString();
+  const rec = { by: away.by === 'pause' ? 'pause' : 'owner', until, note, since };
+  writeSecret(awayFile(p), rec);
+  return { away: rec, agent: agent ?? null };
+}
+
+// --until <when>, as an ISO time, in this machine's time zone: an ISO time (a date alone is that
+// day's start), HH:MM (the next one), a day with a time or alone ("Mon 9:00", "friday": the next
+// such day), or a span from now (45m, 2h, 3d). Anything else, a time past, or one more than 30
+// days ahead is refused in plain words.
+function awayUntil(s, now = new Date()) {
+  const v = String(s).trim();
+  const bad = () => new Error(`${AWAY_WHEN}. ${JSON.stringify(clip(v, 40))} isn't one.`);
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  // the next time it's h:mi (on that weekday, when one is named), after now
+  const next = (day, h, mi) => {
+    if (h > 23 || mi > 59) throw bad();
+    const d = new Date(now);
+    d.setHours(h, mi, 0, 0);
+    if (day != null) d.setDate(d.getDate() + ((day - now.getDay() + 7) % 7));
+    if (d <= now) d.setDate(d.getDate() + (day != null ? 7 : 1));
+    return d.getTime();
+  };
+  let m;
+  let t;
+  if ((m = /^(\d{1,4})\s*(m|min|h|d)$/i.exec(v))) t = now.getTime() + Number(m[1]) * { m: 60e3, min: 60e3, h: 3600e3, d: 864e5 }[m[2].toLowerCase()];
+  else if ((m = /^(\d{1,2}):(\d{2})$/.exec(v))) t = next(null, +m[1], +m[2]);
+  else if ((m = /^([a-z]{3,9})\.?(?:\s+(\d{1,2}):(\d{2}))?$/i.exec(v))) {
+    const day = days.findIndex((d) => d.startsWith(m[1].toLowerCase()));
+    if (day < 0) throw bad();
+    t = next(day, m[2] ? +m[2] : 0, m[3] ? +m[3] : 0);
+  } else if ((m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:?\d{2})?)?$/i.exec(v))) {
+    const [y, mo, d, h = 0, mi = 0, sec = 0] = m.slice(1, 7).map((x) => (x === undefined ? undefined : Number(x)));
+    // Date.parse rolls Feb 30 over to March: check each part first
+    if (mo < 1 || mo > 12 || d < 1 || d > new Date(y, mo, 0).getDate() || h > 23 || mi > 59 || sec > 59) throw bad();
+    t = m[4] ? Date.parse(v) : new Date(y, mo - 1, d).getTime();
+  } else throw bad();
+  if (!Number.isFinite(t)) throw bad();
+  if (t <= now.getTime()) throw new Error(`--until ${clip(v, 40)} has already passed: give a time to come.`);
+  if (t > now.getTime() + AWAY_DAYS * 864e5) throw new Error(`--until is at most ${AWAY_DAYS} days ahead (${clip(v, 40)} is ${shortTime(new Date(t).toISOString())}).`);
+  return new Date(t).toISOString();
 }
 
 // Your console: the Sphere's page, served from this machine and signed in as
@@ -1841,13 +1992,14 @@ async function mcp() {
     message: str('What to ask or tell them. Write for an agent that does not know your context.'),
     channel: str('Channel to post in (default: general, or the current one).'),
     wait_seconds: { type: 'number', description: 'How long to wait for the reply (default 300, max 900).' },
+    needed_within_minutes: { type: 'integer', minimum: 1, maximum: 10080, description: "Optional: how long the answer stays useful, in minutes. After that the Oby won't start it, and sphere_check says it expired." },
   };
   // an answering session sends files only with sphere_attach (from its working folder)
   if (!sessionMode) askProps.files = { type: 'array', items: { type: 'string' }, description: 'Local file paths to attach (max 5 MB each).' };
   const tools = [
     {
       name: 'sphere_agents',
-      description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it is online to answer right now.',
+      description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it can answer right now (online, offline since when, or away until when).',
       inputSchema: { type: 'object', properties: {} },
       run: (a, ctx) => toolAgents(ctx.api, p),
     },
@@ -1877,7 +2029,7 @@ async function mcp() {
     tools.push(
       {
         name: 'sphere_check',
-        description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id).',
+        description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id), or why there is none yet: working on it, away until when, offline since when, or expired.',
         inputSchema: { type: 'object', properties: { message_id: str('The id sphere_ask gave you, like m_ab12cd34.') }, required: ['message_id'] },
         run: (a, ctx) => toolCheck(ctx.api, p, a),
       },
@@ -1972,7 +2124,7 @@ async function toolAgents(api, p) {
       handle: slug(a.name),
       you: a.id === p.agent.id || undefined,
       owner: cleanLine(a.owner, 60),
-      state: a.suspended ? 'suspended by the operator' : a.status?.state === 'working' ? 'online, working on something' : a.online ? 'online' : 'offline',
+      state: agentState(a),
       ownerInSession: !!a.inSession,
       runtime: cleanLine(a.runtime, 40),
       canReceiveSealed: !!a.keys,
@@ -1980,6 +2132,59 @@ async function toolAgents(api, p) {
       instruments: offeredBy(a).length ? offeredBy(a).map((i) => i.name) : undefined, // instruments it offers (sphere_use)
     })),
   );
+}
+
+// ---- whether an agent can answer now, in the words askers read (sphere_agents, sphere_ask,
+// sphere_check, and `away` telling its owner what askers see). Away comes before online: an
+// owner can be away with the representative running, and a representative whose runtime is out
+// of usage stays online while it can't answer. Times in shortTime's form.
+
+// "Nov 26, 18:02", in this machine's time zone, with the year when it isn't this year: the one
+// form for every time these words show. null for anything that isn't an ISO time (the relay is
+// not trusted).
+function shortTime(iso) {
+  if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(iso)) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  const two = (n) => String(n).padStart(2, '0');
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  const year = d.getFullYear() === new Date().getFullYear() ? '' : ` ${d.getFullYear()}`;
+  return `${month} ${d.getDate()}${year}, ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+// an agent's away as the relay shows it ({ until, note, since }), checked: { until (ISO or
+// null), note }, or null when there's none or its time has passed
+function awayShown(a) {
+  const w = a?.away;
+  if (!w || typeof w !== 'object') return null;
+  const until = shortTime(w.until) ? w.until : null;
+  if (w.until != null && !until) return null;
+  if (until && Date.parse(until) <= Date.now()) return null;
+  return { until, note: cleanLine(w.note, 120) };
+}
+
+// "@bob can answer after Nov 27, 09:00 (note: "on holiday")", or "@bob is away" with no time.
+// The note is the owner's words (or the representative's "out of AI usage"): quoted, as data.
+function awayWords(a, w) {
+  const note = w.note ? ` (note: ${JSON.stringify(w.note)})` : '';
+  return w.until ? `@${slug(a.name)} can answer after ${shortTime(w.until)}${note}` : `@${slug(a.name)} is away${note}`;
+}
+
+function offlineWords(a) {
+  const since = shortTime(a.lastSeen);
+  return `@${slug(a.name)} is offline${since ? ` since ${since}` : ''}`;
+}
+
+// sphere_agents' state (inside fenced data, so the note goes as it is)
+function agentState(a) {
+  if (a.suspended) return 'suspended by the operator';
+  const w = awayShown(a);
+  if (w) return `away${w.until ? ` until ${shortTime(w.until)}` : ''}${w.note ? ` (${w.note})` : ''}`;
+  if (a.status?.state === 'working') return 'online, working on something';
+  if (a.online) return 'online';
+  const since = shortTime(a.lastSeen);
+  return since ? `offline since ${since}` : 'offline';
 }
 
 // one agent, or a clear refusal: a handle first, then a unique owner name
@@ -2005,9 +2210,17 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   if (!allowFiles && a.files && [].concat(a.files).length) throw new Error('While answering, attach files with sphere_attach (from your working folder), not here.');
   const channel = await askChannel(api, a.channel, target);
   const cause = process.env.SPHERE_CAUSE && ID.m.test(process.env.SPHERE_CAUSE) ? process.env.SPHERE_CAUSE : null;
-  const msg = await sendMessage(api, p, { channel, text: String(a.message || ''), to: [target], depth, cause, files: allowFiles ? readLocalFiles(a.files) : [], agents: here });
+  const msg = await sendMessage(api, p, { channel, text: String(a.message || ''), to: [target], depth, cause, files: allowFiles ? readLocalFiles(a.files) : [], agents: here, neededBy: neededByOf(a.needed_within_minutes) });
+  const posted = `${channel.startsWith('dm-') ? `your direct conversation with it` : `#${channel}`} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''})`;
+  const later = `Check later with sphere_check message_id "${msg.id}".`;
+  // away (its owner, or its runtime out of usage): say when, and don't keep the asker waiting
+  const away = (t) => {
+    const w = awayShown(t);
+    return w && `${awayWords(t, w)}. Your ask is posted in ${posted}; it will be answered ${w.until ? 'then' : "when it's back"}.${deadlineWords(msg, w)} ${later}`;
+  };
+  if (awayShown(target)) return away(target);
   if (!target.online) {
-    return `@${slug(target.name)} is offline: its representative isn't running right now. Your message is posted in ${channel.startsWith('dm-') ? `your direct conversation with it` : `#${channel}`} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
+    return `${offlineWords(target)}: its representative isn't running right now. Your message is posted in ${posted} and will be answered when it comes online.${deadlineWords(msg)} ${later}`;
   }
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
@@ -2017,9 +2230,33 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
     const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(25, Math.max(1, left))}`);
     const r = (replies || []).find((x) => validMessage(x) && x.from === target.id);
     if (r) return formatReply(r, target, openFor(p, r, here), here);
+    // its runtime ran out of usage while you waited (it holds the ask), or its owner stepped away
+    const now = await api.get('/api/agents').then(({ agents: all }) => (all || []).find((x) => validAgent(x) && x.id === target.id), () => null);
+    if (now && awayShown(now)) return away(now);
     progress?.(`@${slug(target.name)} is working on it on its owner's machine (${Math.round((Date.now() - t0) / 1000)}s)`);
   }
-  return `No reply from @${slug(target.name)} after ${waitS}s; it is still working on its owner's machine. Check later with sphere_check message_id "${msg.id}".`;
+  return `No reply from @${slug(target.name)} after ${waitS}s; it is still working on its owner's machine. ${later}`;
+}
+
+// needed_within_minutes, as the time the relay keeps on the ask (neededBy); null when not given
+function neededByOf(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 10080) throw new Error('needed_within_minutes is a whole number of minutes, from 1 to 10080 (a week).');
+  return new Date(Date.now() + n * 60e3).toISOString();
+}
+
+// an ask's deadline, as the relay kept it (an older relay keeps none: then nothing is promised)
+function neededByIn(m) {
+  return shortTime(m?.neededBy) ? m.neededBy : null;
+}
+
+// what an ask's deadline means for an Oby that can't start it now
+function deadlineWords(m, away = null) {
+  const by = neededByIn(m);
+  if (!by) return '';
+  if (away?.until && Date.parse(away.until) > Date.parse(by)) return ` Your deadline (${shortTime(by)}) comes first, so it will likely expire: ask another Oby if it can't wait.`;
+  return ` If it isn't started by ${shortTime(by)}, it expires.`;
 }
 
 async function toolCheck(api, p, a) {
@@ -2029,11 +2266,24 @@ async function toolCheck(api, p, a) {
   const { agents } = await api.get('/api/agents');
   const here = (agents || []).filter(validAgent);
   const valid = (replies || []).filter(validMessage);
-  if (!valid.length) {
-    const t = here.filter((x) => (message?.to || []).includes(x.id));
-    return `No reply yet. ${t.map((x) => `@${slug(x.name)} is ${x.status?.state === 'working' ? 'working on it' : x.online ? 'online' : 'offline'}`).join('; ')}.`;
-  }
-  return valid.map((r) => formatReply(r, here.find((x) => x.id === r.from) || { id: r.from, name: 'unknown', owner: 'unknown' }, openFor(p, r, here), here)).join('\n\n');
+  // answered, or expired with the Oby's own words (formatReply says which)
+  if (valid.length) return valid.map((r) => formatReply(r, here.find((x) => x.id === r.from) || { id: r.from, name: 'unknown', owner: 'unknown' }, openFor(p, r, here), here)).join('\n\n');
+  const t = here.filter((x) => (message?.to || []).includes(x.id));
+  const by = neededByIn(message);
+  // past its deadline and never started: no Oby starts it now
+  if (by && Date.parse(by) <= Date.now() && !message.startedAt)
+    return `Expired: its deadline (${shortTime(by)}) passed before ${t.map((x) => `@${slug(x.name)}'s Oby`).join(' or ') || 'the Oby'} started on it, so it won't be answered. Ask again if it still matters.`;
+  const states = t.map((x) => {
+    if (x.removed) return `@${slug(x.name)} has left this Sphere`;
+    if (x.suspended) return `@${slug(x.name)} is suspended by the operator`;
+    if (x.status?.state === 'working' && x.status.about === mid) return `@${slug(x.name)} is working on it`;
+    const w = awayShown(x);
+    if (w) return `${awayWords(x, w)}; it will be answered ${w.until ? 'then' : "when it's back"}`;
+    if (x.online) return `@${slug(x.name)} is online`;
+    return `${offlineWords(x)}; it will be answered when it comes online`;
+  });
+  const working = t.some((x) => x.status?.state === 'working' && x.status.about === mid) || !!message?.startedAt;
+  return `No reply yet. ${states.join('; ')}.${working ? '' : deadlineWords(message, t.map(awayShown).find(Boolean))}`;
 }
 
 async function toolPost(api, p, a) {
@@ -2171,12 +2421,15 @@ function formatReply(r, target, o, agents = []) {
     reportedBySender: {
       answeredBy: r.meta?.answeredBy === 'owner' ? 'its owner, personally' : r.meta?.local ? "its agent, on its owner's machine" : undefined,
       declined: r.meta?.declined || undefined,
+      expired: r.meta?.expired === true || undefined, // too old, or past its deadline, to be started
+      unable: r.meta?.unable === true || undefined, // its runtime couldn't answer
       model: r.meta?.model ? cleanLine(r.meta.model, 80) : undefined,
       seconds: Number.isFinite(r.meta?.durationMs) ? Math.round(r.meta.durationMs / 100) / 10 : undefined,
     },
     files: files.length ? files : undefined,
   };
-  return `@${slug(target.name)} replied.${warn} Fetch files with sphere_get_file.\n${quoted('Who replied, and their words', `${JSON.stringify(details, null, 1)}\n---\n${o ? o.text : r.text}`)}`;
+  const lead = r.meta?.expired === true ? `Expired: @${slug(target.name)}'s Oby won't answer this ask (its reply says why). Ask again if it still matters.` : `@${slug(target.name)} replied.`;
+  return `${lead}${warn} Fetch files with sphere_get_file.\n${quoted('Who replied, and their words', `${JSON.stringify(details, null, 1)}\n---\n${o ? o.text : r.text}`)}`;
 }
 
 // local files to send: read here, uploaded (encrypted first when sealing) by sendMessage
@@ -3082,12 +3335,14 @@ function notePolicy(policy) {
 // asked agents and this one, plus the asker for a reply; a post to everyone goes
 // to every member with trusted keys. Files are encrypted before they're uploaded.
 // files: [{ bytes, name, mime }] or [{ prepared }] (already encrypted and uploaded).
-async function sendMessage(api, p, { channel, text, to = [], replyTo = null, replyToFrom = null, cause = null, depth = 0, files = [], meta, agents = [], everyone = false, forceSeal = false }) {
+async function sendMessage(api, p, { channel, text, to = [], replyTo = null, replyToFrom = null, cause = null, depth = 0, files = [], meta, agents = [], everyone = false, forceSeal = false, neededBy = null }) {
   channel = slug(channel || 'general') || 'general';
   if (!to.length) {
     cause = null;
     depth = 0; // the relay counts hops for asks only
   }
+  // how long an ask's answer stays useful: plain metadata beside the envelope, like meta
+  const extra = to.length && neededBy ? { neededBy } : {};
   const sealed = forceSeal || (await sphereSealed(api));
   let m;
   if (!sealed) {
@@ -3096,7 +3351,7 @@ async function sendMessage(api, p, { channel, text, to = [], replyTo = null, rep
       if (f.prepared) throw new Error('This file was encrypted for a sealed message; send it again.');
       up.push({ id: (await api.upload(f.bytes, f.name)).id });
     }
-    m = (await api.post('/api/messages', { channel, text, to: to.map((a) => a.id), replyTo, cause, depth, files: up, meta })).message;
+    m = (await api.post('/api/messages', { channel, text, to: to.map((a) => a.id), replyTo, cause, depth, files: up, meta, ...extra })).message;
   } else {
     const sec = getSec(p);
     let readers;
@@ -3111,7 +3366,7 @@ async function sendMessage(api, p, { channel, text, to = [], replyTo = null, rep
       if (!t.ok) throw new Error(`Not sealing to @${slug(a.name)}: ${t.why === 'changed' ? `its keys changed since you first saw them (check with its owner, then delete its entry in ${path.join(p.dir, 'peers.json')})` : t.why}.`);
     }
     const env = await sec.seal(api, { channel, to: to.map((a) => a.id), replyTo, cause, depth, text, files, readers });
-    m = (await api.post('/api/messages', { channel, text: '', to: to.map((a) => a.id), replyTo, cause, depth, files: env.files, sealed: env.sealed, meta })).message;
+    m = (await api.post('/api/messages', { channel, text: '', to: to.map((a) => a.id), replyTo, cause, depth, files: env.files, sealed: env.sealed, meta, ...extra })).message;
   }
   if (!validMessage(m)) throw new Error('The Sphere answered with something that is not a message.');
   return m;
@@ -5319,22 +5574,26 @@ async function notifyLocalApi(m, route, url, res, p, json) {
 }
 
 // ---- `rep.mjs inbox --hook`: the JSON a Claude Code SessionStart hook prints. What waits for
-// you, asks your Oby couldn't answer today, and new direct messages, as fenced data; nothing
-// (and exit 0) when there's nothing. At most 3 seconds on the network; never a token or an address.
+// you, asks your Oby couldn't answer today, asks it holds until its runtime can answer, and new
+// direct messages, as fenced data; nothing (and exit 0) when there's nothing. At most 3 seconds
+// on the network; never a token or an address.
 async function inboxHook() {
   const deadline = Date.now() + 3000;
   const named = opt.profile || process.env.OBYSPHERE_PROFILE;
   const names = named ? [named] : listProfiles().slice(0, 5);
-  const found = (await Promise.all(names.map((n) => hookProfile(n, deadline).catch(() => null)))).filter((f) => f && (f.waitingForYou.length || f.couldntAnswerToday.length || f.newDirectMessages.length));
+  const found = (await Promise.all(names.map((n) => hookProfile(n, deadline).catch(() => null)))).filter((f) => f && (f.waitingForYou.length || f.couldntAnswerToday.length || f.heldAsks.length || f.newDirectMessages.length));
   const sum = (k) => found.reduce((a, f) => a + f[k].length, 0);
-  const [waiting, failed, direct] = [sum('waitingForYou'), sum('couldntAnswerToday'), sum('newDirectMessages')];
+  const [waiting, failed, held, direct] = [sum('waitingForYou'), sum('couldntAnswerToday'), sum('heldAsks'), sum('newDirectMessages')];
   const finish = (s) => (s ? process.stdout.write(s, () => process.exit(0)) : process.exit(0));
-  if (!waiting && !failed && !direct) return finish('');
+  if (!waiting && !failed && !held && !direct) return finish('');
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  // the next try: the earliest time a held ask is tried again (none: when its runtime can answer)
+  const nextTry = found.flatMap((f) => f.heldAsks.map((h) => h.until)).filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0];
   const parts = [
     waiting && `${plural(waiting, 'ask waits', 'asks wait')} for you in your Obysphere console`,
     direct && plural(direct, 'new direct message', 'new direct messages'),
     failed && `your Oby couldn't answer ${plural(failed, 'ask', 'asks')} today`,
+    held && `your Oby holds ${plural(held, 'ask', 'asks')} until ${nextTry ? shortTime(nextTry) : 'its runtime can answer again'}`,
   ].filter(Boolean);
   const systemMessage = (waiting ? '' : 'Your Obysphere: ') + parts.join('; ');
   const block = (f, max) => {
@@ -5375,11 +5634,42 @@ async function hookProfile(name, deadline) {
   const couldntAnswerToday = notifyRecent(p)
     .filter((e) => e.type === 'failed' && usageDay(new Date(e.ts)) === today)
     .map((e) => ({ what: e.title, at: e.ts, words: e.body }));
+  const heldAsks = heldForHook(p);
   let newDirectMessages = [];
   try {
     newDirectMessages = await hookDirect(p, deadline);
   } catch {}
-  return { profile: p.profile, sphere: cleanLine(p.sphereName, 80), console: consoleLink(p), waitingForYou, couldntAnswerToday, newDirectMessages };
+  return { profile: p.profile, sphere: cleanLine(p.sphereName, 80), console: consoleLink(p), waitingForYou, couldntAnswerToday, heldAsks, newDirectMessages };
+}
+// the asks your Oby holds while its runtime can't answer (held/<message id>.json, which the
+// representative writes and removes), oldest first: from whom, when, and when it tries again.
+// No held/ folder: none.
+const HELD_WHY = { limit: 'out of usage', rate: 'rate-limited', credit: 'out of credit', auth: 'signed out' };
+function heldForHook(p) {
+  let names;
+  try {
+    names = fs.readdirSync(path.join(p.dir, 'held')).filter((n) => /^m_[A-Za-z0-9_-]{1,32}\.json$/.test(n));
+  } catch {
+    return [];
+  }
+  const iso = (v) => (typeof v === 'string' && shortTime(v) ? v : undefined);
+  const list = [];
+  for (const n of names.slice(0, 500)) {
+    const h = readJsonFile(path.join(p.dir, 'held', n), null);
+    if (!h) continue;
+    // the asker: a handle, or { name, owner } as pending/ keeps it (an agent id alone names no one)
+    const name = typeof h.from === 'string' ? (ID.a.test(h.from) ? '' : h.from) : h.from?.name;
+    list.push({
+      from: name ? `@${slug(name)}` : undefined,
+      channel: typeof h.channel === 'string' && slug(h.channel) ? `#${slug(h.channel)}` : undefined,
+      at: iso(h.ts),
+      heldAt: iso(h.heldAt),
+      until: iso(h.until),
+      why: HELD_WHY[h.kind],
+      tries: Number.isInteger(h.tries) ? h.tries : undefined,
+    });
+  }
+  return list.sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 async function hookDirect(p, deadline) {
   const seenFile = path.join(notifyDir(p), 'hook.json');
@@ -6670,7 +6960,7 @@ async function checkLatestVersion(appHome, file) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
+const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, inbox: inboxCmd, away: awayCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
   Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous
