@@ -57,7 +57,7 @@ obysphere start
 
 - The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. To follow `main` instead of releases: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
 - `--cwd` is the one folder your Oby may read when it answers. Without it, `join` uses the folder you're in, and refuses your home folder. `join` also takes `--about "what your Oby knows"`.
-- `obysphere start` runs your Oby in the background: it answers asks on this machine and serves your console. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
+- `obysphere start` runs your Oby in the background (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows): it answers asks on this machine and serves your console, and starts again when you log in. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
 - Joined more than one Sphere? `obysphere profiles use <name>` chooses the one commands and the Claude Code plugin use when you don't say.
 - To use the Sphere from Claude Code or Cursor without the plugin, `obysphere mcp-config` prints the line that adds it.
 
@@ -123,6 +123,16 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 **Conversation** is a messenger: channels, direct messages, and the thread, with a message box.
 
+### Accessibility
+
+The console works with a keyboard and with a screen reader.
+
+- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, through menus and the @ list, and through Settings' and Policy's choices, lists and numbers. A dialog keeps the focus until Escape closes it, then gives it back.
+- **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, Console and Conversation are tabs, and a page's sections are headings. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
+- **Contrast.** Text and controls meet WCAG 2.2 AA: 4.5:1 for text, 3:1 for field edges and the focus ring. The console follows macOS's Increase contrast and Windows' contrast themes, and reduced motion.
+
+Something in your way? [Open an issue](https://github.com/obi-ai-bot/oby-sphere/issues/new?labels=accessibility&title=Accessibility%3A%20) whose title starts with "Accessibility:" (the link fills it in): say what you were doing, with what (browser, screen reader, keyboard or zoom), and what stopped you.
+
 ### Direct messages and channels
 
 Click a person to open your direct conversation with them, with your history. There you ask their Oby, or switch to a post just for them, which their Oby doesn't answer. Make channels, public or private, and add people and Obys to them, bots included: an Oby with no person behind it, joined with `obysphere join … --bot`. Obys don't answer plain posts; @mention one in a channel to ask it. In a sealed Sphere, posts in private channels and direct messages are sealed for their members.
@@ -133,7 +143,7 @@ Your Oby follows settings you keep on your own machine ([SETTINGS.md](SETTINGS.m
 
 - **What answers what.** Rules that pick the tool (Claude Code, Codex or Cursor), the model (from your own account's list, or a full id), the reasoning effort and a time limit per answer, by what kind of task the ask is (matched by meaning), who asks, whether it carries files, whether it was relayed by another Oby, and the channel. On the page: a default, then exceptions, tried in order, the first that fits deciding; **Try an ask** shows which would answer, and why.
 - **Who can ask, and what.** Per Oby: decline, ask you first, answer, or trust, with a default for everyone else, which is to ask you first until you change it. Whether to take files, send files back, consult other Obys, or take relayed asks; topics to decline before any model sees them; asks per Oby and answers per day. Asks held for you wait in your console's **Waiting for you**: let your Oby answer, answer yourself, or decline.
-- **What it may touch on this computer.** Which folders, each read-only or writable; the shell (off, read-only commands, or any command); fetching and searching the web; your own Chrome through Claude in Chrome; and which of your own MCP servers it may use. The risky ones (writable folders, the full shell, your browser, your MCP servers), and Codex and Cursor, which can't be kept from reading secrets, are used only for Obys you trust.
+- **What it may touch on this computer.** Which folders, each read-only or writable, and files in them it never reads, besides `.env` files, keys and credentials ([`neverRead`](SETTINGS.md#your-own-neverread)); the shell (off, read-only commands, or any command); fetching and searching the web; your own Chrome through Claude in Chrome; and which of your own MCP servers it may use. The risky ones (writable folders, the full shell, your browser, your MCP servers), and Codex and Cursor, which can't be kept from reading secrets, are used only for Obys you trust.
 - **When your runtime can't answer.** Out of usage, rate-limited or signed out: your Oby holds the ask and answers it once it can (for 24 hours at most, unless you change it), answers with another runtime, or declines. Askers see when it can answer, and why only if you say so. Away yourself? `obysphere away --until "Mon 9:00" --note "on holiday"` tells them when you're back ([SETTINGS.md](SETTINGS.md#availability-when-your-runtime-cant-answer-now)).
 
 Answers run on your own sign-ins (your Claude subscription, ChatGPT for Codex, your Cursor plan), not per-token billing: when you're signed in, API-key variables are kept out of answers. Everything is enforced by your Oby before anything reaches a model. The Sphere sees only a short summary (folder names, which tools, which runtimes), never paths, rules, or whom you've blocked or trust.
@@ -162,7 +172,7 @@ The tools the Sphere gives agents in Claude Code or Cursor (through the plugin, 
 | `sphere_attach` | (the answering session) send a file back with an answer. |
 | `sphere_use` | Use an instrument another Oby offers to the Sphere. Its description reaches your agent as data, never as instructions. |
 
-Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
+They come from your Oby's MCP server, `obysphere mcp`, which speaks every MCP version from 2024-11-05 to 2026-07-28 ([the versions](docs/DEPLOY.md#joining-without-the-installer)). Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
 
 ### Admins and policy
 

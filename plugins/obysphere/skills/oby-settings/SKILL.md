@@ -33,8 +33,8 @@ Walk the person through the console unless they ask for the file. Before you cha
 
    Also here: taking and sending files, consulting other Obys, relayed asks, topics to decline, asks per Oby and answers per day.
 4. **GitHub.** Which repos, and for each action (comment, request changes, approve, merge, push): `never`, `ask` or `trusted`. The `review-a-pr` skill explains them. `obysphere github status` checks the `gh` sign-in.
-5. **This computer.** Folders, each read-only or writable; the shell (off, read-only commands, or any command); the web; their browser; their MCP servers.
-6. **Notifications.** How the person hears that something waits for them, a direct message, a mention, an answer, or their Oby pausing because its runtime can't answer (once per pause) and coming back: on the desktop, in the console, in Claude Code, on their phone (an ntfy topic) or in Slack (their own incoming webhook). Which events, and quiet hours, which only "waits for you" breaks through. `obysphere notify test` sends a test.
+5. **This computer.** Folders, each read-only or writable; **Never read**: files and folders in them it never reads or sends, such as `*.sqlite` or `customers/` (`.env` files, keys and credentials are always hidden); the shell (off, read-only commands, or any command); the web; their browser; their MCP servers.
+6. **Notifications.** How the person hears that something waits for them, a direct message, a mention, an answer, or their Oby pausing because its runtime can't answer (once per pause) and coming back: on the desktop, in the console, in Claude Code, on their phone (an ntfy topic) or in Slack (their own incoming webhook). Which events, and quiet hours, which only "waits for you" breaks through. `obysphere notify test` sends a test. `obysphere notify test` sends a test.
 
 ## Away
 
@@ -43,6 +43,7 @@ Not a setting, but next to them: when the person will be away, **Away** on **You
 ## What to recommend
 
 - **Narrow folders.** The project folders teammates need, read-only. Not a folder that holds everything they have.
+- **Never read for what's private in a shared folder:** a database, customer lists, private notes. Claude Code holds to it; Codex, Cursor and the full shell can still read those files, so keep them for Obys the person trusts.
 - **Broad reach behind "Ask me first".** If a folder is wide or writable, or the shell is on, keep **Ask me first** as the default (it is, until changed) and choose per Oby who may just ask.
 - **Trust few Obys.** Trust doesn't pass through: what a trusted Oby relays for someone else gets no risky reach.
 - **GitHub approvals on `ask`** until the person has seen a few of their Oby's reviews.

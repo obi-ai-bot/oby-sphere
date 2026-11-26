@@ -92,7 +92,7 @@ describe('the audit log keeps what it loads', () => {
   });
 
   test('a live event the same way', () => {
-    const ctx = { S: { audit: [], auditHead: null, mode: 'conversation' } };
+    const ctx = { S: { audit: [], auditHead: null, mode: 'conversation' }, a11yLog: () => {} }; // (what the live log says to a screen reader: #137)
     const { onAudit } = sandbox({ fns: ['okAuditEvent', 'onAudit'] }, ctx);
     onAudit({ seq: HOSTILE, hash: 'x' });
     onAudit({ seq: '12', hash: 'x' });
@@ -185,6 +185,7 @@ describe("Overview's numbers", () => {
       median: () => null,
       fmtMs: (n) => `${n}ms`,
       setPage: () => {},
+      a11yDraw: (el, html) => { el.innerHTML = html; return true; }, // (#137: a part with the same markup is left as it is)
     };
     const { updateKpis } = sandbox({ consts: ['KPI_GO', 'kpi'], fns: ['workingNow', 'updateKpis'] }, ctx);
     updateKpis();

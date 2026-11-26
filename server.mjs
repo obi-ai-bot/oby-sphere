@@ -26,7 +26,8 @@
 //   fs     one process, a data folder: sphere.json + messages.jsonl + audit.jsonl + files/.
 //   redis  Upstash REST (Vercel): one Redis list is the log, appended with a
 //          compare-and-append script, so writes from many instances are
-//          linearizable; each instance replays the log into its own maps.
+//          linearizable; each instance replays the log into its own maps. Now
+//          and then the log's head is folded into a snapshot (compaction).
 //
 // The API is in API.md. Zero dependencies. Node 22+.
 //   node server.mjs [--port 4848] [--host 0.0.0.0] [--name …] [--key <join key>] [--admin-key <key>]
@@ -67,6 +68,8 @@ const CFG = {
   asksPerMin: Number(args['asks-per-min'] ?? env.SPHERE_ASKS_PER_MIN) || null,
   writesPerMin: Number(args['writes-per-min'] ?? env.SPHERE_WRITES_PER_MIN) || null,
   pollMs: Number(env.SPHERE_POLL_MS) || 1000,
+  compactEvery: compactEvery(env.SPHERE_COMPACT_EVERY), // redis: log entries in the tail before a compaction (0: never)
+  compactWaitMs: Math.max(0, Number(env.SPHERE_COMPACT_WAIT_MS ?? 3600000) || 0), // redis: no compaction until this long after the first compaction-aware start
   streamMaxMs: Number(env.SPHERE_STREAM_MAX_MS) || (ON_VERCEL ? 280000 : 0),
   redisUrl: (env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || '').replace(/\/+$/, ''),
   redisToken: env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || '',
@@ -215,6 +218,12 @@ const NOT_REPS = (st) => st.role !== 'rep';
 function apply(op, liveEvents = true) {
   const ev = [];
   switch (op.t) {
+    case 'tally': // compaction: the counts as they were where a snapshot was taken
+      setTally(op);
+      break;
+    case 'compaction': // compaction: a relay that compacts has started on this log
+      noteCompactionMark(op);
+      break;
     case 'init':
       S.sphere = sphereRecord(op.sphere);
       S.policy = mergePolicy(op.policy);
@@ -555,10 +564,11 @@ function fsStore() {
     msgLines++;
     if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
   }
-  // keep the newest `retainMessages` in memory and in the log (and every file record)
+  // keep the newest `retainMessages` in memory and in the log (and every file record), then
+  // the counts as they are (a tally: messages dropped here still count after a restart)
   function compact() {
     trimMemory();
-    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m))];
+    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m)), JSON.stringify({ tally: tallyOp() })];
     fs.writeFileSync(MSGS + '.tmp', lines.join('\n') + (lines.length ? '\n' : ''), { mode: 0o600 });
     msgOut?.end();
     fs.renameSync(MSGS + '.tmp', MSGS);
@@ -675,6 +685,7 @@ function fsStore() {
           const m = byId.get(o.p);
           if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
         } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
+        else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
       }
       const auditLines = readLog(AUDIT);
@@ -806,17 +817,75 @@ function fsStore() {
 
 // ================================================================ store: redis (Upstash REST, for Vercel)
 
-// Appends ARGV[2..] to the log only if its length is still ARGV[1], the length
-// this instance has applied; otherwise -1, and the caller syncs and retries.
-const APPEND_LUA = `-- obysphere:append
-local n = redis.call('LLEN', KEYS[1])
+// Positions in the log are absolute. Until its first compaction the log is the
+// list <prefix>log, as in 0.3 and before. The first compaction moves it to
+// <prefix>tail and leaves a plain string at <prefix>log (see "compaction" below):
+// from then on <prefix>base operations were folded into a snapshot and trimmed
+// from the list's head, so the log holds base + LLEN. Every script takes KEYS
+// log, base, tail first, and finds the list this way:
+const LOG_LUA = `
+local moved = redis.call('EXISTS', KEYS[2]) == 1
+local log = KEYS[1]
+local base = 0
+if moved then
+  log = KEYS[3]
+  base = tonumber(redis.call('GET', KEYS[2]))
+end`;
+// Appends ARGV[2..] to the log only if base + its length is still ARGV[1], the
+// position this instance has applied; otherwise -1, and the caller syncs and retries.
+const APPEND_LUA = `-- obysphere:append${LOG_LUA}
+local n = base + redis.call('LLEN', log)
 if n ~= tonumber(ARGV[1]) then return -1 end
-for i = 2, #ARGV do redis.call('RPUSH', KEYS[1], ARGV[i]) end
+for i = 2, #ARGV do redis.call('RPUSH', log, ARGV[i]) end
 return n + #ARGV - 1`;
+// {base, entries from position ARGV[1], at most ARGV[2]}, or {base} when that position was compacted away
+const READ_LUA = `-- obysphere:read${LOG_LUA}
+local from = tonumber(ARGV[1]) - base
+if from < 0 then return {base} end
+return {base, redis.call('LRANGE', log, from, from + tonumber(ARGV[2]) - 1)}`;
+// Compaction. Swaps in the snapshot list KEYS[6] (ARGV[4] entries, the state
+// folded from positions 0 to ARGV[2]) only if the snapshot pointer KEYS[4] is
+// still ARGV[1] (so base hasn't moved), the position is still in the log, and the
+// new list is whole. The first time, it moves the list to the tail key and leaves
+// the string ARGV[5] at the old one: a relay that doesn't know about base (0.3 and
+// before) gets WRONGTYPE there, so it fails instead of reading or appending at the
+// wrong position. Then it trims those entries from the log's head, keeps the new
+// list and lets the old one (KEYS[5]) expire.
+const COMPACT_LUA = `-- obysphere:compact${LOG_LUA}
+if (redis.call('GET', KEYS[4]) or '') ~= ARGV[1] then return -1 end
+local pos = tonumber(ARGV[2])
+local len = redis.call('LLEN', log)
+if pos < base or pos > base + len then return -2 end
+if redis.call('LLEN', KEYS[6]) ~= tonumber(ARGV[4]) then return -3 end
+if not moved then
+  if len > 0 then redis.call('RENAME', KEYS[1], KEYS[3]) end
+  redis.call('SET', KEYS[1], ARGV[5])
+  log = KEYS[3]
+end
+redis.call('LTRIM', log, pos - base, -1)
+redis.call('SET', KEYS[2], tostring(pos))
+redis.call('SET', KEYS[4], ARGV[3])
+redis.call('PERSIST', KEYS[6])
+if KEYS[5] ~= KEYS[6] then redis.call('EXPIRE', KEYS[5], 900) end
+return pos`;
 
 function redisStore() {
-  const K = { log: CFG.prefix + 'log', pres: CFG.prefix + 'presence', rl: CFG.prefix + 'rl:', file: CFG.prefix + 'file:' };
-  let applied = 0; // log entries applied to memory
+  const K = {
+    log: CFG.prefix + 'log', // the log until its first compaction; then a string that says where it went
+    base: CFG.prefix + 'base',
+    tail: CFG.prefix + 'tail', // the log after its first compaction
+    snap: CFG.prefix + 'snap',
+    snapList: (id) => CFG.prefix + 'snap:' + id,
+    pres: CFG.prefix + 'presence',
+    rl: CFG.prefix + 'rl:',
+    file: CFG.prefix + 'file:',
+  };
+  const LOG_KEYS = ['3', K.log, K.base, K.tail]; // what every log script starts with
+  let applied = 0; // log position applied to memory (absolute: snapshot included)
+  let base = 0; // the log's base, as last read
+  let snapCount = 0; // entries in the snapshot, as last read
+  let compacting = false;
+  let compactAfter = 0; // after a failed compaction, wait before the next try
   let logBytes = 0;
   let pres = { at: 0, map: new Map() };
   let lastSweep = 0;
@@ -842,8 +911,8 @@ function redisStore() {
       }
     }
   }
-  async function call(cmd) {
-    const r = await redisFetch(CFG.redisUrl, JSON.stringify(cmd), RETRY_SAFE.has(cmd[0]));
+  async function call(cmd, retry = RETRY_SAFE.has(cmd[0])) {
+    const r = await redisFetch(CFG.redisUrl, JSON.stringify(cmd), retry);
     const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     if (j.error) throw new Error(`redis ${cmd[0]}: ${j.error}`);
     return j.result;
@@ -858,8 +927,14 @@ function redisStore() {
 
   async function syncLocked() {
     for (;;) {
-      const items = await call(['LRANGE', K.log, String(applied), String(applied + 199)]);
-      for (const s of items || []) {
+      const r = await call(['EVAL', READ_LUA, ...LOG_KEYS, String(applied), '200'], true); // a read: safe to send twice
+      base = Number(r[0]);
+      if (r.length < 2) {
+        await loadSnapshot(); // compaction: behind the compacted part, the snapshot, then the tail
+        continue;
+      }
+      const items = r[1] || [];
+      for (const s of items) {
         logBytes += s.length;
         try {
           apply(JSON.parse(s));
@@ -868,8 +943,9 @@ function redisStore() {
         }
         applied++;
       }
-      if (!items || items.length < 200) return;
+      if (items.length < 200) break;
     }
+    maybeCompact(); // compaction: now and then, in the background
   }
 
   async function commitLocked(build) {
@@ -893,7 +969,7 @@ function redisStore() {
   }
   async function tryAppend(b) {
     const entries = b.ops.map((o) => JSON.stringify(o));
-    const n = await call(['EVAL', APPEND_LUA, '1', K.log, String(applied), ...entries]);
+    const n = await call(['EVAL', APPEND_LUA, ...LOG_KEYS, String(applied), ...entries]);
     if (Number(n) < 0) return false;
     for (let i = 0; i < b.ops.length; i++) {
       logBytes += entries[i].length;
@@ -911,6 +987,128 @@ function redisStore() {
       for (const op of b.ops) if (op.t === 'audit') again.audit(op.e.type, op.e);
       b = again;
     }
+  }
+
+  // ===== compaction (redis). A snapshot is a Redis list of [position, operation]:
+  // the state folded from the log's first `pos` operations (foldOps: the newest
+  // retainMessages messages, every audit event, each record as it is now, and a
+  // tally of the counts). The pointer <prefix>snap names the list ({id, pos, count}),
+  // and <prefix>base is its position: the log holds what came after.
+  const parsePtr = (s) => {
+    let p = null;
+    try {
+      p = JSON.parse(s);
+    } catch {}
+    if (typeof p?.id !== 'string' || !Number.isInteger(p.pos) || !Number.isInteger(p.count)) throw new Error('the snapshot pointer is damaged');
+    return p;
+  };
+  // a whole list, in pages; null when it isn't `count` long (replaced and expired while we read)
+  async function readList(key, count) {
+    const out = [];
+    while (out.length < count) {
+      const items = await call(['LRANGE', key, String(out.length), String(out.length + 199)]);
+      if (!items?.length) break;
+      out.push(...items);
+    }
+    return out.length === count ? out : null;
+  }
+  async function writeList(key, items) {
+    let bytes = 0;
+    for (let i = 0; i < items.length; ) {
+      const batch = [];
+      let size = 0;
+      while (i < items.length && batch.length < 500 && (!batch.length || size + items[i].length < 256 * 1024)) {
+        size += items[i].length;
+        batch.push(items[i++]);
+      }
+      await call(['RPUSH', key, ...batch]);
+      // until it's swapped in, the list expires: a compaction that dies leaves nothing for long
+      if (i === batch.length) await call(['EXPIRE', key, '3600']);
+      bytes += size;
+    }
+    return bytes;
+  }
+  // An instance behind the snapshot's position (a cold start, or one that slept
+  // through a compaction) applies the entries it hasn't applied yet, then the tail.
+  async function loadSnapshot() {
+    for (let tries = 0; tries < 5; tries++) {
+      const raw = await call(['GET', K.snap]);
+      if (!raw) throw new Error('the log was compacted, but its snapshot is missing');
+      const ptr = parsePtr(raw);
+      if (ptr.pos <= applied) throw new Error('the snapshot is behind the log');
+      const items = await readList(K.snapList(ptr.id), ptr.count);
+      if (!items) continue;
+      logBytes = 0; // the log is this snapshot and its tail now
+      for (const s of items) {
+        logBytes += s.length;
+        try {
+          const [p, op] = JSON.parse(s);
+          if (p >= applied || op.t === 'tally') apply(op);
+        } catch (e) {
+          console.error('a snapshot entry failed to apply:', e.message);
+        }
+      }
+      applied = ptr.pos;
+      snapCount = ptr.count;
+      return;
+    }
+    throw err(503, 'busy', 'The Sphere is busy; try again in a moment.');
+  }
+  // the log's operations from position 0 to `pos`, as [position, operation]: the snapshot, then the tail
+  async function readOps(pos) {
+    const raw = await call(['GET', K.snap]);
+    const ptr = raw ? parsePtr(raw) : { pos: 0, count: 0 };
+    const entries = [];
+    if (raw) {
+      const items = await readList(K.snapList(ptr.id), ptr.count);
+      if (!items) return null;
+      for (const s of items) entries.push(JSON.parse(s));
+    }
+    for (let a = ptr.pos; a < pos; ) {
+      const r = await call(['EVAL', READ_LUA, ...LOG_KEYS, String(a), String(Math.min(200, pos - a))], true);
+      if (r.length < 2 || Number(r[0]) !== ptr.pos || !r[1]?.length) return null; // compacted meanwhile
+      r[1].forEach((s, i) => entries.push([a + i, JSON.parse(s)]));
+      a += r[1].length;
+    }
+    return { raw: raw || '', ptr, entries };
+  }
+  // rarely: when the tail is longer than both SPHERE_COMPACT_EVERY and the snapshot
+  function maybeCompact() {
+    if (compacting || Date.now() < compactAfter || applied - base < Math.max(CFG.compactEvery, snapCount) || !compactionReady()) return;
+    compacting = true;
+    compact()
+      .catch((e) => {
+        compactAfter = Date.now() + 30000;
+        console.error('compaction:', e.message);
+      })
+      .finally(() => {
+        compacting = false;
+      });
+  }
+  async function compact() {
+    // the position, and the counts there (messages folded away still count), taken together
+    const at = await lock(async () => ({ pos: applied, tally: tallyOp(), retain: S.policy.retainMessages, bytes: logBytes }));
+    const read = await readOps(at.pos);
+    if (!read) return false;
+    snapCount = read.ptr.count;
+    if (at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
+    const folded = foldOps(read.entries, at.retain);
+    folded.push([at.pos - 1, at.tally]);
+    const id = token(9);
+    const key = K.snapList(id);
+    const bytes = await writeList(key, folded.map((e) => JSON.stringify(e)));
+    const ptr = JSON.stringify({ id, pos: at.pos, count: folded.length, at: now() });
+    const old = read.raw ? K.snapList(read.ptr.id) : key;
+    const moved = `obysphere: this log was compacted, and is now ${K.tail} after the snapshot ${K.snap}. Relays of 0.3 and before can't read it.`;
+    const r = Number(await call(['EVAL', COMPACT_LUA, '6', K.log, K.base, K.tail, K.snap, old, key, read.raw, String(at.pos), ptr, String(folded.length), moved]));
+    if (r < 0) {
+      await call(['DEL', key]).catch(() => {}); // another instance compacted first: its snapshot stands
+      return false;
+    }
+    base = Math.max(base, at.pos);
+    snapCount = folded.length;
+    logBytes = bytes + Math.max(0, logBytes - at.bytes); // the snapshot, and what this instance applied after it
+    return true;
   }
 
   async function refreshPresence(force = false) {
@@ -1039,6 +1237,139 @@ function redisStore() {
 }
 
 const store = CFG.store === 'redis' ? redisStore() : fsStore();
+
+// ===== compaction: state as operations
+//
+// One function, foldOps(), folds a log of operations into the fewest that leave
+// the same state. The Redis store's snapshot is that fold, plus a tally of the
+// counts; the file store ends its compacted messages.jsonl with the same tally.
+
+// SPHERE_COMPACT_EVERY: unset, 5000; 0 (or off), never; otherwise at least 1
+function compactEvery(v) {
+  if (v === undefined || v === '') return 5000;
+  if (/^(0|off|no|false)$/i.test(String(v).trim())) return Infinity;
+  return Math.max(1, Number(v) || 5000);
+}
+
+// The counts the console shows, carried across what a fold drops (messages past
+// retainMessages still count). Applied after the messages, it sets them as they were.
+// Denials aren't in it: they're counted from the audit chain, which is never folded.
+function tallyOp() {
+  const { denials, ...kept } = counts;
+  const seen = Object.values(S.agents).flatMap((a) => (a.lastSeen ? [[a.id, a.lastSeen]] : [])); // touched by what a fold drops
+  return { t: 'tally', counts: kept, days: [...exchangesByDay], agents: [...agentStats].map(([id, s]) => [id, { ...s, samples: s.samples.slice() }]), seen };
+}
+function setTally(op) {
+  for (const k of Object.keys(counts)) if (k !== 'denials' && Number.isFinite(op.counts?.[k])) counts[k] = op.counts[k];
+  exchangesByDay.clear();
+  for (const [d, n] of op.days || []) exchangesByDay.set(d, n);
+  agentStats.clear();
+  for (const [id, s] of op.agents || []) agentStats.set(id, { asksIn: 0, asksOut: 0, answered: 0, errors: 0, declined: 0, ...s, samples: [...(s.samples || [])] });
+  for (const [id, ts] of op.seen || []) touch(id, ts);
+}
+
+// The guard for a deploy from 0.3, whose relays don't know about base. The first
+// start of a relay that compacts writes {t: 'compaction', since} to the log (0.3
+// ignores operations it doesn't know). No instance compacts until that is
+// SPHERE_COMPACT_WAIT_MS (an hour) old, so a 0.3 instance still running from before
+// the deploy has finished its last request (Vercel ends a function within 5
+// minutes). One that runs later anyway (a rollback, an old preview on the same
+// database) fails on the moved log instead of misreading it (see COMPACT_LUA).
+const compactionMark = { since: null };
+function noteCompactionMark(op) {
+  const t = Date.parse(op.since);
+  if (Number.isFinite(t) && (compactionMark.since === null || t < compactionMark.since)) compactionMark.since = t; // the first one counts
+}
+function markCompaction(b) {
+  if (store.kind === 'redis' && CFG.compactEvery !== Infinity && compactionMark.since === null) b.push({ t: 'compaction', since: now() });
+}
+function compactionReady() {
+  return compactionMark.since !== null && Date.now() - compactionMark.since >= CFG.compactWaitMs;
+}
+
+// the record an operation replaces: only the last one for each key matters
+function recordKey(op) {
+  switch (op.t) {
+    case 'agent':
+      return 'a:' + op.a?.id;
+    case 'channel': // the whole record: kind, topic, members
+      return 'c:' + op.ch?.name;
+    case 'file':
+      return 'f:' + op.f?.id;
+    case 'claim':
+      return 'k:' + op.key;
+    case 'status':
+      return 's:' + op.agent;
+    case 'presence':
+      return 'p:' + op.agent + ':' + op.role;
+    case 'role': // admin roles: made an admin, or no longer one
+      return 'r:' + op.id;
+    default:
+      return null;
+  }
+}
+
+// a key in plain text (an older version's records) leaves only as its hash
+function withoutKeys(op) {
+  if (op.t === 'init' && op.sphere) return { ...op, sphere: sphereRecord(op.sphere) };
+  if (op.t === 'sphere' && op.fields && ('key' in op.fields || 'adminKey' in op.fields)) {
+    const { key, adminKey, ...fields } = op.fields;
+    if (key) fields.keyHash = sha(String(key));
+    if (adminKey) fields.adminKeyHash = sha(String(adminKey));
+    return { ...op, fields };
+  }
+  return op;
+}
+
+// Folds [position, operation] pairs, in log order, into the fewest that leave the
+// same state: each record once, where it first appeared, as it was last (with that
+// last position, so an instance that applied the log up to some position applies
+// only what is newer); the newest `retain` messages, with their patches and claims;
+// every audit event, so the chain stays whole; and every other operation as it was
+// (init, sphere, policy, the compaction mark, and ones this version doesn't know). Counts are left to a
+// tally the caller adds. A record that depends on another comes after it in the log
+// (an agent before its role, a channel before its messages), so it does here too.
+// A status is also cleared without a status operation (its member removed or
+// suspended, its representative offline); records apply where they first appeared,
+// so a status cleared after its last operation is folded as cleared.
+function foldOps(entries, retain = Infinity) {
+  const ids = [];
+  const last = new Map();
+  const seen = new Set();
+  const cleared = new Map(); // agent id -> where its status was last cleared
+  entries.forEach(([, op], i) => {
+    if (op.t === 'msg' && !seen.has(op.m.id)) {
+      seen.add(op.m.id);
+      ids.push(op.m.id);
+    }
+    const k = recordKey(op);
+    if (k) last.set(k, i);
+    if (op.t === 'agent' && (op.a?.removed || op.a?.suspended)) cleared.set(op.a.id, i);
+    if (op.t === 'presence' && op.role === 'rep' && !op.on) cleared.set(op.agent, i);
+  });
+  const asNow = (i) => {
+    const [p, op] = entries[i];
+    return op.t === 'status' && op.status && cleared.get(op.agent) > i ? [p, { ...op, status: null }] : entries[i];
+  };
+  const kept = new Set(ids.slice(Math.max(0, ids.length - retain)));
+  const out = [];
+  const done = new Set();
+  const once = (k) => !done.has(k) && done.add(k);
+  for (const [p, op] of entries) {
+    if (op.t === 'tally') continue;
+    if (op.t === 'msg') {
+      if (kept.has(op.m.id) && once('m:' + op.m.id)) out.push([p, op]);
+    } else if (op.t === 'audit') {
+      if (once('e:' + op.e.seq)) out.push([p, op]);
+    } else if (op.t === 'patch') {
+      if (kept.has(op.id)) out.push([p, op]);
+    } else if (recordKey(op)) {
+      if (op.t === 'claim' && op.ask && !kept.has(op.ask)) continue;
+      if (once(recordKey(op))) out.push(asNow(last.get(recordKey(op))));
+    } else out.push([p, withoutKeys(op)]);
+  }
+  return out;
+}
 
 // ================================================================ presence
 
@@ -2709,6 +3040,7 @@ async function init() {
     if (CFG.writesPerMin && CFG.writesPerMin !== S.policy.rate.writesPerMin) pol.rate = { ...(pol.rate || S.policy.rate), writesPerMin: CFG.writesPerMin };
     if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
     ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
+    markCompaction(b); // compaction: say once, in the log, that a relay that compacts is here
   });
   startInfo = info;
   const base = CFG.publicUrl || `http://localhost:${CFG.port}`;

@@ -1,6 +1,7 @@
 // A small stand-in for Upstash's Redis REST API, for tests: the commands the
 // relay uses, single (POST /) and pipelined (POST /pipeline), with bearer auth.
-// EVAL runs the relay's own scripts, recognised by their first line, in JS.
+// EVAL runs the relay's own scripts, recognised by their first line, in JS: each
+// runs to its end before the next command, so they're atomic here as in Redis.
 //   node test/fake-upstash.mjs [port] [token]     (or import { startFakeUpstash })
 import http from 'node:http';
 
@@ -33,8 +34,8 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
   const score = (s) => (s === '+inf' ? Infinity : s === '-inf' ? -Infinity : Number(s));
   let commands = 0;
 
-  const run = (cmd) => {
-    commands++;
+  const run = (cmd, inner = false) => {
+    if (!inner) commands++; // a script's own calls are part of the one EVAL
     const [name, ...a] = cmd.map(String);
     switch (name.toUpperCase()) {
       case 'PING':
@@ -50,6 +51,21 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
       }
       case 'DEL':
         return a.reduce((n, k) => n + (kv.delete(k) ? 1 : 0), 0);
+      case 'EXISTS':
+        return a.reduce((n, k) => n + (live(k) ? 1 : 0), 0);
+      case 'PERSIST': {
+        const e = live(a[0]);
+        if (!e || !e.exp) return 0;
+        e.exp = 0;
+        return 1;
+      }
+      case 'RENAME': {
+        const e = live(a[0]);
+        if (!e) throw new Error('ERR no such key');
+        kv.delete(a[0]);
+        kv.set(a[1], e);
+        return 'OK';
+      }
       case 'INCR': {
         const e = get(a[0], 'string');
         const n = Number(e?.v ?? 0) + 1;
@@ -67,13 +83,21 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
       case 'RPUSH': {
         const l = list(a[0]);
         l.push(...a.slice(1));
-        kv.set(a[0], { type: 'list', v: l, exp: 0 });
+        kv.set(a[0], { type: 'list', v: l, exp: live(a[0])?.exp ?? 0 }); // as in Redis, a push keeps the key's expiry
         return l.length;
       }
       case 'LRANGE': {
         const l = list(a[0]);
         const [s, e] = range(l.length, a[1], a[2]);
         return s > e ? [] : l.slice(s, e + 1);
+      }
+      case 'LTRIM': {
+        const e0 = get(a[0], 'list');
+        if (!e0) return 'OK';
+        const [s, e] = range(e0.v.length, a[1], a[2]);
+        e0.v = s > e ? [] : e0.v.slice(s, e + 1);
+        if (!e0.v.length) kv.delete(a[0]); // Redis drops an empty list
+        return 'OK';
       }
       case 'ZADD': {
         const z = zset(a[0]);
@@ -106,13 +130,44 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
         const [script, numkeys, ...rest] = a;
         const keys = rest.slice(0, Number(numkeys));
         const argv = rest.slice(Number(numkeys));
+        // the log: KEYS log, base, tail (as 0.3 and before, KEYS log alone). Once base exists, the
+        // log was compacted: it's the tail list, at positions from base, and the old key holds a string.
+        const moved = keys.length >= 3 && !!live(keys[1]);
+        const logKey = moved ? keys[2] : keys[0];
+        const base = moved ? Number(get(keys[1], 'string').v) : 0;
         if (script.startsWith('-- obysphere:append')) {
-          // compare-and-append: the relay's log
-          const l = list(keys[0]);
-          if (l.length !== Number(argv[0])) return -1;
-          l.push(...argv.slice(1));
-          kv.set(keys[0], { type: 'list', v: l, exp: 0 });
-          return l.length;
+          // compare-and-append, at base + the list's length
+          const l = list(logKey);
+          const n = base + l.length;
+          if (n !== Number(argv[0])) return -1;
+          run(['RPUSH', logKey, ...argv.slice(1)], true);
+          return keys.length >= 3 ? n + argv.length - 1 : list(logKey).length;
+        }
+        if (script.startsWith('-- obysphere:read')) {
+          const from = Number(argv[0]) - base;
+          if (from < 0) return [base];
+          return [base, run(['LRANGE', logKey, from, from + Number(argv[1]) - 1], true)];
+        }
+        if (script.startsWith('-- obysphere:compact')) {
+          // KEYS log, base, tail, pointer, old snapshot list, new snapshot list;
+          // ARGV pointer expected, position, new pointer, new count, what the old log key says once moved
+          if ((get(keys[3], 'string')?.v ?? '') !== argv[0]) return -1;
+          const pos = Number(argv[1]);
+          const len = list(logKey).length;
+          if (pos < base || pos > base + len) return -2;
+          if (list(keys[5]).length !== Number(argv[3])) return -3;
+          let at = logKey;
+          if (!moved) {
+            if (len > 0) run(['RENAME', keys[0], keys[2]], true);
+            run(['SET', keys[0], argv[4]], true);
+            at = keys[2];
+          }
+          run(['LTRIM', at, pos - base, -1], true);
+          run(['SET', keys[1], String(pos)], true);
+          run(['SET', keys[3], argv[2]], true);
+          run(['PERSIST', keys[5]], true);
+          if (keys[4] !== keys[5]) run(['EXPIRE', keys[4], 900], true);
+          return pos;
         }
         throw new Error('ERR this fake runs only the relay\'s own scripts');
       }
