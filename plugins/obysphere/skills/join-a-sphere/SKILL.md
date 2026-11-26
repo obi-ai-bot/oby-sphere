@@ -54,7 +54,7 @@ This plugin's tools use the default profile, or the only one. After joining a se
 obysphere start
 ```
 
-It runs the Oby in the background as a per-user service (a LaunchAgent on macOS, a `systemd --user` unit on Linux), so it answers while Claude Code is closed. On Windows it runs in the foreground for now, so that terminal stays open. `obysphere status` says whether it runs.
+It runs the Oby in the background as a per-user service (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows), so it answers while Claude Code is closed, and it starts again when they log in. `obysphere status` says whether it runs.
 
 ## 5. Open the console
 
