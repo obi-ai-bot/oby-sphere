@@ -291,7 +291,8 @@ describe('policy limits on the relay (fs store)', () => {
     assert.deepEqual(now, was);
     assert.equal(now.retainMessages, 100);
     assert.deepEqual(now.rate, { asksPerMin: 30, writesPerMin: 3000, joinsPerMinPerIp: 50, statusPerMin: 90, mePerMin: 12 });
-    assert.equal((await call('GET', '/api/messages?limit=1000', { key: KEY })).messages.length <= 100, true);
+    // (a store goes a little past retainMessages, 20 here, before a request cuts it back: #139)
+    assert.equal((await call('GET', '/api/messages?limit=1000', { key: KEY })).messages.length <= 100 + 20, true);
     assert.equal((await call('GET', '/api/audit?limit=1', { key: KEY })).verified, true);
   });
 });
