@@ -1558,6 +1558,12 @@ async function auditExport() {
   }
   if (opt.out === true || Array.isArray(opt.out)) die('--out takes one file, or - for the terminal.');
   const toStdout = opt.out === '-';
+  // to the terminal or a pipe: when what reads it stops (`| head`), so does the export, quietly
+  if (toStdout)
+    process.stdout.on('error', (e) => {
+      if (e.code !== 'EPIPE') log(red('error: ') + printable(e.message));
+      process.exit(e.code === 'EPIPE' ? 0 : 1);
+    });
   const p = loadProfile();
   const api = client(p);
   const { sphere } = await api.get('/api/info');

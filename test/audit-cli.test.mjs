@@ -269,6 +269,18 @@ describe('audit export and verify on the fs store', () => {
     for (const bad of [['--after', 'x'], ['--after', '-1'], ['--out']]) assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'bob', ...bad])).code, 1, bad.join(' '));
   });
 
+  test('export to a pipe stops quietly when what reads it stops (| head)', async () => {
+    const p = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'admin', 'audit', 'export', '--profile', 'bob', '--out', '-'], { env: m.env(), cwd: m.files, stdio: ['ignore', 'pipe', 'pipe'] });
+    let err = '';
+    p.stderr.on('data', (d) => (err += d));
+    const closed = new Promise((resolve) => p.on('close', resolve));
+    const first = await new Promise((resolve) => p.stdout.once('data', resolve));
+    p.stdout.destroy(); // the first chunk read, and no more: the rest of the 2,500+ events has nowhere to go
+    assert.match(String(first), /^\{"seq":1,/);
+    assert.equal(await closed, 0, err);
+    assert.doesNotMatch(err, /EPIPE|Unhandled|\n\s+at /, 'no stack trace');
+  });
+
   test("rep.mjs's copy of the chain matches server.mjs's: a real relay's log checks, online and from the file", async () => {
     const online = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
     assert.equal(online.code, 0, online.out);
