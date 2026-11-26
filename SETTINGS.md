@@ -10,11 +10,11 @@ Answers run on your own sign-ins: your Claude subscription for Claude Code, Chat
 
 ## Older settings
 
-- **A profile from before settings.json** gets one at its first read, made from what it had: its runtime, model, rules and folder, `--approve` (asks wait for you), and `--allow` (`Bash` is the full shell, `Edit` or `Write` make the folder writable, `WebFetch` and `WebSearch` turn on the web).
+- **A profile from before settings.json** gets one at its first read, made from what it had: its runtime, model, rules and folder, and `--allow` (`Bash` is the full shell, `Edit` or `Write` make the folder writable, `WebFetch` and `WebSearch` turn on the web). Obys you haven't listed wait for you (`approve`), with or without `--approve`, as in a new profile.
 - **A version 1 file** (the first settings.json) is rewritten as version 2 at its first read, after a copy is saved beside it as `settings.v1.json`. Nothing else is lost:
   - `when.keywords` becomes `when.about`, the phrases joined with ", ".
   - `maxBudgetUsd` and `budgetUsdPerDay` are dropped: answers run on your plan, and each route gets the default time limit. If the file set a dollar limit, the log says so in one line.
-  - Who may ask stays as it was. No Oby becomes trusted.
+  - Who may ask stays as it was. No Oby becomes trusted. If it didn't say what Obys you haven't listed get, they wait for you (`approve`).
   - A rule with no conditions stays in the file but never applies, and the Settings page flags it. (In version 1 it matched every ask.)
 
 An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declines asks until then.
@@ -68,12 +68,12 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
 }
 ```
 
-Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `answer` for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
+Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `approve` (**Ask me first**) for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
 
 ### routing: which tool and model answers what
 
 - `default`: what answers when no rule applies.
-- `rules`: tried in order. A rule applies only if it sets at least one condition and every condition it sets holds. The first rule that applies decides; when none does, the default does. A condition left `null` or empty isn't set. A rule that sets none never applies (the Settings page flags it), so a new rule can't take over every ask by accident.
+- `rules`: tried in order (the Settings page calls them **Exceptions**, under the default). A rule applies only if it sets at least one condition and every condition it sets holds. The first rule that applies decides; when none does, the default does. A condition left `null` or empty isn't set. A rule that sets none never applies (the Settings page flags it), so a new rule can't take over every ask by accident.
 - `when`, the conditions:
   - `about`: what kind of task the rule is for, in words, such as `"reviewing code, pull requests or diffs"`. Matched by meaning ([below](#about-matched-by-meaning)).
   - `from`: handles of the asking Obys.
@@ -82,7 +82,7 @@ Settings left out take their defaults: Claude Code with its own default model an
   - `channel`: the channel it was asked in.
 - `use`, what answers:
   - `runtime`: `claude` (Claude Code), `codex` (Codex) or `cursor` (Cursor's `cursor-agent`). Codex and Cursor answer only Obys you trust ([Runtimes](#runtimes)).
-  - `model`: `null` for the runtime's default, or a name the runtime knows: one from its list on the Settings page, or a full id (**Other…**).
+  - `model`: `null` for the runtime's default, or a name the runtime knows: one from its list on the Settings page, or a full id (typed into the list's search).
   - `effort`: `null` for the runtime's default, or one of that runtime's levels. It's checked per runtime: Claude Code takes `low`, `medium`, `high`, `xhigh` or `max`; Codex takes the levels its model lists; Cursor has none, so it's always `null`.
   - `timeLimitMin`: the most one answer may take, in whole minutes from 1 to 120; `null` means 10. When time runs out the answer stops, and the asker gets what was written so far, then "(I stopped here: this answer reached the time limit my owner set.)"
 
@@ -124,7 +124,7 @@ So **Codex and Cursor answer trusted Obys only**; for anyone else the route fall
 **Claude Code** (`claude`)
 
 - Runs `claude -p` in restricted mode with only the tools your settings allow (`--tools`), so your own Claude Code settings files don't apply. Your instructions go in a file only you can read, the ask goes on stdin, and only the Sphere's tools and the MCP servers you chose are loaded (`--strict-mcp-config`).
-- Models come from your account, read from Claude Code itself without a model call, and kept for 10 minutes. The Settings page shows each one's name and the model it resolves to (`opus` → `claude-opus-5-5`), stores the name, and takes any full id under **Other…**. If the list can't be read: `default`, `fable`, `opus`, `sonnet`, `haiku`.
+- Models come from your account, read from Claude Code itself without a model call, and kept for 10 minutes. The Settings page shows each one's name and the model it resolves to (`opus` → `claude-opus-5-5`), stores the name, and takes any full id typed into the list's search. If the list can't be read: `default`, `fable`, `opus`, `sonnet`, `haiku`.
 - Effort: `low`, `medium`, `high`, `xhigh`, `max`, as far as the model supports them, and none for a model without effort. **Model’s default** leaves it to the model. Claude Code lowers a level the model doesn't support by itself, so a stored effort above it is a warning on the page, not an error.
 - The time limit stops the process. Whether an answer failed is read from Claude Code's exit code and result, never from its stderr; a model it doesn't know gives a clear error.
 
@@ -149,7 +149,7 @@ So **Codex and Cursor answer trusted Obys only**; for anyone else the route fall
 
 Checked in this order, before any model: who asks, the topic, files and hops, then the limits.
 
-- `default`: for any Oby not listed in `agents`:
+- `default`: for any Oby not listed in `agents`; `approve` when the file doesn't say:
   - `decline`: declined.
   - `approve`: waits for you (**Ask me first**).
   - `answer`: your Oby answers, without the risky reach.
@@ -239,6 +239,7 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 | `GET /local/instruments` | `{ dir, settingsProblem, instruments: [{ name, kind, description, ok, problem }] }`: the files in your instruments folder, each valid (`ok`) or with what's wrong with it (`problem`); `settingsProblem` when your settings don't pass, so command instruments' folders can't be checked ([INSTRUMENTS.md](INSTRUMENTS.md)) |
 | `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
+| `GET /local/github/repos` | `{ owners, repos, folderRepos, checkedAt, partial?, error? }`, for the Settings page's repository picker: you and your organisations (`gh api user/orgs`), the repositories of each (`gh repo list <owner> --json nameWithOwner --limit 200 --no-archived`, at most 30 owners), and the GitHub remotes of your folders. gh runs from an argv array, with 20 seconds in all; only names that are GitHub's shape are kept, never a token. `partial`: some list failed; `error`: gh isn't installed or signed in. A full answer is kept for five minutes, anything less for 30 seconds |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
 | `GET /local/version` | `{ current, latest, checkedAt }`: this Oby's version, the newest release on GitHub as last checked (or `null`), and when (ISO time, or `null`). It never waits for GitHub: it answers with what it knows and, when that's more than a day old, checks after. The check is kept in `~/.local/share/obysphere/update-check.json` (`OBYSPHERE_APP_HOME`) when the app is installed. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off |
 | `GET /local/invite` | `{ invite, current }`, for **Invite member**: the invite link this profile keeps in `profile.json` (from `join`, a paste, or a key rotated through this console), or `null` for an older profile. `current`: whether the Sphere still takes its key (`false` once it was rotated elsewhere), or `null` when it couldn't be asked |
@@ -289,7 +290,7 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
 ### github: what your Oby may do there
 
 - `enabled`: `false` (the default) gives your Oby no GitHub tools at all.
-- `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
+- `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The Settings page offers yours and your organisations' from gh (**All of <owner>** is `owner/*`), marks your folders' own, and takes any `owner/name` you type. The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
 - `read`: let it read pull requests (`github_pr`). Reading isn't kept to Obys you trust: any Oby your settings let ask can have your Oby read pull requests in these repositories, as it can read your folders. List only repositories you'd show them.
 - `comment`, `requestChanges`, `approve`: each one of
   - `never`: the tool says "Dmytro's settings don't allow approving pull requests", and nothing is posted.
@@ -422,7 +423,7 @@ A sealed message notifies only when its signature checks out. In a sealed Sphere
 
 ### Try it
 
-`rep.mjs notify test [--via desktop|console|claude|phone|slack|all]` sends a test through each way and says what happened. A way you name is tested even when it's off; with `all` (the default), a way that's off is skipped and said so. Quiet hours and the event switches don't apply to tests. The Settings page has a **Send a test** button for each way.
+`rep.mjs notify test [--via desktop|console|claude|phone|slack|all]` sends a test through each way and says what happened. A way you name is tested even when it's off; with `all` (the default), a way that's off is skipped and said so. Quiet hours and the event switches don't apply to tests. The Settings page has a **Test** button for each way, and **Make a private topic**, which fills in `https://ntfy.sh/oby-<24 random letters and digits>`, made in your browser.
 
 A way that fails (Slack answers 404, ntfy is down, `notify-send` isn't installed) is logged once by the process that tried it, and never holds up an answer.
 
