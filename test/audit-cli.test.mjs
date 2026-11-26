@@ -1,10 +1,11 @@
 // `obysphere admin audit export` and `admin audit verify` (#141): the audit log saved as JSON Lines,
 // and checked on this machine with the admin key. Real relays on both stores (fs, and Redis through
 // test/fake-upstash.mjs), with 2,500+ events so the export takes three pages: the export is the
-// relay's pages, and verify passes online and on the file, which also keeps rep.mjs's copy of the
-// chain's hash in step with server.mjs's. On the fs store, each tampering the issue lists is done on
-// disk and the relay started again with the same key, and verify fails at the right seq: an edited
-// detail, a dropped line, two lines swapped, the log re-chained under another key, a message changed.
+// relay's pages, and verify passes online and on the file, which also keeps rep.mjs's copies of the
+// chain's hash and of the content hash (an ask the relay patched among them) in step with
+// server.mjs's. On the fs store, each tampering the issue lists is done on disk and the relay
+// started again with the same key, and verify fails at the right seq: an edited detail, a dropped
+// line, two lines swapped, the log re-chained under another key, a message changed.
 // A wrong key fails at #1, a relay serving a forged log with verified: true fails, and a data
 // folder's audit.jsonl checks with no profile. The key never reaches argv, a request (a recording
 // proxy sees every one), the output or a file. Step 2: a cut or a rewrite after an export is caught
@@ -166,6 +167,15 @@ async function busy(base, m) {
   const [bob, carol] = [m.token('bob'), m.token('carol')];
   const ask = await call(base, 'POST', '/api/messages', { token: bob, body: { channel: 'general', to: ['carol'], text: 'What changed this week?' } });
   assert.equal(ask.status, 200, JSON.stringify(ask));
+  // carol's Oby takes the ask, works on it and holds it for her OK: the relay patches it (claimedAt,
+  // startedAt, waiting), which its event's content leaves out. A real relay's patched message checking
+  // keeps rep.mjs's copy of contentHash() in step with server.mjs's.
+  const id = ask.message.id;
+  assert.equal((await call(base, 'POST', `/api/messages/${id}/claim`, { token: carol, body: { instance: 'audit-cli-test' } })).ok, true);
+  assert.equal((await call(base, 'POST', '/api/status', { token: carol, body: { state: 'working', about: id, note: 'looking' } })).status, 200);
+  assert.equal((await call(base, 'POST', `/api/messages/${id}/waiting`, { token: carol, body: { for: 'owner', until: new Date(Date.now() + 3600e3).toISOString() } })).ok, true);
+  const { message: patched } = await call(base, 'GET', `/api/messages/${id}`, { token: bob });
+  for (const k of ['claimedAt', 'startedAt', 'waiting']) assert.ok(patched[k], `the ask carries ${k}: ${JSON.stringify(patched)}`);
   const reply = await call(base, 'POST', '/api/messages', { token: carol, body: { channel: 'general', replyTo: ask.message.id, text: 'The release notes.' } });
   assert.equal(reply.status, 200, JSON.stringify(reply));
   for (let i = 0; i < POSTS; i += 50) {
