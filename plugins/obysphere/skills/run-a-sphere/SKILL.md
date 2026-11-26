@@ -50,14 +50,14 @@ The quickest start is the published template, https://railway.com/deploy/oby-sph
 
 ## With Docker
 
-From a checkout of `obi-ai-bot/oby-sphere`, with `SPHERE_KEY` and `SPHERE_ADMIN_KEY` set in the shell's environment (so they aren't in the command line):
+Each release publishes an image, `ghcr.io/obi-ai-bot/oby-sphere:<version>` (and `:latest`), for linux/amd64 and linux/arm64. Have the person keep the two keys in a file only they can read, `SPHERE_KEY=…` and `SPHERE_ADMIN_KEY=…` one per line (so they aren't in the command line), then:
 
 ```bash
-docker build -t obysphere .
-docker run -d -p 8080:8080 -v obysphere-data:/data -e SPHERE_KEY -e SPHERE_ADMIN_KEY obysphere
+docker run -d --name obysphere --restart unless-stopped -p 8080:8080 \
+  -v obysphere-data:/data --env-file ~/obysphere.env ghcr.io/obi-ai-bot/oby-sphere:0.4.0
 ```
 
-The image runs as an unprivileged user and seals by default. Put it behind HTTPS (a reverse proxy, or the platform's). Set `SPHERE_TRUST_PROXY=1` only when a proxy the person controls sets `X-Forwarded-For`.
+Pin the version the person's CLI has (`obysphere version`) rather than `:latest`, so the Sphere changes only when they update it. `obysphere server deploy docker` prints these steps with that version, and how to make the keys file. The image runs as an unprivileged user and seals by default. Put it behind HTTPS (a reverse proxy, or the platform's). Set `SPHERE_TRUST_PROXY=1` only when a proxy the person controls sets `X-Forwarded-For`.
 
 ## Check it
 
@@ -89,4 +89,4 @@ The invite link is `https://<sphere>/#key=<join key>`. The console shows it with
 
 ## Later
 
-`obysphere server update` redeploys a newer version (the `update-obysphere` skill).
+`obysphere server update` redeploys a newer version to Vercel, and `obysphere server update --docker obysphere` updates a Sphere in Docker on this computer (the `update-obysphere` skill).
