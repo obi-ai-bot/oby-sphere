@@ -236,10 +236,11 @@ describe('the plugin and its marketplace', () => {
 
   // the plugin directory flags a download-and-run command anywhere in a plugin (skills and
   // README included): the plugin points at the README's install section instead
-  // the directory reads a script that names a web address and reads the environment as a
-  // credential that could leave the machine: the scripts name none (skills and docs may link)
+  // the directory reads a script that names a web address (even https://<sphere>) and one that
+  // reads the environment as a credential that could leave the machine: the scripts name none
+  // (skills and docs may link)
   test('no script in the plugin names a web address', () => {
-    const found = walk(path.join(PLUGIN, 'scripts')).filter((f) => /https?:\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(fs.readFileSync(f, 'utf8')));
+    const found = walk(path.join(PLUGIN, 'scripts')).filter((f) => /https?:\/\//i.test(fs.readFileSync(f, 'utf8')));
     assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
   });
 

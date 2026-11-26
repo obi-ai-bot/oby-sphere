@@ -153,7 +153,7 @@ function setupText(startError) {
     `Install the obysphere CLI with the one-line installer in ${INSTALL_DOCS}. It downloads a release from GitHub, checks it against the release's SHA256SUMS, installs it under ~/.local/share/obysphere and puts \`obysphere\` in ~/.local/bin. Show the person the command from there and ask before running it.`,
   ];
   const join = [
-    "Join with the invite link the Sphere's admin gave the person (https://<sphere>/#key=<join key>). Ask for it, and for the handle, their name, what their Oby knows and the one folder it may read. The link holds the join key: use it only in this command, never in a file, a commit or a message.",
+    "Join with the invite link the Sphere's admin gave the person: the Sphere's address followed by #key= and the join key. Ask for it, and for the handle, their name, what their Oby knows and the one folder it may read. The link holds the join key: use it only in this command, never in a file, a commit or a message.",
     '   obysphere join "<invite link>" --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <the folder it may read>',
     'Go online, so their Oby answers in the background: obysphere start',
     'Open their console: obysphere open',
