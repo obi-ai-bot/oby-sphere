@@ -1445,8 +1445,9 @@ const auditWhat = (e) => `#${auditN(e.seq)} (${e.type}, ${auditWhen(e.ts)})`;
 
 // Checks events in order: [{ e, line?, damaged? }] (damaged: a line that isn't JSON). A log that starts
 // at #1 starts the chain; a file that starts later (made with --after) is checked from its first
-// event, unless `full` (the relay's log, which starts at #1). Stops at the first failure.
-function auditCheck(items, k, { full = false } = {}) {
+// event, unless `full` (the relay's log, which starts at #1), or `after` (an event checked already,
+// which the first must follow: the log read on from there). Stops at the first failure.
+function auditCheck(items, k, { full = false, after = null } = {}) {
   const r = { ok: true, count: 0, from: null, to: null, last: null, partial: false, fail: null };
   const stop = (seq, kind, message) => {
     r.ok = false;
@@ -1454,7 +1455,7 @@ function auditCheck(items, k, { full = false } = {}) {
     return r;
   };
   const lost = (seq) => (seq ? `Nothing from #${auditN(seq)} on is proven.` : 'Nothing in it is proven.');
-  let prev = null;
+  let prev = after;
   for (const { e, line, damaged } of items) {
     const want = prev ? prev.seq + 1 : full ? 1 : null;
     const at = line ? `Line ${auditN(line)}` : `What the relay sent ${prev ? `after #${auditN(prev.seq)}` : 'first'}`;
@@ -1463,8 +1464,8 @@ function auditCheck(items, k, { full = false } = {}) {
     if (shape) return stop(want, 'shape', `${at} isn't a well-formed event: ${shape}. ${lost(want)}`);
     if (want !== null && e.seq !== want)
       return stop(want, 'order', `Event #${auditN(want)} isn't where it should be: ${prev ? `after #${auditN(prev.seq)} comes` : 'the log starts at'} #${auditN(e.seq)}. It was dropped or moved. ${lost(want)}`);
+    r.from ??= e.seq;
     if (!prev) {
-      r.from = e.seq;
       r.partial = e.seq !== 1;
       if (!r.partial && e.prev !== AUDIT_ZERO) return stop(1, 'prev', `Event ${auditWhat(e)} doesn't start the chain: its prev isn't 64 zeros. ${lost(1)}`);
     } else if (e.prev !== prev.hash) return stop(e.seq, 'prev', `Event ${auditWhat(e)} doesn't follow #${auditN(prev.seq)}: its prev isn't that event's hash. ${lost(e.seq)}`);
@@ -1622,20 +1623,21 @@ async function auditVerify(file) {
   // the older export first: a wrong path stops here, before the key is asked for
   const older = opt.since ? auditOlder(String(opt.since)) : null;
   const res = { verified: false, source: file ? 'file' : 'relay', file: file ? path.resolve(file) : null, events: 0, from: null, to: null, head: null, failure: null, notes: [] };
-  let check, items;
+  let check, items, k;
   let p = null;
   let relay = null;
   if (file) {
     const read = auditReadFile(file);
     items = read.items;
     if (read.torn) res.notes.push("The file's last line isn't whole: a write was cut off. The relay leaves such a line out when it starts, and so does this check.");
-    check = auditCheck(items, await auditKey('The Sphere'));
+    k = await auditKey('The Sphere');
+    check = auditCheck(items, k);
   } else {
     p = loadProfile();
     const api = client(p);
     const info = await api.get('/api/info');
     const where = printable(cleanLine(info.sphere?.name, 80) || p.sphereName);
-    const k = await auditKey(where);
+    k = await auditKey(where);
     if (!opt.json) log(dim(`Downloading ${where}'s audit log…`));
     items = [];
     let head = null;
@@ -1709,9 +1711,20 @@ async function auditVerify(file) {
 
   // online: each message the relay still holds against what was recorded when it was posted
   if (!res.failure && relay) {
-    const c = auditContent(items.map((x) => x.e), await auditMessages(relay.api), { all: relay.all });
+    const events = items.map((x) => x.e);
+    const held = await auditMessages(relay.api);
+    let c = auditContent(events, held, { all: relay.all });
+    if (c.fail?.later) {
+      // a message shown as deleted, with no event for it in the log as it was read: it may have been
+      // deleted (or posted and deleted) since. The log from there on, read now that the messages are
+      // in, must link on to what checked, and say so.
+      const more = [];
+      for await (const page of auditPages(relay.api, check.to ?? 0)) for (const e of page.events) more.push({ e });
+      const on = auditCheck(more, k, check.last ? { after: check.last } : { full: true });
+      c = on.ok ? auditContent(events, held, { all: relay.all, later: more.map((x) => x.e) }) : { ...c, fail: on.fail };
+    }
     res.messages = { checked: c.checked, deleted: c.deleted, notHeld: c.notHeld, hidden: c.hidden, everyChannel: relay.all };
-    if (c.fail) fail('content', c.fail.message, c.fail.seq);
+    if (c.fail) fail(c.fail.kind ?? 'content', c.fail.message, c.fail.seq);
   }
 
   res.verified = !res.failure;
@@ -1738,17 +1751,25 @@ function auditOlder(file) {
 // A message it doesn't serve is counted: not held any more, or, for an Oby that doesn't see every
 // channel, held in a channel it isn't in when it's newer than one it was served. Every rule about
 // a message's content is here, so later events about messages are checked here too.
-function auditContent(events, held, { all }) {
+// `events` is the log as read before the messages; `later`, the log from there on, read after them.
+// A message deleted (or posted and deleted) in between is shown as deleted, with its events only in
+// `later`: without it, such a failure says `later: true`, to be asked again with it.
+function auditContent(events, held, { all, later = null }) {
   const out = { checked: 0, deleted: 0, notHeld: 0, hidden: 0, fail: null };
-  const posted = new Map(); // message id -> its ask, reply or post event
-  const deletes = new Map(); // message id -> its delete event
-  for (const e of events) {
-    if (AUDIT_MESSAGE_EVENTS.includes(e.type) && e.ref && e.content) posted.set(e.ref, e);
-    else if (e.type === 'delete' && e.ref) deletes.set(e.ref, e);
-  }
+  const index = (list) => {
+    const posted = new Map(); // message id -> its ask, reply or post event
+    const deletes = new Map(); // message id -> its delete event
+    for (const e of list) {
+      if (AUDIT_MESSAGE_EVENTS.includes(e.type) && e.ref && e.content) posted.set(e.ref, e);
+      else if (e.type === 'delete' && e.ref) deletes.set(e.ref, e);
+    }
+    return { posted, deletes };
+  };
+  const { posted, deletes } = index(events);
+  const since = index(later ?? []);
   const words = (m) => (m.text != null && m.text !== '') || m.sealed != null || (Array.isArray(m.files) && m.files.length > 0);
-  const failed = (seq, message) => {
-    out.fail = { seq, message };
+  const failed = (seq, message, maybeLater = false) => {
+    out.fail = { seq, message, ...(maybeLater && !later ? { later: true } : {}) };
     return out;
   };
   // retention drops the oldest first: a message posted after one the relay served is still held
@@ -1762,8 +1783,9 @@ function auditContent(events, held, { all }) {
       if (all || e.seq < oldest) out.notHeld++;
       else out.hidden++;
     } else if (m.deleted) {
-      if (!del || del.content !== e.content) return failed(e.seq, `${name} is shown as deleted, but the log has no delete event for it with the content it was posted with.`);
-      if (words(m)) return failed(del.seq, `${name} was deleted (#${auditN(del.seq)}), but the relay still serves its words.`);
+      const d = del ?? since.deletes.get(id);
+      if (!d || d.content !== e.content) return failed(e.seq, `${name} is shown as deleted, but the log has no delete event for it with the content it was posted with.`, !del);
+      if (words(m)) return failed(d.seq, `${name} was deleted (#${auditN(d.seq)}), but the relay still serves its words.`);
       out.deleted++;
     } else if (del) return failed(del.seq, `${name} was deleted (#${auditN(del.seq)}), but the relay still serves its words.`);
     else if (auditContentHash(m) !== e.content) return failed(e.seq, `${name} isn't what was recorded when it was posted: it was changed since.`);
@@ -1771,7 +1793,14 @@ function auditContent(events, held, { all }) {
   }
   for (const [id, m] of held) {
     if (posted.has(id)) continue;
-    if (m.deleted) return failed(null, `Message ${printable(id)} is shown as deleted, but the log never recorded it being posted and deleted.`);
+    if (m.deleted) {
+      // posted after the log was read, and deleted: both events in what was read after the messages
+      const p = since.posted.get(id);
+      const d = since.deletes.get(id);
+      if (!p || !d || d.content !== p.content) return failed(null, `Message ${printable(id)} is shown as deleted, but the log never recorded it being posted and deleted.`, true);
+      if (words(m)) return failed(d.seq, `Message ${printable(id)} was deleted (#${auditN(d.seq)}), but the relay still serves its words.`);
+      continue;
+    }
     const del = deletes.get(id);
     if (del) return failed(del.seq, `Message ${printable(id)} was deleted (#${auditN(del.seq)}), but the relay still serves it.`);
   }

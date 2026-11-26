@@ -9,8 +9,9 @@
 // folder's audit.jsonl checks with no profile. The key never reaches argv, a request (a recording
 // proxy sees every one), the output or a file. Step 2: a cut or a rewrite after an export is caught
 // with --since and with the head the profile kept, and a log that only grew passes. The rule for
-// deleted messages (#139), against logs built here with the HMAC. And the console: Export all saves
-// the whole log as JSON Lines, which the CLI checks, and the Audit log page says how. `npm test`.
+// deleted messages (#139), against logs built here with the HMAC, a message deleted while a check
+// runs among them. And the console: Export all saves the whole log as JSON Lines, which the CLI
+// checks, and the Audit log page says how. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -609,11 +610,14 @@ describe('deleted messages, against logs built by hand', () => {
   };
   const ev = (type, extra = {}) => ({ ts: ts(5), type, actor: 'a_bob001', target: null, ref: null, detail: `bob · ${type}`, ...extra });
   const base = () => [ev('join', { detail: 'bob joined, representing Bob' }), ev('post', { ref: msgA.id, content: contentHash(msgA) }), ev('post', { ref: msgB.id, content: contentHash(msgB) })];
-  const check = async (events, messages) => {
-    const fake = await fakeRelay({ events: chain(events, ADMIN), messages });
+  // `more`: events written while the check runs, after the log was read and before the messages
+  // were (chained on from `events`, unless they come chained already)
+  const check = async (events, messages, { more = [], chained = null } = {}) => {
+    const all = chained ?? chain([...events, ...more], ADMIN);
+    const fake = await fakeRelay({ events: all.slice(0, events.length), more: all.slice(events.length), messages });
     m.fakeProfile('hand', fake.base);
     try {
-      return await verifyJson(m, ['--profile', 'hand']);
+      return { ...(await verifyJson(m, ['--profile', 'hand'])), paths: fake.paths };
     } finally {
       await fake.close();
     }
@@ -655,6 +659,40 @@ describe('deleted messages, against logs built by hand', () => {
     r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [{ ...tomb(msgA), text: 'A thing I said' }, msgB]);
     assert.equal(r.code, 1, r.out);
     assert.match(r.j.failure.message, /still serves its words/);
+  });
+
+  test('a message deleted while the check runs passes: the log read on after the messages has its delete event', async () => {
+    const del = ev('delete', { ref: msgA.id, content: contentHash(msgA) });
+    let r = await check(base(), [tomb(msgA), msgB], { more: [del] });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.deleted], [1, 1]);
+    assert.ok(r.paths.includes('/api/audit?after=3&limit=1000'), `it read the log on from #3: ${r.paths.join(' ')}`);
+    // posted and deleted while it runs: both events come after the log it checked
+    const msgC = { ...msgA, id: 'm_cccc0003', text: 'Said and taken back' };
+    r = await check(base(), [msgA, msgB, tomb(msgC)], { more: [ev('post', { ref: msgC.id, content: contentHash(msgC) }), ev('delete', { ref: msgC.id, content: contentHash(msgC) })] });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.deleted], [2, 0]);
+    // a check with nothing to explain doesn't read on
+    r = await check(base(), [msgA, msgB], { more: [del] });
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!r.paths.some((p) => p.startsWith('/api/audit?after=3')), r.paths.join(' '));
+  });
+
+  test("a tombstone the log read on doesn't explain fails, and so does a log read on that doesn't link on", async () => {
+    let r = await check(base(), [tomb(msgA), msgB], { more: [ev('post', { ref: 'm_dddd0004', content: contentHash(msgB) })] });
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.j.failure.kind, 'content');
+    assert.match(r.j.failure.message, /Message m_aaaa0001 \(post #2 .*\) is shown as deleted, but the log has no delete event for it/);
+    r = await check(base(), [msgA, msgB, { ...tomb(msgA), id: 'm_eeee0005' }]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.j.failure.message, /Message m_eeee0005 is shown as deleted, but the log never recorded it being posted and deleted\./);
+    // the delete event chained under another key: what was read on doesn't follow #3
+    const del = ev('delete', { ref: msgA.id, content: contentHash(msgA) });
+    const forged = chain([...base(), del], OTHER);
+    r = await check(base(), [tomb(msgA), msgB], { chained: [...chain(base(), ADMIN), forged[3]] });
+    assert.equal(r.code, 1, r.out);
+    assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [4, 'prev']);
+    assert.match(r.j.failure.message, /^Event #4 \(delete, .*\) doesn't follow #3/);
   });
 
   test("a message deleted and then no longer held is counted as not held", async () => {
@@ -755,10 +793,10 @@ describe("the console's Audit log", () => {
 
 // ---- fakes: a relay that serves what it's given, and a proxy that records every request
 
-async function fakeRelay({ events, head, messages = [] }) {
+// `more`: events written once the messages were asked for (a message deleted while a check runs)
+async function fakeRelay({ events, head, messages = [], more = [] }) {
   const paths = [];
-  const last = events.at(-1);
-  const h = head ?? { seq: last?.seq ?? 0, hash: last?.hash ?? ZERO };
+  let log = events;
   const server = http.createServer((req, res) => {
     paths.push(req.url);
     const u = new URL(req.url, 'http://x');
@@ -770,9 +808,14 @@ async function fakeRelay({ events, head, messages = [] }) {
     if (u.pathname === '/api/audit') {
       const after = Number(u.searchParams.get('after')) || 0;
       const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 200);
-      return send({ events: events.filter((e) => e.seq > after).slice(0, limit), head: h, verified: true, total: events.length });
+      const last = log.at(-1);
+      const h = head ?? { seq: last?.seq ?? 0, hash: last?.hash ?? ZERO };
+      return send({ events: log.filter((e) => e.seq > after).slice(0, limit), head: h, verified: true, total: log.length });
     }
-    if (u.pathname === '/api/messages') return send({ messages: u.searchParams.get('before') ? [] : messages });
+    if (u.pathname === '/api/messages') {
+      log = [...events, ...more];
+      return send({ messages: u.searchParams.get('before') ? [] : messages });
+    }
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end('{"error":"not found"}');
   });
