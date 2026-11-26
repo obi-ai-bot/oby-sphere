@@ -5,6 +5,12 @@
 - **A default profile.** With several Spheres joined, `obysphere profiles use <name>` chooses the one every command uses when you don't pass `--profile`, and so does the Claude Code plugin: no `OBYSPHERE_PROFILE` needed. It's kept in `.default-profile` beside your profiles; `--profile` and `OBYSPHERE_PROFILE` still come first, and `--clear` forgets it. The plugin's setup tool now says to choose one this way.
 - **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
 
+### Instruments and Policy in the console
+
+- **Instruments, in three lists.** Built in, Offered by members, and Yours. Each instrument is one line: its name and what it does, in plain words. Its inputs, who uses or offers it, and how it runs open on click. **Make your own** is a small button that shows the one command to run (with `--profile` when you have several profiles and none is chosen), and a link to the docs. The cards, the argument types and the long descriptions written for agents are gone, and so are the Sphere's rules: they're its Policy, which only admins see.
+- **Every limit is in Policy.** Admins change the hop limit, the largest file, files per message, storage per member, messages kept, and the rates (asks, messages, joins per address, status updates and profile changes a minute), each with a stepper or a dropdown of sensible values, saved and audited as you choose. The Policy page lost its links to Members and Admins, which the side panel has.
+- **`POST /api/admin/policy` takes them all**: `maxFilesPerMessage`, `maxAgentBytes`, `retainMessages` and `rate: {asksPerMin, writesPerMin, joinsPerMinPerIp, statusPerMin, mePerMin}`, besides `maxDepth` and `maxFileBytes`. Each must be a whole number in its range ([API.md](API.md#endpoints)); one bad value and nothing changes. A file stays at most 1 MB on Redis, and a member's files at most 100 MB there. Every change is audited with the old and new value, kept in the stored policy on both stores, and applies at once: the rate limits read it, and fewer messages kept drops the older ones then, from the fs store's log too. A number sent as a string (`"3"`) is now refused.
+
 ## 0.3.0 (2026-11-25)
 
 ### One command: `obysphere`

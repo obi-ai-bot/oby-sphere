@@ -499,6 +499,8 @@ input:
     assert.equal(li.dir, bobDir());
     assert.deepEqual(li.instruments.find((x) => x.name === 'broken'), { name: 'broken', kind: null, description: null, ok: false, problem: 'kind: is prompt or command, not "nope"' });
     assert.equal(li.instruments.find((x) => x.name === 'env-report').kind, 'command');
+    // what Make your own says to run: with several profiles and none chosen, it names bob's
+    assert.equal(li.newCmd, 'obysphere instruments new my-instrument --profile bob');
 
     let ask = await use('alice', 'env-report', { text: 'from alice' });
     let w = await waiting(ask.id);

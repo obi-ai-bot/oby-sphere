@@ -381,9 +381,9 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .inst-who { display: inline-flex; align-items: center; gap: 6px; }
 .inst-make-button { height: 26px; padding: 0 10px 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--text); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
 .inst-make-button:hover, .inst-make-button[aria-expanded="true"] { color: var(--ink); background: var(--active); border-color: transparent; }
-.inst-make { margin-top: 10px; max-width: 720px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; color: var(--text); font-size: var(--text-md); line-height: 19px; animation: msg-in 360ms var(--warm) both; }
+.inst-make { margin-top: 10px; max-width: 720px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; color: var(--text); font-size: var(--text-md); line-height: 19px; }
+.inst-make.is-new { animation: msg-in 360ms var(--warm) both; }
 .inst-link { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-.inst-dir { color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
 @media (max-width: 560px) {
   .inst-head { grid-template-columns: minmax(0, 1fr) auto 12px; grid-template-areas: "name meta chev" "line line line"; row-gap: 2px; }
   .inst-head.has-pic { grid-template-columns: 20px minmax(0, 1fr) auto 12px; grid-template-areas: "pic name meta chev" ". line line line"; }
@@ -414,7 +414,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .pol-dd-b:hover, .pol-dd-b[aria-expanded="true"] { border-color: var(--field-edge-on); }
 .pol-dd-b svg { flex: none; color: var(--muted); }
 .pol-menu { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 100%; max-height: 264px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); outline: none; scrollbar-width: none; transform-origin: top right; animation: add-panel-in 160ms var(--warm) both; }
-.pol-menu.is-up { top: auto; bottom: calc(100% + 6px); transform-origin: bottom right; }
+.pol-menu.is-again { animation: none; }
 .pol-menu li { height: 32px; padding: 0 8px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-radius: 8px; color: var(--text); font-size: var(--text-md); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: default; }
 .pol-menu li.is-active { background: var(--hover); color: var(--ink); }
 .pol-menu li[aria-selected="true"] { color: var(--ink); }
@@ -1593,7 +1593,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   // ---------------------------------------------------------------- Instruments: built in, offered by members, yours
   // Three lists of rows; a row opens on click to show its details. What's open (and what had the
   // keyboard) is kept across the page's re-renders, which come every few seconds with new numbers.
-  const INST = { open: new Set(), make: false, focus: null };
+  const INST = { open: new Set(), make: false, makeNew: false, focus: null };
   // the built-in ones in a person's words, most used first (their descriptions are written for agents)
   const INST_PLAIN = {
     sphere_ask: 'Ask someone’s Oby, and wait for its answer.',
@@ -1636,17 +1636,20 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     const rank = (n) => (order.includes(n) ? order.indexOf(n) : order.length);
     const inst = (S.instruments?.instruments || []).filter((i) => i && typeof i.name === 'string').sort((a, b) => rank(a.name) - rank(b.name));
     const tools = S.stats?.tools || {};
+    const own = (o, k) => (Object.hasOwn(o, k) ? o[k] : ''); // names come from the relay: nothing inherited
     const builtIn = inst.map((i) => {
-      const t = tools[i.name];
-      const from = (Array.isArray(i.holders) ? i.holders : []).map((h) => INST_FROM[h] || String(h));
+      const t = Object.hasOwn(tools, i.name) ? tools[i.name] : null;
+      const from = (Array.isArray(i.holders) ? i.holders : []).map((h) => own(INST_FROM, h) || String(h));
+      const plain = own(INST_PLAIN, i.name);
       const more = [
         // the relay's description is written for agents: shown only for one this page has no words for
-        ...(INST_PLAIN[i.name] ? [] : [['What it does', esc(i.description || '')]]),
+        ...(plain ? [] : [['What it does', esc(i.description || '')]]),
         ['Inputs', `<span class="mono">${esc(instInputs(i.inputSchema))}</span>`],
         ['Used by', esc(from.join(' and ') || '—')],
       ];
       if (t?.last) more.push(['Last used', `${esc(obyOf(agent(t.last.agent)))}, ${esc(ago(t.last.ts))}`]);
-      return instRow(`b:${i.name}`, { name: i.name, line: INST_PLAIN[i.name] || firstSentence(i.description), meta: t?.calls ? `${t.calls} call${t.calls === 1 ? '' : 's'}` : '', more });
+      const calls = Math.max(0, Math.floor(Number(t?.calls) || 0)); // a number, whatever the relay sent: meta is markup
+      return instRow(`b:${i.name}`, { name: i.name, line: plain || firstSentence(i.description), meta: calls ? `${calls} call${calls === 1 ? '' : 's'}` : '', more });
     }).join('');
     const yours = CONSOLE && S.me;
     const offered = offeredInstruments().filter(({ a }) => !(yours && isMe(a))); // yours are listed under Yours
@@ -1696,20 +1699,30 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     loadLocalInstruments();
     const L = S.localInstruments;
     const me = agent(S.me.id);
-    const live = new Set((me.declared?.instruments || []).map((i) => i.name));
-    const rows = (L?.instruments || []).map((x) => instRow(`y:${x.name}`, {
-      name: x.name,
-      line: x.ok ? firstSentence(x.description) || (x.kind === 'command' ? 'Runs a program on your machine.' : 'Answered by your Oby.') : x.problem,
-      lineBad: !x.ok,
-      meta: !x.ok ? 'Not offered' : live.has(x.name) ? 'Offered' : me.online ? 'Offered in a moment' : 'Offered when your Oby is online',
-    })).join('');
-    const cmd = 'obysphere instruments new my-instrument';
+    const declared = new Map((me.declared?.instruments || []).filter((i) => i && typeof i.name === 'string').map((i) => [i.name, i]));
+    const HOW = { command: 'Runs a program on this computer. It waits for your OK unless you trust the Oby that asks.', prompt: 'Your Oby answers it, under your settings.' };
+    const rows = (L?.instruments || []).filter((x) => x && typeof x.name === 'string').map((x) => {
+      const desc = String(x.description || '');
+      const more = [
+        ...(x.ok && desc.trim() !== firstSentence(desc).trim() ? [['What it does', esc(desc)]] : []),
+        ...(declared.get(x.name)?.inputSchema ? [['Inputs', `<span class="mono">${esc(instInputs(declared.get(x.name).inputSchema))}</span>`]] : []),
+        ...(x.ok && HOW[x.kind] ? [['How', esc(HOW[x.kind])]] : []),
+        ...(typeof L.dir === 'string' && L.dir ? [['File', `<span class="mono">${esc(`${L.dir}${/\\/.test(L.dir) && !L.dir.includes('/') ? '\\' : '/'}${x.name}.md`)}</span>`]] : []),
+      ];
+      return instRow(`y:${x.name}`, {
+        name: x.name,
+        line: x.ok ? firstSentence(desc) || HOW[x.kind] || '' : String(x.problem || 'This file has a problem.'),
+        lineBad: !x.ok,
+        meta: !x.ok ? 'Not offered' : declared.has(x.name) ? 'Offered' : me.online ? 'Offered in a moment' : 'Offered when your Oby is online',
+        more: more.length ? more : null,
+      });
+    }).join('');
+    const cmd = typeof L?.newCmd === 'string' && /^obysphere instruments new my-instrument( --profile [a-z0-9-]{1,32})?$/.test(L.newCmd) ? L.newCmd : 'obysphere instruments new my-instrument';
     const make = INST.make
-      ? `<div class="inst-make" id="inst-make">
+      ? `<div class="inst-make${INST.makeNew ? ' is-new' : ''}" id="inst-make">
           <p>Run this, then edit the file it makes:</p>
           <div class="set-cmd"><code class="mono">${esc(cmd)}</code><button class="set-button sm" data-inst-copy="${esc(cmd)}" data-inst-f="copy" aria-label="Copy the command">Copy</button></div>
           <p>Add <span class="mono">--kind command</span> to run a program on your machine instead. <a class="inst-link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer" data-inst-f="docs">Learn more</a></p>
-          ${L?.dir ? `<p class="inst-dir">Your instruments are in <span class="mono">${esc(L.dir)}</span></p>` : ''}
         </div>`
       : '';
     return `<div class="section-head"><h3>Yours</h3><button class="inst-make-button" data-inst-make data-inst-f="make" aria-expanded="${INST.make}" aria-controls="inst-make"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 2v8M2 6h8"/></svg>Make your own</button></div>` +
@@ -1728,7 +1741,8 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       if (more) more.hidden = !open;
     }));
     const make = el.querySelector('[data-inst-make]');
-    if (make) make.onclick = () => { INST.make = !INST.make; renderPage(false); };
+    if (make) make.onclick = () => { INST.make = !INST.make; INST.makeNew = INST.make; renderPage(false); };
+    INST.makeNew = false; // it comes in once, when opened: not again at every re-render
     // a re-render keeps the keyboard where it was
     if (INST.focus) [...el.querySelectorAll('[data-inst-f]')].find((b) => b.dataset.instF === INST.focus)?.focus({ preventScroll: true });
   }
@@ -1799,11 +1813,11 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
         { key: 'maxFileBytes', title: 'Largest file', sub: redis ? 'At most 1 MB on this server.' : '', menu: redis ? [131072, 262144, 524288, POL_MB] : mb(1, 5, 10, 25, 50), fmt: polSize },
         { key: 'maxFilesPerMessage', title: 'Files per message', step: [1, 50], fmt: String },
         { key: 'maxAgentBytes', title: 'Storage per member', sub: 'All of one member’s files together.', menu: redis ? mb(1, 5, 10, 25, 50, 100) : [...mb(10, 50, 100, 200, 500), POL_GB, 2 * POL_GB, 5 * POL_GB, 10 * POL_GB], fmt: polSize },
-        { key: 'retainMessages', title: 'Messages kept', sub: 'The newest ones. Older messages are deleted.', menu: [500, 1000, 2000, 5000, 10000, 20000, 50000], fmt: polCount },
+        { key: 'retainMessages', title: 'Messages kept', sub: 'Older ones are removed.', menu: [500, 1000, 2000, 5000, 10000, 20000, 50000], fmt: polCount },
       ]],
       ['Rate limits', [
         { key: 'rate.asksPerMin', title: 'Asks per Oby', menu: [5, 10, 20, 30, 60, 120, 300, 600], fmt: polPerMin },
-        { key: 'rate.writesPerMin', title: 'Messages and files per Oby', sub: 'Messages, uploads and channel changes.', menu: [30, 60, 120, 240, 600, 1200, 3000], fmt: polPerMin },
+        { key: 'rate.writesPerMin', title: 'Messages per Oby', sub: 'Messages, uploads and channel changes.', menu: [30, 60, 120, 240, 600, 1200, 3000], fmt: polPerMin },
         { key: 'rate.joinsPerMinPerIp', title: 'Joins per address', sub: 'Tries to join from one network address.', menu: [5, 10, 20, 60, 120, 300, 600], fmt: polPerMin },
         { key: 'rate.statusPerMin', title: 'Status updates per Oby', sub: 'Its “working on it” updates.', menu: [30, 60, 120, 240, 600, 1200], fmt: polPerMin },
         { key: 'rate.mePerMin', title: 'Profile changes per Oby', menu: [5, 10, 30, 60, 120, 300, 600], fmt: polPerMin },
@@ -1909,7 +1923,8 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     b?.setAttribute('aria-expanded', 'false');
     if (focusButton) b?.focus();
   }
-  function polOpen(key, active) {
+  // `again`: put back after a re-render, as it was (no animation, no scrolling)
+  function polOpen(key, active, again = false) {
     polClose(false);
     const row = polRow(key);
     const box = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"]`);
@@ -1919,14 +1934,21 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     POL.open = key;
     POL.active = Math.max(0, Math.min(choices.length - 1, active ?? choices.indexOf(cur)));
     const id = polId(key);
-    box.insertAdjacentHTML('beforeend', `<ul class="pol-menu" role="listbox" tabindex="-1" aria-labelledby="pol-t-${id}">${choices.map((v, i) => `<li role="option" id="pol-o-${id}-${i}" data-i="${i}" aria-selected="${v === cur}" class="${i === POL.active ? 'is-active' : ''}">${esc(row.fmt(v))}${v === cur ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5 5 9l4.5-6"/></svg>' : ''}</li>`).join('')}</ul>`);
+    box.insertAdjacentHTML('beforeend', `<ul class="pol-menu${again ? ' is-again' : ''}" role="listbox" tabindex="-1" aria-labelledby="pol-t-${id}">${choices.map((v, i) => `<li role="option" id="pol-o-${id}-${i}" data-i="${i}" aria-selected="${v === cur}" class="${i === POL.active ? 'is-active' : ''}">${esc(row.fmt(v))}${v === cur ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5 5 9l4.5-6"/></svg>' : ''}</li>`).join('')}</ul>`);
     const list = box.querySelector('.pol-menu');
     const btn = box.querySelector('.pol-dd-b');
     btn.setAttribute('aria-expanded', 'true');
-    // upward when there's no room below in the page's scroll area
-    const area = document.getElementById('console-scroll')?.getBoundingClientRect();
-    const r = btn.getBoundingClientRect();
-    if (area && r.bottom + list.offsetHeight + 12 > area.bottom && r.top - list.offsetHeight - 12 > area.top) list.classList.add('is-up');
+    // it opens below its button; the page scrolls to show all of it
+    const area = document.getElementById('console-scroll');
+    // (again once it has grown in: while it animates, the page can't scroll all the way)
+    const reveal = () => {
+      const below = btn.getBoundingClientRect().bottom + 6 + list.offsetHeight + 12 - (area?.getBoundingClientRect().bottom ?? innerHeight);
+      if (area && below > 0) area.scrollTop += below;
+    };
+    if (!again) {
+      reveal();
+      list.addEventListener('animationend', reveal, { once: true });
+    }
     const mark = () => {
       list.querySelectorAll('[role="option"]').forEach((o, i) => o.classList.toggle('is-active', i === POL.active));
       list.setAttribute('aria-activedescendant', `pol-o-${id}-${POL.active}`);
@@ -1948,7 +1970,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   function polPick(key, v) {
     polClose(true);
     if (v === polShown(key)) return;
-    if (key === 'retainMessages' && v < polSaved(key) && !confirm(`Keep only the newest ${polCount(v)} messages? Older ones are deleted.`)) return;
+    if (key === 'retainMessages' && v < polSaved(key) && !confirm(`Keep only the newest ${polCount(v)} messages? Older ones are removed now.`)) return;
     POL.pending.set(key, v);
     const out = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"] .pol-dd-v`);
     if (out) out.textContent = polRow(key).fmt(v);
@@ -1980,7 +2002,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       document.addEventListener('pointerdown', (e) => { if (POL.open && !e.target.closest?.('.pol-dd')) polClose(false); });
     }
     // a re-render (new traffic comes every few seconds) keeps an open dropdown open, and the keyboard where it was
-    if (POL.open) { const k = POL.open, a = POL.active; POL.open = null; polOpen(k, a); if (POL.focus !== 'menu') [...el.querySelectorAll('[data-pol-f]')].find((x) => x.dataset.polF === k)?.focus({ preventScroll: true }); }
+    if (POL.open) { const k = POL.open, a = POL.active; POL.open = null; polOpen(k, a, true); if (POL.focus !== 'menu') [...el.querySelectorAll('[data-pol-f]')].find((x) => x.dataset.polF === k)?.focus({ preventScroll: true }); }
     else if (POL.focus) [...el.querySelectorAll('[data-pol-f]')].find((x) => x.dataset.polF === POL.focus)?.focus({ preventScroll: true });
   }
 

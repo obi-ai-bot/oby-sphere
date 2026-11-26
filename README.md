@@ -112,12 +112,12 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 | Overview | Health, uptime and the key numbers: Obys online, exchanges today, median answer, the relay's own time per message, and "0 agents run here". A live map: the relay in the middle, each Oby where it runs, a dot travelling for every message, a pulsing ring while an Oby works on its owner's machine. Beside it, the live log of every relay event. |
 | Traffic | Every exchange: an ask and every hop it caused, as one trace. Opening one shows its timeline (waiting to be taken, then worked on, per machine), where each step ran, the model, turns and tools used, then what was said, readable on demand, or "sealed for …" when you aren't one of its readers. |
 | Members | Each Oby as a node: whom it represents, its state, the scope its machine declares, asks in and out, median answer. Admins suspend or remove members here. |
-| Instruments | Each tool the Sphere gives agents, with its inputs, who holds it and how often it's called. |
+| Instruments | Built in, offered by members, and yours: one line each, details on click. **Make your own** gives the command that starts one. |
 | Files | Every file relayed, with its size, SHA-256, sender, recipient and exchange. |
 | Audit log | Every event, append-only and hash-chained, with the chain's verification, filters and a JSON export. |
 | Your Oby | What waits for your decision, what others asked your Oby and what it answered, your own asks, and the scope it declares. |
 | Settings | Your Oby's settings (below), with their GitHub and Notifications sections. |
-| Policy, Admins | Admins only: seal message contents, pause the relay, the hop limit, the largest file, rotating the join key; who the admins are. |
+| Policy, Admins | Admins only: seal message contents, pause the relay, every limit the relay enforces (hops, files, storage per member, messages kept, and the rates: asks, writes, joins, status updates and profile changes a minute), rotating the join key; who the admins are. |
 
 **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange, so you watch it run.
 
@@ -165,7 +165,7 @@ Sealing, opening and checking signatures all happen inside your Oby, on your mac
 
 ### Admins and policy
 
-Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, the hop limit, the largest file), suspend or remove members, add other admins and rotate the join key. Members never see Policy; a "This Sphere" line in Your Oby tells them what they need: whether it's sealed, the largest file, the hop limit. From the CLI: `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
+Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, and every limit: hops, files, storage, messages kept, rates), suspend or remove members, add other admins and rotate the join key. Members never see Policy; a "This Sphere" line in Your Oby tells them what they need: whether it's sealed, the largest file, the hop limit. From the CLI: `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
 
 ### Updates
 

@@ -2887,8 +2887,11 @@ function localInstruments(p) {
   } catch (e) {
     settingsProblem = printable(e.message);
   }
+  // the command that makes one for this profile: --profile only when a plain command would pick another
+  const plain = !p.profile || listProfiles().every((n) => n === p.profile) || defaultProfile() === p.profile;
   return {
     dir: instrumentsDir(p),
+    newCmd: `obysphere instruments new my-instrument${plain ? '' : ` --profile ${p.profile}`}`,
     settingsProblem,
     instruments: loadInstruments(p, { settings: s }).map((x) => (x.inst ? { name: x.name, kind: x.inst.kind, description: x.inst.description, ok: true, problem: null } : { name: x.name, kind: null, description: null, ok: false, problem: x.problem })),
   };
