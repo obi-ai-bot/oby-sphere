@@ -289,6 +289,21 @@ describe('obysphere server update for a Sphere in Docker', { skip: !POSIX && 'th
     assert.ok(!fs.existsSync(m.recordFile('obysphere')), 'nothing recorded');
   });
 
+  test("when the old one has its name back but doesn't start, it says so, with the right step", async () => {
+    const m = machine('no-start');
+    m.docker.set({ runExits: true, startFails: true });
+    const r = await m.cli(['server', 'update', '--docker', 'obysphere']);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.stderr, /docker start failed:[\s\S]*port is already allocated/, 'why it did not start');
+    assert.match(r.stderr, /The old container is obysphere again, on the image it had, but it didn't start\. Start it: docker start obysphere\./);
+    assert.doesNotMatch(r.stderr, /docker rename obysphere-previous/, 'no step that would fail: there is no obysphere-previous now');
+    assertNoKeys(m, r);
+    const s = m.docker.state();
+    assert.deepEqual(Object.keys(s.containers), ['obysphere']);
+    assert.equal(s.containers.obysphere.Image, LOCAL.Id);
+    assert.equal(s.containers.obysphere.State.Running, false);
+  });
+
   test('when docker run fails and prints the variables, they are hidden and the old one comes back', async () => {
     const m = machine('echo');
     m.docker.set({ runEchoes: true });

@@ -1474,15 +1474,27 @@ async function dockerServerUpdate(container, rec = null) {
     const logs = await docker(['logs', '--tail', '20', container]).catch(() => null);
     await docker(['rm', '-f', container]).catch(() => {});
     let back = false;
+    let renamed = false;
+    let why = '';
     try {
       await docker(['rename', previous, container]);
+      renamed = true;
       if (c.State?.Running) await docker(['start', container]);
       back = true;
-    } catch {}
+    } catch (err) {
+      why = hide(err.message, plan.secrets);
+    }
     warn(`${red('✗')} ${hide(e.message, plan.secrets)}`);
     const said = logs && clean(hide(`${logs.stdout}\n${logs.stderr}`, plan.secrets), 3000, true);
     if (said) warn(dim(`  Its log:\n${indentText(said)}`));
-    die(back ? `${container} is back on ${was || 'the image it had'}, as before.` : `Couldn't bring the old container back: it's ${previous}, stopped. docker rename ${previous} ${container}, then docker start ${container}.`);
+    if (why) warn(dim(`  ${why}`));
+    die(
+      back
+        ? `${container} is back on ${was || 'the image it had'}, as before.`
+        : renamed // the old one has its name again, but didn't start
+          ? `The old container is ${container} again, on ${was || 'the image it had'}, but it didn't start. Start it: docker start ${container}.`
+          : `Couldn't bring the old container back: it's ${previous}, stopped. docker rename ${previous} ${container}, then docker start ${container}.`
+    );
   }
   await docker(['rm', previous]).catch(() => warn(`${yellow('!')} the old container is still there, stopped: docker rm ${previous}`));
   record(version, new Date().toISOString());

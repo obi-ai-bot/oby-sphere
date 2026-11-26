@@ -6,7 +6,8 @@
 //                               mode, read while they exist).
 //                               state: { containers, images (by ref), registry (what pull finds),
 //                               runExits (a new container stops at once), runEchoes (docker run
-//                               fails and prints the variables it was given) }
+//                               fails and prints the variables it was given), startFails
+//                               (docker start fails) }
 //   settingsOf(container, image) what a container keeps across an update, to compare two
 //   parseYaml(text)             a small reader for the YAML GitHub workflows use: block maps and
 //                               lists, `|` blocks, [flow, lists], quoted and plain scalars. It
@@ -53,7 +54,12 @@ if (a === 'rename') {
   ok();
 }
 if (a === 'stop') { container(argv[1]).State = { Status: 'exited', Running: false, Restarting: false, ExitCode: 0 }; save(); ok(argv[1]); }
-if (a === 'start') { container(argv[1]).State = running(); save(); ok(argv[1]); }
+if (a === 'start') {
+  if (state.startFails) fail('Error response from daemon: driver failed programming external connectivity: port is already allocated');
+  container(argv[1]).State = running();
+  save();
+  ok(argv[1]);
+}
 if (a === 'rm') {
   const n = argv[argv.length - 1];
   if (container(n).State.Running && !argv.includes('-f')) fail('Error response from daemon: cannot remove a running container');
