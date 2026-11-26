@@ -274,7 +274,10 @@ describe('obysphere start on Windows: a scheduled task (schtasks faked)', () => 
     // real Task Scheduler test covers ending a task)
     if (!WIN) await waitFor(() => !alive(first), 5000);
     assert.ok(await answers(port));
-    await waitFor(() => /obysphere: (the service was changed or removed|its task ended): stopping/.test(fs.readFileSync(spec.log, 'utf8')));
+    await waitFor(() => /obysphere: (the service was changed or removed|its task ended): stopping/.test(fs.readFileSync(spec.log, 'utf8'))).catch((e) => {
+      e.message += `: the first supervisor never said it stopped. Its log:\n${fs.readFileSync(spec.log, 'utf8')}\nThe fake Task Scheduler:\n${sched.output()}`;
+      throw e;
+    });
 
     // stop: the spec goes (the supervisor stops with the console), the task is ended and deleted
     const m = sched.calls().length;
