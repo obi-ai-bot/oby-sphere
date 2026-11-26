@@ -1442,7 +1442,7 @@ function parseArgs(list) {
 }
 
 function which(bin) {
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : ['']; // node.exe, as the file is named
   for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
     for (const e of exts) {

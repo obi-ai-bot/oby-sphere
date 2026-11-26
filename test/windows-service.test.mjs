@@ -74,7 +74,15 @@ after(async () => {
   for (const f of cleanups) await f();
   // give processes a moment to let go of their folders (Windows won't remove an open one)
   await sleep(WIN ? 1500 : 200);
-  for (const d of roots) fs.rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  for (const d of roots) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+    } catch (e) {
+      // a task's process can hold its log a little longer on Windows: a temp folder left behind isn't a failure
+      if (!(WIN && (e.code === 'EBUSY' || e.code === 'EPERM' || e.code === 'ENOTEMPTY'))) throw e;
+      console.log(`# left behind (still in use): ${d}`);
+    }
+  }
 });
 
 function run(cli, args, env) {
@@ -478,7 +486,9 @@ test('the real Task Scheduler takes the task, runs it if it can, and removes it'
   assert.equal(r.code, 0, r.out);
   const q = query();
   assert.equal(q.status, 0, q.stderr);
-  for (const s of ['InteractiveToken', 'LeastPrivilege', 'wscript.exe', '//E:JScript', 'PT0S', '<LogonTrigger>']) assert.ok(q.stdout.includes(s), `the registered task has ${s}`);
+  for (const s of ['InteractiveToken', 'wscript.exe', '//E:JScript', 'PT0S', '<LogonTrigger>']) assert.ok(q.stdout.includes(s), `the registered task has ${s}`);
+  // least privileges: Windows leaves the default run level out of what it shows, so check it isn't raised
+  assert.ok(!q.stdout.includes('HighestAvailable'), 'the registered task runs with least privileges');
   noSecret('the registered task', q.stdout);
   if (await answers(port)) {
     const s = JSON.parse((await run(cli, ['status', '--json'], env)).stdout).profiles[0];
