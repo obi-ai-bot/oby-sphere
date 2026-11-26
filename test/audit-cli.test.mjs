@@ -527,6 +527,8 @@ describe('audit export and verify on the fs store', () => {
         assert.equal(c.code, 1, c.out);
         assert.equal(c.j.failure.kind, 'kept-head');
         assert.match(c.j.failure.message, new RegExp(`this log checked up to #${keptNow.seq.toLocaleString('en-US')}, but now it ends at #${(olderLast.seq - 5).toLocaleString('en-US')}: events were cut off\\.`));
+        const said = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+        assert.match(said.stdout, /Only if this Sphere was started afresh on purpose: delete .*alice\/audit-heads\.json/);
         // dave's own check kept a head before the cut too
         c = await verifyJson(m, ['--profile', 'dave']);
         assert.deepEqual([c.code, c.j.failure.kind], [1, 'kept-head']);

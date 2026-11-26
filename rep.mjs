@@ -1677,7 +1677,7 @@ async function auditVerify(file) {
   const kept = auditHeadOf(keptRec);
   if (kept && kept.seq > 0) {
     const at = auditWhen(keptRec.at);
-    res.keptHead = { seq: kept.seq, hash: kept.hash, at: typeof keptRec.at === 'string' ? keptRec.at : null, held: null };
+    res.keptHead = { seq: kept.seq, hash: kept.hash, at: typeof keptRec.at === 'string' ? keptRec.at : null, held: null, file: headsFile };
     if (!res.failure) {
       const e = eventAt(kept.seq);
       if (!e) fail('kept-head', `On ${at} this log checked up to #${auditN(kept.seq)}, but now it ends at #${auditN(check.to ?? 0)}: events were cut off.`, kept.seq);
@@ -1790,6 +1790,7 @@ function auditReport(res, relay) {
       if (res.events) lines.push(`  The chain itself checks: #${auditN(res.from)} to #${auditN(res.to)}.`);
     } else if (res.events) lines.push(`  #${auditN(res.from)} to #${auditN(res.to)} check.`);
     if (relay?.says) lines.push("  The relay says its chain is verified: that's its own word, and this check, on your machine, says otherwise.");
+    if (res.failure.kind === 'kept-head') lines.push(dim(`  Only if this Sphere was started afresh on purpose: delete ${printable(res.keptHead.file)}, and the next check keeps a new head.`));
   }
   for (const n of res.notes) lines.push(`  ${n}`);
   const m = res.messages;
