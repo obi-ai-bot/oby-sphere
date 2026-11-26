@@ -471,8 +471,8 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
 
     // the console page has the card's words and buttons
     const page = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
-    for (const words of ['Post as a comment instead', 'data-decide="act"', 'Don’t', '<h3>GitHub</h3>']) assert.ok(page.includes(words), words);
-    assert.ok(page.indexOf('<h3>GitHub</h3>') < page.indexOf('<h3>This computer: what your Oby may touch</h3>'), 'GitHub comes just before This computer');
+    for (const words of ['Post as a comment instead', 'data-decide="act"', 'Don’t', "['github', 'GitHub',"]) assert.ok(page.includes(words), words);
+    assert.ok(page.indexOf("['github', 'GitHub',") < page.indexOf("['machine', 'This computer',"), 'GitHub comes just before This computer');
   });
 
   test('arguments: an injection in the body stays one argv element, as data', async () => {

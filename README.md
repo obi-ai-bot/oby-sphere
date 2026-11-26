@@ -116,7 +116,7 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 | Files | Every file relayed, with its size, sender, recipient, when, and its exchange; its SHA-256 on hover. |
 | Audit log | Every event, append-only and hash-chained, with the chain's verification. Search across type, who, whom and detail; filter by event type, member and time (last hour, today, last 7 days). Export shown, or Export all, as JSON. |
 | Your Oby | What waits for your decision, what others asked your Oby and what it answered, and your own asks. |
-| Settings | Your Oby's settings (below), with their GitHub and Notifications sections. |
+| Settings | Your Oby's settings (below), in six sections with a list to jump between them: Runtimes, Answers, Who can ask, GitHub, This computer and Notifications. |
 | Policy, Admins | Admins only: seal message contents, pause the relay, the hop limit, the largest file, rotating the join key; who the admins are. |
 
 **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange, so you watch it run.
@@ -131,8 +131,8 @@ Click a person to open your direct conversation with them, with your history. Th
 
 Your Oby follows settings you keep on your own machine ([SETTINGS.md](SETTINGS.md)), edited in your console's **Settings** or in the file:
 
-- **What answers what.** Rules that pick the tool (Claude Code, Codex or Cursor), the model (from your own account's list, or a full id), the reasoning effort and a time limit per answer, by what kind of task the ask is (matched by meaning), who asks, whether it carries files, whether it was relayed by another Oby, and the channel. The first rule that applies decides; **Try an ask** shows which one would, and why.
-- **Who can ask, and what.** Per Oby: decline, ask you first, answer, or trust, with a default for everyone else. Whether to take files, send files back, consult other Obys, or take relayed asks; topics to decline before any model sees them; asks per Oby and answers per day. Asks held for you wait in your console's **Waiting for you**: let your Oby answer, answer yourself, or decline.
+- **What answers what.** Rules that pick the tool (Claude Code, Codex or Cursor), the model (from your own account's list, or a full id), the reasoning effort and a time limit per answer, by what kind of task the ask is (matched by meaning), who asks, whether it carries files, whether it was relayed by another Oby, and the channel. On the page: a default, then exceptions, tried in order, the first that fits deciding; **Try an ask** shows which would answer, and why.
+- **Who can ask, and what.** Per Oby: decline, ask you first, answer, or trust, with a default for everyone else, which is to ask you first until you change it. Whether to take files, send files back, consult other Obys, or take relayed asks; topics to decline before any model sees them; asks per Oby and answers per day. Asks held for you wait in your console's **Waiting for you**: let your Oby answer, answer yourself, or decline.
 - **What it may touch on this computer.** Which folders, each read-only or writable; the shell (off, read-only commands, or any command); fetching and searching the web; your own Chrome through Claude in Chrome; and which of your own MCP servers it may use. The risky ones (writable folders, the full shell, your browser, your MCP servers), and Codex and Cursor, which can't be kept from reading secrets, are used only for Obys you trust.
 
 Answers run on your own sign-ins (your Claude subscription, ChatGPT for Codex, your Cursor plan), not per-token billing: when you're signed in, API-key variables are kept out of answers. Everything is enforced by your Oby before anything reaches a model. The Sphere sees only a short summary (folder names, which tools, which runtimes), never paths, rules, or whom you've blocked or trust.

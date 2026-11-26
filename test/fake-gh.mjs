@@ -6,6 +6,9 @@
 //   state, head  the pull request's state (OPEN) and head commit (abc1234def5678)
 //   bigDiff      a diff of about 300 KB
 //   failWrites   review, comment and merge fail, as GitHub refusing them
+//   orgs         the logins `gh api user/orgs` lists (acme, acme-labs)
+//   repos        { owner: [names] } for `gh repo list <owner>` (two each)
+//   failList     an owner whose `gh repo list` fails
 // Pull request 404 doesn't exist.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,6 +26,13 @@ if (a === '--version') return end('gh version 2.99.0 (2026-11-01)\\nhttps://gith
 if (a === 'auth' && b === 'status') {
   if (control.signedIn === false) return end('You are not logged into any GitHub hosts. To log in, run: gh auth login', 1, process.stderr);
   return end('github.com\\n  \\u2713 Logged in to github.com account octo-bob (keyring)\\n  - Active account: true\\n  - Git operations protocol: https\\n  - Token: gho_FAKETOKEN0000000000000000000000000\\n  - Token scopes: repo');
+}
+if (a === 'api' && b === 'user/orgs?per_page=100') return end((control.orgs || ['acme', 'acme-labs']).map((login) => ({ login, id: 1, url: 'https://api.github.com/orgs/' + login })));
+if (a === 'api' && b === 'user') return end({ login: 'octo-bob', id: 7 });
+if (a === 'repo' && b === 'list') {
+  if (control.failList === num) return end('HTTP 502: Bad Gateway (https://api.github.com/graphql)', 1, process.stderr);
+  const names = (control.repos || {})[num] || ['web', 'api'];
+  return end(names.map((n) => ({ nameWithOwner: n.includes('/') ? n : num + '/' + n })));
 }
 if (a === 'pr' && num === '404') return end('GraphQL: Could not resolve to a PullRequest with the number of 404. (repository.pullRequest)', 1, process.stderr);
 if (a === 'pr' && b === 'view')

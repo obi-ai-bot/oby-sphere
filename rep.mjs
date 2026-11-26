@@ -73,6 +73,7 @@ const RUNTIME_LABEL = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor' 
 const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], cursor: [] };
 const EFFORT_LABEL = { minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
 const ACCESS = ['decline', 'approve', 'answer', 'trust'];
+const ACCESS_DEFAULT = 'approve'; // Obys you haven't listed: Ask me first, unless the file says otherwise
 const TIME_LIMIT_DEFAULT = 10; // minutes, when a route sets none
 const TIME_LIMIT_MAX = 120;
 const ABOUT_MAX = 500; // characters in what a rule is about
@@ -634,6 +635,7 @@ async function localApi(req, res, url, p) {
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)) });
     }
     if (route === '/local/github' && m === 'GET') return sendJson(res, 200, await githubStatus(p));
+    if (route === '/local/github/repos' && m === 'GET') return sendJson(res, 200, await githubRepos(p));
     if (route === '/local/instruments' && m === 'GET') return sendJson(res, 200, localInstruments(p)); // instruments
     if (route === '/local/route-preview' && m === 'POST') {
       const b = await json();
@@ -3361,13 +3363,14 @@ function settingsFile(p) {
   return path.join(p.dir, 'settings.json');
 }
 
-// a profile from before settings.json (or a fresh join): its fields, as settings
+// a profile from before settings.json (or a fresh join): its fields, as settings. Obys you
+// haven't listed wait for you (Ask me first), with or without --approve: the safe default
 function settingsFromProfile(p) {
   const extra = [].concat(p.allow || []).map(String).filter((t) => !FOLDER_TOOLS.includes(t));
   return {
     version: SETTINGS_VERSION,
     routing: { default: { runtime: RUNTIMES.includes(p.runtime) ? p.runtime : 'claude', model: p.model || null, effort: null, timeLimitMin: TIME_LIMIT_DEFAULT }, rules: [] },
-    access: { default: p.approve ? 'approve' : 'answer', agents: {}, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, declineTopics: [], asksPerAgentPerDay: 0, answersPerDay: 0, rules: String(p.rules || '') },
+    access: { default: ACCESS_DEFAULT, agents: {}, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, declineTopics: [], asksPerAgentPerDay: 0, answersPerDay: 0, rules: String(p.rules || '') },
     machine: {
       folders: [{ path: String(p.cwd || ''), write: extra.some((t) => /^(Edit|Write|NotebookEdit)\b/.test(t)) }],
       shell: extra.includes('Bash') ? 'full' : extra.some((t) => t.startsWith('Bash(')) ? 'read' : 'off',
@@ -3643,7 +3646,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   if (a.rules !== undefined && a.rules !== null && typeof a.rules !== 'string') throw bad('access.rules', 'is your instructions, in words');
   if (String(a.rules || '').length > 8000) throw bad('access.rules', 'is at most 8,000 characters');
   const access = {
-    default: a.default === undefined || a.default === null ? 'answer' : choice(a.default, 'access.default'),
+    default: a.default === undefined || a.default === null ? ACCESS_DEFAULT : choice(a.default, 'access.default'),
     agents,
     acceptFiles: bool(a.acceptFiles, 'access.acceptFiles', true),
     sendFiles: bool(a.sendFiles, 'access.sendFiles', true),
@@ -5679,6 +5682,80 @@ async function githubStatus(p) {
   }
   const gh = await ghStatus();
   return { gh, enabled: !!s && githubOf(s).enabled, folderRepos: s ? folderRepos(s) : [], checkedAt: new Date(ghCache.at || Date.now()).toISOString(), ...(error ? { error } : {}) };
+}
+
+// GET /local/github/repos: what the console's repository picker offers. The owner's repositories
+// and their organisations', through gh (gh api user/orgs, then gh repo list <owner> for each, four
+// at a time), and the GitHub remotes of their folders. gh runs from an argv array with a time
+// limit, as for its sign-in; a full answer is kept for five minutes, anything less for 30 seconds.
+// Only names, each checked: never a token, and an owner gh names is one argv element, never an option.
+const GH_OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+const GH_OWNERS_MAX = 30;
+const ghReposCache = { at: 0, ttl: 0, value: null, pending: null };
+async function githubRepos(p) {
+  let s = null;
+  try {
+    s = loadSettings(p);
+  } catch {}
+  const c = ghReposCache;
+  if (!(c.value && Date.now() - c.at < (PROBE_CACHE_MS ?? c.ttl))) {
+    if (!c.pending)
+      c.pending = listGhRepos().then(
+        (v) => Object.assign(c, { at: Date.now(), ttl: v.error || v.partial ? 30e3 : 5 * 60e3, value: v, pending: null }).value,
+        (e) => {
+          c.pending = null;
+          throw e;
+        },
+      );
+    await c.pending;
+  }
+  return { ...c.value, folderRepos: s ? folderRepos(s) : [], checkedAt: new Date(c.at).toISOString() };
+}
+async function listGhRepos() {
+  const st = await ghStatus().catch(() => null);
+  if (!st?.installed) return { owners: [], repos: [], error: "gh isn't installed on this machine" };
+  if (st.signedIn === false) return { owners: [], repos: [], error: "gh isn't signed in to GitHub on this machine (gh auth login)" };
+  const deadline = Date.now() + 20e3;
+  const left = () => Math.max(500, deadline - Date.now());
+  const json = (r) => {
+    try {
+      return r.code === 0 ? JSON.parse(r.out) : null;
+    } catch {
+      return null;
+    }
+  };
+  const owners = [];
+  const add = (o) => typeof o === 'string' && GH_OWNER.test(o) && !owners.some((x) => x.toLowerCase() === o.toLowerCase()) && owners.push(o);
+  let partial = false;
+  if (st.login) add(st.login);
+  else {
+    const me = json(await ghRun(['api', 'user'], { timeoutMs: left() }));
+    if (me) add(me.login);
+    else partial = true;
+  }
+  const orgs = json(await ghRun(['api', 'user/orgs?per_page=100'], { timeoutMs: left() }));
+  if (Array.isArray(orgs)) orgs.forEach((o) => add(o?.login));
+  else partial = true;
+  const lists = new Array(Math.min(owners.length, GH_OWNERS_MAX));
+  let next = 0;
+  const worker = async () => {
+    while (next < lists.length) {
+      const i = next++;
+      // past the time limit, no new gh starts: the owners left are said to be missing (partial)
+      lists[i] = Date.now() < deadline ? json(await ghRun(['repo', 'list', owners[i], '--json', 'nameWithOwner', '--limit', '200', '--no-archived'], { timeoutMs: left() })) : null;
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  const repos = [];
+  for (const list of lists) {
+    if (!Array.isArray(list)) {
+      partial = true;
+      continue;
+    }
+    for (const r of list) if (validRepo(r?.nameWithOwner) && !repos.some((x) => x.toLowerCase() === r.nameWithOwner.toLowerCase())) repos.push(r.nameWithOwner);
+  }
+  if (owners.length > GH_OWNERS_MAX) partial = true;
+  return { owners: owners.slice(0, GH_OWNERS_MAX), repos, ...(partial ? { partial: true } : {}) };
 }
 async function githubCmd() {
   const p = loadProfile();

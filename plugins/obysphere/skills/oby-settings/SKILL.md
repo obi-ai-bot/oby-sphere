@@ -17,8 +17,8 @@ Walk the person through the console unless they ask for the file. Before you cha
 ## The sections, in order
 
 1. **Runtimes.** How Claude Code, Codex and Cursor are signed in on this computer, or the command to install or sign in. Answers run on the person's own plans, not per-token billing.
-2. **What answers what.** Rules that pick the runtime, model, effort and time limit, by what an ask is about (matched by meaning), who asks, files, hops and the channel. The first rule that applies decides. **Try an ask** shows which rule would answer an ask, and why.
-3. **Who can ask your Oby, and what.** A choice per Oby, and a default for everyone else:
+2. **Answers.** A default runtime, model, effort and time limit, then exceptions that pick others by what an ask is about (matched by meaning), who asks, files, hops and the channel. Exceptions are tried in order; the first that fits decides. **Try an ask** shows which would answer an ask, and why.
+3. **Who can ask.** A choice per Oby, and a default for everyone else (**Ask me first** until the person changes it):
    - **Decline**.
    - **Ask me first**: the ask waits for the person in **Waiting for you**, and they're notified.
    - **Answer**: their Oby answers, without the risky reach.
@@ -26,13 +26,13 @@ Walk the person through the console unless they ask for the file. Before you cha
 
    Also here: taking and sending files, consulting other Obys, relayed asks, topics to decline, asks per Oby and answers per day.
 4. **GitHub.** Which repos, and for each action (comment, request changes, approve, merge, push): `never`, `ask` or `trusted`. The `review-a-pr` skill explains them. `obysphere github status` checks the `gh` sign-in.
-5. **This computer: what your Oby may touch.** Folders, each read-only or writable; the shell (off, read-only commands, or any command); the web; their browser; their MCP servers.
+5. **This computer.** Folders, each read-only or writable; the shell (off, read-only commands, or any command); the web; their browser; their MCP servers.
 6. **Notifications.** How the person hears that something waits for them, a direct message, a mention, or an answer: on the desktop, in the console, in Claude Code, on their phone (an ntfy topic) or in Slack (their own incoming webhook). Which events, and quiet hours, which only "waits for you" breaks through. `obysphere notify test` sends a test.
 
 ## What to recommend
 
 - **Narrow folders.** The project folders teammates need, read-only. Not a folder that holds everything they have.
-- **Broad reach behind "Ask me first".** If a folder is wide or writable, or the shell is on, make **Ask me first** the default and choose per Oby who may just ask.
+- **Broad reach behind "Ask me first".** If a folder is wide or writable, or the shell is on, keep **Ask me first** as the default (it is, until changed) and choose per Oby who may just ask.
 - **Trust few Obys.** Trust doesn't pass through: what a trusted Oby relays for someone else gets no risky reach.
 - **GitHub approvals on `ask`** until the person has seen a few of their Oby's reviews.
 - **Notifications:** keep the desktop ones on; add the phone or Slack if they're often away. Webhook and ntfy URLs are secrets: they stay on this computer, masked in the console, never in a commit or a message.

@@ -223,6 +223,9 @@ describe("your Oby's settings", () => {
     assert.deepEqual(s.machine.web, { fetch: true, search: false });
     assert.ok(fs.existsSync(path.join(home, 'dave', 'settings.json')), 'written on first read');
     assert.equal(fs.statSync(path.join(home, 'dave', 'settings.json')).mode & 0o777, 0o600);
+    // without --approve too: Obys you haven't listed wait for you (Ask me first) until you choose otherwise
+    fs.rmSync(path.join(home, 'erin', 'settings.json'));
+    assert.equal(JSON.parse((await rep(['settings', '--profile', 'erin', '--json'])).stdout).access.default, 'approve');
   });
 
   test('a version 1 file (your real one) moves to version 2 on first read, after a backup', async () => {
@@ -1026,6 +1029,7 @@ describe("your Oby's settings", () => {
     fs.writeFileSync(prof, JSON.stringify({ ...JSON.parse(fs.readFileSync(prof, 'utf8')), claudeBin: old.claude, codexBin: old.codex, cursorBin: old.cursor }), { mode: 0o600 });
     const es = JSON.parse(fs.readFileSync(path.join(home, 'erin', 'settings.json'), 'utf8'));
     es.routing.rules = [{ name: 'Reviews', when: { about: 'review' }, use: { runtime: 'claude', model: 'opus' } }];
+    es.access.default = 'answer'; // answered at once, not held for erin (a new profile asks its owner first)
     fs.writeFileSync(path.join(home, 'erin', 'settings.json'), JSON.stringify(es), { mode: 0o600 });
     const port = await freePort();
     const at = `http://127.0.0.1:${port}`;

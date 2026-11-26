@@ -19,6 +19,15 @@ Every part of the console's pages now answers a question or lets you act; what d
 - **Conversation.** Shorter hints under the message box, no paragraph in the side panel, and one line per answer: on whose machine, the model, the time. In a sealed Sphere a message no longer says "Sealed end to end" under it, since every message is; one whose signature fails still says so. A new Sphere's #general is "Where everyone in the Sphere meets."; an older one's first topic is shown that way too.
 - **Numbers from the relay are checked.** An audit event's number, today's count of exchanges and a member's count of answers reach the page only as numbers (or escaped); an audit event without a whole number is dropped. Before, a relay could put markup into the console through them.
 
+### Settings, made lean
+
+- **Obys you haven't listed wait for you.** `access.default` is `approve` (**Ask me first**) when the file doesn't say: in a new profile, with or without `--approve`, and in a file, old or new, without it. A file that says `answer` keeps it. The demo's two teammates still answer everyone.
+- **Six sections, and a list to jump between them:** Runtimes, Answers, Who can ask, GitHub, This computer, Notifications. Each is a card with a title, one line on what it's for, and a link to the docs. Most explanations went: what's left says what a choice does.
+- **Answers** reads as a default, then exceptions tried in order, then **Try an ask**, apart. Picking a model, you can type any full name into the list's search; **Other…** is gone.
+- **The console's own controls.** A dropdown (searchable when there are many options, with chips when it takes several), a segmented control, a stepper, a time picker and a chips input replace every native select, number, time and checkbox field on the page. They work from the keyboard, are labelled for screen readers, and fit a phone.
+- **GitHub repositories** come from your `gh`: yours and your organisations', with **All of <owner>** for `owner/*` and your folders' own marked. Typing `owner/name` still adds one that isn't listed. The console asks `GET /local/github/repos`, which runs gh with a time limit and keeps the answer for five minutes.
+- **Notifications:** **Make a private topic** fills in a long random ntfy.sh address, made in your browser; one line each on ntfy and on Slack's incoming webhooks, with links; Summary or Full text side by side; quiet hours with a switch and two times.
+
 ## 0.3.0 (2026-11-25)
 
 ### One command: `obysphere`
