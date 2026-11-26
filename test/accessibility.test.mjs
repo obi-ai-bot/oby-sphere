@@ -553,6 +553,17 @@ describe('the markup, rendered', () => {
     assert.match(SCRIPT,/const unreadHtml = \(n\) => \(n \? `<span class="unread-count">\$\{n > 99 \? '99\+' : n\}<span class="sr-only"> new<\/span><\/span>` : ''\);/);
   });
 
+  test('the side panel says what its Waiting for you count counts', () => {
+    // "Your Oby 2 waiting for you", not "Your Oby 2" (a title on a span isn't read)
+    const nav = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+    render(['renderNav'], 'renderNav()', {
+      S: { page: 'overview', pending: [{ id: 'p_1' }, { id: 'p_2' }], me: { id: 'a_me' }, admin: false, messages: [] },
+      NAV: [['you', 'Your Oby', null, 'you']], NAV_GROUPS: [['you', 'You']], CONSOLE: {},
+      exchanges: () => [], members: () => [], $: () => nav, a11yDraw: (el, html) => { el.innerHTML = html; return true; },
+    });
+    assert.match(nav.innerHTML, /<span class="connector-name">Your Oby<\/span><span class="needs" title="2 waiting for you">2<span class="sr-only"> waiting for you<\/span><\/span>/);
+  });
+
   test('Policy: the switches say whether they are on, the choices are named', () => {
     const html = render(['pagePolicy'], 'pagePolicy()', {
       S: { admin: true, adminKey: null, me: null, sphere: { paused: true, policy: { sealed: true, maxDepth: 3, maxFileBytes: 5242880 } } },

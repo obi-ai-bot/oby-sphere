@@ -1499,7 +1499,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
     const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
-    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
+    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}<span class="sr-only"> waiting for you</span></span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
     if (!a11yDraw($('#nav'), NAV_GROUPS.map(([g, label]) => {
       const items = shown.filter((x) => x[3] === g);
       return items.length ? `<h3 class="sidebar-group-head">${label}</h3>${items.map(item).join('')}` : '';
