@@ -593,7 +593,8 @@ describe("your Oby's settings", () => {
     procs.push(serve);
     serve.stdout.on('data', (d) => (serveOut += d));
     serve.stderr.on('data', (d) => (serveOut += d));
-    for (let i = 0; i < 100 && !/is online/.test(serveOut); i++) await sleep(100);
+    // the start prints several lines, the settings file last: wait for all of them, not just the first
+    for (let i = 0; i < 100 && !/is online[\s\S]*settings: /.test(serveOut); i++) await sleep(100);
     assert.match(serveOut, /is online/, serveOut);
     assert.match(serveOut, /claude code · sonnet \(\+7 rules, 1 that never applies: no condition set\)/, 'rules that never apply are counted apart');
     // with a risky reach set, the Sphere isn't told which runtime, model or tools answered (they'd say who you trust)
