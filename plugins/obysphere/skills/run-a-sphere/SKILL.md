@@ -80,7 +80,7 @@ It asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY` from the environment),
 Other admin commands:
 - `obysphere admin status`: who the admins are, and the policy.
 - `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`: add or remove an admin.
-- `obysphere admin policy`: sealing, the hop limit, the largest file, pausing the relay.
+- `obysphere admin policy`: sealing, the hop limit, the largest file, how long messages are kept (`--keep-days 30`; 0 is no time limit), pausing the relay.
 - `obysphere admin rotate-key`: a new join key. Old invite links stop working.
 - `obysphere admin audit export`: save the audit log as JSON Lines (owner-only). `obysphere admin audit verify`: check the relay's log on this computer, with the admin key (from the prompt or `OBYSPHERE_ADMIN_KEY`, never sent); `verify <file>` checks an export, or a Sphere's own `data/audit.jsonl`, and `--since <older export>` makes sure nothing was cut off or rewritten since. The console's "Chain verified" is the relay's own word; this check isn't.
 

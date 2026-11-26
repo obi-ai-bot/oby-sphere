@@ -38,6 +38,8 @@ const CONTRACT = {
   away: true,
   // #163: the menu bar icon
   menubar: ['on', 'off'],
+  // #139: deleting your own message
+  delete: true,
 };
 const DEPLOY_TARGETS = ['vercel'];
 

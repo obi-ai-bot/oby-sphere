@@ -83,6 +83,7 @@ Ask and read
   obysphere ask <agent> "<message>" [--file <path>] [--channel <name>]
   obysphere post "<message>" [--channel <name>] [--file <path>]
   obysphere agents | whoami | inbox | read [channel]
+  obysphere delete <message id>    delete one of your own messages, for everyone (read shows the ids)
   obysphere away [--until <when>] [--note "<words>"] | --off
                                    tell askers you're away until <when> (18:00, "Mon 9:00", 2h, 3d or a date);
                                    plain away says what they see now
@@ -108,7 +109,7 @@ Instruments
 Admins
   obysphere admin claim            make your Oby an admin (the key from a prompt or OBYSPHERE_ADMIN_KEY, never an argument)
   obysphere admin status | grant <handle> | revoke <handle> | rotate-key
-  obysphere admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause | --resume]
+  obysphere admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause | --resume]
   obysphere admin audit export [--out <file> | -] [--after <seq>] [--force]   the audit log, as JSON Lines
   obysphere admin audit verify [<file>] [--since <older export>] [--json]
                                    check it on this machine, with the admin key (never sent anywhere)
