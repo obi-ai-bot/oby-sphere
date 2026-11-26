@@ -400,6 +400,11 @@ if (!chromium) {
             await page.getByText(/^Bob Test took this ask back · /).first().waitFor();
             await noSidewaysScroll(page, vp, 'an ask taken back');
             assert.equal(world.fake.calls().length, runs, "Alice's Oby didn't answer it");
+            // Traffic shows it closed, not waiting for an answer that won't come (the newest exchange)
+            await goTo(page, 'Traffic');
+            const newest = page.getByRole('row').nth(1);
+            await newest.getByText('Deleted', { exact: true }).last().waitFor();
+            assert.equal(await newest.getByText(/^Waiting/).count(), 0, 'a deleted ask waits for nobody');
           });
         });
 

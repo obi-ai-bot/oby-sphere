@@ -229,6 +229,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .msg-del:hover { color: var(--ink); }
 .msg-del:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .sys.msg-gone { font-style: italic; }
+.status-dot.is-deleted { background: var(--muted); }
 .pending-gone { margin: 10px 0 0; color: var(--muted); font-size: var(--text-sm); }
 
 .chat-live { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -1571,6 +1572,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let status = 'answered';
     if (ask.kind === 'post') status = 'posted';
     else if (reply) status = reply.meta?.lapsed ? 'lapsed' : reply.meta?.expired ? 'expired' : reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
+    else if (ask.deleted) status = 'deleted'; // deleting messages: its asker took it back, so nobody will answer it
     else if (target?.status?.state === 'working' && target.status.about === ask.id) status = 'working';
     else if (late) status = 'expired';
     else if (target?.online && ownerWait) status = 'owner';
@@ -1581,7 +1583,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     return { ask, target, reply, posted, claimed, started: status === 'owner' && !ask.startedAt ? null : started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
   }
 
-  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted' };
+  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted', deleted: 'Deleted' };
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
