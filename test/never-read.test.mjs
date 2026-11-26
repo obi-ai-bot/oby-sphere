@@ -398,7 +398,7 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     assert.deepEqual(got.settings.machine.neverRead, OWN);
     assert.deepEqual(got.neverReadBuiltIn, R.SECRET_FILES, 'the built-in list, for the page to show');
 
-    // saved as the page sends them: the whole settings, one name a line made a list
+    // saved as the page sends them: the whole settings, with the field's names as a list
     const mine = ['*.sqlite', ' customers-zq7/ ', 'ledger-*.xlsx', '*.sqlite'];
     const put = await local('PUT', '/local/settings', { settings: { ...got.settings, machine: { ...got.settings.machine, neverRead: mine } } });
     assert.equal(put.status, 200, JSON.stringify(put));
@@ -452,6 +452,7 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     assert.match(fn, /ctlChips\(\{ id: fid\(k\), values: m\.neverRead \|\| \[\], label: 'Never read', [^)]*max: NEVER_READ_MAX, each: NEVER_READ_LEN, attrs: `data-k="\$\{k\}"` \}\)/);
     assert.doesNotMatch(fn, /<textarea|data-t=/);
     assert.match(fn, /<details class="set-always"><summary>Always hidden: \.env files, keys, credentials and similar<\/summary>/);
+    assert.match(fn, /Files and folders your Oby never reads or sends, in any of your folders, such as/);
     assert.match(fn, /Codex, Cursor and a shell set to Any command can still read them/);
     assert.match(fn, /the Sphere never sees them/);
     // the limits are rep.mjs's
