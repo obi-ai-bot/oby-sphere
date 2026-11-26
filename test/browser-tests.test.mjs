@@ -292,7 +292,10 @@ if (!chromium) {
             assert.equal(await just.getAttribute('aria-checked'), 'true');
             const runs = world.fake.calls().length;
             await page.getByRole('textbox', { name: 'Message', exact: true }).fill(note);
+            // what the console sends asks no Oby (Bob's Oby may answer an ask after any wait here)
+            const sent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/messages');
             await page.getByRole('button', { name: 'Send', exact: true }).click();
+            assert.deepEqual((await sent).postDataJSON().to, [], 'a note just for Bob asks no Oby');
             await page.getByRole('log').getByText(note).waitFor();
             await noSidewaysScroll(page, vp, 'a direct conversation');
 
