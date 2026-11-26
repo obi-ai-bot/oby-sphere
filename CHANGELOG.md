@@ -5,6 +5,19 @@
 - **A default profile.** With several Spheres joined, `obysphere profiles use <name>` chooses the one every command uses when you don't pass `--profile`, and so does the Claude Code plugin: no `OBYSPHERE_PROFILE` needed. It's kept in `.default-profile` beside your profiles; `--profile` and `OBYSPHERE_PROFILE` still come first, and `--clear` forgets it. The plugin's setup tool now says to choose one this way.
 - **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
 
+### The console says less
+
+Every part of the console's pages now answers a question or lets you act; what did neither is gone.
+
+- **The side panel's foot** is the version and how long the Sphere has been up (`v0.3 · up 3 min`). The line under the Sphere's name is "Healthy · sealed".
+- **Overview.** Relay overhead and Agents run here are gone. Working now (asks being answered, and those not taken yet) opens Traffic, and, in your own console, Waiting for you (your decisions) opens Your Oby. Obys online opens Members. The page's line is health and sealing only; the map's and the log's captions are gone, and the log has a link to the Audit log.
+- **Traffic.** The list has no Hops column: the route's pictures show every hop. An exchange shows who asked whom, when and how it went, a timeline with one short line per step (where it ran, the model, how long it worked), then "What was said": the messages themselves.
+- **Members.** No Scope column. Each row is the person and what their Oby is for, online, working or offline, what it answers with ("Claude Code · Haiku"), how many asks it answered and its median answer. Suspend and Remove stay for admins. At phone width the name keeps its room.
+- **Audit log.** A search across type, who, whom and detail, and filters for the event type, the member and the time (last hour, today, last 7 days), as the console's own dropdowns. The page loads the newest 1,000 events. **Export shown** downloads what the search and filters show; **Export all** pages through the whole log (it used to stop at the newest 1,000). At phone width an event's detail wraps.
+- **Your Oby.** No Scope number and no This Sphere card; the line under its name is its state and what it answers with.
+- **Files.** No SHA-256 column (it's on hover) and an Exchange link instead of an id.
+- **Conversation.** Shorter hints under the message box, no paragraph in the side panel, and one line per answer: on whose machine, the model, the time. A new Sphere's #general is "Where everyone in the Sphere meets."; an older one's first topic is shown that way too.
+
 ## 0.3.0 (2026-11-25)
 
 ### One command: `obysphere`
