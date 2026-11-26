@@ -278,6 +278,8 @@ function toConsole(consoleUrl, { method = 'GET', path: p = '/', body, headers = 
   });
 }
 const LOCAL = { 'x-obysphere-console': '1' };
+// #139's tombstone of a message: no words, no files, no envelope, and `deleted`
+const tombstoneOf = (m) => ({ id: m.id, ts: m.ts, channel: m.channel, from: m.from, kind: m.kind, to: m.to, replyTo: m.replyTo, cause: m.cause, depth: m.depth, claimedAt: null, startedAt: null, deleted: { at: new Date().toISOString(), by: m.from } });
 
 // an MCP server (rep.mjs mcp) to talk to: request(method, params) gives the answer
 function mcpSession(world, args, env = {}) {
@@ -400,11 +402,12 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     id.forged = (await sealedPost('bob', { channel: dmAb, readers: ['bob', 'alice'], text: 'A forged flamingo.' })).id;
     id.opsSealed = (await sealedPost('bob', { channel: 'ops', readers: ['bob', 'sam'], text: 'An ops flamingo, sealed.' })).id;
     await many(150, (i) => sealedPost(i % 2 ? 'sam' : 'bob', { channel: 'general', readers: ['bob', 'sam', 'alice'], text: `Sealed filler ${i}.` }));
+    id.lastFiller = (await relayCall('GET', '/api/messages?limit=1', { tok: at.bob.token })).messages[0].id;
 
     // what a malicious relay says: one of bob's messages with a field its signature covers changed;
     // and #139's tombstone of a message (no words, no files, `deleted`)
     proxy.rewrite.set(id.forged, (m) => ({ ...m, depth: 1 }));
-    proxy.rewrite.set(id.tombstone, (m) => ({ id: m.id, ts: m.ts, channel: m.channel, from: m.from, kind: m.kind, to: m.to, replyTo: m.replyTo, cause: m.cause, depth: m.depth, deleted: { at: new Date().toISOString(), by: m.from } }));
+    proxy.rewrite.set(id.tombstone, tombstoneOf);
 
     // alice's console; a page loads (the history is read now), and its live stream stays open
     const cport = await freePort();
@@ -596,9 +599,10 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
   });
 
   test('a catch-up reads back to where the last read stopped, though the page read the newest messages first', async () => {
-    // no page has its stream open now: what's said reaches the index by what the page reads, and the catch-ups
-    // and the console's stream to the relay ends with it, by the next thing the relay sends (its
-    // ping, every 20 seconds; here an event), though a garbage collection made Node's fetch miss the abort
+    // The page closes its stream: what's said reaches the index only by what a page reads, and the
+    // catch-ups. The console's stream to the relay ends with it, by the next thing the relay sends
+    // (its ping, every 20 seconds; here an event), though a garbage collection made Node's fetch
+    // miss the abort.
     stream.destroy();
     await until(() => {
       proxy.inject('nothing', {});
@@ -607,6 +611,9 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     const dm = (await relayCall('POST', '/api/dm', { tok: at.bob.token, body: { with: 'alice' } })).channel.name;
     id.gannet = (await sealedPost('bob', { channel: dm, readers: ['bob', 'alice'], text: 'A gannet, the first of many.' })).id;
     await many(259, (i) => sealedPost(i % 2 ? 'sam' : 'bob', { channel: 'general', readers: ['bob', 'sam', 'alice'], text: `Gap filler ${i}.` }));
+    // and the newest message the first read reached is deleted since (#139)
+    assert.equal((await find('"sealed filler"', { limit: 1 })).json.total, 150);
+    proxy.rewrite.set(id.lastFiller, tombstoneOf);
     // more than a page of history (200) since the last read; a page opens and reads the newest few first
     const newest = await toConsole(alice.url, { path: '/api/messages?limit=10', headers: LOCAL });
     assert.equal(newest.status, 200, newest.text);
@@ -618,6 +625,9 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     const r = (await find('gannet', { wait: true })).json;
     assert.deepEqual(words({ json: r }), ['gannet'], 'the oldest of what was said since the last read');
     assert.equal((await find('"gap filler"', { limit: 1 })).json.total, 259);
+    const fillers = (await find('"sealed filler"', { limit: 200 })).json;
+    assert.equal(fillers.total, 149, 'the one deleted since the first read reached it: out');
+    assert.ok(!fillers.results.some((x) => x.id === id.lastFiller));
   });
 
   test('with no console running, obysphere search reads the history itself, and says so', async () => {

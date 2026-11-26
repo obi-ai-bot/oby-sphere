@@ -4188,6 +4188,7 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
         novel++;
         if (!channel && into.walked.has(id)) {
           met = true;
+          if (m.deleted) add(into, m, amap); // read before, deleted since (#139): it leaves
           continue;
         }
         if (!channel && into.seen.has(id) && !m.deleted) continue; // the page read it, or the stream brought it: in already (or left out)
