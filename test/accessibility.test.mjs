@@ -106,6 +106,11 @@ describe('names and labels', () => {
       assert.match(fn(f), /<th><span class="sr-only">Actions<\/span><\/th>/);
     }
   });
+
+  test("a table's hidden header stays inside the table's own scroll, so the page never scrolls sideways", () => {
+    // .sr-only is absolutely placed: without a placed .table-wrap, it lands beside the whole page on a phone
+    assert.match(STYLE, /\.table-wrap \{ position: relative; overflow-x: auto;/);
+  });
 });
 
 // ---------------------------------------------------------------- dialogs
