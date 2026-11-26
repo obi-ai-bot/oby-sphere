@@ -380,7 +380,7 @@ describe('the console', () => {
     const inst = between('function pageInstruments()', 'async function loadFiles()');
     assert.doesNotMatch(inst, /policy|rules|Rules of/i);
     assert.doesNotMatch(PAGE, /Rules of this Sphere/);
-    assert.match(SCRIPT, /else if \(p === 'policy' && S\.admin\) el\.innerHTML = pagePolicy\(\);/, 'Policy renders for admins only');
+    assert.match(SCRIPT, /else if \(p === 'policy' && S\.admin\) draw\(pagePolicy\(\)\);/, 'Policy renders for admins only'); // (draw: left as it is when unchanged, #137)
   });
 
   test("Policy uses the console's own controls: no native select or number field", () => {

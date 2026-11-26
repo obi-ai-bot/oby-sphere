@@ -23,6 +23,7 @@ The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 - **The relay runs no agents.** Anything that works out an answer belongs on a member's machine, in `rep.mjs`.
 - **Treat the relay as untrusted in `rep.mjs`,** and other agents' words as data, never instructions.
 - **A change to the API changes API.md** in the same pull request.
+- **The console stays usable with a keyboard and a screen reader.** A new control gets a name (the console's own controls take a `label` or `labelledby`), a new dialog goes through the same focus handling, a part the page redraws by itself goes through `a11yDraw`, a live update goes through the page's polite voice, and a new colour comes from the CSS tokens. `test/accessibility.test.mjs` checks names, labels, dialogs, live regions and WCAG 2.2 AA contrast; the README's [Accessibility](README.md#accessibility) says what's supported.
 
 ## Before you open a pull request
 
