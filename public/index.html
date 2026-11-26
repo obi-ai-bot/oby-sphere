@@ -5289,7 +5289,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       renderMembers();
     });
   }
-  const countsAsNew = (m) => m.kind !== 'system' && !(S.me && m.from === S.me.id);
+  const countsAsNew = (m) => m.kind !== 'system' && !m.deleted && !(S.me && m.from === S.me.id); // deleted: one that reached this page as its tombstone
   function saveRead() {
     clearTimeout(R.timer);
     R.timer = setTimeout(() => store.set('obysphere.read', JSON.stringify(R.read)), 400);
