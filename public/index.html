@@ -15,8 +15,8 @@
   --bg: #0b0b0b;
   --ink: #ececec;
   --text: #a3a3a8;
-  --muted: #6e6e74;
-  --label: rgba(255, 255, 255, 0.4);
+  --muted: #8e8e93;    /* macOS's systemGray: 4.5:1 or more on every surface here (accessibility) */
+  --label: rgba(255, 255, 255, 0.5);
   --item: rgba(255, 255, 255, 0.8);
   --line: rgba(255, 255, 255, 0.10);
   --line-strong: rgba(255, 255, 255, 0.15);
@@ -27,6 +27,8 @@
   --chip-hover: #1f1f21;
   --danger: #f07167;
   --unread: #0a84ff;
+  --unread-badge: #0071e3; /* white numbers on it read at 4.5:1 */
+  --focus: #0a84ff;
   --needs: #ff9f0a;
   --online: #30d158;   /* macOS's green, as Oby's done mark */
   --text-sm: 12px;
@@ -39,7 +41,8 @@
   --surface: #181817;
   --surface-edge: rgba(255, 255, 255, 0.08);
   --field: rgba(255, 255, 255, 0.02);
-  --field-edge-on: rgba(255, 255, 255, 0.2);
+  --field-edge: rgba(255, 255, 255, 0.36);   /* a field's edge: 3:1 against what's around it */
+  --field-edge-on: rgba(255, 255, 255, 0.55);
   --sidebar: 290px;
   --rail: 48px;
   --fade: 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -83,7 +86,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .side-part { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
 .sidebar-title { padding: 0 10px; color: var(--ink); font-size: var(--text-title); font-weight: 600; line-height: 32px; white-space: nowrap; overflow: hidden; mask-image: var(--fade-out); }
 .sidebar-subtitle { margin: 0 0 12px; padding: 0 10px; color: var(--muted); font-size: var(--text-sm); display: flex; align-items: center; gap: 6px; }
-.sidebar-group-head { height: 26px; margin-top: 12px; padding: 0 10px; display: flex; align-items: center; color: var(--label); font-size: var(--text-sm); }
+.sidebar-group-head { height: 26px; margin-top: 12px; padding: 0 10px; display: flex; align-items: center; color: var(--label); font-size: var(--text-sm); font-weight: 400; }
 .connector { width: 100%; height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 12px; border-radius: 6px; text-align: left; transition: background-color var(--fade); }
 .connector + .connector { margin-top: 4px; }
 .connector:hover { background: var(--hover); }
@@ -95,7 +98,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .connector-count { flex: none; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .channel-hash { flex: none; width: 22px; text-align: center; color: var(--muted); }
 .unread-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--unread); }
-.oby-row.is-offline { opacity: 0.45; }
+/* offline: the picture dims, the name goes grey (still 4.5:1) */
+.oby-row.is-offline > :is(.owner-avatar, svg, .status) { opacity: 0.45; }
+.oby-row.is-offline .connector-name { color: var(--muted); }
 .oby-row .you { color: var(--muted); }
 .oby-more { margin: 2px 0 6px; padding: 0 10px 0 44px; color: var(--muted); font-size: var(--text-sm); line-height: 17px; user-select: text; display: none; }
 .oby-more.is-open { display: block; }
@@ -134,7 +139,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 /* short of room, the crumbs before the page give way first, with an ellipsis, then the page name */
 .trail-part { flex: 0 1000 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .trail-part.is-link:hover { color: var(--text); }
-.trail-now { flex: 0 1 auto; min-width: 0; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.trail-now { flex: 0 1 auto; min-width: 0; color: var(--ink); font-size: inherit; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
 .trail svg { flex: none; color: var(--muted); }
 /* too little room for both: the page name alone */
 @container trail (max-width: 180px) { .trail-part, .trail-chev { display: none; } }
@@ -190,8 +195,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .words b, .words strong { color: var(--ink); font-weight: 600; }
 .words blockquote { position: relative; padding: 2px 0 2px 19px; color: var(--text); }
 .words blockquote::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; border-radius: 1.5px; background: var(--line); }
-.tok-url { color: #64a8ff; text-decoration: none; }
-.tok-url:hover { text-decoration: underline; }
+/* a link in someone's words is underlined: its colour alone is too close to the text around it */
+.tok-url { color: #64a8ff; text-decoration: underline; text-decoration-color: rgba(100, 168, 255, 0.5); text-underline-offset: 2px; }
+.tok-url:hover { text-decoration-color: currentColor; }
 .tok-mention { padding: 1px 3px; border-radius: 4px; background: rgba(100, 168, 255, 0.16); color: #8cbcff; }
 .tok-code { padding: 1px 3px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); color: #ff8a70; font-family: var(--mono); font-size: 13px; }
 .ss-code { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font: 12px/18px var(--mono); white-space: pre; overflow-x: auto; max-height: 320px; overflow-y: auto; user-select: text; }
@@ -221,12 +227,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .live-secs { flex: none; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 
 .group-none { position: absolute; left: 0; right: 0; top: 45%; transform: translateY(-50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 0 24px; }
-.group-none p { color: rgba(255, 255, 255, 0.3); font-size: var(--text-base); }
+.group-none p { color: var(--muted); font-size: var(--text-base); }
 
 /* ---------- the message box */
 .chat-composer { width: 100%; max-width: calc(var(--column) + 2 * var(--gutter)); margin: 0 auto; padding: 8px var(--gutter) 16px; }
 .modal .chat-composer { max-width: none; padding: 0; }
-.composer-field { position: relative; border: 1px solid var(--line); border-radius: 23px; background: var(--bg); transition: border-color var(--fade); }
+.composer-field { position: relative; border: 1px solid var(--field-edge); border-radius: 23px; background: var(--bg); transition: border-color var(--fade); }
 .composer-field:hover, .composer-field:focus-within { border-color: var(--field-edge-on); }
 .composer-grid { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "tags tags tags" "plus text end"; align-items: end; column-gap: 2px; padding: 6px; }
 .composer-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 6px; padding: 3px 3px 4px; margin-bottom: 4px; }
@@ -248,7 +254,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .add-panel { position: absolute; z-index: 20; left: -1px; right: -1px; bottom: calc(100% + 8px); padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 20px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transform-origin: bottom left; animation: add-panel-in 220ms var(--warm) both; max-height: 60vh; overflow-y: auto; scrollbar-width: none; }
 @keyframes add-panel-in { from { opacity: 0; transform: translateY(6px) scale(0.94); } }
 .add-panel button { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 10px; border-radius: 10px; color: var(--text); font-size: var(--text-base); text-align: left; transition: background-color var(--fade), color var(--fade); }
-.add-panel button:hover, .add-panel button:focus-visible { background: var(--hover); color: var(--ink); outline: 0; }
+.add-panel button:hover, .add-panel button:focus-visible { background: var(--hover); color: var(--ink); outline-offset: -2px; }
 .add-panel button > svg:first-child { flex: none; color: var(--muted); }
 .add-panel button .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; mask-image: var(--fade-out); }
 .add-panel button.is-on { color: var(--ink); }
@@ -299,7 +305,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .node .pic { position: relative; border-radius: 50%; }
 .node.is-working .pic::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.6); animation: ring 1.6s ease-in-out infinite; }
 @keyframes ring { 0%, 100% { opacity: 0.15; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
-.node.is-offline { opacity: 0.4; }
+.node.is-offline .pic { opacity: 0.4; }
+.node.is-offline .node-name { color: var(--muted); }
 .node.is-suspended .pic { opacity: 0.4; }
 .node-name { color: var(--ink); font-size: var(--text-md); font-weight: 500; line-height: 16px; }
 .node-where { color: var(--muted); font-size: 11px; line-height: 14px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -436,11 +443,11 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .switch.is-on { background: var(--online); }
 .switch.is-on::after { transform: translateX(16px); }
 .switch:disabled { opacity: 0.4; }
-.set-select { height: 32px; max-width: 100%; min-width: 0; padding: 0 30px 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.75 5 6.75 8 3.75'/%3E%3C/svg%3E") no-repeat right 11px center / 10px 10px; color: var(--ink); font: var(--text-md) var(--font); -webkit-appearance: none; appearance: none; text-overflow: ellipsis; outline: none; transition: border-color var(--fade); }
+.set-select { height: 32px; max-width: 100%; min-width: 0; padding: 0 30px 0 12px; border: 1px solid var(--field-edge); border-radius: 8px; background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.75 5 6.75 8 3.75'/%3E%3C/svg%3E") no-repeat right 11px center / 10px 10px; color: var(--ink); font: var(--text-md) var(--font); -webkit-appearance: none; appearance: none; text-overflow: ellipsis; outline: none; transition: border-color var(--fade); }
 .set-select:hover, .set-select:focus { border-color: var(--field-edge-on); }
 .set-select:disabled { opacity: 0.5; }
 .set-select option, .set-select optgroup { background: var(--surface); color: var(--ink); }
-.set-field { width: 100%; height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font: var(--text-base) var(--font); outline: none; transition: border-color var(--fade); }
+.set-field { width: 100%; height: 32px; padding: 0 14px; border: 1px solid var(--field-edge); border-radius: 8px; background: var(--field); color: var(--ink); font: var(--text-base) var(--font); outline: none; transition: border-color var(--fade); }
 .set-field::placeholder { color: var(--muted); }
 .set-field:hover, .set-field:focus { border-color: var(--field-edge-on); }
 .set-button { height: 32px; padding: 0 14px; flex: none; border-radius: 8px; background: var(--chip-hover); border: 1px solid var(--line); color: var(--ink); font-size: var(--text-base); transition: background-color var(--fade), border-color var(--fade); }
@@ -465,7 +472,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .ask-card .why { color: var(--needs); font-size: var(--text-sm); font-weight: 400; }
 .ask-card .q { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--item); font-size: var(--text-base); line-height: 20px; max-height: 220px; overflow-y: auto; }
 .ask-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.set-area { width: 100%; min-height: 72px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); font: var(--text-base)/20px var(--font); resize: vertical; outline: none; transition: border-color var(--fade); }
+.set-area { width: 100%; min-height: 72px; padding: 8px 12px; border: 1px solid var(--field-edge); border-radius: 10px; background: var(--field); color: var(--ink); font: var(--text-base)/20px var(--font); resize: vertical; outline: none; transition: border-color var(--fade); }
 .set-area:hover, .set-area:focus { border-color: var(--field-edge-on); }
 .set-row-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .set-field.set-num { width: 96px; }
@@ -681,7 +688,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .chain.is-bad { color: var(--danger); }
 
 /* ---------- conversations: channels, direct messages, bots */
-.unread-count { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--unread); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+.unread-count { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--unread-badge); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
 .channel-hash svg { display: block; margin: 0 auto; }
 .connector.is-unread .connector-name { color: var(--ink); font-weight: 500; }
 .connector .avatar-stack { flex: none; }
@@ -758,7 +765,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .account-button:hover, .account-button[aria-expanded="true"] { background: var(--hover); }
 .account-menu { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: 260px; max-width: calc(100vw - 32px); padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 16px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transform-origin: top right; animation: add-panel-in 220ms var(--warm) both; }
 .account-menu button { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 10px; border-radius: 10px; color: var(--text); font-size: var(--text-base); text-align: left; transition: background-color var(--fade), color var(--fade); }
-.account-menu button:hover, .account-menu button:focus-visible { background: var(--hover); color: var(--ink); outline: 0; }
+.account-menu button:hover, .account-menu button:focus-visible { background: var(--hover); color: var(--ink); outline-offset: -2px; }
 .account-menu button > svg { flex: none; color: var(--muted); }
 .account-menu .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .account-who { padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 2px; }
@@ -871,6 +878,31 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   .mem-table.is-admin .mem-state .mem-sub { display: none; }
   .mem-actions { flex-direction: column; align-items: flex-end; gap: 4px; }
 }
+
+/* ===== accessibility (#137): focus you can see, a skip link, words only a screen reader hears,
+   the view switch as tabs, and the colours of Increase contrast and of Windows' contrast themes */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.composer-input:focus-visible { outline: none; } /* its rounded box shows the focus (--field-edge-on) */
+.trail button:focus-visible { outline-offset: -2px; } /* the title bar's crumbs clip what's outside them */
+.page-title:focus, #feed:focus { outline: none; } /* where the page puts you after a change of page or a dialog */
+.sr-only { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip-link { position: fixed; z-index: 300; top: 8px; left: 8px; padding: 6px 12px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: var(--text-md); font-weight: 500; text-decoration: none; transform: translateY(-160%); }
+.skip-link:focus { transform: none; }
+.rail-tabs { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rail-button:focus-visible::after { opacity: 1; transform: translate(0, -50%); transition-delay: 0s; }
+.row-open { border-radius: 4px; transition: color var(--fade); }
+.row-open:hover { color: var(--ink); }
+@media (prefers-contrast: more) {
+  :root { --muted: #a3a3a8; --label: rgba(255, 255, 255, 0.7); --line: rgba(255, 255, 255, 0.24); --divider: rgba(255, 255, 255, 0.14); --field-edge: rgba(255, 255, 255, 0.6); --field-edge-on: rgba(255, 255, 255, 0.85); }
+}
+@media (forced-colors: active) {
+  .switch, .mini-switch { border: 1px solid CanvasText; }
+  .switch::after, .mini-switch::after { background: CanvasText; }
+  .switch.is-on, .composer-toggle.is-on .mini-switch { background: Highlight; }
+  .status-dot, .unread-dot, .packet, .bar { forced-color-adjust: none; }
+  :is(.connector.is-active, .rail-button.is-on, .filters button.is-on, .chips-pick button.is-on, .composer-toggle.is-on) { outline: 2px solid Highlight; outline-offset: -2px; }
+  .unread-count, .connector .needs { border: 1px solid CanvasText; }
+}
 </style>
 </head>
 <body>
@@ -878,12 +910,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
 <template id="tpl-app">
   <div class="window">
+    <a class="skip-link" id="skip" href="#page">Skip to the content</a>
     <aside class="sidebar" id="side">
       <nav class="rail">
-        <button class="rail-button is-on" id="rail-sphere" data-tip="Obysphere"><span class="sphere-tile" id="tile">O</span></button>
+        <div class="rail-button is-on" id="rail-sphere" role="img" aria-label="Obysphere" data-tip="Obysphere"><span class="sphere-tile" id="tile" aria-hidden="true">O</span></div>
         <div class="rail-sep"></div>
-        <button class="rail-button" id="rail-console" data-tip="Console" aria-label="Console" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
-        <button class="rail-button" id="rail-conv" data-tip="Conversation" aria-label="Conversation" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
+        <div class="rail-tabs" role="tablist" aria-label="View" aria-orientation="vertical">
+          <button class="rail-button" id="rail-console" data-tip="Console" aria-label="Console" role="tab" aria-selected="false" aria-controls="console"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 13a6 6 0 1 1 12 0"/><path d="M9 13l3-4"/></svg></button>
+          <button class="rail-button" id="rail-conv" data-tip="Conversation" aria-label="Conversation" role="tab" aria-selected="false" aria-controls="conv"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5v6a1.5 1.5 0 0 1-1.5 1.5H8l-3.5 3v-3h0A1.5 1.5 0 0 1 3 10.5z"/></svg></button>
+        </div>
         <div class="rail-foot" id="rail-me"></div>
       </nav>
       <div class="sidebar-content">
@@ -891,26 +926,26 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
         <div class="side-part" id="side-console">
           <p class="sidebar-subtitle" id="health-line"></p>
-          <div id="nav"></div>
+          <nav id="nav" aria-label="Pages"></nav>
           <p class="sidebar-foot" id="console-foot"></p>
         </div>
 
-        <div class="side-part" id="side-conv" hidden>
+        <nav class="side-part" id="side-conv" aria-label="Conversations" hidden>
           <p class="sidebar-subtitle" id="sphere-count"></p>
-          <button class="connector" id="invite"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 6v10M6 11h10"/></svg><span class="connector-name">Invite member</span></button>
-          <div class="sidebar-group-head">Channels</div>
+          <button class="connector" id="invite"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M11 6v10M6 11h10"/></svg><span class="connector-name">Invite member</span></button>
+          <h3 class="sidebar-group-head">Channels</h3>
           <div id="channels"></div>
-          <div class="sidebar-group-head" id="people-head">Members</div>
+          <h3 class="sidebar-group-head" id="people-head">Members</h3>
           <div id="members"></div>
-          <div class="sidebar-group-head" id="bots-head" hidden>Bots</div>
+          <h3 class="sidebar-group-head" id="bots-head" hidden>Bots</h3>
           <div id="bots"></div>
-        </div>
+        </nav>
       </div>
     </aside>
 
     <main class="view">
       <header class="titlebar">
-        <button class="icon-button panel-toggle" id="toggle" aria-label="Side panel"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="14" height="12" rx="3"/><path d="M7 3v12"/></svg></button>
+        <button class="icon-button panel-toggle" id="toggle" aria-label="Side panel" aria-expanded="false" aria-controls="side"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="14" height="12" rx="3"/><path d="M7 3v12"/></svg></button>
         <div class="trail" id="trail"></div>
         <div class="bar-end">
           <span id="bar-avatars"></span>
@@ -920,10 +955,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       </header>
       <p class="update-line" id="update-line" hidden></p>
 
-      <div class="conv" id="conv" hidden>
+      <div class="conv" id="conv" role="tabpanel" aria-labelledby="rail-conv" hidden>
         <div class="conv-head" id="conv-head" hidden></div>
         <div class="chat-scroll">
-          <section class="chat" id="feed" role="log">
+          <section class="chat" id="feed" role="log" aria-label="Messages" aria-live="off" tabindex="-1">
             <div class="chat-column">
               <div class="chat-thread" id="thread"></div>
               <div class="chat-live" id="live"></div>
@@ -937,9 +972,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
               <div class="add-panel" id="add-panel" role="menu" hidden></div>
               <div class="composer-grid">
                 <div class="composer-tags" id="tags"></div>
-                <button type="button" class="composer-button" id="plus" aria-label="Add" aria-haspopup="menu"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 4.5v11M4.5 10h11"/></svg></button>
-                <textarea class="composer-input" id="text" rows="1" aria-label="Message"></textarea>
-                <button type="submit" class="composer-button composer-send" id="send" aria-label="Send"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9"/></svg></button>
+                <button type="button" class="composer-button" id="plus" aria-label="Add" aria-haspopup="menu" aria-expanded="false" aria-controls="add-panel"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11"/></svg></button>
+                <textarea class="composer-input" id="text" rows="1" aria-label="Message" aria-describedby="hint" aria-autocomplete="list" aria-controls="add-panel"></textarea>
+                <button type="submit" class="composer-button composer-send" id="send" aria-label="Send" aria-disabled="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9"/></svg></button>
               </div>
             </div>
             <div class="composer-foot"><p class="composer-hint" id="hint"></p><button type="button" class="composer-toggle" id="just" role="switch" aria-checked="false" hidden><span class="mini-switch"></span><span id="just-t"></span></button></div>
@@ -949,14 +984,14 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <p class="watch-foot" id="watch-foot" hidden>You’re watching: only members write here. <button id="invite-2">Invite member</button></p>
       </div>
 
-      <div class="console" id="console">
+      <div class="console" id="console" role="tabpanel" aria-labelledby="rail-console">
         <div class="console-scroll" id="console-scroll"><div class="page" id="page"></div></div>
       </div>
     </main>
   </div>
 
   <div class="modal-backdrop" id="invite-modal" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="inv-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="inv-title" tabindex="-1">
       <header class="modal-head">
         <h2 id="inv-title">Invite member</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
@@ -966,18 +1001,18 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   </div>
 
   <div class="modal-backdrop" id="new-modal" hidden>
-    <div class="modal has-menu" role="dialog" aria-modal="true" aria-labelledby="new-title">
+    <div class="modal has-menu" role="dialog" aria-modal="true" aria-labelledby="new-title" aria-describedby="new-line" tabindex="-1">
       <header class="modal-head">
         <h2 id="new-title">New exchange</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
       </header>
-      <p class="modal-line">Ask an Oby. You’ll watch the exchange as it runs.</p>
+      <p class="modal-line" id="new-line">Ask an Oby. You’ll watch the exchange as it runs.</p>
       <div id="new-slot"></div>
     </div>
   </div>
 
   <div class="modal-backdrop" id="admin-modal" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title" style="width:min(460px,100%)">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title" aria-describedby="adm-line" tabindex="-1" style="width:min(460px,100%)">
       <header class="modal-head">
         <h2 id="adm-title">Admin access</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
@@ -993,7 +1028,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   </div>
 
   <div class="modal-backdrop" id="channel-modal" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ch-title">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ch-title" tabindex="-1">
       <header class="modal-head">
         <h2 id="ch-title">New channel</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
@@ -1001,6 +1036,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       <div id="ch-slot"></div>
     </div>
   </div>
+
+  <!-- what changes while you listen, said politely and in summary (the accessibility section) -->
+  <div class="sr-only" id="a11y-status" role="status" aria-live="polite" aria-atomic="true"></div>
 </template>
 
 <script>
@@ -1076,7 +1114,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   boot().catch((e) => { if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
 
   function gate(err) {
-    $('#root').innerHTML = `<div class="gate"><form>${obyFace(48)}<h2>Open an Obysphere</h2><p>Paste the key from your invite link.</p><input class="set-field" name="k" placeholder="Obysphere key" autocomplete="off" autofocus>${err ? `<p class="err">${esc(err)}</p>` : ''}<button class="modal-primary">Open</button></form></div>`;
+    $('#root').innerHTML = `<div class="gate"><form>${obyFace(48)}<h2>Open an Obysphere</h2><p>Paste the key from your invite link.</p><input class="set-field" name="k" placeholder="Obysphere key" aria-label="Obysphere key" autocomplete="off" autofocus>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}<button class="modal-primary">Open</button></form></div>`;
     $('form').onsubmit = (e) => { e.preventDefault(); const k = e.target.k.value.trim(); store.set('obysphere.key', k); location.hash = 'key=' + encodeURIComponent(k); location.reload(); };
   }
 
@@ -1131,10 +1169,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     initConversations();
 
     if (S.me) {
-      $('#rail-me').innerHTML = `<button class="rail-button" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${avatar(S.me, 28, false)}</button>`;
+      $('#rail-me').innerHTML = `<span class="rail-button" role="img" aria-label="You: ${esc(S.me.owner)} (${esc(S.me.name)})" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${avatar(S.me, 28, false)}</span>`;
       setupComposer();
     } else $('#watch-foot').hidden = false;
     wire();
+    a11ySetup();
     renderAccount();
     renderAll();
     connect();
@@ -1157,6 +1196,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#rail-conv').onclick = () => setMode('conversation');
     $('#new-exchange').onclick = openNew;
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && a11yEscape()) return; // an open menu, or the side panel on a phone, goes first
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-backdrop').forEach((m) => !m.hidden && closeModal(m));
         closeAdd();
@@ -1206,8 +1246,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#side-conv').hidden = con;
     $('#rail-console').classList.toggle('is-on', con);
     $('#rail-conv').classList.toggle('is-on', !con);
-    $('#rail-console').setAttribute('aria-pressed', String(con));
-    $('#rail-conv').setAttribute('aria-pressed', String(!con));
+    a11yTabs(con);
     $('#new-exchange').hidden = !(con && S.me);
     renderBar();
     renderTrail();
@@ -1288,6 +1327,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   function upsertAgent(a) {
     if (!okAgent(a)) return;
+    a11yPresence(S.agents.get(a.id), a);
     S.agents.set(a.id, { ...(S.agents.get(a.id) || {}), ...a });
     if (S.me && a.id === S.me.id && !a.removed) S.me = S.agents.get(a.id);
     if (S.me && a.id === S.me.id) adminFromMe();
@@ -1303,6 +1343,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (!S.channels.has(m.channel)) unknownChannel(m.channel);
     if (m.files?.length) S.files = null;
     noteUnread(m);
+    a11yMessage(m);
     if (S.mode === 'conversation') {
       if (m.channel === S.current) {
         const feed = $('#feed');
@@ -1327,6 +1368,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     S.audit.push(ev);
     if (S.audit.length > 2000) S.audit.shift();
     S.auditHead = { seq: ev.seq, hash: String(ev.hash ?? '') };
+    a11yLog(ev);
     if (S.mode !== 'console') return;
     const log = document.getElementById('log');
     if (log) {
@@ -1429,7 +1471,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const ICON_SHIELD = '<path d="M9 2.5 14.5 4.5v4c0 3.4-2.3 6-5.5 7-3.2-1-5.5-3.6-5.5-7v-4z"/>';
   const ICON_ADMINS = '<circle cx="7" cy="6.5" r="2.5"/><path d="M2.5 15a4.5 4.5 0 0 1 9 0"/><path d="M13.5 8.5l2 .8v1.6c0 1.3-.8 2.4-2 2.9-1.2-.5-2-1.6-2-2.9V9.3z"/>';
   const ICON_KEY = '<circle cx="6" cy="9" r="3"/><path d="M9 9h6.5M13 9v2.5M15.5 9v2"/>';
-  const navIcon = (icon, px = 18) => `<svg width="${px}" height="${px}" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>`;
+  const navIcon = (icon, px = 18) => `<svg width="${px}" height="${px}" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
   // [page, label, icon, group]: the nav in three groups; Admin shows only for admins
   const NAV = [
     ['overview', 'Overview', '<path d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z"/>', 'sphere'],
@@ -1457,10 +1499,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
     const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
-    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}">${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
+    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
     $('#nav').innerHTML = NAV_GROUPS.map(([g, label]) => {
       const items = shown.filter((x) => x[3] === g);
-      return items.length ? `<div class="sidebar-group-head">${label}</div>${items.map(item).join('')}` : '';
+      return items.length ? `<h3 class="sidebar-group-head">${label}</h3>${items.map(item).join('')}` : '';
     }).join('') + navFoot();
     $('#nav').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     $('#nav').querySelector('[data-admin-signin]')?.addEventListener('click', () => openAdmin('signin'));
@@ -1481,7 +1523,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function renderTrail() {
     const chev = '<svg class="trail-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
     let parts = [`<span class="trail-part">${esc(S.sphere.name)}</span>`];
-    if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(channelTitle(S.current))}</span>`);
+    if (S.mode === 'conversation') parts.push(`<h1 class="trail-now">${esc(channelTitle(S.current))}</h1>`); // the view's title (a console page has its own)
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
       parts.push(`<span class="trail-now">Exchange</span>`);
@@ -1494,7 +1536,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const online = members().filter((a) => a.online).sort((a, b) => ownerName(a).localeCompare(ownerName(b)));
     const shown = online.slice(0, 5);
     $('#bar-avatars').innerHTML = online.length
-      ? `<span class="avatar-stack" title="Online: ${esc(online.map(obyOf).join(', '))}">${shown.map((a, i) => avatar(a, 22, i === shown.length - 1)).join('')}${online.length > 5 ? `<span class="avatar-more">+${online.length - 5}</span>` : ''}</span>`
+      ? `<span class="avatar-stack" role="img" title="Online: ${esc(online.map(obyOf).join(', '))}" aria-label="Online: ${esc(online.map(obyOf).join(', '))}">${shown.map((a, i) => avatar(a, 22, i === shown.length - 1)).join('')}${online.length > 5 ? `<span class="avatar-more">+${online.length - 5}</span>` : ''}</span>`
       : '';
   }
 
@@ -1524,7 +1566,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   function head(title, sub, right = '') {
-    return `<div class="page-head"><div><h1 class="page-title">${title}</h1>${sub ? `<p class="page-sub">${sub}</p>` : ''}</div>${right}</div>`;
+    return `<div class="page-head"><div><h1 class="page-title" tabindex="-1">${title}</h1>${sub ? `<p class="page-sub">${sub}</p>` : ''}</div>${right}</div>`;
   }
 
   // Overview: built once, then its parts are updated in place (the map and the log keep running)
@@ -1535,8 +1577,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div id="ov-head"></div>
         <div class="kpis" id="kpis"></div>
         <div class="split">
-          <div class="panel"><div class="panel-head"><span>Map</span></div><div class="topo" id="topo"></div></div>
-          <div class="panel"><div class="panel-head"><span>Live log</span><button class="link" data-page="audit">Audit log</button></div><div class="log" id="log"></div></div>
+          <div class="panel"><div class="panel-head"><span id="map-title">Map</span></div><div class="topo" id="topo" role="group" aria-labelledby="map-title"></div></div>
+          <div class="panel"><div class="panel-head"><span id="log-title">Live log</span><button class="link" data-page="audit">Audit log</button></div><div class="log" id="log" role="log" aria-labelledby="log-title" aria-live="off" tabindex="0"></div></div>
         </div>
         <div class="section-head"><h3>Recent exchanges</h3><button class="link" data-page="traffic">All traffic</button></div>
         <div id="ov-recent"></div>`;
@@ -1601,7 +1643,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   let topoPos = new Map();
   function buildTopo() {
     const t = $('#topo');
-    t.innerHTML = `<svg class="edges" id="edges"></svg><div class="relay" title="${esc(S.sphere.name)}"><div><b>${esc(S.sphere.name)}</b></div></div><div id="nodes"></div>`;
+    t.innerHTML = `<svg class="edges" id="edges" aria-hidden="true"></svg><div class="relay" title="${esc(S.sphere.name)}"><div><b>${esc(S.sphere.name)}</b></div></div><div id="nodes" role="list" aria-label="Obys"></div>`;
     updateTopo();
   }
   function updateTopo() {
@@ -1630,7 +1672,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         const p = topoPos.get(a.id);
         const st = a.suspended ? 'suspended' : stateOf(a);
         const where = a.suspended ? 'suspended' : st === 'working' ? `working · <span class="num" data-since="${esc(a.status.since)}">${secs(a.status.since)}</span>` : st;
-        return `<div class="node is-${st}" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
+        return `<div class="node is-${st}" role="listitem" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
           <span class="pic">${picture(a, 36)}</span>
           <span class="node-name">${esc(obyOf(a))}</span>
           <span class="node-where${st === 'working' ? ' sheen' : ''}">${where}</span>
@@ -1648,7 +1690,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let toId = m.to?.[0];
     if (!toId && m.replyTo) toId = S.byId.get(m.replyTo)?.from;
     const to = toId ? topoPos.get(toId) : null;
-    if (!from) return;
+    if (!from || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const w = t.clientWidth, h = t.clientHeight;
     const dot = document.createElement('div');
     dot.className = 'packet' + (m.kind === 'reply' ? ' is-reply' : '');
@@ -1673,7 +1715,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       .map((e) => {
         const words = isSealed(e.root) ? `Sealed · ${size(sealedBytes(e.root))}` : e.root.text || (e.root.files?.length ? `${e.root.files.length} file(s)` : '');
         return `<tr class="is-link" data-page="exchange:${e.id}">
-          <td class="num mono">${esc(clock(e.start))}</td>
+          <td class="num mono"><button type="button" class="row-open" aria-label="${esc(a11yExchangeName(e))}">${esc(clock(e.start))}</button></td>
           <td><div class="cell">${route(e)}</div></td>
           <td class="hide-narrow fill"><div class="clip muted">${esc(words)}</div></td>
           <td class="r num mono ink">${e.root.kind === 'post' ? '—' : fmtMs(e.durationMs)}</td>
@@ -1778,7 +1820,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       .join('');
     return (
       head('Members', `${list.length} member${list.length === 1 ? '' : 's'} · ${online} online`, `<button class="set-button" data-invite>Invite member</button>`) +
-      `<div class="table-wrap"><table class="table mem-table${S.admin ? ' is-admin' : ''}"><thead><tr><th>Member</th><th>Status</th><th class="hide-phone">Answers with</th><th class="r hide-narrow">Answered</th><th class="r hide-phone">Median answer</th>${S.admin ? '<th></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+      `<div class="table-wrap" role="region" aria-label="Members" tabindex="0"><table class="table mem-table${S.admin ? ' is-admin' : ''}"><thead><tr><th>Member</th><th>Status</th><th class="hide-phone">Answers with</th><th class="r hide-narrow">Answered</th><th class="r hide-phone">Median answer</th>${S.admin ? '<th><span class="sr-only">Actions</span></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
   }
@@ -2002,7 +2044,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       })
       .join('');
     return head('Files', S.files && list.length ? `${list.length} file${list.length === 1 ? '' : 's'} · ${size(total)}` : S.files ? '' : 'Loading…') +
-      (list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th class="hide-phone">Size</th><th>From → to</th><th>When</th><th class="hide-phone"></th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
+      (list.length ? `<div class="table-wrap" role="region" aria-label="Files" tabindex="0"><table class="table"><thead><tr><th>File</th><th class="hide-phone">Size</th><th>From → to</th><th>When</th><th class="hide-phone"><span class="sr-only">Exchange</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
   }
 
   // ---------------------------------------------------------------- Audit log: search, filters (event type, member, time), export
@@ -2101,7 +2143,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       .join('');
     const more = n > AU.shown ? `<button type="button" class="au-more" data-au-more>Show ${Math.min(200, n - AU.shown)} more</button>` : '';
     return `<p class="au-count" id="au-count">${count}</p>` + (n
-      ? `<div class="table-wrap"><table class="table au-table"><thead><tr><th class="hide-phone">Seq</th><th>Time</th><th>Event</th><th>Detail</th><th class="hide-narrow">Hash</th></tr></thead><tbody>${rows}</tbody></table></div>${more}`
+      ? `<div class="table-wrap" role="region" aria-label="Events" tabindex="0"><table class="table au-table"><thead><tr><th class="hide-phone">Seq</th><th>Time</th><th>Event</th><th>Detail</th><th class="hide-narrow">Hash</th></tr></thead><tbody>${rows}</tbody></table></div>${more}`
       : `<p class="empty-line">${filtering ? 'No events match.' : 'Nothing has happened yet.'}</p>`);
   }
   // the newest 1,000 (the most one request gives), the first time the page opens; new ones arrive live
@@ -2472,7 +2514,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       })
       .join('');
     return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members. Admins change Policy and manage members.`) +
-      `<div class="table-wrap"><table class="table adm-table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      `<div class="table-wrap"><table class="table adm-table"><thead><tr><th>Oby</th><th>Role</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows}</tbody></table></div>
        <p class="note">The Sphere’s admin key works too, for whoever holds it: keep it somewhere safe.</p>
        <p class="note is-problem" id="admins-problem" hidden></p>`;
   }
@@ -2513,6 +2555,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const ids = (pending || []).map((p) => p.id).join(',');
       if (ids !== (S.pending || []).map((p) => p.id).join(',')) {
         if (pending?.length) await settingsForPending();
+        a11yWaiting((S.pending || []).length, (pending || []).length);
         S.pending = pending || [];
         renderNav();
         if (S.mode === 'console' && S.page === 'you') renderPending();
@@ -2554,7 +2597,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
           <button class="set-button" data-decide="decline">Decline</button>
           <span class="saved-note" data-note></span>
         </div>
-        <div data-write hidden><textarea class="set-area" placeholder="Your answer, sent as yours"></textarea><div class="ask-actions" style="margin-top:8px"><button class="modal-primary" data-decide="send">Send my answer</button></div></div>
+        <div data-write hidden><textarea class="set-area" placeholder="Your answer, sent as yours" aria-label="Your answer, sent as yours"></textarea><div class="ask-actions" style="margin-top:8px"><button class="modal-primary" data-decide="send">Send my answer</button></div></div>
       </div>`).join('');
   }
   function wirePending() {
@@ -4010,6 +4053,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       if (d.copy !== undefined) {
         try { await navigator.clipboard.writeText(d.copy); b.textContent = 'Copied'; }
         catch { const c = b.parentElement.querySelector('code'); const r = document.createRange(); r.selectNodeContents(c); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; }
+        a11ySay('note', b.textContent);
         setTimeout(() => { b.textContent = 'Copy'; }, 1600);
       } else if (d.setJump) {
         const sec = document.getElementById(`set-sec-${d.setJump}`);
@@ -4335,7 +4379,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     wirePending();
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
-    el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } setTimeout(() => (b.textContent = 'Copy'), 1400); }));
+    el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } a11ySay('note', b.textContent); setTimeout(() => (b.textContent = 'Copy'), 1400); }));
     wireAudit(el);
     el.querySelectorAll('[data-suspend]').forEach((b) => (b.onclick = () => admin(() => apiPost(`/api/admin/agents/${b.dataset.suspend}/suspend`, { suspended: b.dataset.to === '1' }), 'member-problem')));
     el.querySelectorAll('[data-remove]').forEach((b) => (b.onclick = () => {
@@ -4545,7 +4589,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const dmWith = (a) => [...S.channels.values()].find((c) => c.kind === 'dm' && inCh(c) && inCh(c, a)) || null;
   const byName = (n) => members().find((a) => a.name === n) || null;
   const label = (a) => (a.bot ? a.name : ownerName(a)); // a bot goes by its handle: no person behind it
-  const unreadHtml = (n) => (n ? `<span class="unread-count" aria-label="${n} new">${n > 99 ? '99+' : n}</span>` : '');
+  const unreadHtml = (n) => (n ? `<span class="unread-count">${n > 99 ? '99+' : n}<span class="sr-only"> new</span></span>` : '');
   const plusIcon = () => '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>';
   // a channel's name for people: a direct conversation is the other person
   function channelTitle(name) {
@@ -4636,9 +4680,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       list
         .map((c) => {
           const n = S.unread[c.name] || 0;
-          return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="${esc(c.topic || (c.kind === 'private' ? 'Private: only its members see it' : ''))}"><span class="channel-hash">${c.kind === 'private' ? lock(13) : '#'}</span><span class="connector-name">${esc(c.name)}</span>${unreadHtml(n)}</button>`;
+          return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}"${c.name === S.current ? ' aria-current="page"' : ''}${c.kind === 'private' ? ` aria-describedby="about-ch-${esc(c.name)}"` : ''} title="${esc(c.topic || (c.kind === 'private' ? 'Private: only its members see it' : ''))}"><span class="channel-hash" aria-hidden="true">${c.kind === 'private' ? lock(13) : '#'}</span>${c.kind === 'private' ? `<span id="about-ch-${esc(c.name)}" hidden>Private${c.topic ? `: ${esc(c.topic)}` : ': only its members see it'}</span>` : ''}<span class="connector-name">${esc(c.name)}</span>${unreadHtml(n)}</button>`;
         })
-        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : '');
+        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash" aria-hidden="true">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : '');
     $('#channels').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
     $('#channels').querySelector('[data-new-channel]')?.addEventListener('click', openChannelModal);
   }
@@ -4692,11 +4736,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const n = c ? S.unread[c.name] || 0 : 0;
     const active = !!c && c.name === S.current;
     const title = S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '';
-    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}" title="${esc(title)}">
+    return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}"${active ? ' aria-current="page"' : ''}${S.me ? '' : ` aria-expanded="${S.open.has(a.id)}"`} aria-describedby="about-${esc(a.id)}" title="${esc(title)}">
         ${picture(a, 22)}
         <span class="connector-name">${esc(label(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
         ${unreadHtml(n)}
         <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
+        <span id="about-${esc(a.id)}" hidden>${esc(st)}${a.about ? ` · ${esc(a.about)}` : ''}</span>
       </button>` +
       (S.me ? '' : `<div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
         ${a.about ? `<div>${esc(a.about)}</div>` : ''}
@@ -4706,7 +4751,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
   function theirDmRow(c) {
     const n = S.unread[c.name] || 0;
-    return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}" title="A direct conversation"><span class="avatar-stack">${(c.members || []).slice(0, 2).map((id) => avatar(agent(id), 18, false)).join('')}</span><span class="connector-name">${esc(channelTitle(c.name))}</span>${unreadHtml(n)}</button>`;
+    return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}"${c.name === S.current ? ' aria-current="page"' : ''} title="A direct conversation"><span class="avatar-stack">${(c.members || []).slice(0, 2).map((id) => avatar(agent(id), 18, false)).join('')}</span><span class="connector-name">${esc(channelTitle(c.name))}</span>${unreadHtml(n)}</button>`;
   }
   // your direct conversation with someone: made on the relay the first time
   async function openDm(a) {
@@ -4737,7 +4782,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const shown = list.slice(0, 5);
       const inner = shown.map((a, i) => avatar(a, 22, i === shown.length - 1)).join('') + (list.length > 5 ? `<span class="avatar-more">+${list.length - 5}</span>` : '');
       const title = `In it: ${list.map(label).join(', ')}`;
-      return btn ? `<button type="button" class="avatar-stack" data-ch-people title="${esc(title)}" aria-label="${esc(title)}">${inner}</button>` : `<span class="avatar-stack" title="${esc(title)}">${inner}</span>`;
+      return btn ? `<button type="button" class="avatar-stack" data-ch-people title="${esc(title)}" aria-label="${esc(title)}">${inner}</button>` : `<span class="avatar-stack" role="img" title="${esc(title)}" aria-label="${esc(title)}">${inner}</span>`;
     };
     let topic;
     let tools = '';
@@ -4808,7 +4853,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       <div class="set-row ch-private"><div class="set-row-text"><div class="set-row-title" id="ch-private-l">Private</div><div class="set-row-sub" id="ch-private-sub"></div></div><button type="button" class="switch" role="switch" aria-checked="false" id="ch-private" aria-labelledby="ch-private-l"></button></div>
       <span class="modal-label">People and Obys</span>
       ${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">No one else is in the Sphere yet.</p>'}
-      <p class="note is-problem" id="ch-problem" hidden></p>
+      <p class="note is-problem" id="ch-problem" role="alert" hidden></p>
       <div class="modal-actions"><button type="button" class="modal-primary" id="ch-create">Create channel</button></div>`;
     const sw = $('#ch-private');
     const sub = () => {
@@ -4852,7 +4897,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       <p class="modal-line">${c.kind === 'private' ? `Only these see #${esc(c.name)}, post in it and are asked in it. Anyone in it can add others.` : `Anyone in the Sphere can read #${esc(c.name)} and post in it; these joined it.`}</p>
       <div class="set-group">${inIt.length ? inIt.map((a) => `<div class="ch-row">${picture(a, 28)}<span class="t">${esc(label(a))}${isMe(a) ? ' <span class="you" style="color:var(--muted)">(you)</span>' : ''}<small>@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${c.createdBy === a.id ? ' · made it' : ''}</small></span>${canRemove(a) ? `<button type="button" class="set-button sm" data-ch-remove="${esc(a.id)}">${isMe(a) ? 'Leave' : 'Remove'}</button>` : ''}</div>`).join('') : '<div class="ch-row"><span class="t is-none">No one has joined it yet.</span></div>'}</div>
       ${canAdd ? `<span class="modal-label">Add people or Obys</span>${rest.length ? `<div class="chips-pick ch-pick" id="ch-pick" role="group" aria-label="People and Obys to add">${rest.map(pickChip).join('')}</div>` : '<p class="note">Everyone in the Sphere is in it.</p>'}` : ''}
-      <p class="note is-problem" id="ch-problem" hidden></p>
+      <p class="note is-problem" id="ch-problem" role="alert" hidden></p>
       ${canAdd && rest.length ? '<div class="modal-actions"><button type="button" class="modal-primary" id="ch-add">Add</button></div>' : ''}`;
     wirePicks($('#ch-pick'));
     $('#ch-slot').querySelectorAll('[data-ch-remove]').forEach((b) => (b.onclick = async () => {
@@ -5102,6 +5147,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
           (c.kind === 'private' && !inModal() ? `<button type="button" role="menuitem" data-add="people">${plusIcon()}<span class="t">Add people or Obys to #${esc(c.name)}…</span></button>` : ''));
     $('#add-panel').hidden = false;
     $('#plus').classList.add('is-on');
+    a11yMenuOpened($('#add-panel'), 'menu');
     $('#add-panel').querySelectorAll('button').forEach((b) => {
       b.onclick = () => {
         if (b.dataset.add === 'files') $('#file').click();
@@ -5117,6 +5163,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (p) p.hidden = true;
     C.menu = null;
     document.getElementById('plus')?.classList.remove('is-on');
+    document.getElementById('text')?.removeAttribute('aria-activedescendant');
   }
 
   // @ and a name: the Obys you may ask here (in a private channel its members; in a public one, anyone)
@@ -5144,9 +5191,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     C.hits = hits;
     C.pick = Math.max(0, Math.min(C.pick, hits.length - 1));
     const c = chOf(composerChannel());
-    $('#add-panel').innerHTML = `<div class="add-label">${c.kind === 'private' ? `Ask someone in #${esc(c.name)}` : 'Ask an Oby'}</div>` +
-      hits.map((a, i) => `<button type="button" role="menuitem" data-mention="${esc(a.name)}" class="${i === C.pick ? 'is-pick' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="mention-handle">@${esc(a.name)}</span></button>`).join('');
+    $('#add-panel').innerHTML = `<div class="add-label" id="mention-label">${c.kind === 'private' ? `Ask someone in #${esc(c.name)}` : 'Ask an Oby'}</div>` +
+      hits.map((a, i) => `<button type="button" role="option" id="mention-${i}" aria-selected="${i === C.pick}" tabindex="-1" data-mention="${esc(a.name)}" class="${i === C.pick ? 'is-pick' : ''}">${avatar(a, 20)}<span class="t">${esc(obyOf(a))}</span><span class="mention-handle">@${esc(a.name)}</span></button>`).join('');
     $('#add-panel').hidden = false;
+    a11yMenuOpened($('#add-panel'), 'listbox');
     $('#add-panel').querySelectorAll('[data-mention]').forEach((b) => {
       b.onpointerdown = (e) => e.preventDefault(); // keep the caret in the message
       b.onclick = () => completeMention(b.dataset.mention);
@@ -5183,7 +5231,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     hint.classList.remove('is-problem');
     const sealed = !!S.sphere.policy?.sealed;
     const just = $('#just');
-    const fileTags = C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove">${xIcon()}</button></span>`).join('');
+    const fileTags = C.files.map((f, i) => `<span class="composer-tag">${fileIcon()}<span class="t">${esc(f.name)}</span><button type="button" class="x" data-untag="${i}" aria-label="Remove ${esc(f.name)}">${xIcon()}</button></span>`).join('');
     const wireTags = () => $('#tags').querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => { if (b.dataset.untag === 'to') C.to = null; else C.files.splice(Number(b.dataset.untag), 1); renderTo(); $('#text').focus(); }));
     // a private channel or direct conversation you aren't in (the admin key shows every one): read only
     const outside = isClosed(c) && !inCh(c) && !inModal();
@@ -5286,7 +5334,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       } catch (e) { problem(e.message); }
     };
   }
-  function problem(m) { const h = $('#hint'); h.textContent = m; h.classList.add('is-problem'); }
+  function problem(m) { const h = $('#hint'); h.textContent = m; h.classList.add('is-problem'); a11ySay('problem', m); }
   function toB64(file) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -5404,7 +5452,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let html;
     if (link) {
       html = `<p class="modal-line">Send this to your teammate. They paste it into their AI agent (Claude Code, Codex or Cursor), which sets up their Oby: on their own machine, with their files and their rules.</p>
-        <pre class="ss-code inv-text" tabindex="0" aria-label="The text for their AI agent">${esc(inviteText(link))}</pre>
+        <pre class="ss-code inv-text" tabindex="0" role="region" aria-label="The text for their AI agent">${esc(inviteText(link))}</pre>
         <div class="inv-actions"><button class="modal-primary" type="button" data-inv-main data-label="Copy for your AI agent">Copy for your AI agent</button>${unkept ? '<span class="saved-note">For now only: update rep.mjs so your console keeps the link.</span>' : ''}</div>
         <span class="modal-label">Or with the skill, in Claude Code</span>
         <p class="modal-line">They run <code class="tok-code">/plugin marketplace add ${esc(REPO)}</code>, then <code class="tok-code">/plugin install obysphere@obysphere</code>, and ask Claude Code to join with this link. Its join-a-sphere skill does the rest.</p>
@@ -5466,6 +5514,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       try { ok = document.execCommand('copy'); } catch {}
     }
     btn.textContent = ok ? 'Copied' : 'Selected: copy it';
+    a11ySay('note', btn.textContent);
     clearTimeout(btn.copyTimer);
     btn.copyTimer = setTimeout(() => (btn.textContent = btn.dataset.label || 'Copy'), 1600);
   }
@@ -5489,6 +5538,264 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     el.innerHTML = `A newer Oby is out (${esc(v.latest)}): run <code class="tok-code">obysphere update</code><button type="button" aria-label="Dismiss"><svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>`;
     el.hidden = false;
     $('button', el).onclick = () => { store.set('obysphere.update.dismissed', v.latest); el.hidden = true; };
+  }
+
+  // ===== accessibility (#137)
+  // Keyboard paths through the side panel, its view tabs, menus and dialogs; dialogs that hold the
+  // focus and give it back; focus that survives the page's re-renders (it redraws a part whenever
+  // the Sphere moves); and a polite voice for what changes while you listen. The voice waits a
+  // moment for more of the same, then says one sentence, so a busy Sphere never floods a screen reader.
+  const A11Y = { voice: null, from: null, key: null, keyboard: false, opened: new Map() };
+  const FOCUSABLE = ['a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])', 'textarea:not([disabled])', 'summary', '[tabindex]'].map((s) => `${s}:not([tabindex="-1"])`).join(', ');
+  const narrow = () => matchMedia('(max-width: 760px)').matches;
+  // on screen and reachable: not hidden (a closed <details> keeps boxes for its contents), not behind
+  // a dialog, not in the side panel while it's slid away
+  const reachable = (el) => !!el && el.isConnected && el.getClientRects().length > 0 && (!el.checkVisibility || el.checkVisibility({ visibilityProperty: true }))
+    && !el.closest('details:not([open]) > :not(summary), [inert]') && !(narrow() && el.closest('.sidebar:not(.is-open)'));
+  const openModal = () => [...document.querySelectorAll('.modal-backdrop')].find((m) => !m.hidden) || null;
+  const viewKey = () => `${S.mode}|${S.mode === 'console' ? S.page : S.current}`;
+  const a11ySay = (kind, item) => A11Y.voice?.say(kind, item);
+
+  // the voice: say(kind, item) gathers items of a kind; once that kind has waited its moment (and
+  // the log and the map at most every so often) one sentence goes out for all of them
+  function a11yAnnouncer(write, env) {
+    const WAIT = { message: 1200, direct: 1200, presence: 2500, log: 4000, waiting: 600, problem: 0, note: 0 };
+    const EVERY = { presence: 8000, log: 15000 };
+    const clip = (s, n) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+    const SAY = {
+      message: (xs) => (xs.length === 1 ? clip(xs[0].line, 220) : `${xs.length} new messages ${xs[0].where}, the last from ${xs[xs.length - 1].who}.`),
+      direct: (xs) => (xs.length === 1 ? `${xs[0].who} wrote to you directly.` : `${xs.length} direct messages to you, the last from ${xs[xs.length - 1].who}.`),
+      presence: (xs) => {
+        const words = [...new Map(xs.map((x) => [x.id, x.words])).values()];
+        return words.length <= 3 ? words.join(' ') : `${words.slice(0, 2).join(' ')} And ${words.length - 2} more changes on the map.`;
+      },
+      log: (xs) => { const l = xs[xs.length - 1]; return `Live log: ${xs.length} new event${xs.length === 1 ? '' : 's'}, the latest ${l.type}${l.detail ? `: ${clip(l.detail, 90)}` : ''}.`; },
+      waiting: (xs) => xs[xs.length - 1],
+      problem: (xs) => clip(xs[xs.length - 1], 220),
+      note: (xs) => xs[xs.length - 1],
+    };
+    const queue = new Map(), last = new Map();
+    let out = [], outTimer = null;
+    function flush(kind) {
+      const xs = queue.get(kind) || [];
+      queue.delete(kind);
+      if (!xs.length) return;
+      last.set(kind, env.now());
+      out.push(SAY[kind](xs));
+      if (!outTimer) outTimer = env.setTimeout(() => { outTimer = null; const text = out.join(' '); out = []; if (text) write(text); }, 50);
+    }
+    return {
+      say(kind, item) {
+        if (!SAY[kind] || item == null || item === '' || env.hidden()) return;
+        if (queue.has(kind)) return void queue.get(kind).push(item);
+        queue.set(kind, [item]);
+        const wait = Math.max(WAIT[kind] ?? 1000, (last.get(kind) ?? -Infinity) + (EVERY[kind] || 0) - env.now());
+        env.setTimeout(() => flush(kind), wait);
+      },
+    };
+  }
+
+  // what each live change says (hooks in onMessage, upsertAgent, onAudit and pollPending)
+  function a11yMessage(m) {
+    if (!A11Y.voice || !countsAsNew(m)) return;
+    const a = agent(m.from);
+    const words = isSealed(m) ? 'a sealed message' : m.text || (m.files?.length ? `${m.files.length} file${m.files.length === 1 ? '' : 's'}` : '');
+    if (S.mode === 'conversation' && m.channel === S.current) {
+      const did = m.replyTo ? 'answers' : m.to?.length ? `asks ${m.to.map((id) => obyLower(agent(id))).join(' and ')}` : 'says';
+      a11ySay('message', { who: label(a), where: chOf(m.channel).kind === 'dm' ? 'here' : `in #${m.channel}`, line: `${obyOf(a)} ${did}: ${words}` });
+    } else if (S.mode === 'conversation' && chOf(m.channel).kind === 'dm' && inCh(chOf(m.channel))) {
+      a11ySay('direct', { who: label(a) });
+    } else if (S.mode === 'console' && S.page.startsWith('exchange:')) {
+      const ex = exchanges().find((e) => e.id === S.page.slice(9));
+      if (!ex || !ex.spans.some((s) => s.ask.id === m.id || s.reply?.id === m.id)) return;
+      const line = m.replyTo ? `${obyOf(a)} ${m.meta?.error ? 'couldn’t answer' : m.meta?.declined ? 'declined' : 'answered'}.` : `${obyOf(a)} asks ${m.to?.length ? obyLower(agent(m.to[0])) : 'an Oby'}.`;
+      a11ySay('message', { who: obyOf(a), where: 'in this exchange', line });
+    }
+  }
+  function a11yPresence(prev, next) {
+    if (!A11Y.voice || !prev || prev.removed) return; // a join or a removal: the log says it
+    const now = { ...prev, ...next };
+    const st = (x) => (x.suspended ? 'suspended' : stateOf(x));
+    const was = st(prev), is = st(now);
+    if (was === is) return;
+    const who = obyOf(now);
+    if (S.mode === 'conversation') {
+      // here only what the thread shows: an Oby at work on something said in this conversation
+      const about = (x) => S.byId.get(x.status?.about)?.channel === S.current;
+      if (is === 'working' && about(now)) a11ySay('presence', { id: now.id, words: `${who} is answering, on ${machineOf(now)}.` });
+      else if (was === 'working' && about(prev)) a11ySay('presence', { id: now.id, words: `${who} finished.` });
+      return;
+    }
+    if (S.page !== 'overview') return;
+    const words = is === 'working' ? `${who} is answering, on ${machineOf(now)}.` : was === 'working' && is === 'online' ? `${who} finished.` : is === 'online' ? `${who} is online.` : is === 'offline' ? `${who} went offline.` : `${who} is suspended.`;
+    a11ySay('presence', { id: now.id, words });
+  }
+  function a11yLog(ev) {
+    if (S.mode === 'console' && S.page === 'overview') a11ySay('log', { type: TYPE_WORDS[ev.type] || String(ev.type), detail: ev.detail || '' });
+  }
+  function a11yWaiting(before, now) {
+    if (now > before) a11ySay('waiting', now === 1 ? 'Something waits for you, in Your Oby.' : `${now} things wait for you, in Your Oby.`);
+  }
+  // a row of an exchanges table, as its button says it
+  function a11yExchangeName(e) {
+    const words = e.root.kind === 'post' ? `${obyOf(agent(e.root.from))} posted to ${postTo(e.root)}` : routeWords(e).replace(' → ', ' asks ');
+    return `Open the exchange at ${clock(e.start)}: ${words}`;
+  }
+
+  // Console and Conversation are tabs: the arrow keys move between them (renderAll calls this)
+  function a11yTabs(con) {
+    for (const [id, on] of [['#rail-console', con], ['#rail-conv', !con]]) {
+      $(id).setAttribute('aria-selected', String(on));
+      $(id).tabIndex = on ? 0 : -1;
+    }
+  }
+  // where focus goes when the place it was is gone: the page's title, or the message box
+  function a11yLanding() {
+    if (S.mode === 'console') return $('#page h1') || $('#new-exchange');
+    const t = $('#text');
+    return t && !t.disabled && reachable(t) && A11Y.keyboard ? t : $('#feed');
+  }
+  // Escape closes the innermost thing first: a menu, or the side panel on a phone (wire's keydown)
+  function a11yEscape() {
+    if (document.querySelector('#bar-account .account-menu')) { toggleAccount(false); $('#account-button')?.focus(); return true; }
+    if (C.menu === 'add' && !$('#add-panel').hidden) { closeAdd(); $('#plus').focus(); return true; }
+    const side = $('#side');
+    if (narrow() && side.classList.contains('is-open') && !openModal()) { $('#toggle').focus(); side.classList.remove('is-open'); return true; }
+    return false;
+  }
+  // the + menu takes the focus; the @ list leaves it in the message box, which points at the pick
+  function a11yMenuOpened(panel, kind) {
+    panel.setAttribute('role', kind);
+    $('#plus').setAttribute('aria-expanded', String(kind === 'menu'));
+    if (kind === 'listbox') {
+      panel.removeAttribute('aria-label');
+      panel.setAttribute('aria-labelledby', 'mention-label');
+      $('#text').setAttribute('aria-activedescendant', `mention-${C.pick}`);
+    } else {
+      panel.removeAttribute('aria-labelledby');
+      panel.setAttribute('aria-label', 'Add');
+      panel.querySelector('[role="menuitem"]')?.focus();
+    }
+  }
+
+  // Focus that survives a re-render: what had it is found again in the new markup, by its id, or
+  // by its data-* attributes (and those of the row or card it sits in)
+  function a11yKeyOf(el) {
+    if (!el?.closest || el === document.body || !el.closest('#root')) return null;
+    const own = (n) => n.tagName.toLowerCase() + [...n.classList].filter((c) => !c.startsWith('is-')).map((c) => `.${CSS.escape(c)}`).join('');
+    const attrs = (n, values = true) => [...n.attributes].filter((x) => x.name.startsWith('data-') || ['role', 'name', 'type'].includes(x.name)).map((x) => (values ? `[${x.name}="${CSS.escape(x.value)}"]` : `[${x.name}]`)).join('');
+    const zone = el.id ? null : el.parentElement?.closest('[id]');
+    const holder = el.parentElement?.closest('[data-page], [data-pending], [data-rule], [data-ch], [data-member]');
+    const within = holder && (!zone || zone.contains(holder)) ? `${holder.tagName.toLowerCase()}${attrs(holder)} ` : '';
+    const sel = el.id ? `#${CSS.escape(el.id)}` : within + own(el) + attrs(el);
+    return { zone: zone?.id || null, sel, loose: own(el) + attrs(el, false), i: Math.max(0, [...(zone || document).querySelectorAll(sel)].indexOf(el)), view: viewKey() };
+  }
+  function a11yRestore() {
+    const k = A11Y.key;
+    const scope = k.zone ? document.getElementById(k.zone) : document;
+    const pick = (sel) => { const all = scope ? [...scope.querySelectorAll(sel)].filter(reachable) : []; return all[Math.min(k.i, all.length - 1)] || null; };
+    const same = k.view === viewKey();
+    const n = pick(k.sel) || (same ? pick(k.loose) : null) || (!same || k.zone === 'page' || scope?.closest?.('#page') ? a11yLanding() : null);
+    if (n && reachable(n)) n.focus({ preventScroll: true });
+  }
+
+  // a dialog: the rest of the page goes inert, focus goes in and stays, and comes back on close
+  function a11yModal(m) {
+    if (!m.hidden) {
+      if (A11Y.opened.has(m)) return;
+      A11Y.opened.set(m, { from: A11Y.from, view: viewKey() });
+      $('.window').inert = true;
+      setTimeout(() => {
+        if (m.hidden || m.contains(document.activeElement)) return;
+        ([...m.querySelectorAll(FOCUSABLE)].find(reachable) || m.querySelector('[role="dialog"]'))?.focus();
+      }, 90);
+      return;
+    }
+    const was = A11Y.opened.get(m);
+    if (!was) return;
+    A11Y.opened.delete(m);
+    if (!openModal()) $('.window').inert = false;
+    const a = document.activeElement;
+    if (a && a !== document.body && !m.contains(a)) return; // the dialog sent focus somewhere on purpose
+    // back to what opened it; if the dialog took you somewhere new, to that place's title
+    (was.view === viewKey() && reachable(was.from) ? was.from : a11yLanding())?.focus();
+  }
+
+  function a11ySetup() {
+    const side = $('#side');
+    side.setAttribute('aria-label', 'Side panel');
+    $('.rail').setAttribute('aria-label', 'Views');
+    $('#rail-sphere').setAttribute('aria-label', S.sphere.name);
+    const region = $('#a11y-status');
+    A11Y.voice = a11yAnnouncer((text) => { region.textContent = ''; setTimeout(() => { region.textContent = text; }, 30); }, { now: () => Date.now(), setTimeout: (f, ms) => setTimeout(f, ms), hidden: () => document.hidden });
+
+    // keyboard or pointer: only a keyboard user's focus is moved for them
+    document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) A11Y.keyboard = true; }, true);
+    document.addEventListener('pointerdown', () => { A11Y.keyboard = false; }, true);
+
+    // the view tabs: arrows, Home and End
+    $('.rail-tabs').addEventListener('keydown', (e) => {
+      const tabs = [$('#rail-console'), $('#rail-conv')];
+      const i = tabs.indexOf(e.target);
+      const go = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (i < 0 || go === undefined) return;
+      e.preventDefault();
+      const t = tabs[(go + tabs.length) % tabs.length];
+      t.focus();
+      if (t.getAttribute('aria-selected') !== 'true') t.click();
+    });
+
+    // menus (the + menu, your account's): arrows, Home and End; Tab closes and moves on
+    document.addEventListener('keydown', (e) => {
+      const menu = e.target.closest?.('[role="menu"]');
+      if (!menu) return;
+      const items = [...menu.querySelectorAll('[role="menuitem"]')].filter(reachable);
+      const i = items.indexOf(e.target);
+      const go = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key];
+      if (go !== undefined && items.length) { e.preventDefault(); items[(go + items.length) % items.length].focus(); }
+      else if (e.key === 'Tab') { if (menu.id === 'add-panel') { closeAdd(); $('#plus').focus(); } else { toggleAccount(false); $('#account-button')?.focus(); } }
+    });
+
+    // a dialog keeps Tab inside it
+    document.addEventListener('keydown', (e) => {
+      const m = e.key === 'Tab' && openModal();
+      if (!m) return;
+      const f = [...m.querySelectorAll(FOCUSABLE)].filter(reachable);
+      const a = document.activeElement;
+      if (!f.length) return e.preventDefault();
+      if (e.shiftKey ? a === f[0] || !m.contains(a) : a === f[f.length - 1] || !m.contains(a)) { e.preventDefault(); (e.shiftKey ? f[f.length - 1] : f[0]).focus(); }
+    });
+
+    // remember what has focus, and what opened a dialog
+    document.addEventListener('focusin', (e) => {
+      if (!e.target.closest?.('.modal-backdrop')) A11Y.from = e.target;
+      A11Y.key = a11yKeyOf(e.target);
+    });
+    document.addEventListener('focusout', (e) => {
+      const t = e.target;
+      queueMicrotask(() => { if (t.isConnected && (!document.activeElement || document.activeElement === document.body)) A11Y.key = null; });
+    });
+    new MutationObserver((records) => {
+      for (const r of records) if (r.type === 'attributes' && r.target.classList?.contains('modal-backdrop')) a11yModal(r.target);
+      const a = document.activeElement;
+      if (A11Y.key && (!a || a === document.body)) a11yRestore();
+    }).observe($('#root'), { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+
+    // the side panel on a phone: Tab into it slides it in, Tab out of it slides it away
+    new MutationObserver(() => {
+      const open = side.classList.contains('is-open');
+      $('#toggle').setAttribute('aria-expanded', String(open));
+      if (!open && narrow() && A11Y.keyboard && side.contains(document.activeElement)) a11yLanding()?.focus();
+    }).observe(side, { attributes: true, attributeFilter: ['class'] });
+    side.addEventListener('focusin', () => { if (narrow() && A11Y.keyboard && !side.classList.contains('is-open')) side.classList.add('is-open'); });
+    side.addEventListener('focusout', (e) => { if (narrow() && A11Y.keyboard && e.relatedTarget && !side.contains(e.relatedTarget)) side.classList.remove('is-open'); });
+
+    // Send says when there's nothing to send yet; + says when its menu is open
+    const send = $('#send'), panel = $('#add-panel');
+    new MutationObserver(() => send.setAttribute('aria-disabled', String(!send.classList.contains('is-ready')))).observe(send, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(() => { if (panel.hidden) $('#plus').setAttribute('aria-expanded', 'false'); }).observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+
+    $('#skip').addEventListener('click', (e) => { e.preventDefault(); a11yLanding()?.focus(); });
   }
 
   // ---------------------------------------------------------------- their words: a little Markdown, escaped first

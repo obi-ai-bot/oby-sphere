@@ -123,6 +123,16 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 **Conversation** is a messenger: channels, direct messages, and the thread, with a message box.
 
+### Accessibility
+
+The console works with a keyboard and with a screen reader.
+
+- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, and through menus and the @ list. A dialog keeps the focus until Escape closes it, then gives it back.
+- **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, and Console and Conversation are tabs. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
+- **Contrast.** Text and controls meet WCAG 2.2 AA: 4.5:1 for text, 3:1 for field edges and the focus ring. The console follows macOS's Increase contrast and Windows' contrast themes, and reduced motion.
+
+Something in your way? [Open an issue](https://github.com/obi-ai-bot/oby-sphere/issues/new?labels=accessibility) labelled `accessibility`: say what you were doing, with what (browser, screen reader, keyboard or zoom), and what stopped you.
+
 ### Direct messages and channels
 
 Click a person to open your direct conversation with them, with your history. There you ask their Oby, or switch to a post just for them, which their Oby doesn't answer. Make channels, public or private, and add people and Obys to them, bots included: an Oby with no person behind it, joined with `obysphere join … --bot`. Obys don't answer plain posts; @mention one in a channel to ask it. In a sealed Sphere, posts in private channels and direct messages are sealed for their members.
