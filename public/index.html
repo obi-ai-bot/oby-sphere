@@ -381,7 +381,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .inst-who { display: inline-flex; align-items: center; gap: 6px; }
 .inst-make-button { height: 26px; padding: 0 10px 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--text); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
 .inst-make-button:hover, .inst-make-button[aria-expanded="true"] { color: var(--ink); background: var(--active); border-color: transparent; }
-.inst-make { margin-top: 10px; max-width: 720px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; color: var(--text); font-size: var(--text-md); line-height: 19px; }
+.inst-make { margin-bottom: 12px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; color: var(--text); font-size: var(--text-md); line-height: 19px; }
 .inst-make.is-new { animation: msg-in 360ms var(--warm) both; }
 .inst-link { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 560px) {
@@ -413,12 +413,15 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .pol-dd-b { height: 32px; min-width: 124px; padding: 0 10px 0 12px; display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font-size: var(--text-md); white-space: nowrap; font-variant-numeric: tabular-nums; transition: border-color var(--fade); }
 .pol-dd-b:hover, .pol-dd-b[aria-expanded="true"] { border-color: var(--field-edge-on); }
 .pol-dd-b svg { flex: none; color: var(--muted); }
-.pol-menu { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 100%; max-height: 264px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); outline: none; scrollbar-width: none; transform-origin: top right; animation: add-panel-in 160ms var(--warm) both; }
+.pol-menu { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 100%; max-height: 280px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); outline: none; scrollbar-width: none; transform-origin: top right; animation: add-panel-in 160ms var(--warm) both; }
 .pol-menu.is-again { animation: none; }
 .pol-menu li { height: 32px; padding: 0 8px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-radius: 8px; color: var(--text); font-size: var(--text-md); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: default; }
 .pol-menu li.is-active { background: var(--hover); color: var(--ink); }
 .pol-menu li[aria-selected="true"] { color: var(--ink); }
 .pol-menu li svg { flex: none; color: var(--ink); }
+.pol-link { color: var(--text); overflow-wrap: anywhere; user-select: all; }
+/* Admins: the name column gives way at phone width (its names end in "…"), so the buttons stay in view */
+.adm-table td:first-child { width: 100%; max-width: 0; }
 
 /* policy: Oby's Settings rows */
 .set-group { border-radius: 14px; background: var(--chip); padding: 4px 16px; }
@@ -1339,7 +1342,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     if (p.startsWith('exchange:')) el.innerHTML = pageExchange(p.slice(9));
     else if (p === 'traffic') el.innerHTML = pageTraffic();
     else if (p === 'members') el.innerHTML = pageMembers();
-    else if (p === 'instruments') el.innerHTML = pageInstruments();
+    else if (p === 'instruments') renderInstruments(el, fresh);
     else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
     else if (p === 'audit') el.innerHTML = pageAudit();
     else if (p === 'policy' && S.admin) el.innerHTML = pagePolicy();
@@ -1653,12 +1656,18 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     }).join('');
     const yours = CONSOLE && S.me;
     const offered = offeredInstruments().filter(({ a }) => !(yours && isMe(a))); // yours are listed under Yours
-    return head('Instruments', 'What Obys can use in this Sphere.') +
+    return `<div class="inst-page">` + head('Instruments', 'What Obys can use in this Sphere.') +
       `<div class="section-head"><h3>Built in</h3></div>` +
       (builtIn ? `<div class="inst-list">${builtIn}</div>` : `<p class="empty-line">This Sphere doesn’t list them.</p>`) +
       `<div class="section-head"><h3>Offered by members</h3></div>` +
       (offered.length ? `<div class="inst-list">${offered.map(offeredRow).join('')}</div>` : `<p class="empty-line">No member offers one yet.</p>`) +
-      (yours ? yourInstrumentsHtml() : '');
+      (yours ? yourInstrumentsHtml() : '') + `</div>`;
+  }
+  // the page is asked for again every few seconds (new numbers): it's replaced only when something
+  // shown changed, so a selection (a file's path, the command) and the keyboard stay where they were
+  function renderInstruments(el, fresh) {
+    const html = pageInstruments();
+    if (fresh || html !== INST.html || !el.querySelector(':scope > .inst-page')) el.innerHTML = INST.html = html;
   }
 
   // ---------------------------------------------------------------- instruments members offer (INSTRUMENTS.md)
@@ -1717,7 +1726,8 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
         more: more.length ? more : null,
       });
     }).join('');
-    const cmd = typeof L?.newCmd === 'string' && /^obysphere instruments new my-instrument( --profile [a-z0-9-]{1,32})?$/.test(L.newCmd) ? L.newCmd : 'obysphere instruments new my-instrument';
+    // the command names the program this console runs as: `obysphere`, or `node <path>/rep.mjs`
+    const cmd = typeof L?.newCmd === 'string' && /^(obysphere|node (\/[\w./@:-]+|'[^'\n]+')) instruments new my-instrument( --profile [a-z0-9-]{1,32})?$/.test(L.newCmd) ? L.newCmd : 'obysphere instruments new my-instrument';
     const make = INST.make
       ? `<div class="inst-make${INST.makeNew ? ' is-new' : ''}" id="inst-make">
           <p>Run this, then edit the file it makes:</p>
@@ -1725,20 +1735,25 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
           <p>Add <span class="mono">--kind command</span> to run a program on your machine instead. <a class="inst-link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer" data-inst-f="docs">Learn more</a></p>
         </div>`
       : '';
+    // the panel opens right under its button, not below a long list
     return `<div class="section-head"><h3>Yours</h3><button class="inst-make-button" data-inst-make data-inst-f="make" aria-expanded="${INST.make}" aria-controls="inst-make"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 2v8M2 6h8"/></svg>Make your own</button></div>` +
-      (rows ? `<div class="inst-list">${rows}</div>` : L ? `<p class="empty-line">You don’t offer any yet.</p>` : '') +
       make +
+      (rows ? `<div class="inst-list">${rows}</div>` : L ? `<p class="empty-line">You don’t offer any yet.</p>` : '') +
       (L?.settingsProblem ? `<p class="note is-problem">Fix your settings to check your command instruments: ${esc(L.settingsProblem)}</p>` : '');
   }
   function wireInstruments(el) {
     el.querySelectorAll('[data-inst-key]').forEach((b) => (b.onclick = () => {
       const k = b.dataset.instKey;
+      const inStep = pageInstruments() === INST.html; // what's shown is the page as it is now
       if (!INST.open.delete(k)) INST.open.add(k);
+      if (!inStep) return renderPage(false);
+      // opened in place, so the arrow turns; the page as it is now is what's shown
       const open = INST.open.has(k);
       b.setAttribute('aria-expanded', String(open));
       b.parentElement.classList.toggle('is-open', open);
       const more = b.nextElementSibling;
       if (more) more.hidden = !open;
+      INST.html = pageInstruments();
     }));
     const make = el.querySelector('[data-inst-make]');
     if (make) make.onclick = () => { INST.make = !INST.make; INST.makeNew = INST.make; renderPage(false); };
@@ -1798,7 +1813,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   // ===== Policy: this Sphere's switches and limits, for everyone in it. Only admins reach this page (renderPage).
   // Every limit the relay enforces is here, within the relay's ranges (POST /api/admin/policy). Its
   // controls, a stepper and a dropdown (pol-*), are its own, kept apart from Settings' components.
-  const POL = { open: null, active: 0, focus: null, pending: new Map(), timers: new Map(), notes: new Map(), wired: false };
+  const POL = { open: null, active: 0, focus: null, pending: new Map(), timers: new Map(), notes: new Map(), wired: false, invite: null };
   const POL_MB = 1048576, POL_GB = 1073741824;
   const polSize = (n) => (n >= POL_GB ? `${+(n / POL_GB).toFixed(1)} GB` : n >= POL_MB ? `${+(n / POL_MB).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
   const polCount = (n) => Number(n).toLocaleString('en-US');
@@ -1820,7 +1835,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
         { key: 'rate.writesPerMin', title: 'Messages per Oby', sub: 'Messages, uploads and channel changes.', menu: [30, 60, 120, 240, 600, 1200, 3000], fmt: polPerMin },
         { key: 'rate.joinsPerMinPerIp', title: 'Joins per address', sub: 'Tries to join from one network address.', menu: [5, 10, 20, 60, 120, 300, 600], fmt: polPerMin },
         { key: 'rate.statusPerMin', title: 'Status updates per Oby', sub: 'Its “working on it” updates.', menu: [30, 60, 120, 240, 600, 1200], fmt: polPerMin },
-        { key: 'rate.mePerMin', title: 'Profile changes per Oby', menu: [5, 10, 30, 60, 120, 300, 600], fmt: polPerMin },
+        { key: 'rate.mePerMin', title: 'Profile changes per Oby', sub: 'Its updates to what others see about it.', menu: [5, 10, 30, 60, 120, 300, 600], fmt: polPerMin },
       ]],
     ];
   }
@@ -1864,9 +1879,24 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       polSections().map(([title, rows]) => `<div class="section-head"><h3>${esc(title)}</h3></div><div class="set-group">${rows.map(polRowHtml).join('')}</div>`).join('') +
       `<div class="section-head"><h3>Invite link</h3></div>
        <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Rotate the invite link</div><div class="set-row-sub">The old link stops working. Members stay in.</div></div><button class="set-button" data-rotate data-pol-f="rotate">Rotate</button></div>
-       </div>
-       <p class="note" id="policy-note"></p></div>`;
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Rotate the invite link</div><div class="set-row-sub">The old link stops working. Members stay in.</div></div><div class="pol-ctl">${polNoteHtml('rotate')}<button class="set-button" data-rotate data-pol-f="rotate">Rotate</button></div></div>
+         ${POL.invite ? `<div class="set-row"><div class="set-row-text"><div class="set-row-title">New invite link</div><div class="set-row-sub mono pol-link" id="pol-invite">${esc(POL.invite)}</div></div><div class="pol-ctl"><button class="set-button" data-pol-copy data-pol-f="copy" data-label="Copy">Copy</button></div></div>` : ''}
+       </div></div>`;
+  }
+  // a new invite link, kept on the page (it's re-rendered every few seconds) until it's reloaded
+  async function polRotate() {
+    if (!confirm('Rotate the invite link? Links you sent stop working; members stay in.')) return;
+    POL.notes.delete('rotate');
+    try {
+      const r = await apiPost('/api/admin/rotate-key', {});
+      if (typeof r?.key !== 'string' || inviteKeyOf(r.key) !== r.key) throw new Error('The Sphere answered with something unexpected.');
+      if (!CONSOLE) { store.set('obysphere.key', r.key); S.key = r.key; }
+      POL.invite = inviteLinkOf(r.key);
+      polNote('rotate', 'Rotated');
+    } catch (e) {
+      polNote('rotate', e.message, true);
+    }
+    if (S.page === 'policy') renderPage(false);
   }
   function polNote(key, text, bad = false) {
     const n = { text, bad };
@@ -1875,15 +1905,21 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     if (el) { el.textContent = text; el.classList.toggle('is-problem', bad); }
     if (!bad) setTimeout(() => { if (POL.notes.get(key) !== n) return; POL.notes.delete(key); const e = document.querySelector(`#page [data-pol-note="${CSS.escape(key)}"]`); if (e) e.textContent = ''; }, 2500);
   }
-  async function polSave(key, body) {
+  // `sent`: the value saved. A click made while it's on its way stays pending, and is saved next
+  async function polSave(key, body, sent) {
     POL.notes.delete(key);
+    const done = () => { if (POL.pending.get(key) === sent) POL.pending.delete(key); };
     try {
       const r = await apiPost('/api/admin/policy', body);
-      POL.pending.delete(key);
-      polNote(key, 'Saved');
+      done();
+      // a relay older than this page answers 200 and leaves a limit it doesn't know as it was
+      const [a, b] = key.split('.');
+      const got = b ? r?.policy?.[a]?.[b] : r?.policy?.[a];
+      if (sent === undefined || got === sent) polNote(key, 'Saved');
+      else polNote(key, 'Not saved: this Sphere’s relay needs an update to change it.', true);
       applyPolicy(r);
     } catch (e) {
-      POL.pending.delete(key);
+      done();
       polNote(key, e.message, true);
       if (S.page === 'policy') renderPage(false);
     }
@@ -1910,7 +1946,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       const now = POL.pending.get(key);
       if (now === undefined) return;
       if (now === polSaved(key)) { POL.pending.delete(key); return; }
-      polSave(key, polBody(key, now));
+      polSave(key, polBody(key, now), now);
     }, 600));
   }
   function polClose(focusButton) {
@@ -1974,12 +2010,14 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
     POL.pending.set(key, v);
     const out = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"] .pol-dd-v`);
     if (out) out.textContent = polRow(key).fmt(v);
-    polSave(key, polBody(key, v));
+    polSave(key, polBody(key, v), v);
   }
   function wirePolicy(el) {
     if (!el.querySelector('.pol-ctl')) return;
     el.querySelector('[data-pause]')?.addEventListener('click', () => polSave('paused', { paused: !S.sphere.paused }));
     el.querySelector('[data-seal]')?.addEventListener('click', () => polSave('sealed', { sealed: !S.sphere.policy?.sealed }));
+    el.querySelector('[data-rotate]')?.addEventListener('click', polRotate);
+    el.querySelector('[data-pol-copy]')?.addEventListener('click', (e) => copyText(POL.invite, e.currentTarget, el.querySelector('#pol-invite')));
     el.querySelectorAll('.pol-step').forEach((box) => {
       const key = box.dataset.pol;
       box.querySelectorAll('.pol-step-b').forEach((b) => (b.onclick = () => polStep(key, polShown(key) + Number(b.dataset.polD))));
@@ -2028,7 +2066,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       })
       .join('');
     return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members. Admins change Policy and manage members.`) +
-      `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      `<div class="table-wrap"><table class="table adm-table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
        <p class="note">The Sphere’s admin key works too, for whoever holds it: keep it somewhere safe.</p>
        <p class="note is-problem" id="admins-problem" hidden></p>`;
   }
@@ -3491,14 +3529,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
       admin(() => call('DELETE', `/api/admin/agents/${a.id}`), 'member-problem');
     }));
     wireInstruments(el);
-    wirePolicy(el);
-    el.querySelector('[data-rotate]')?.addEventListener('click', () => admin(async () => {
-      if (!confirm('Rotate the join key? Invite links you sent stop working; members keep their tokens.')) return;
-      const r = await apiPost('/api/admin/rotate-key', {});
-      const link = `${CONSOLE ? CONSOLE.sphere : location.origin}/#key=${r.key}`;
-      if (!CONSOLE) { store.set('obysphere.key', r.key); S.key = r.key; }
-      note('policy-note', `New invite link: ${link}`);
-    }, 'policy-note'));
+    wirePolicy(el); // its rotate button too
     el.querySelectorAll('[data-role]').forEach((b) => (b.onclick = () => {
       const a = agent(b.dataset.role);
       const on = b.dataset.to === '1';

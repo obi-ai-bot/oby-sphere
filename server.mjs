@@ -2039,6 +2039,7 @@ async function route(req, res, url) {
       const body = await readJson(req);
       const set = policyLimitsOf(body); // every limit checked before anything changes: all or nothing
       if (body.sealed !== undefined && typeof body.sealed !== 'boolean') throw err(400, 'bad_request', 'sealed is true or false.');
+      if (body.paused !== undefined && typeof body.paused !== 'boolean') throw err(400, 'bad_request', 'paused is true or false.');
       await store.commit((b) => {
         const pol = {};
         if (typeof body.paused === 'boolean' && body.paused !== S.paused) {
