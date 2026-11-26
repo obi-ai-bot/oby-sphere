@@ -144,7 +144,7 @@ if (!chromium) {
             await page.getByRole('button', { name: 'Event type: All events' }).click();
             await page.getByRole('listbox', { name: 'Event type' }).getByRole('option', { name: /^Members\b/ }).click();
             await page.getByRole('button', { name: 'Event type: Members' }).waitFor();
-            const membersEvents = ['join', 'online', 'offline', 'session', 'keys', 'channel'];
+            const membersEvents = ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'];
             await until(async () => { const d = await shown(); return d.length >= 3 && d.every((e) => membersEvents.includes(e.type)); }, 'only members’ events');
             await noSidewaysScroll(page, vp, 'the audit log, filtered');
             await page.getByRole('button', { name: 'Clear filters' }).click();
@@ -242,6 +242,12 @@ if (!chromium) {
             await title(page, 'Your Oby').waitFor();
             const ask = (text) => world.repInBackground(['ask', 'alice', text, '--profile', 'bob', '--wait', '60']);
             const [askYes, askNo, askMine] = [ask(yes), ask(no), ask(mine)];
+            // What Bob's ask says: how it ended, when it waits that long, or that it waits for Alice
+            // (a rep.mjs that says so at once, #160); either way Traffic shows how it ended, below
+            const bobGets = async (p, words) => {
+              const { out } = await p.exited;
+              assert.ok(out.includes(words) || /asks its owner \("Alice Test"\) before answering; they've been told/.test(out), out);
+            };
             // an item that waits for you (it has no role of its own)
             const card = (text) => page.locator('[data-pending]').filter({ hasText: text });
 
@@ -251,24 +257,35 @@ if (!chromium) {
             await noSidewaysScroll(page, vp, 'Waiting for you');
             await card(yes).getByRole('button', { name: 'Let my Oby answer' }).click();
             await card(yes).waitFor({ state: 'detached' });
-            const answered = await askYes.exited;
-            assert.ok(answered.out.includes(ANSWER), answered.out);
-            assert.ok(world.fake.calls().some((c) => c.prompt.includes(yes)), 'answered by the fake runtime');
+            await bobGets(askYes, ANSWER);
+            await until(() => world.fake.calls().some((c) => c.prompt.includes(yes)), 'the fake runtime to answer');
 
             const runs = world.fake.calls().length;
             await card(no).getByRole('button', { name: 'Decline' }).click();
             await card(no).waitFor({ state: 'detached' });
-            const declined = await askNo.exited;
-            assert.match(declined.out, /Alice Test's Oby isn't taking this ask: its owner declined it/, declined.out);
+            await bobGets(askNo, "Alice Test's Oby isn't taking this ask: its owner declined it");
 
             await card(mine).getByRole('button', { name: 'Answer myself' }).click();
             await card(mine).getByRole('textbox', { name: 'Your answer, sent as yours' }).fill(myAnswer);
             await noSidewaysScroll(page, vp, 'Answer myself');
             await card(mine).getByRole('button', { name: 'Send my answer' }).click();
             await card(mine).waitFor({ state: 'detached' });
-            const written = await askMine.exited;
-            assert.ok(written.out.includes(myAnswer), written.out);
+            await bobGets(askMine, myAnswer);
+
+            // each one in Traffic, as it ended (exact: the questions hold these words too)
+            await goTo(page, 'Traffic');
+            const row = (text) => page.getByRole('row').filter({ hasText: text });
+            await row(yes).getByText('Answered', { exact: true }).waitFor();
+            await row(no).getByText('Declined', { exact: true }).waitFor();
+            await row(mine).getByText('Answered', { exact: true }).waitFor();
             assert.equal(world.fake.calls().length, runs, 'no runtime ran for the declined ask, or the one Alice answered');
+            await row(yes).click();
+            await title(page, 'Exchange').waitFor();
+            await page.getByText(ANSWER).first().waitFor();
+            await goTo(page, 'Traffic');
+            await row(mine).click();
+            await title(page, 'Exchange').waitFor();
+            await page.getByText(myAnswer).first().waitFor();
           });
         });
 
@@ -612,7 +629,8 @@ if (!chromium) {
               await card.waitFor({ state: 'detached' });
               await waiting.exited;
               await goTo(page, 'Settings');
-              await page.getByRole('region', { name: 'Who can ask' }).getByText('@carol · away').waitFor();
+              // Carol's Oby, offline ("away" before #160), and maybe how often it asked today
+              await page.getByRole('region', { name: 'Who can ask' }).getByText(/^@carol · (offline|away)\b/).waitFor();
               await check(page, 'Settings');
               await goTo(page, 'Traffic');
               await page.getByRole('row').filter({ hasText: question }).click();
