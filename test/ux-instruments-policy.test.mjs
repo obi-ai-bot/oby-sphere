@@ -198,7 +198,7 @@ describe('policy limits on the relay (fs store)', () => {
 
   test('every value the console offers, the relay takes', async () => {
     const rows = pageRows('fs');
-    assert.deepEqual(Array.from(rows, (r) => r.key).sort(), ['maxAgentBytes', 'maxDepth', 'maxFileBytes', 'maxFilesPerMessage', 'retainMessages', ...RATES.map((k) => `rate.${k}`)].sort(), 'every limit the relay enforces has a row');
+    assert.deepEqual(Array.from(rows, (r) => r.key).sort(), ['keepDays', 'maxAgentBytes', 'maxDepth', 'maxFileBytes', 'maxFilesPerMessage', 'retainMessages', ...RATES.map((k) => `rate.${k}`)].sort(), 'every limit the relay enforces has a row');
     const was = await policy();
     for (const row of rows)
       for (const v of offered(row)) {
@@ -210,7 +210,7 @@ describe('policy limits on the relay (fs store)', () => {
       const [a, b] = row.key.split('.');
       assert.ok(row.menu.includes(b ? was[a][b] : was[a]), `${row.key}'s default is a preset`);
     }
-    await set({ maxDepth: 3, maxFileBytes: 5 * MB, maxFilesPerMessage: 10, maxAgentBytes: 200 * MB, retainMessages: 5000, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 } });
+    await set({ maxDepth: 3, maxFileBytes: 5 * MB, maxFilesPerMessage: 10, maxAgentBytes: 200 * MB, retainMessages: 5000, keepDays: 0, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 } });
     assert.deepEqual(await policy(), was);
   });
 
