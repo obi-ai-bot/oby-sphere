@@ -359,6 +359,59 @@ if (!chromium) {
           });
         });
 
+        test('Search (#138): a message found from the side panel opens in its conversation, and the relay hears nothing of it', EACH, async (t) => {
+          const words = `The heron count is in: twelve this year. (${vp.name})`;
+          await run(t, alice.url, vp, async (page) => {
+            await title(page, sphere.name).waitFor();
+            await switchView(page, 'Conversation');
+            const thread = page.getByRole('log', { name: 'Messages' });
+            assert.match((await world.rep(['post', words, '--profile', 'bob'])).out, /Posted in #general/);
+            await thread.getByText(words).waitFor();
+            // from here on, what the page asks of the relay (its live stream is open already)
+            const asked = [];
+            page.on('request', (r) => {
+              const u = new URL(r.url());
+              if (u.pathname.startsWith('/api/')) asked.push(`${r.method()} ${u.pathname}${u.search}`);
+            });
+            // / reaches the field when you aren't typing (on a phone, the side panel slides in)
+            await thread.focus();
+            await page.keyboard.press('/');
+            await until(() => page.evaluate(() => document.activeElement?.id === 'search'), 'the search field to have the focus');
+            await page.getByRole('searchbox', { name: 'Search messages' }).fill(`HERON ${vp.name}`);
+            await page.keyboard.press('Enter');
+            const results = page.getByRole('region', { name: `1 result for “HERON ${vp.name}”` });
+            await results.waitFor();
+            await title(page, 'Search').waitFor();
+            await results.getByText(/^Your Oby searched [\d,]+ messages?, back to /).waitFor();
+            const hit = results.getByRole('button', { name: /^Bob Test’s Oby, #general, .+: The heron count is in/ });
+            await until(() => hit.evaluate((b) => b === document.activeElement), 'the focus on the first result (Enter)');
+            assert.equal(await hit.locator('mark').first().textContent(), 'heron', 'the words found are marked');
+            await noSidewaysScroll(page, vp, 'the search results');
+            await hit.click();
+            await title(page, 'general').waitFor();
+            await thread.getByText(words).waitFor();
+            await until(() => page.evaluate(() => document.activeElement?.closest?.('.msg')?.textContent.includes('heron count')), 'the focus on the message found');
+            assert.deepEqual(asked, [], 'the search and the click asked the relay nothing');
+          });
+        });
+
+        test("Search on the Sphere's own page: it searches what it holds, and says what it can't open", EACH, async (t) => {
+          await run(t, `${sphere.url}/#key=${encodeURIComponent(sphere.key)}`, vp, async (page) => {
+            await title(page, sphere.name).waitFor();
+            await switchView(page, 'Conversation');
+            await sidePanel(page);
+            await page.getByRole('searchbox', { name: 'Search messages' }).fill('heron');
+            // a sealed Sphere: the join key alone opens nothing members say
+            const results = page.getByRole('region', { name: 'No results for “heron”' });
+            await results.waitFor();
+            await results.getByText(/^This page holds no messages it can search\. [\d,]+ messages? here (is|are) sealed: only (its|their) readers can open (it|them), in their console\.$/).waitFor();
+            await noSidewaysScroll(page, vp, "the Sphere's own search");
+            await page.keyboard.press('Escape'); // in the field: the search ends
+            await results.waitFor({ state: 'hidden' });
+            assert.equal(await page.getByRole('searchbox', { name: 'Search messages' }).inputValue(), '');
+          });
+        });
+
         // ===== deleting messages (#139)
         test('Conversation: you delete your own message after a confirmation, and everyone sees it go', EACH, async (t) => {
           const words = `Oops, wrong channel: the launch plan (${vp.name})`;
@@ -804,6 +857,13 @@ if (!chromium) {
               await switchView(page, 'Conversation');
               await page.getByRole('log', { name: 'Messages' }).getByText(`The notes, as a file (${vp.name})`).waitFor();
               await check(page, 'the Conversation view');
+              // search (#138): the field, and its results in the thread's place
+              await sidePanel(page);
+              await page.getByRole('searchbox', { name: 'Search messages' }).fill(`notes file ${vp.name}`);
+              await page.getByRole('region', { name: /^\d+ results? for “notes file / }).getByRole('button', { name: /The notes, as a file/ }).first().waitFor();
+              await check(page, 'search results');
+              await page.keyboard.press('Escape'); // in the field: the search ends
+              await page.getByRole('log', { name: 'Messages' }).waitFor();
               await goTo(page, 'Carol Test');
               await page.getByText('Your conversation with Carol Test and their Oby.').waitFor();
               await check(page, 'a direct conversation with an offline member');

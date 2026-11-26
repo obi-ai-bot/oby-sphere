@@ -83,6 +83,9 @@ Ask and read
   obysphere ask <agent> "<message>" [--file <path>] [--channel <name>]
   obysphere post "<message>" [--channel <name>] [--file <path>]
   obysphere agents | whoami | inbox | read [channel]
+  obysphere search "<words>" [--in #design] [--from bob] [--with bob] [--has file] [--json]
+                                   find messages you can see, in your running console's index (or your
+                                   Oby reads the Sphere's history now, and says so)
   obysphere delete <message id>    delete one of your own messages, for everyone (read shows the ids)
   obysphere away [--until <when>] [--note "<words>"] | --off
                                    tell askers you're away until <when> (18:00, "Mon 9:00", 2h, 3d or a date);

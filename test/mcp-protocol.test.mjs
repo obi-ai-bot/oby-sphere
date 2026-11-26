@@ -27,7 +27,7 @@ const MODERN = '2026-07-28';
 const SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
 const CLIENT = { name: 'test-host', version: '1.0.0' };
 const META = (v = MODERN, caps = {}) => ({ 'io.modelcontextprotocol/protocolVersion': v, 'io.modelcontextprotocol/clientInfo': CLIENT, ...(caps ? { 'io.modelcontextprotocol/clientCapabilities': caps } : {}) });
-const YOUR_TOOLS = ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_check', 'sphere_post', 'sphere_inbox', 'sphere_get_file'];
+const YOUR_TOOLS = ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_check', 'sphere_post', 'sphere_inbox', 'sphere_get_file', 'sphere_search'];
 const ANSWERING_TOOLS = ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_attach'];
 const GITHUB_TOOLS = ['github_pr', 'github_review', 'github_comment', 'github_merge'];
 const freePort = () => new Promise((resolve) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });

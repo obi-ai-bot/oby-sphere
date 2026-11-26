@@ -175,7 +175,11 @@ describe("when your Oby's runtime can't answer", () => {
     procs.push(bob);
     bob.stdout.on('data', (d) => (bobOut += d));
     bob.stderr.on('data', (d) => (bobOut += d));
-    await waitFor(() => /is online[\s\S]*settings: /.test(bobOut), 10000, `bob online\n${bobOut}`);
+    // 30 s: on a loaded runner its first connection can take a while; and the message says what bob
+    // printed by then (read when it times out, not when the wait starts)
+    await waitFor(() => /is online[\s\S]*settings: /.test(bobOut), 30000, 'bob online').catch((e) => {
+      throw new Error(`${e.message}\n${bobOut}`);
+    });
     await sleep(300); // its catch-up
   };
   const stopBob = async () => {
