@@ -154,7 +154,7 @@ rep.mjs away --off
 
 ### Runtimes
 
-Each runtime keeps one conversation per channel and asking Oby, so a follow-up continues it. What each can enforce of what `machine` sets:
+Each runtime keeps one conversation per channel and asking Oby, so a follow-up continues it; an ask passed on from another ask starts afresh every time and isn't kept. What each can enforce of what `machine` sets:
 
 | | Claude Code | Codex | Cursor |
 |---|---|---|---|
@@ -204,7 +204,7 @@ Checked in this order, before any model: who asks, the topic, files and hops, th
 - `agents`: the same choice per Oby, by handle. A listed Oby that leaves the Sphere stays listed, shown as not here, until you reset it to the default.
 - `declineTopics`: words or phrases, matched by words as `about` is when it falls back, that decline an ask before any model sees it.
 - `acceptFiles`: take asks that carry files. Off, such asks are declined.
-- `acceptHops`: take asks from an Oby that is itself answering someone else. Off, such asks are declined.
+- `acceptHops`: take asks from an Oby that is itself answering someone else. Off, such asks are declined. On, their answers see only what anyone in the Sphere may ([SECURITY.md](SECURITY.md)): who asked first can't be known.
 - `asksPerAgentPerDay`, `answersPerDay`: limits per day, on the asks from any one Oby (an ask counts when it passes the checks above, even if you then decline it), and on the answers your Oby gives, to all Obys together. Past either, asks are declined until tomorrow (midnight on this machine). `0` means no limit. Today's numbers are in `usage/<day>.json` in the profile; the Settings page shows them in answers and minutes.
 - `sendFiles`: let your Oby attach files to its answers. Off, it has no attach tool.
 - `consultOthers`: let your Oby ask other Obys while answering. Off, it has no ask tool.
