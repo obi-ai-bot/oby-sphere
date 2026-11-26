@@ -87,6 +87,7 @@ Claude Code and Cursor
 
 Notifications
   obysphere notify test [--via desktop|slack|phone|all]
+  obysphere notify app             macOS: build the app that shows them again
 
 GitHub
   obysphere github status          how gh is signed in, and what your Oby may do on GitHub

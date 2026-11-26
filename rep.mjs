@@ -160,6 +160,7 @@ function help() {
   node rep.mjs agents | whoami | inbox | read [channel]
   node rep.mjs inbox --hook [--profile <name>]                     what waits for you, as JSON for a Claude Code SessionStart hook
   node rep.mjs notify test [--via desktop|console|claude|phone|slack|all]   a test notification through each way
+  node rep.mjs notify app      macOS: build Obysphere's app for notifications (~/Applications/Obysphere.app) again
   node rep.mjs ask <agent> "<message>" [--channel general] [--file <path>]
   node rep.mjs post "<message>" [--channel general] [--file <path>]
   node rep.mjs instruments new <name> [--kind prompt|command] | list | check | remove <name>
@@ -4645,8 +4646,10 @@ function redactPaths(text, s) {
 //
 // Every notification starts here, on your machine: only this machine can read a sealed
 // message, and the relay never learns whether, or where, you're notified. The ways:
-//   desktop  macOS (terminal-notifier when it's on your PATH, so a click opens your console;
-//            otherwise osascript), Linux (notify-send), Windows (a PowerShell toast)
+//   desktop  macOS (Obysphere's own small app, ~/Applications/Obysphere.app, built here with the
+//            Xcode command line tools: Obysphere's icon, and a click opens the page in your console;
+//            otherwise terminal-notifier or osascript), Linux (notify-send, with Obysphere's icon),
+//            Windows (a PowerShell toast)
 //   console  your console's page: browser notifications while its tab is hidden, and a count
 //            in the tab title (it reads GET /local/notifications)
 //   claude   your own Claude Code session, through the MCP channel (`rep.mjs mcp`), and the
@@ -4859,6 +4862,9 @@ function notifyOwner(p, event) {
     const ref = String(event.ref || '');
     if (/^[A-Za-z0-9_-]{1,64}$/.test(ref) && !notifyOnce(p, `${event.type}-${ref}`)) return;
     const e = { type: event.type, from: slug(event.from || ''), channel: event.channel ? slug(event.channel) || null : null, title: cleanLine(event.title || '', 140), body: printable(event.body ?? '').trim().slice(0, 4000), ref, about: String(event.about || '') };
+    // the ask it's about, for the page a click opens: an ask to your Oby is its own ref; an answer says which ask
+    const ask = String(event.ask || (e.type === 'asked' || e.type === 'failed' ? ref : ''));
+    if (ID.m.test(ask)) e.ask = ask;
     if (!e.title) e.title = NOTIFY_TITLE[e.type](e);
     // quiet hours: kept in the history (inbox --hook reads it), shown nowhere
     if (e.type !== 'waiting' && inQuiet(n.quiet)) return void notifyRecord(p, notifyNote([e]), { quiet: true });
@@ -4894,12 +4900,26 @@ function notifyFlush(profile) {
 // one notification for a group of the same kind
 function notifyNote(group) {
   const [e] = group;
-  if (group.length === 1) return { type: e.type, count: 1, title: e.title, body: e.body, from: e.from, channel: e.channel };
+  if (group.length === 1) return { type: e.type, count: 1, title: e.title, body: e.body, from: e.from, channel: e.channel, ask: e.ask || null };
   const handles = [...new Set(group.map((x) => x.from).filter(Boolean))];
   const names = handles.slice(0, 5).map((h) => `@${h}`);
   if (handles.length > 5) names.push(`${handles.length - 5} more`);
   const list = names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return { type: e.type, count: group.length, title: NOTIFY_MANY[e.type](group.length), body: names.length ? `From ${list}.` : '', from: handles.join(' '), channel: null };
+}
+
+// where a notification leads (a click on the desktop, the link in Slack): the console's page for
+// it. What waits for you: Your Oby. One ask, answer or failure: its exchange; several: Traffic.
+// A direct message or a mention: its conversation.
+function notifyLink(base, note) {
+  const t = note?.type;
+  const ask = ['asked', 'failed', 'answered'].includes(t);
+  let hash = '';
+  if (t === 'waiting') hash = 'page=you';
+  else if (ask && note.count === 1 && ID.m.test(String(note.ask || ''))) hash = `page=exchange:${note.ask}`;
+  else if (ask) hash = 'page=traffic';
+  else if ((t === 'direct' || t === 'mention') && /^[a-z0-9-]{1,32}$/.test(String(note.channel || ''))) hash = `mode=conversation&c=${note.channel}`;
+  return hash ? `${base}#${hash}` : base;
 }
 
 function notifyWays(n) {
@@ -4908,7 +4928,7 @@ function notifyWays(n) {
 
 // sends one notification through the ways asked for; [{ way, ok, note, id? }], never throws
 async function notifyDispatch(p, note, n, ways) {
-  const link = consoleLink(p);
+  const link = notifyLink(consoleLink(p), note);
   const results = [];
   // the history, and what the console and Claude Code show
   let rec = null;
@@ -4917,7 +4937,7 @@ async function notifyDispatch(p, note, n, ways) {
   } catch {}
   for (const way of ['console', 'claude']) {
     if (!ways[way]) continue;
-    notifyLogLine(way, note, note.body);
+    notifyLogLine(way, note, note.body, link);
     results.push(rec ? { way, ok: true, id: rec.id, note: way === 'console' ? 'recorded: your console shows it in a browser that allows its notifications, while you look elsewhere' : 'recorded: a Claude Code session with the Obysphere channel shows it' } : { way, ok: false, note: "couldn't record it in the profile folder" });
   }
   const jobs = ['desktop', 'phone', 'slack']
@@ -4937,7 +4957,7 @@ async function notifySend(p, way, note, n, link) {
   if (way === 'desktop') {
     // Linux: notify-send takes the words on its command line, where other processes see them
     const body = process.platform !== 'darwin' && process.platform !== 'win32' ? NOTIFY_OPEN : clip(note.body || NOTIFY_OPEN, 160);
-    notifyLogLine('desktop', note, body);
+    notifyLogLine('desktop', note, body, link);
     if (NOTIFY_LOG) return 'recorded in the notification log (OBYSPHERE_NOTIFY_LOG)';
     if (NOTIFY_DRY) return 'not shown (running under node --test)';
     return desktopNotify(p, note.title, body, link, note.type);
@@ -4951,13 +4971,13 @@ async function notifySend(p, way, note, n, link) {
   if (way === 'slack') {
     // Slack's own escaping: no <!channel>, <@someone> or links from other people's words
     const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const text = `${esc(note.title)}. Open your console: <${link}>${full ? `\n${esc(words).split('\n').map((l) => `> ${l}`).join('\n')}` : ''}`;
-    notifyLogLine('slack', note, text);
+    const text = `${esc(note.title)}. Open your console: <${link.replace(/&/g, '&amp;')}>${full ? `\n${esc(words).split('\n').map((l) => `> ${l}`).join('\n')}` : ''}`;
+    notifyLogLine('slack', note, text, link);
     body = JSON.stringify({ text });
     headers = { 'content-type': 'application/json' };
   } else {
     body = full ? words : NOTIFY_OPEN;
-    notifyLogLine('phone', note, body);
+    notifyLogLine('phone', note, body, link);
     // ntfy: the title and priority go in headers (RFC 2047 for anything beyond ASCII)
     const title = /^[\x20-\x7e]*$/.test(note.title) ? note.title : `=?UTF-8?B?${Buffer.from(note.title).toString('base64')}?=`;
     headers = { 'content-type': 'text/plain; charset=utf-8', title, priority: note.type === 'waiting' ? 'high' : 'default' };
@@ -4980,14 +5000,30 @@ function notifyFailedOnce(way, why) {
   notifyState.failed.add(way);
   log(yellow(`  notifications: ${NOTIFY_WAY_LABEL[way] || way} failed: `) + printable(why) + dim(' (said once; asks are answered as usual)'));
 }
-function notifyLogLine(way, note, body) {
+function notifyLogLine(way, note, body, link) {
   if (!NOTIFY_LOG) return;
   try {
-    fs.appendFileSync(NOTIFY_LOG, JSON.stringify({ way, type: note.type, title: note.title, body: String(body ?? '') }) + '\n', { mode: 0o600 });
+    fs.appendFileSync(NOTIFY_LOG, JSON.stringify({ way, type: note.type, title: note.title, body: String(body ?? ''), ...(link ? { link } : {}) }) + '\n', { mode: 0o600 });
   } catch {}
 }
 
-function desktopNotify(p, title, body, link, type = 'test') {
+async function desktopNotify(p, title, body, link, type = 'test') {
+  if (process.platform === 'darwin') {
+    try {
+      return await macNotify(p, title, body, link, type);
+    } catch (e) {
+      if (!e.fallback) throw e; // macOS said no (you turned Obysphere's notifications off): nothing else shows it
+      if (!notifyState.failed.has('notifier')) {
+        notifyState.failed.add('notifier');
+        log(yellow("  notifications: Obysphere's app for them: ") + printable(e.message) + dim(" (osascript instead: Script Editor's icon, and a click opens Script Editor)"));
+      }
+    }
+  }
+  return desktopNotifyPlain(p, title, body, link, type);
+}
+
+// terminal-notifier or osascript on macOS, notify-send on Linux, a toast on Windows
+function desktopNotifyPlain(p, title, body, link, type) {
   return new Promise((resolve, reject) => {
     let bin;
     let args = [];
@@ -5017,7 +5053,10 @@ function desktopNotify(p, title, body, link, type = 'test') {
         "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show([Windows.UI.Notifications.ToastNotification]::new($x))",
         '',
       ].join('\n');
-    } else [bin, args] = ['notify-send', ['--app-name=Obysphere', '--', title, body]];
+    } else {
+      const icon = notifierIcon();
+      [bin, args] = ['notify-send', ['--app-name=Obysphere', ...(icon ? [`--icon=${icon}`] : []), '--', title, body]];
+    }
     let child;
     try {
       child = spawn(bin, args, { stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'], windowsHide: true });
@@ -5044,6 +5083,219 @@ function desktopNotify(p, title, body, link, type = 'test') {
     }
   });
 }
+// ---- macOS: Obysphere's own small app for notifications, ~/Applications/Obysphere.app.
+// macOS shows a notification from osascript (or from a script app) with Script Editor's icon, and a
+// click opens Script Editor; and it lets an app ask to notify only from an Applications folder. So
+// Obysphere builds its own app there, once, from the Swift below, with the Xcode command line tools
+// (the ones git and Homebrew need: xcode-select --install), signed for this Mac only (ad hoc). It
+// has Obysphere's name and icon, one bundle id (so one entry in System Settings › Notifications),
+// and opens a notification's page in your console when you click it. It's rebuilt when
+// NOTIFIER_VERSION changes; `notify app` rebuilds it by hand. Without the tools, osascript as before.
+// OBYSPHERE_NOTIFIER_APP=<path>.app builds it elsewhere (tests): as dev.oby.obysphere.test, and not
+// registered with LaunchServices, so it never stands in for the real one.
+const NOTIFIER_VERSION = '1';
+const NOTIFIER_ELSEWHERE = !!process.env.OBYSPHERE_NOTIFIER_APP;
+const NOTIFIER_ID = NOTIFIER_ELSEWHERE ? 'dev.oby.obysphere.test' : 'dev.oby.obysphere';
+const NOTIFIER_SWIFT = String.raw`import AppKit
+import UserNotifications
+
+// Obysphere's notifier. "Obysphere --note <file>" reads {title, body, url, group, id} from the file,
+// removes it, shows the notification and writes <file>.done: ok, not-allowed or error. Opened with
+// no note (a click on one of its notifications), it opens that notification's url, then quits.
+final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+  func applicationDidFinishLaunching(_ n: Notification) {
+    UNUserNotificationCenter.current().delegate = self
+    let args = CommandLine.arguments
+    if let i = args.firstIndex(of: "--note"), i + 1 < args.count { post(args[i + 1]) }
+    else { DispatchQueue.main.asyncAfter(deadline: .now() + 5) { exit(0) } }
+  }
+  func done(_ path: String, _ word: String, _ code: Int32) -> Never {
+    try? word.write(toFile: path + ".done", atomically: true, encoding: .utf8)
+    exit(code)
+  }
+  func post(_ path: String) {
+    guard let data = FileManager.default.contents(atPath: path),
+          let note = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] else { done(path, "error: no note", 2) }
+    try? FileManager.default.removeItem(atPath: path)
+    let center = UNUserNotificationCenter.current()
+    center.requestAuthorization(options: [.alert]) { allowed, _ in
+      guard allowed else { self.done(path, "not-allowed", 3) }
+      let content = UNMutableNotificationContent()
+      content.title = note["title"] ?? "Obysphere"
+      content.body = note["body"] ?? ""
+      if let g = note["group"] { content.threadIdentifier = g }
+      if let u = note["url"] { content.userInfo = ["url": u] }
+      let request = UNNotificationRequest(identifier: note["id"] ?? UUID().uuidString, content: content, trigger: nil)
+      center.add(request) { error in self.done(path, error == nil ? "ok" : "error: \(error!.localizedDescription)", error == nil ? 0 : 4) }
+    }
+    // the first time, macOS asks you whether Obysphere may notify: wait for your answer, not forever
+    DispatchQueue.main.asyncAfter(deadline: .now() + 120) { exit(5) }
+  }
+  // a click: open its page in your console (only ever an http:// address on this machine)
+  func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse, withCompletionHandler finish: @escaping () -> Void) {
+    if let s = r.notification.request.content.userInfo["url"] as? String, s.hasPrefix("http://"), let u = URL(string: s) { NSWorkspace.shared.open(u) }
+    finish()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+  }
+  func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification, withCompletionHandler finish: @escaping (UNNotificationPresentationOptions) -> Void) {
+    finish([.banner, .list])
+  }
+}
+let app = NSApplication.shared
+let notifier = Notifier()
+app.delegate = notifier
+app.setActivationPolicy(.accessory)
+app.run()
+`;
+
+const notifierPath = () => (process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
+// Obysphere's icon (the plugin's), beside this file: Linux's notify-send and the Mac app use it
+function notifierIcon() {
+  const f = path.join(path.dirname(SELF), 'plugins', 'obysphere', 'assets', 'icon.png');
+  return fs.existsSync(f) ? f : null;
+}
+// the app as this version builds it is there
+function notifierCurrent(app) {
+  try {
+    const plist = fs.readFileSync(path.join(app, 'Contents', 'Info.plist'), 'utf8');
+    return plist.includes(`<key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string>`) && fs.statSync(path.join(app, 'Contents', 'MacOS', 'Obysphere')).isFile();
+  } catch {
+    return false;
+  }
+}
+// a program's result: { code, out, err }; never rejects (a missing program is code -1)
+function runQuiet(bin, args, timeoutMs = 120e3) {
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let child;
+    try {
+      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      return resolve({ code: -1, out, err: e.message });
+    }
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ code: -1, out, err: e.code === 'ENOENT' ? `${path.basename(bin)} isn't installed` : e.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, out, err });
+    });
+  });
+}
+const fallback = (message) => Object.assign(new Error(message), { fallback: true });
+
+let notifierBuilding = null; // one build at a time in this process
+function ensureNotifier({ rebuild = false } = {}) {
+  const app = notifierPath();
+  if (!rebuild && notifierCurrent(app)) return Promise.resolve(app);
+  return (notifierBuilding ||= buildNotifier(app).finally(() => (notifierBuilding = null)));
+}
+// builds the app beside where it goes (so it moves into place in one rename), then swaps it in
+async function buildNotifier(app) {
+  if (process.platform !== 'darwin') throw fallback('only on macOS');
+  if ((await runQuiet('xcode-select', ['-p'], 10e3)).code !== 0) throw fallback("the Xcode command line tools aren't installed (xcode-select --install), and Obysphere's app for notifications is built with them");
+  const parent = path.dirname(app);
+  fs.mkdirSync(parent, { recursive: true });
+  const work = fs.mkdtempSync(path.join(parent, '.obysphere-notifier-'));
+  try {
+    const built = path.join(work, 'Obysphere.app');
+    fs.mkdirSync(path.join(built, 'Contents', 'MacOS'), { recursive: true });
+    fs.mkdirSync(path.join(built, 'Contents', 'Resources'), { recursive: true });
+    fs.writeFileSync(path.join(work, 'main.swift'), NOTIFIER_SWIFT);
+    const sw = await runQuiet('swiftc', ['-O', path.join(work, 'main.swift'), '-o', path.join(built, 'Contents', 'MacOS', 'Obysphere')]);
+    if (sw.code !== 0) throw fallback(`swiftc couldn't build it: ${cleanLine(sw.err || sw.out, 200)}`);
+    // the icon: Obysphere's, at every size macOS asks for (an app without one still notifies)
+    const png = notifierIcon();
+    let icon = false;
+    if (png) {
+      const set = path.join(work, 'Obysphere.iconset');
+      fs.mkdirSync(set);
+      let ok = true;
+      for (const [px, name] of [[16, '16x16'], [32, '16x16@2x'], [32, '32x32'], [64, '32x32@2x'], [128, '128x128'], [256, '128x128@2x'], [256, '256x256'], [512, '256x256@2x'], [512, '512x512']])
+        ok = ok && (await runQuiet('sips', ['-z', String(px), String(px), png, '--out', path.join(set, `icon_${name}.png`)], 30e3)).code === 0;
+      icon = ok && (await runQuiet('iconutil', ['-c', 'icns', set, '-o', path.join(built, 'Contents', 'Resources', 'Obysphere.icns')], 30e3)).code === 0;
+    }
+    const plist = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+      '<plist version="1.0"><dict>',
+      `<key>CFBundleIdentifier</key><string>${NOTIFIER_ID}</string>`,
+      '<key>CFBundleName</key><string>Obysphere</string>',
+      '<key>CFBundleDisplayName</key><string>Obysphere</string>',
+      '<key>CFBundleExecutable</key><string>Obysphere</string>',
+      ...(icon ? ['<key>CFBundleIconFile</key><string>Obysphere</string>'] : []),
+      '<key>CFBundlePackageType</key><string>APPL</string>',
+      `<key>CFBundleShortVersionString</key><string>${NOTIFIER_VERSION}</string>`,
+      `<key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string>`,
+      '<key>LSUIElement</key><true/>', // no Dock icon, no menu: it shows a notification and quits
+      '<key>LSMinimumSystemVersion</key><string>11.0</string>',
+      '</dict></plist>',
+      '',
+    ].join('\n');
+    fs.writeFileSync(path.join(built, 'Contents', 'Info.plist'), plist);
+    const sign = await runQuiet('codesign', ['--force', '--sign', '-', built], 60e3);
+    if (sign.code !== 0) throw fallback(`codesign couldn't sign it: ${cleanLine(sign.err || sign.out, 200)}`);
+    // swapped in whole: an older one moves aside first, and goes
+    const old = fs.existsSync(app) ? path.join(work, 'old.app') : null;
+    if (old) fs.renameSync(app, old);
+    fs.renameSync(built, app);
+    // LaunchServices learns it now, so the first click on a notification finds it
+    if (!NOTIFIER_ELSEWHERE) await runQuiet('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', app], 30e3);
+    return app;
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
+// one notification through the app: the words go in a file (0600) the app reads and removes, never
+// on a command line; it answers in <file>.done
+async function macNotify(p, title, body, link, type) {
+  const fresh = !notifierCurrent(notifierPath());
+  const app = await ensureNotifier();
+  // one kind of notification at a time per profile: a newer one of that kind replaces the last
+  const note = { title: String(title), body: String(body), url: link, group: `obysphere-${p.profile}`, id: `obysphere-${p.profile}-${type}` };
+  let said = await macPost(app, note);
+  // just built: macOS may not know the app yet for a moment, and says no once
+  if (said === 'not-allowed' && fresh) {
+    await new Promise((r) => setTimeout(r, 1500));
+    said = await macPost(app, note);
+  }
+  if (said === 'ok') return 'shown by the Obysphere app (a click opens it in your console)';
+  if (said === 'not-allowed') throw new Error("macOS doesn't let Obysphere notify: turn it on in System Settings › Notifications › Obysphere");
+  if (said === null) return 'sent to the Obysphere app (the first time, macOS asks whether Obysphere may notify you)';
+  throw fallback(cleanLine(said, 200));
+}
+// what the app said: ok, not-allowed, an error, or null (no answer in time: macOS is asking you)
+async function macPost(app, note) {
+  const dir = path.join(HOME, 'notifier');
+  // what an earlier one left (an answer that came after we stopped waiting): gone after 10 minutes
+  try {
+    for (const f of fs.readdirSync(dir)) if (/^[0-9a-f]{16}\.json(\.done)?$/.test(f) && Date.now() - fs.statSync(path.join(dir, f)).mtimeMs > 600e3) fs.rmSync(path.join(dir, f), { force: true });
+  } catch {}
+  const file = path.join(dir, `${randomBytes(8).toString('hex')}.json`);
+  writeSecret(file, note);
+  const opened = await runQuiet('open', ['-n', '-g', app, '--args', '--note', file], 15e3);
+  if (opened.code !== 0) {
+    fs.rmSync(file, { force: true });
+    throw fallback(`macOS couldn't open it: ${cleanLine(opened.err || opened.out, 200)}`);
+  }
+  const doneFile = `${file}.done`;
+  const until = Date.now() + NOTIFY_TIMEOUT_MS;
+  while (Date.now() < until && !fs.existsSync(doneFile)) await new Promise((r) => setTimeout(r, 100));
+  try {
+    const said = fs.readFileSync(doneFile, 'utf8').trim();
+    fs.rmSync(doneFile, { force: true });
+    return said;
+  } catch {
+    return null;
+  }
+}
+
 function onPath(name) {
   for (const d of String(process.env.PATH || '').split(path.delimiter)) {
     if (!d) continue;
@@ -5168,7 +5420,7 @@ async function noticeMessage(p, m) {
     if (!type) return;
     const from = slug(agents.get(m.from)?.name) || 'unknown';
     const title = type !== 'answered' ? null : m.meta?.declined ? `@${from} declined your ask` : m.meta?.error ? `@${from} couldn't answer your ask` : null;
-    notifyOwner(p, { type, from, channel: m.channel, body: o.text, ref: m.id, ...(title ? { title } : {}) });
+    notifyOwner(p, { type, from, channel: m.channel, body: o.text, ref: m.id, ...(type === 'answered' ? { ask: m.replyTo } : {}), ...(title ? { title } : {}) });
   } catch {}
 }
 async function myAsk(api, p, id) {
@@ -5292,8 +5544,19 @@ async function notifyTest(p, via = 'all') {
 }
 
 async function notifyCmd() {
+  // macOS: build (again) Obysphere's app for notifications, ~/Applications/Obysphere.app
+  if (pos[0] === 'app') {
+    if (process.platform !== 'darwin') die('notify app is for macOS: elsewhere, notifications need no app of their own.');
+    try {
+      const app = await ensureNotifier({ rebuild: true });
+      console.log(`${green('✓')} Obysphere's app for notifications is ready: ${app}\n  ${dim(`It shows your notifications with Obysphere's icon, and a click opens them in your console. Try it: ${meCmd()} notify test --via desktop`)}`);
+    } catch (e) {
+      die(`Obysphere's app for notifications wasn't built: ${e.message}`);
+    }
+    return;
+  }
   const via = typeof opt.via === 'string' ? opt.via : 'all';
-  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: ${meCmd()} notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]`);
+  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: ${meCmd()} notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]\n       ${meCmd()} notify app   (macOS: build Obysphere's app for notifications again)`);
   const p = loadProfile();
   const { results, settingsError } = await notifyTest(p, via);
   if (settingsError) log(yellow('  your settings need fixing, so the test used the defaults: ') + settingsError);
