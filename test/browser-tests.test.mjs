@@ -199,8 +199,8 @@ if (!chromium) {
             await title(page, 'Settings').waitFor();
             const sendFiles = page.getByRole('switch', { name: 'Send files back' });
             const wasOn = (await sendFiles.getAttribute('aria-checked')) === 'true';
-            // what saving says, by the section buttons (on a phone it isn't shown)
-            const state = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('status', { includeHidden: true });
+            // what saving says, by the section buttons (on a phone not shown, but still said to a screen reader)
+            const state = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('status');
             // a list of words: each one a chip, added with Enter
             await page.getByRole('textbox', { name: 'Decline asks about: add' }).fill(`salary, hiring, ${topic}`);
             await page.keyboard.press('Enter');
