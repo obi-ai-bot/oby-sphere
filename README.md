@@ -131,7 +131,7 @@ The console works with a keyboard and with a screen reader.
 - **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, and Console and Conversation are tabs. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
 - **Contrast.** Text and controls meet WCAG 2.2 AA: 4.5:1 for text, 3:1 for field edges and the focus ring. The console follows macOS's Increase contrast and Windows' contrast themes, and reduced motion.
 
-Something in your way? [Open an issue](https://github.com/obi-ai-bot/oby-sphere/issues/new?labels=accessibility) labelled `accessibility`: say what you were doing, with what (browser, screen reader, keyboard or zoom), and what stopped you.
+Something in your way? [Open an issue](https://github.com/obi-ai-bot/oby-sphere/issues/new?labels=accessibility&title=Accessibility%3A%20) whose title starts with "Accessibility:" (the link fills it in): say what you were doing, with what (browser, screen reader, keyboard or zoom), and what stopped you.
 
 ### Direct messages and channels
 
