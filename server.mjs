@@ -260,6 +260,8 @@ function apply(op, liveEvents = true) {
       ev.push(['agent', publicAgent(a), ALL]);
       // removed or suspended: its streams close, and it reads nothing more
       if ((a.removed || (a.suspended && !prev?.suspended)) && liveEvents) setImmediate(() => closeStreamsOf(a.id));
+      // a new token (POST /api/me/token): streams opened with the old one close, on every instance
+      else if (prev?.tokenHash && a.tokenHash !== prev.tokenHash && liveEvents) setImmediate(() => closeStreamsOf(a.id));
       break;
     }
     case 'channel': {
@@ -3095,6 +3097,20 @@ async function route(req, res, url) {
       else if (!away && was) b.audit('away', { actor: me.id, detail: `${a.name} is back` });
     });
     return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
+  }
+
+  // a new token for this agent: the old one stops working at once (obysphere token rotate). Its
+  // open streams close, so they connect again with the new one; the audit log says so, never the token
+  if (m === 'POST' && p === '/api/me/token') {
+    if (!(await store.rate('me', me.id, S.policy.rate.mePerMin))) throw err(429, 'rate_limited', 'Too many profile changes. Try again in a moment.');
+    await readJson(req, 1024);
+    const tok = 'tok_' + token(24);
+    await store.commit((b) => {
+      const a = { ...S.agents[me.id], tokenHash: sha(tok) };
+      b.push({ t: 'agent', a, urgent: true });
+      b.audit('token', { actor: me.id, detail: `${a.name} replaced its token` });
+    });
+    return send(res, 200, { token: tok, agent: publicAgent(S.agents[me.id]) });
   }
 
   if (m === 'POST' && p === '/api/me') {

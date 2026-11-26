@@ -54,6 +54,10 @@ const CONTRACT = {
   away: { flags: ['--until', '--note', '--off'] },
   // the menu bar icon (#163)
   menubar: { subs: { on: [], off: [] } },
+  // security: the check, lockdown, a new token
+  security: { flags: ['--json', '--no-scan'] },
+  lockdown: { flags: ['--off', '--note'] },
+  token: { subs: { rotate: ['--yes'] } },
   // deleting your own message (#139)
   delete: {},
   // obysphere.mjs (cli)

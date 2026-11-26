@@ -213,7 +213,7 @@ describe('notifications', () => {
     assert.equal(r.code, 0, r.out);
     assert.ok(!('notify' in JSON.parse(r.stdout)), 'nothing written for a file that has no notify section');
     r = await rep(['settings', '--profile', 'bob']);
-    assert.match(r.stdout, /Notifications\n {2}ways: this computer, your console, Claude Code\n {2}for: what waits for you, asks to your Oby, direct messages, mentions, answers to your asks, asks your Oby couldn't answer, your Oby pausing \(out of usage, signed out\), your Oby back after a pause\n {2}quiet hours: none/);
+    assert.match(r.stdout, /Notifications\n {2}ways: this computer, your console, Claude Code\n {2}for: what waits for you, asks to your Oby, direct messages, mentions, answers to your asks, asks your Oby couldn't answer, your Oby pausing \(out of usage, signed out\), your Oby back after a pause, asks that make your Oby try what you don't allow\n {2}quiet hours: none/);
 
     const port = await freePort();
     uiBase = `http://127.0.0.1:${port}`;
@@ -228,7 +228,7 @@ describe('notifications', () => {
     }, 8000, 'the console');
     const g = await local('GET', '/local/settings');
     assert.equal(g.status, 200);
-    assert.deepEqual(g.settings.notify, { desktop: true, console: true, claude: true, phone: { url: null, content: 'summary' }, slack: { webhookUrl: null, content: 'summary' }, events: { waiting: true, asked: true, direct: true, mention: true, answered: true, failed: true, paused: true, resumed: true }, quiet: { from: null, to: null } });
+    assert.deepEqual(g.settings.notify, { desktop: true, console: true, claude: true, phone: { url: null, content: 'summary' }, slack: { webhookUrl: null, content: 'summary' }, events: { waiting: true, asked: true, direct: true, mention: true, answered: true, failed: true, paused: true, resumed: true, blocked: true }, quiet: { from: null, to: null } });
     // the console's address, for the links in notifications
     assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'bob', 'notify', 'console.json'), 'utf8')).url, `http://bob.localhost:${port}/`);
 

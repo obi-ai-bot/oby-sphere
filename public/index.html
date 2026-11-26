@@ -740,6 +740,20 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .look-dot { display: block; width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 .look-colors [aria-checked="true"] .look-dot { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ink); }
 .look-note { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
+/* your Oby's security (Your Oby): the check, what answers tried, lockdown and a new token */
+#you-security { margin-bottom: 12px; }
+.sec { display: grid; gap: 10px; padding: 14px 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sec-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sec-rows { display: grid; gap: 8px; }
+.sec-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; }
+.sec-row .status { margin-top: 5px; }
+.sec-title { color: var(--ink); font-size: var(--text-md); line-height: 20px; }
+.sec-detail, .sec-fix, .sec-lock { color: var(--muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.sec-fix::before { content: '→ '; }
+.sec-row.is-risk .sec-title { color: var(--danger); }
+.sec-lock { margin: 0; color: var(--needs); }
+.sec-blocked ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
 .icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
@@ -1709,6 +1723,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       if (fresh) YOU.editing = false;
       draw(pageYou());
       loadYou(); // away and held asks, from this machine
+      if (fresh || !SEC.report) loadSecurity(); // the security check: it reads your folders, so after the page
     }
     else if (p === 'settings' && S.me && CONSOLE) { if (fresh || !document.getElementById('settings-root')) loadSettings(); return; }
     else { S.page = 'overview'; return renderOverview(true); }
@@ -2865,7 +2880,60 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   function pageYou() {
     return head(`<span style="display:inline-flex;align-items:center;gap:10px" id="you-face">${obyPic(S.agents.get(S.me.id) || S.me, 28)}Your Oby</span>`, youSub(), CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
-      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div class="section-head"><h2>Look</h2></div><div id="you-look">${lookHtml()}</div><div id="you-rest">${youRest()}</div>`;
+      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div class="section-head"><h2>Look</h2></div><div id="you-look">${lookHtml()}</div>${CONSOLE ? `<div class="section-head"><h2 id="you-security-h">Security</h2></div><div id="you-security" role="region" aria-labelledby="you-security-h">${securityHtml()}</div>` : ''}<div id="you-rest">${youRest()}</div>`;
+  }
+
+  // ---------------------------------------------------------------- your Oby's security: the check, lockdown, a new token
+  // GET /local/security (rep.mjs securityReport): what your Oby can reach, who may ask it, whether the
+  // Sphere is sealed, secrets in its folders, its files, and asks that made it try what you don't allow.
+  // A rep.mjs from before it answers 404, and the card says nothing.
+  const SEC = { report: null, off: false, busy: false, loading: false };
+  const SEC_MARK = { risk: 'error', warn: 'paused', info: 'declined', ok: 'online' };
+  const SEC_SAID = { risk: 'Needs attention', warn: 'Worth a look', info: 'Looks right', ok: 'Looks right' };
+  async function loadSecurity() {
+    if (!CONSOLE || !S.me || SEC.off || SEC.loading) return;
+    SEC.loading = true;
+    try { SEC.report = await local('GET', '/local/security'); } catch (e) { if (e.status === 404) SEC.off = true; } finally { SEC.loading = false; }
+    paintSecurity();
+  }
+  function paintSecurity() {
+    const box = document.getElementById('you-security');
+    if (box && a11yDraw(box, securityHtml())) wireSecurity(box);
+  }
+  function securityHtml() {
+    if (SEC.off) return '<p class="empty-line">Update your Oby to see its security check.</p>';
+    const r = SEC.report;
+    if (!r) return '<p class="empty-line">Checking what your Oby can reach…</p>';
+    const worst = r.checks[0]?.level || 'ok';
+    const lock = r.lockdown;
+    const rows = r.checks.map((c) => `<div class="sec-row is-${esc(c.level)}"><span class="status"><span class="status-dot is-${SEC_MARK[c.level] || 'declined'}"></span></span><div class="sec-text"><div class="sec-title">${esc(c.title)}</div>${c.detail ? `<div class="sec-detail">${esc(c.detail)}</div>` : ''}${c.fix && c.level !== 'ok' ? `<div class="sec-fix">${esc(c.fix)}</div>` : ''}</div></div>`).join('');
+    const blocked = (r.blocked || []).slice(-5).reverse().map((b) => `<li><span class="mono">${esc(whenWords(b.ts))}</span> @${esc(b.from)}: ${esc(b.denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; '))}</li>`).join('');
+    return `<div class="set-group"><div class="sec">
+      <div class="sec-head"><span class="state"><span class="status"><span class="status-dot is-${SEC_MARK[worst]}"></span></span><strong>${esc(lock ? 'Locked down' : SEC_SAID[worst])}</strong></span>
+        <span class="sec-actions"><button type="button" class="set-button" data-sec="again">Check again</button>${lock ? '<button type="button" class="set-button" data-sec="unlock">Lift lockdown</button>' : '<button type="button" class="set-button is-danger" data-sec="lock" title="Every ask waits for you; answers reach nothing but your folders">Lock down</button>'}<button type="button" class="set-button" data-sec="token" title="If this computer or your profile may have leaked">New token…</button></span></div>
+      ${lock ? `<p class="sec-lock">Since ${esc(whenWords(lock.at))}: every ask waits for you, and your Oby answers with no shell, web, browser, MCP servers, writes, GitHub or files. Your settings are as you left them.</p>` : ''}
+      <div class="sec-rows">${rows}</div>
+      ${blocked ? `<div class="sec-blocked"><div class="sec-title">What answers tried that you don’t allow</div><ul>${blocked}</ul></div>` : ''}
+      <span class="saved-note" data-sec-note></span>
+    </div></div>`;
+  }
+  function wireSecurity(box) {
+    const say = (words, bad = false) => { const n = box.querySelector('[data-sec-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } a11ySay(bad ? 'problem' : 'note', words); };
+    box.querySelectorAll('[data-sec]').forEach((b) => (b.onclick = async () => {
+      if (SEC.busy) return;
+      const what = b.dataset.sec;
+      if (what === 'token' && !confirm('A new token for your Oby? The old one stops working at once. Your Oby, console and Claude Code sessions on this computer pick up the new one by themselves.')) return;
+      SEC.busy = true;
+      try {
+        if (what === 'lock' || what === 'unlock') await local('POST', '/local/lockdown', { on: what === 'lock' });
+        if (what === 'token') await local('POST', '/local/token', { rotate: true });
+        SEC.report = await local('GET', '/local/security');
+        paintSecurity();
+        say(what === 'lock' ? 'Locked down' : what === 'unlock' ? 'Lockdown lifted' : what === 'token' ? 'Your Oby has a new token' : 'Checked');
+      } catch (e) {
+        say(e.message || 'That didn’t work.', true);
+      } finally { SEC.busy = false; }
+    }));
   }
 
   // ---------------------------------------------------------------- your Oby's look: everyone in the Sphere sees it
@@ -4759,6 +4827,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const NOTIFY_EVENT_ROWS_NEWER = [
     ['paused', 'Your Oby pauses: out of usage or signed out'],
     ['resumed', 'Your Oby is back after a pause'],
+    ['blocked', 'An ask makes your Oby try what you don’t allow'],
   ];
   const CONTENT_SUB = { summary: 'Who, and what kind. Never the words.', full: 'Also the words, up to 600 characters.' };
   const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'what to notify you about', quiet: 'quiet hours' };

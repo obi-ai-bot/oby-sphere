@@ -40,7 +40,7 @@ const consoleCmd = (profile) => (process.env.OBYSPHERE_CLI ? `obysphere open --p
 // profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
 const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
-const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off', 'if-needed']);
+const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off', 'if-needed', 'no-scan', 'yes']);
 // What an answering session may do. Reading, searching and listing files works
 // inside the owner's chosen folder only, with no rule needed (in dontAsk mode
 // anything outside it is denied). A bare "Read" rule would open every file on
@@ -335,6 +335,9 @@ function help() {
                                          "Mon 9:00" (the next Monday), 2h or 3d; at most 30 days ahead
   node rep.mjs away --off | away         back now | what askers see now
   node rep.mjs post "<message>" [--channel general] [--file <path>]
+  node rep.mjs security [--json] [--no-scan]   what your Oby can reach, who may ask it, secrets in its folders, and what to do
+  node rep.mjs lockdown [--off]          every ask waits for you, and answers reach nothing but your folders, until --off
+  node rep.mjs token rotate [--yes]      a new token for your Oby: the old one stops working at once
   node rep.mjs delete <message id>       delete one of your own messages (a post or an ask you wrote, a reply
                                          your Oby gave): gone for everyone; read shows the ids
   node rep.mjs instruments new <name> [--kind prompt|command] | list | check | remove <name>
@@ -843,7 +846,9 @@ async function ui() {
       if (req.method === 'POST' && url.pathname === '/api/admin/claim' && req.headers['x-admin-key']) headers['x-admin-key'] = String(req.headers['x-admin-key']).slice(0, 200);
       const ac = new AbortController();
       res.on('close', () => ac.abort());
-      const r = await fetch(p.sphere + url.pathname + url.search, { method: req.method, headers, body, signal: ac.signal, redirect: 'error' });
+      const relay = () => fetch(p.sphere + url.pathname + url.search, { method: req.method, headers: { ...headers, authorization: `Bearer ${p.token}` }, body, signal: ac.signal, redirect: 'error' });
+      let r = await relay();
+      if (r.status === 401 && tokenChanged(p)) r = await relay(); // a new token, from token rotate
       const out = {};
       for (const h of ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy', 'x-content-sha256']) {
         const v = r.headers.get(h);
@@ -970,6 +975,23 @@ async function localApi(req, res, url, p) {
     if (route.startsWith('/local/notif')) return await notifyLocalApi(m, route, url, res, p, json);
     if (route === '/local/held') return await heldLocalApi(m, res, p, json); // asks held while a runtime can't answer
     if (route === '/local/away') return await awayLocalApi(m, res, p, json);
+    if (route === '/local/security' && m === 'GET') return sendJson(res, 200, await securityReport(p, { scan: url.searchParams.get('scan') !== '0' }));
+    if (route === '/local/lockdown' && m === 'POST') {
+      const b = await json();
+      if (typeof b.on !== 'boolean') return sendJson(res, 400, { error: 'on: true or false', field: 'on' });
+      setLockdown(p, b.on, typeof b.why === 'string' ? b.why : '');
+      return sendJson(res, 200, { lockdown: readLockdown(p) });
+    }
+    if (route === '/local/token' && m === 'POST') {
+      const b = await json();
+      if (b.rotate !== true) return sendJson(res, 400, { error: 'rotate: true', field: 'rotate' });
+      try {
+        await rotateToken(p);
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, e.code === 'relay_too_old' ? 409 : 502, { error: printable(e.message), code: e.code || 'failed' });
+      }
+    }
     if (route === '/local/environment' && m === 'GET') return sendJson(res, 200, await localEnvironment(p, { stale: true }));
     if (route === '/local/version' && m === 'GET') return sendJson(res, 200, localVersion());
     if (route === '/local/pending' && m === 'GET') {
@@ -977,7 +999,7 @@ async function localApi(req, res, url, p) {
       let s = null; // always: "Always answer @x" is offered for an Oby you haven't listed in Who can ask
       try {
         s = loadSettings(p);
-        risky = riskyReach(s);
+        risky = riskyReach(lockdownOverlay(p, s)); // locked down: nothing to let it use
       } catch {}
       // instruments: a use of a command instrument is run or not; "everything you allow" doesn't apply to it
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
@@ -1941,7 +1963,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     agentsById = new Map((agents || []).filter(validAgent).map((a) => [a.id, a]));
   };
   // read again at every ask: a change in the console or the file applies at the next one
-  const settingsNow = () => withOverrides(loadSettings(p), overrides);
+  const settingsNow = () => withOverrides(lockdownOverlay(p, loadSettings(p)), overrides); // lockdown: laid over your settings
   await ensurePublished(api, p);
 
   // what this machine tells the Sphere about itself: folder names and kinds of tools,
@@ -2651,6 +2673,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       }
       const durationMs = Date.now() - started;
       addAnswer(p, durationMs / 1000);
+      if (r.denied?.length) noteBlocked(p, { msg, from: ctx.from, denied: r.denied }); // it tried what your settings block
       // it handed the ask to you in this run (sphere_ask_owner): what it wrote isn't sent; you decide
       const handed = readHandoff(p, msg.id);
       if (handed && Date.parse(handed.at) >= started - 1000) {
@@ -3139,6 +3162,7 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
       model: Object.keys(j.modelUsage || {})[0] || model || use.model || null,
       tools: used,
       apiKeySource,
+      denied: deniedOf(j), // what it tried that your settings blocked (security: blocked attempts)
     };
   });
 }
@@ -7173,10 +7197,10 @@ async function deleteCmd() {
 // instead of acting. The console and Claude Code still record here, and a Slack or phone
 // address on this machine (localhost) is still called, so a test can read what it gets.
 
-const NOTIFY_EVENTS = ['waiting', 'asked', 'direct', 'mention', 'answered', 'failed', 'paused', 'resumed'];
+const NOTIFY_EVENTS = ['waiting', 'asked', 'direct', 'mention', 'answered', 'failed', 'paused', 'resumed', 'blocked'];
 const NOTIFY_WAYS = ['desktop', 'console', 'claude', 'phone', 'slack'];
 const NOTIFY_WAY_LABEL = { desktop: 'Desktop', console: 'Console', claude: 'Claude Code', phone: 'Phone', slack: 'Slack' };
-const NOTIFY_EVENT_WORDS = { waiting: 'what waits for you', asked: 'asks to your Oby', direct: 'direct messages', mention: 'mentions', answered: 'answers to your asks', failed: "asks your Oby couldn't answer", paused: 'your Oby pausing (out of usage, signed out)', resumed: 'your Oby back after a pause' };
+const NOTIFY_EVENT_WORDS = { waiting: 'what waits for you', asked: 'asks to your Oby', direct: 'direct messages', mention: 'mentions', answered: 'answers to your asks', failed: "asks your Oby couldn't answer", paused: 'your Oby pausing (out of usage, signed out)', resumed: 'your Oby back after a pause', blocked: "asks that make your Oby try what you don't allow" };
 const NOTIFY_LOG = process.env.OBYSPHERE_NOTIFY_LOG ? path.resolve(process.env.OBYSPHERE_NOTIFY_LOG) : null;
 // under `node --test` without a log, nothing reaches the desktop or another host
 const NOTIFY_DRY = !NOTIFY_LOG && !!process.env.NODE_TEST_CONTEXT;
@@ -7195,6 +7219,7 @@ const NOTIFY_TITLE = {
   failed: (e) => `Your Oby couldn't answer ${e.from ? `@${e.from}` : 'an ask'}`,
   paused: () => "Your Oby paused: its runtime can't answer for now",
   resumed: () => 'Your Oby is back after a pause',
+  blocked: (e) => `${e.from ? `@${e.from}'s ask` : 'An ask'} made your Oby try what you don't allow`,
 };
 const NOTIFY_MANY = {
   waiting: (n) => `${n} asks wait for you`,
@@ -7205,6 +7230,7 @@ const NOTIFY_MANY = {
   failed: (n) => `Your Oby couldn't answer ${n} asks`,
   paused: (n) => `${n} runtimes paused`,
   resumed: (n) => `${n} runtimes are back`,
+  blocked: (n) => `${n} asks made your Oby try what you don't allow`,
 };
 
 function notifyDefaults() {
@@ -7430,7 +7456,7 @@ function notifyLink(base, note) {
   const t = note?.type;
   const ask = ['asked', 'failed', 'answered'].includes(t);
   let hash = '';
-  if (t === 'waiting') hash = 'page=you';
+  if (t === 'waiting' || t === 'blocked') hash = 'page=you';
   else if (ask && note.count === 1 && ID.m.test(String(note.ask || ''))) hash = `page=exchange:${note.ask}`;
   else if (ask) hash = 'page=traffic';
   else if ((t === 'direct' || t === 'mention') && /^[a-z0-9-]{1,32}$/.test(String(note.channel || ''))) hash = `mode=conversation&c=${note.channel}`;
@@ -8999,7 +9025,7 @@ function toolAskOwner(p, a) {
 function githubSessionTools(p) {
   let s;
   try {
-    s = loadSettings(p);
+    s = lockdownOverlay(p, loadSettings(p));
   } catch {
     return [];
   }
@@ -9047,7 +9073,7 @@ function githubCheck(p, a) {
   const owner = cleanLine(p.agent.owner, 60);
   let s;
   try {
-    s = loadSettings(p);
+    s = lockdownOverlay(p, loadSettings(p));
   } catch {
     return `${owner}'s settings need fixing, so GitHub isn't available right now.`;
   }
@@ -9439,6 +9465,19 @@ function githubShellDeny(s) {
 // A client for the Sphere's API. Made for an instrument (`tool`), every request
 // it sends carries that instrument's name and one call id, so the Sphere counts
 // one call per use, however many requests it takes. Redirects are refused.
+// a token replaced (token rotate, possibly by another process of this profile): profile.json has
+// the new one. true when it changed, so a call the relay refused can be tried once more
+function tokenChanged(p) {
+  if (!p?.dir) return false;
+  try {
+    const t = JSON.parse(fs.readFileSync(path.join(p.dir, 'profile.json'), 'utf8')).token;
+    if (typeof t === 'string' && /^tok_[A-Za-z0-9_-]{20,200}$/.test(t) && t !== p.token) {
+      p.token = t;
+      return true;
+    }
+  } catch {}
+  return false;
+}
 function client(p, tool = null) {
   const tag = tool ? { 'x-sphere-tool': tool, 'x-sphere-call': randomBytes(8).toString('hex') } : {};
   const parse = async (res) => {
@@ -9453,15 +9492,18 @@ function client(p, tool = null) {
     if (!res.ok) throw new Error(relayError(data, res.status));
     return data && typeof data === 'object' ? data : {};
   };
-  const call = async (method, url, body) =>
-    parse(
-      await fetch(p.sphere + url, {
-        method,
-        headers: { authorization: `Bearer ${p.token}`, ...tag, ...(body ? { 'content-type': 'application/json' } : {}) },
-        body: body ? JSON.stringify(body) : undefined,
-        redirect: 'error',
-      }),
-    );
+  const send = (method, url, body) =>
+    fetch(p.sphere + url, {
+      method,
+      headers: { authorization: `Bearer ${p.token}`, ...tag, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      redirect: 'error',
+    });
+  const call = async (method, url, body) => {
+    let res = await send(method, url, body);
+    if (res.status === 401 && tokenChanged(p)) res = await send(method, url, body); // a new token, from token rotate
+    return parse(res);
+  };
   return {
     get: (u) => call('GET', u),
     post: (u, b) => call('POST', u, b || {}),
@@ -9516,6 +9558,9 @@ async function stream(p, role, { onEvent, onOpen, onDown }) {
   for (;;) {
     try {
       const res = await fetch(`${p.sphere}/api/stream?role=${role}`, { headers: { authorization: `Bearer ${p.token}`, accept: 'text/event-stream' }, redirect: 'error' });
+      // a new token, from token rotate: connect with it (it may land in profile.json a moment after the
+      // relay closed this stream, so look once more before giving up)
+      if (res.status === 401 && (tokenChanged(p) || (await new Promise((r) => setTimeout(r, 2000)), tokenChanged(p)))) continue;
       if (res.status === 401) die(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset?). Join again.`);
       if (res.status === 403) throw new Error('suspended by the operator');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -9825,7 +9870,320 @@ async function checkLatestVersion(appHome, file) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, delete: deleteCmd, inbox: inboxCmd, away: awayCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
+// ================================================================ security: what your Oby can reach, and what to do
+//
+// Four things for the owner, each a command, a card on Your Oby, or both:
+// - the check (`security`, GET /local/security): what your Oby can reach and who may ask it, whether
+//   the Sphere is sealed, secrets sitting in the folders it reads under ordinary names, its files'
+//   modes, your notifications; each with what to do about it;
+// - blocked attempts: when an answer tries something your settings block (Claude Code's
+//   permission_denials), you're told who asked, and it's listed in the check;
+// - lockdown (`lockdown`, POST /local/lockdown): every ask waits for you, and your Oby answers with
+//   no shell, web, browser, MCP servers, writes, GitHub or files, until you lift it. settings.json is
+//   left as it is: lockdown is lockdown.json, laid over your settings wherever an ask is decided;
+// - a new token (`token rotate`, POST /local/token): if this computer or its profile may have leaked,
+//   the relay forgets the old token at once. This profile's processes pick up the new one by
+//   themselves (they read profile.json again when the relay says no).
+
+const lockdownFile = (p) => path.join(p.dir, 'lockdown.json');
+function readLockdown(p) {
+  const l = readJsonFile(lockdownFile(p), null);
+  return isMap(l) && typeof l.at === 'string' && Number.isFinite(Date.parse(l.at)) ? { at: l.at, why: cleanLine(l.why || '', 120) } : null;
+}
+function setLockdown(p, on, why = '') {
+  if (!on) return void fs.rmSync(lockdownFile(p), { force: true });
+  if (!readLockdown(p)) writeSecret(lockdownFile(p), { at: new Date().toISOString(), why: cleanLine(why, 120) });
+}
+// your settings as an ask sees them while you're locked down: everyone waits for you (a declined
+// Oby stays declined), and nothing reaches past reading your folders
+function lockdownOverlay(p, s) {
+  if (!s || !readLockdown(p)) return s;
+  const t = structuredClone(s);
+  t.access.default = t.access.default === 'decline' ? 'decline' : 'approve';
+  for (const k of Object.keys(t.access.agents || {})) if (t.access.agents[k] !== 'decline') t.access.agents[k] = 'approve';
+  t.access.consultOthers = false;
+  t.access.sendFiles = false;
+  t.access.acceptHops = false;
+  t.machine.folders = t.machine.folders.map((f) => ({ ...f, write: false }));
+  t.machine.shell = 'off';
+  t.machine.web = { ...t.machine.web, fetch: false, search: false };
+  t.machine.browser = 'off';
+  t.machine.mcp = [];
+  if (isMap(t.github)) t.github = { ...t.github, enabled: false };
+  return t;
+}
+const LOCKDOWN_WORDS = 'every ask waits for you; your Oby answers with no shell, web, browser, MCP servers, writes, GitHub or files, and asks no other Oby';
+
+// ---- blocked attempts: what an answer tried that your settings didn't allow
+const blockedFile = (p) => path.join(p.dir, 'security', 'blocked.jsonl');
+const BLOCKED_KEEP = 200;
+// one denial in a few words: the tool, and what it was for (a file, a command, an address)
+function deniedOf(j) {
+  if (!Array.isArray(j?.permission_denials)) return [];
+  return j.permission_denials.slice(0, 20).map((d) => {
+    const i = isMap(d?.tool_input) ? d.tool_input : {};
+    const what = [i.file_path, i.path, i.command, i.url, i.pattern, i.query].find((v) => typeof v === 'string' && v.trim());
+    return { tool: cleanLine(String(d?.tool_name || 'a tool'), 40), what: what ? cleanLine(what, 120) : '' };
+  });
+}
+function noteBlocked(p, { msg, from, denied }) {
+  const asker = slug(from?.name || '') || 'someone';
+  const entry = { ts: new Date().toISOString(), ask: msg.id, from: asker, channel: msg.channel, denied };
+  try {
+    fs.mkdirSync(path.dirname(blockedFile(p)), { recursive: true, mode: 0o700 });
+    const kept = readBlocked(p, Infinity).slice(-(BLOCKED_KEEP - 1));
+    const tmp = `${blockedFile(p)}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, [...kept, entry].map((e) => JSON.stringify(e)).join('\n') + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, blockedFile(p));
+  } catch {}
+  const words = denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; ');
+  log(`${yellow('  ⚠ blocked:')} ${dim(`${asker}'s ask made your Oby try what your settings don't allow: ${printable(words)}`)}`);
+  notifyOwner(p, { type: 'blocked', from: asker, channel: msg.channel, body: `Blocked: ${words}`, ref: `${msg.id}-blocked`, about: msg.id });
+}
+// the newest last; only what's from the last `days`
+function readBlocked(p, days = 30) {
+  let lines = [];
+  try {
+    lines = fs.readFileSync(blockedFile(p), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+  const since = Date.now() - days * 864e5;
+  return lines
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter((e) => isMap(e) && typeof e.ts === 'string' && Date.parse(e.ts) >= since && Array.isArray(e.denied))
+    .map((e) => ({ ts: e.ts, ask: ID.m.test(String(e.ask)) ? e.ask : null, from: slug(String(e.from || '')) || 'someone', channel: slug(String(e.channel || '')) || null, denied: e.denied.filter(isMap).slice(0, 20).map((d) => ({ tool: cleanLine(String(d.tool || ''), 40), what: cleanLine(String(d.what || ''), 120) })) }));
+}
+
+// ---- secrets in the folders your Oby reads, under names the never-read list doesn't cover
+const SECRET_PATTERNS = [
+  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----/],
+  ['an AWS access key', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ['a GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})\b/],
+  ['a Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
+  ['an Anthropic API key', /\bsk-ant-[A-Za-z0-9_-]{20,}/],
+  ['an OpenAI API key', /\bsk-(?:proj-)?(?!ant-)[A-Za-z0-9_-]{32,}/],
+  ['a Stripe live key', /\b(?:sk|rk)_live_[A-Za-z0-9]{20,}\b/],
+  ['a Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ['an Obysphere token', /\btok_[A-Za-z0-9_-]{30,}\b/],
+];
+const SCAN_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache', 'coverage']);
+const SCAN_FILES = 4000;
+const SCAN_BYTES = 1024 * 1024;
+const SCAN_MS = 4000;
+// [{ folder, file (relative), line, kind }]: never the secret itself
+function scanSecrets(s) {
+  const found = [];
+  const never = neverReadForms(neverReadOf(s)).regex;
+  const start = Date.now();
+  let files = 0;
+  let cut = false;
+  for (const f of s.machine.folders) {
+    const root = f.path;
+    const walk = (dir, depth) => {
+      if (cut || depth > 12) return;
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (cut) return;
+        if (files >= SCAN_FILES || Date.now() - start > SCAN_MS) return void (cut = true);
+        const full = path.join(dir, e.name);
+        if (e.isSymbolicLink()) continue;
+        if (e.isDirectory()) {
+          if (!SCAN_SKIP.has(e.name)) walk(full, depth + 1);
+          continue;
+        }
+        if (!e.isFile()) continue;
+        files++;
+        // a file your Oby never reads is already kept from answers
+        if (isSecretPath(full) || never?.test(full)) continue;
+        let text;
+        try {
+          if (fs.statSync(full).size > SCAN_BYTES) continue;
+          const buf = fs.readFileSync(full);
+          if (buf.subarray(0, 8000).includes(0)) continue; // binary
+          text = buf.toString('utf8');
+        } catch {
+          continue;
+        }
+        for (const [kind, re] of SECRET_PATTERNS) {
+          const m = re.exec(text);
+          if (!m) continue;
+          found.push({ folder: path.basename(root), file: path.relative(root, full), line: text.slice(0, m.index).split('\n').length, kind });
+          if (found.length >= 50) return void (cut = true);
+          break;
+        }
+      }
+    };
+    walk(root, 0);
+  }
+  return { found, files, cut };
+}
+
+// ---- the check. checks: [{ id, level: risk|warn|ok|info, title, detail, fix }]
+const LEVELS = ['risk', 'warn', 'info', 'ok'];
+async function securityReport(p, { scan = true } = {}) {
+  const checks = [];
+  const add = (id, level, title, detail = '', fix = '') => checks.push({ id, level, title, detail, fix });
+  let s;
+  try {
+    s = loadSettings(p);
+  } catch (e) {
+    add('settings', 'risk', 'Your settings need fixing', printable(e.message), `${meCmd()} settings${profileFlag(p)} shows where they are`);
+    return { profile: p.profile, lockdown: readLockdown(p), checks, blocked: readBlocked(p), scanned: null };
+  }
+  const lock = readLockdown(p);
+  if (lock) add('lockdown', 'info', 'Lockdown is on', `Since ${shortTime(lock.at)}: ${LOCKDOWN_WORDS}.`, `${meCmd()} lockdown --off${profileFlag(p)} when you're ready`);
+
+  // the Sphere: sealed, or readable by whoever runs the relay
+  let sealed = null;
+  try {
+    sealed = await sphereSealed(client(p));
+  } catch {}
+  const trusted = Object.entries(s.access.agents || {}).filter(([, v]) => v === 'trust').map(([k]) => `@${k}`);
+  const g = githubOf(s);
+  const ghOwn = g.enabled && ['comment', 'requestChanges', 'approve'].some((k) => g[k] === 'trusted');
+  if (sealed === false) add('sealed', trusted.length || ghOwn ? 'risk' : 'warn', 'This Sphere isn’t sealed', `Whoever runs the relay, and its admins, read every message${trusted.length ? `, and could pass off a message as ${trusted.join(', ')}'s, whom you trust` : ''}.`, 'Ask an admin to seal it (obysphere admin policy --sealed on), or trust no Oby here');
+  else if (sealed === true) add('sealed', 'ok', 'This Sphere is sealed', 'Messages are end to end: the relay can’t read them.');
+
+  // who may ask, and what they get
+  const d = s.access.default;
+  if (d === 'trust') add('default', 'risk', 'Every Oby is trusted', 'Any member’s Oby gets everything you allow without asking you.', 'Settings › Who can ask: Obys you haven’t listed → Ask me first');
+  else if (d === 'answer') add('default', 'warn', 'Any Oby gets answers without you', 'Obys you haven’t listed are answered from your folders without asking you.', 'Settings › Who can ask: Obys you haven’t listed → Ask me first');
+  else add('default', 'ok', 'Obys you haven’t listed wait for you', d === 'decline' ? 'They’re declined.' : 'You decide each of their asks.');
+  if (trusted.length) add('trusted', 'warn', `You trust ${trusted.length === 1 ? trusted[0] : `${trusted.length} Obys`}`, `${trusted.join(', ')} get${trusted.length === 1 ? 's' : ''} everything you allow below, without asking you.`, 'Trust only Obys whose owners you’d hand your keyboard to');
+
+  // what an answer can reach
+  const m = s.machine;
+  const writes = m.folders.filter((f) => f.write).map((f) => path.basename(f.path));
+  if (writes.length) add('write', trusted.length ? 'warn' : 'info', `It may change files in ${writes.join(', ')}`, 'For trusted Obys, or an ask you let use everything.', 'Settings › This machine: make the folder read only if it doesn’t need changes');
+  if (m.shell === 'full') add('shell', 'risk', 'It may run any command, as you', 'For trusted Obys, or an ask you let use everything: their words reach a shell with your sign-ins.', 'Settings › This machine › Shell: read only, or off');
+  if (m.web.fetch || m.web.search) add('web', 'warn', 'It may open web pages', 'An answer that read something private could put it in a web address it opens.', 'Settings › This machine › Web: off, unless answers need it');
+  if (m.browser !== 'off') add('browser', 'risk', 'It may use your Chrome, signed in as you', 'For trusted Obys, or an ask you let use everything.', 'Settings › This machine › Browser: off');
+  if (m.mcp.length) add('mcp', 'warn', `It may use your MCP servers: ${m.mcp.join(', ')}`, 'They act with your accounts.', 'Settings › This machine › MCP servers: only what answers need');
+  const others = [s.routing.default, ...s.routing.rules.map((r) => r.use)].map((u) => u.runtime).filter((r) => r !== 'claude');
+  if (others.length) add('runtimes', 'warn', `${[...new Set(others)].map((r) => RUNTIME_LABEL[r]).join(' and ')} answer${others.length === 1 ? 's' : ''} for trusted Obys`, 'They can read anything on your disk you can, secrets included.', 'Answer with Claude Code, which keeps to your folders');
+  if (ghOwn) add('github', 'warn', 'It acts on GitHub on its own for trusted Obys', 'Comments, reviews or approvals go up without your click.', 'Settings › GitHub: Ask me first');
+  const commands = loadInstruments(p, { settings: s }).filter((x) => x.inst?.kind === 'command' && !x.inst.askFirst).map((x) => x.name);
+  if (commands.length) add('instruments', 'warn', `Command instruments run without asking you: ${commands.join(', ')}`, 'For trusted Obys asking for themselves.', 'Add askFirst to each in INSTRUMENTS.md');
+  if (!writes.length && m.shell !== 'full' && m.browser === 'off' && !m.mcp.length) add('reach', 'ok', 'Answers only read your folders', `${m.shell === 'read' ? 'With read-only commands. ' : ''}Never .env files, keys or the names you keep private.`);
+
+  // secrets your Oby could read under ordinary names
+  let scanned = null;
+  if (scan) {
+    scanned = scanSecrets(s);
+    if (scanned.found.length) add('secrets', 'risk', `${scanned.found.length === 1 ? 'A secret' : `${scanned.found.length} secrets`} in the folders your Oby reads`, scanned.found.slice(0, 8).map((x) => `${x.folder}/${x.file}:${x.line} (${x.kind})`).join('; ') + (scanned.found.length > 8 ? '; …' : ''), 'Move them out, or add the file names to Settings › This machine › Never read');
+    else add('secrets', 'ok', 'No secrets found in your folders', `${scanned.files} file${scanned.files === 1 ? '' : 's'} looked at${scanned.cut ? ' (not all: there were too many)' : ''}; files your Oby never reads were skipped.`);
+  }
+
+  // this profile's files: only you may read them
+  const loose = ['profile.json', 'keys.json', 'settings.json', 'peers.json'].filter((f) => {
+    try {
+      return (fs.statSync(path.join(p.dir, f)).mode & 0o077) !== 0;
+    } catch {
+      return false;
+    }
+  });
+  let dirLoose = false;
+  try {
+    dirLoose = (fs.statSync(p.dir).mode & 0o077) !== 0;
+  } catch {}
+  if (process.platform !== 'win32' && (loose.length || dirLoose)) add('files', 'risk', 'Other users on this computer can read your profile', `${[dirLoose && 'its folder', ...loose].filter(Boolean).join(', ')}: your token and keys are in there.`, `chmod 700 ${p.dir} && chmod 600 ${path.join(p.dir, '*.json')}`);
+  else if (process.platform !== 'win32') add('files', 'ok', 'Only you can read your profile', 'Your token and keys stay in files only you can open.');
+
+  // notifications: a short ntfy topic can be guessed
+  try {
+    const n = notifyOf(s);
+    const topic = n.phone.url ? String(new URL(n.phone.url).pathname).replace(/^\//, '') : '';
+    if (n.phone.url && /ntfy\.sh$/i.test(new URL(n.phone.url).hostname) && topic.length < 20) add('ntfy', 'warn', 'Your phone notifications’ topic is easy to guess', 'Anyone who guesses an ntfy.sh topic reads it.', 'Use a long random topic name');
+    if ((n.phone.url && n.phone.content === 'full') || (n.slack.webhookUrl && n.slack.content === 'full')) add('notify-words', 'info', 'Notifications carry the words', 'Ntfy and Slack read what you send them.', 'Settings › Notifications: Who and what kind only');
+  } catch {}
+
+  // what answers tried that your settings blocked
+  const blocked = readBlocked(p);
+  if (blocked.length) {
+    const by = [...new Set(blocked.map((b) => `@${b.from}`))];
+    add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask, or ${meCmd()} lockdown${profileFlag(p)}`);
+  }
+  checks.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level));
+  return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned: scanned && { files: scanned.files, cut: scanned.cut } };
+}
+
+async function securityCmd() {
+  const p = loadProfile();
+  const r = await securityReport(p, { scan: !opt['no-scan'] });
+  if (opt.json) return console.log(JSON.stringify(r, null, 2));
+  const mark = { risk: red('✗'), warn: yellow('!'), info: dim('·'), ok: green('✓') };
+  const worst = r.checks[0]?.level || 'ok';
+  console.log(`${bold(`${p.agent.name}'s Oby`)} in ${printable(cleanLine(p.sphereName, 80))}: ${worst === 'risk' ? red('needs attention') : worst === 'warn' ? yellow('worth a look') : green('looks right')}\n`);
+  for (const c of r.checks) {
+    console.log(`  ${mark[c.level]} ${c.title}`);
+    if (c.detail) console.log(dim(`      ${printable(c.detail)}`));
+    if (c.fix && c.level !== 'ok') console.log(`      ${cyan('→')} ${printable(c.fix)}`);
+  }
+  for (const b of r.blocked.slice(-5)) console.log(dim(`      ${shortTime(b.ts)} @${b.from}: ${printable(b.denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; '))}`));
+  if (!r.lockdown) console.log(dim(`\n  In trouble? ${meCmd()} lockdown${profileFlag(p)} makes every ask wait for you, at once. A token you think leaked: ${meCmd()} token rotate${profileFlag(p)}`));
+  if (worst === 'risk') process.exitCode = 1;
+}
+
+async function lockdownCmd() {
+  const p = loadProfile();
+  if (pos.length) die(`usage: ${meCmd()} lockdown [--off] [--note "<why>"]${profileFlag(p)}`);
+  if (opt.off) {
+    if (!readLockdown(p)) return console.log(`${p.agent.name}'s Oby isn't locked down.`);
+    setLockdown(p, false);
+    return console.log(`${green('✓')} Lockdown lifted: your settings apply again.`);
+  }
+  const was = readLockdown(p);
+  setLockdown(p, true, typeof opt.note === 'string' ? opt.note : '');
+  console.log(`${was ? dim('Already locked down') : `${green('✓')} ${bold(`${p.agent.name}'s Oby is locked down`)}`}: ${LOCKDOWN_WORDS}.
+  Your settings file is as it was. Lift it: ${meCmd()} lockdown --off${profileFlag(p)}`);
+}
+
+// a new token: the relay forgets the old one at once; this profile's processes read the new one
+async function rotateToken(p) {
+  const api = client(p);
+  let r;
+  try {
+    r = await api.post('/api/me/token', {});
+  } catch (e) {
+    if (/"Not found\."|HTTP 404|Not found/.test(String(e.message))) throw Object.assign(new Error("This Sphere's relay can't replace tokens yet: whoever runs it updates it (obysphere server update)."), { code: 'relay_too_old' });
+    throw e;
+  }
+  if (typeof r.token !== 'string' || !/^tok_[A-Za-z0-9_-]{20,200}$/.test(r.token)) throw new Error("The relay's answer had no token in it: your old one may be gone. Join again if nothing works.");
+  const file = path.join(p.dir, 'profile.json');
+  writeSecret(file, { ...readJsonFile(file, {}), token: r.token });
+  p.token = r.token;
+  return { ok: true };
+}
+async function tokenCmd() {
+  const p = loadProfile();
+  if (pos[0] !== 'rotate' || pos.length > 1) die(`usage: ${meCmd()} token rotate [--yes]${profileFlag(p)}\n  a new token for your Oby: the old one stops working at once`);
+  if (!opt.yes) {
+    if (!process.stdin.isTTY) die('Add --yes: the old token stops working at once.');
+    const a = await askOwner(`  A new token for ${p.agent.name}'s Oby: the old one stops working at once. Go ahead? [y/N] `, { text: true });
+    if (!/^y(es)?$/i.test(String(a || '').trim())) return console.log('Nothing changed.');
+  }
+  try {
+    await rotateToken(p);
+  } catch (e) {
+    die(e.message);
+  }
+  console.log(`${green('✓')} ${bold(`${p.agent.name}'s Oby has a new token`)}: the old one doesn't work any more.
+  Your background Oby, console and Claude Code sessions on this computer pick it up by themselves.`);
+}
+
+const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, delete: deleteCmd, inbox: inboxCmd, away: awayCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, security: securityCmd, lockdown: lockdownCmd, token: tokenCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
   Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous

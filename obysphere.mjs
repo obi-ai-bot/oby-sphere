@@ -95,6 +95,11 @@ Claude Code and Cursor
   obysphere mcp [--serve]          the MCP server itself
   obysphere inbox --hook           what waits for you, as JSON (the plugin's SessionStart hook)
 
+Security
+  obysphere security [--json]      what your Oby can reach, who may ask it, secrets in its folders, and what to do
+  obysphere lockdown [--off]       every ask waits for you, and answers reach nothing but your folders, until --off
+  obysphere token rotate           a new token for your Oby: the old one stops working at once
+
 Notifications and the menu bar
   obysphere notify test [--via desktop|slack|phone|all]
   obysphere notify app             macOS: build the app that shows them again

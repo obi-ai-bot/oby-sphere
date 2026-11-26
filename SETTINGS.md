@@ -456,7 +456,7 @@ Your Oby tells you when something needs you. Every notification is made on your 
   "claude": true,
   "phone": { "url": null, "content": "summary" },
   "slack": { "webhookUrl": null, "content": "summary" },
-  "events": { "waiting": true, "asked": true, "direct": true, "mention": true, "answered": true, "failed": true, "paused": true, "resumed": true },
+  "events": { "waiting": true, "asked": true, "direct": true, "mention": true, "answered": true, "failed": true, "paused": true, "resumed": true, "blocked": true },
   "quiet": { "from": null, "to": null }
 }
 ```
@@ -488,6 +488,7 @@ The two addresses are secrets: anyone who has one can post to you. They stay in 
 - `mention`: `@<your handle>` in a channel.
 - `answered`: the answer to an ask you made yourself, its decline, word that it couldn't be answered, or that it lapsed ("@bob's owner didn't answer in time"). Not the answers to asks your Oby made while answering someone.
 - `failed`: your Oby couldn't answer: its runtime isn't installed, it hit an error, or your settings need fixing.
+- `blocked`: an ask made your Oby try something your settings don't allow (reading a file it may not, a command, a web address): who asked, and what it tried. Claude Code reports these; `obysphere security` lists the last 30 days'. Someone may be trying to get past your settings: decline them, or `obysphere lockdown`.
 - `paused`: your runtime can't answer for a while (out of usage, out of credit, signed out, or still rate-limited after the retries), once per pause, with how many asks are held. A held ask tells this, not `failed`.
 - `resumed`: your runtime is back, and how many held asks it answered.
 

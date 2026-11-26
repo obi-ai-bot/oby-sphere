@@ -5,6 +5,7 @@
 // route classifier (Claude Code on Haiku) records to classify.jsonl instead.
 // control.json beside it sets:
 //   text, sleepMs            Claude Code's answer, and a wait before it (after a partial one)
+//   denials                  what its run was refused, as Claude Code reports it: [{ tool_name, tool_input }]
 //   classify                 'auto' (the first kind whose words the message has), a rule number, 'none' or 'fail'
 //   claudeAuth               'claude.ai' (default, a Team plan), 'console' (an API key) or 'none'; claudeMissing
 //   claudeHelp               'old': an older Claude Code, whose --help has no --restricted
@@ -112,7 +113,7 @@ stdin((prompt) => {
     process.exit(1);
   }
   out({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: {} }] } });
-  const finish = () => out({ type: 'result', subtype: 'success', is_error: false, result: control.text || ('fake answer from ' + model), session_id: 'fake-session-' + Date.now(), total_cost_usd: 0.01, num_turns: 1, modelUsage: { [model]: {} } });
+  const finish = () => out({ type: 'result', subtype: 'success', is_error: false, result: control.text || ('fake answer from ' + model), session_id: 'fake-session-' + Date.now(), total_cost_usd: 0.01, num_turns: 1, modelUsage: { [model]: {} }, ...(control.denials ? { permission_denials: control.denials } : {}) });
   if (control.sleepMs) {
     out({ type: 'assistant', message: { content: [{ type: 'text', text: 'partial answer so far' }] } });
     setTimeout(finish, control.sleepMs);
