@@ -4045,10 +4045,11 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     channelsAt = Date.now();
   }
   // a message in a channel not heard of yet: a new one, whose kind decides whether it's yours (until
-  // the relay lists it, it's taken for a public one). Asked at once the first time a channel is
-  // heard of, even just after a read (a private one made a moment ago), then at most every 5 seconds.
+  // the relay lists it, it's taken for a public one, or a direct one for others). Asked at once the
+  // first time a channel is heard of, even just after a read (a private one made a moment ago, or
+  // a direct conversation just opened with you), then at most every 5 seconds.
   async function knowChannels(list) {
-    const unheard = [...new Set(list.filter((m) => !channels.has(m.channel) && !m.channel.startsWith('dm-')).map((m) => m.channel))];
+    const unheard = [...new Set(list.filter((m) => !channels.has(m.channel)).map((m) => m.channel))];
     if (!unheard.length || (unheard.every((n) => asked.has(n)) && Date.now() - channelsAt < 5000)) return;
     for (const n of unheard) remember(asked, n);
     await loadChannels().catch(() => {});

@@ -707,10 +707,12 @@ describe('a relay that sends an endless history', { timeout: 180000 }, () => {
 
 // ---------------------------------------------------------------- a relay that says odd things (#139's tombstones, a channel it listed late)
 
-// Its history, oldest first: 50 notes, then 250 messages deleted on the Sphere (#139's tombstones,
-// more than a page of them), 10 newer notes, and one in a private channel the reader isn't in,
-// which /api/channels lists only from its second answer on (as if it was made a moment after).
-describe('a relay that sends a page of deleted messages, and a private channel it listed late', { timeout: 180000 }, () => {
+// Its history, oldest first: 50 notes and one in a direct conversation with the reader, then 250
+// messages deleted on the Sphere (#139's tombstones, more than a page of them), 10 newer notes, and
+// one in a private channel the reader isn't in. /api/channels lists the private channel only from
+// its second answer on, and the direct conversation from its third (as if each was made a moment
+// before the read reached it), so each is heard of first in a page of its own.
+describe('a relay that sends a page of deleted messages, and channels it listed late', { timeout: 180000 }, () => {
   let world, server, url;
   let channelReads = 0;
   const reader = { id: 'a_reader', name: 'reader', owner: 'Reader Test' };
@@ -719,6 +721,7 @@ describe('a relay that sends a page of deleted messages, and a private channel i
   const t0 = Date.UTC(2026, 10, 20);
   const note = (id, channel, text) => ({ id, ts: new Date(t0 + history.length * 1000).toISOString(), channel, from: writer.id, kind: 'post', to: [], text, files: [], depth: 0, replyTo: null, cause: null, meta: {} });
   for (let i = 0; i < 50; i++) history.push(note(`m_old${i}`, 'general', `An osprey, old note ${i}.`));
+  history.push(note('m_direct', 'dm-reader-writer', 'A direct osprey, for the reader.'));
   for (let i = 0; i < 250; i++) {
     const at = new Date(t0 + history.length * 1000).toISOString();
     history.push({ id: `m_gone${i}`, ts: at, channel: 'general', from: writer.id, kind: 'post', to: [], replyTo: null, cause: null, depth: 0, claimedAt: null, startedAt: null, deleted: { at, by: writer.id } });
@@ -738,7 +741,9 @@ describe('a relay that sends a page of deleted messages, and a private channel i
       if (u.pathname === '/api/agents') return send({ agents: [reader, writer] });
       if (u.pathname === '/api/channels') {
         channelReads++;
-        return send({ channels: [{ name: 'general', kind: 'public', members: [] }, ...(channelReads > 1 ? [{ name: 'secret', kind: 'private', members: [writer.id] }] : [])] });
+        const secret = { name: 'secret', kind: 'private', members: [writer.id] };
+        const direct = { name: 'dm-reader-writer', kind: 'dm', members: [reader.id, writer.id] };
+        return send({ channels: [{ name: 'general', kind: 'public', members: [] }, ...(channelReads > 1 ? [secret] : []), ...(channelReads > 2 ? [direct] : [])] });
       }
       if (u.pathname === '/api/messages') {
         const ch = u.searchParams.get('channel');
@@ -762,14 +767,15 @@ describe('a relay that sends a page of deleted messages, and a private channel i
   });
 
   test('a page of deleted messages is read past, and a channel listed late is asked about before anything in it is kept', async () => {
-    const r = await world.rep(['search', 'osprey', '--profile', 'reader', '--json'], { env: { TMPDIR: world.tmp } });
+    const r = await world.rep(['search', 'osprey', '--profile', 'reader', '--json', '--limit', '100'], { env: { TMPDIR: world.tmp } });
     assert.equal(r.code, 0, r.out.slice(-2000));
     const out = JSON.parse(r.out.slice(r.out.indexOf('{')));
     assert.equal(out.via, 'oby');
-    assert.equal(out.total, 50, 'the notes from before the deleted ones');
-    assert.ok(out.results.every((x) => /^m_old\d+$/.test(x.id)), JSON.stringify(out.results.map((x) => x.id)));
-    assert.equal(out.searched, 60, "every note it could open: none deleted, none in the private channel it isn't in");
-    assert.ok(channelReads >= 2, 'it asked the relay again about a channel it had not heard of');
+    assert.equal(out.total, 51, 'the notes from before the deleted ones, and the direct one');
+    assert.equal(out.results[0].id, 'm_direct', 'the direct conversation, the reader is in it');
+    assert.ok(out.results.slice(1).every((x) => /^m_old\d+$/.test(x.id)), JSON.stringify(out.results.map((x) => x.id)));
+    assert.equal(out.searched, 61, "every note it could open: none deleted, none in the private channel it isn't in");
+    assert.ok(channelReads >= 2, 'it asked the relay again about the channels it had not heard of');
   });
 
   test("a console that hasn't read the history yet reads it for the first search from a terminal, and says so", async () => {
@@ -778,13 +784,13 @@ describe('a relay that sends a page of deleted messages, and a private channel i
     await world.waitFor(proc, /your console for/);
     const first = await world.rep(['search', 'osprey', '--profile', 'reader'], { env: { TMPDIR: world.tmp } });
     assert.equal(first.code, 0, first.out);
-    assert.match(first.out, /^50 messages match/m);
+    assert.match(first.out, /^51 messages match/m);
     assert.match(first.out, /Your console hadn't read the Sphere's history yet, so your Oby read it just now to search it\. The Sphere saw that read, never your words\./);
     assert.ok(!/console isn't running/.test(first.out), first.out);
     const second = await world.rep(['search', 'osprey', '--profile', 'reader', '--json'], { env: { TMPDIR: world.tmp } });
     const out = JSON.parse(second.out.slice(second.out.indexOf('{')));
     assert.equal(out.via, 'console');
-    assert.equal(out.total, 50);
+    assert.equal(out.total, 51);
     assert.equal(out.readNow, undefined, 'read once: the next search says nothing of it');
     assert.ok(!/hadn't read/.test(second.out), second.out);
   });
