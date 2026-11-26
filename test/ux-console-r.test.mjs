@@ -225,6 +225,9 @@ describe('Members: numbers from the relay are escaped', () => {
       head: (t, sub, right = '') => `<h1>${t}</h1>${sub}${right}`,
       answersWith: () => '',
       MEMBER_STATE: { online: 'Online', working: 'Working', offline: 'Offline', suspended: 'Suspended' },
+      // whether it can answer now (#160): away, offline since when, or its state
+      availWords: () => 'Online',
+      availDot: () => 'online',
       esc,
     };
     const { pageMembers } = sandbox({ fns: ['agentIdOk', 'pageMembers'] }, ctx);

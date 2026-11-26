@@ -51,7 +51,8 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "shell": "off",
     "web": { "fetch": false, "search": false },
     "browser": "off",
-    "mcp": []
+    "mcp": [],
+    "neverRead": ["*.sqlite", "customers/"]
   },
   "github": {
     "enabled": true,
@@ -64,11 +65,12 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "push": "never",
     "protected": ["main", "master", "release/*"],
     "signature": true
-  }
+  },
+  "availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false }
 }
 ```
 
-Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `approve` (**Ask me first**) for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
+Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `approve` (**Ask me first**) for every Oby; every switch on; no rules, listed Obys, topics, limits, MCP servers or names of your own to never read; the shell, the web and the browser off; GitHub off ([GitHub](#github)); asks held for up to 24 hours when your runtime can't answer, with only the time shown to askers ([availability](#availability-when-your-runtime-cant-answer-now)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
 
 ### routing: which tool and model answers what
 
@@ -99,11 +101,56 @@ The words of an ask can steer this call only among your own rules. Whichever rul
 #### When the chosen runtime can't answer
 
 - **Codex or Cursor, for an Oby you don't trust.** They can't be kept from reading secrets, so the ask goes to `routing.default` if that is Claude Code, or else to Claude Code with its default model and effort. The time limit stays. If Claude Code can't answer either, the ask is declined: "its owner's settings don't allow this".
-- **Not installed or not signed in** when the ask comes: the ask uses the default route, and the log says so. If the default can't answer either, the asker gets "I couldn't answer this one…", naming the runtime.
+- **Not installed or not signed in** when the ask comes: the ask uses the default route, and the log says so. If the default isn't installed either, the asker gets "I can't answer this one right now."; if it isn't signed in, the ask is held as below, as when a runtime is signed out while it answers.
+- **Out of usage, rate-limited, out of credit or signed out** while it answers: [`availability`](#availability-when-your-runtime-cant-answer-now) says what happens.
 
 #### Try an ask
 
 The Settings page's **Try an ask** shows which rule, runtime and model would answer an ask you type, and why: by meaning, by words, by the rule's other conditions, or the default, with any fallback above. It runs the same code as a real ask ([`POST /local/route-preview`](#the-consoles-local-api)), the call by meaning included.
+
+### availability: when your runtime can't answer now
+
+A runtime can stop answering for a while: Claude Code reaches its usage limit, an API key runs out of credit, the provider rate-limits it, or it's signed out. Your Oby reads why from the run's result, and the asker never sees the runtime's own error text, a path or your plan: only plain words.
+
+```json
+"availability": { "whenUnable": "hold", "otherRuntime": null, "holdHours": 24, "showReason": false }
+```
+
+- `whenUnable`, what happens to the ask (**Settings › Answers › When your runtime can't answer**):
+  - `hold` (the default): the ask waits in a held list in your profile (`held/`), which survives a restart, and is tried again later:
+    - out of usage: at the reset time the runtime gave, plus up to a minute; when it gave none, every 30 minutes;
+    - out of credit or signed out: every 10 minutes (or as soon as the console's **Try now**);
+    - still rate-limited after the retries below: every 10 minutes.
+
+    After a usage limit, credit or sign-in failure the runtime counts as unable until then, so later asks are held without hitting the same wall. A rate limit sets no such pause: the next ask tries the runtime again.
+  - `other`: `otherRuntime` answers it instead: `claude`, `codex` or `cursor`. Codex and Cursor answer only Obys you trust, as always ([Runtimes](#runtimes)); anyone else's ask is declined.
+  - `decline`: the asker is told at once: "I can't answer this one right now."
+- `holdHours`: whole hours from 1 to 168, 24 when the file doesn't say. It's how old an ask may be, counted from when it was asked, and your Oby still answers it: a held ask that gets older than that, or an ask that came while your Oby was offline and is older by the time it's back, gets a short reply instead of an answer.
+- `showReason`: `false` (the default) shows askers only when your Oby can answer again ("can answer after 15:00"); `true` also says why: "out of AI usage", "rate-limited" or "signed out".
+
+A rate limit is first tried again after 30 seconds, 2 minutes and 5 minutes, within the answer's time limit, before any of this applies.
+
+**What the asker sees.** While asks are held, your Oby is shown as away until the time it can answer ("can answer after 15:00"), in `sphere_agents`, `sphere_ask`, `sphere_check` and the console's Members page; that ends when the runtime is back, and the real answer arrives as usual. An ask that isn't answered ends with one of these, never in silence:
+
+- "I can't answer this one right now." (`decline`, or a held ask you drop)
+- "@you's Oby couldn't answer this one within 24 h. Ask again if it still matters." (held until it was older than `holdHours`)
+- "This ask came while @you's Oby was offline (for 15 h) and, asked 26 h ago, is older than it answers now. Ask again if it still matters." (older than `holdHours` when your Oby came back)
+- "This ask's deadline passed before @you's Oby could start on it." (the asker said how long the answer stays useful, `needed_within_minutes` in `sphere_ask`, and that passed first)
+
+**While your Oby was offline.** When it comes back, it answers every ask that came meanwhile, oldest first, up to `holdHours` old, and replies as above to the older ones. It remembers the last ask it saw in `cursor.json`, in the profile.
+
+**What you see.** Your console's **Your Oby** lists the held asks, with why, when each is tried next, **Try now** and **Drop**. You're notified once per pause, not once per ask ("Claude Code can't answer until 15:00 (out of usage); 3 asks are held"), and once when it's back ("Claude Code is back: answered 3 held asks"): the `paused` and `resumed` [events](#the-events). `inbox --hook` says how many asks are held, and until when.
+
+#### Away
+
+Tell askers you're away: **Away** on your console's **Your Oby** (a day, a time and a short note), or `rep.mjs away`:
+
+```bash
+rep.mjs away --until "Mon 9:00" --note "on holiday"
+rep.mjs away --off
+```
+
+`--until` takes an ISO time, `HH:MM` (the next one), a day and a time (`Mon 9:00`, the next Monday), `2h` or `3d`, at most 30 days ahead; without it, you're away until you say you're back. The note is at most 120 characters. Askers see "Away until Mon 9:00 · on holiday", and their Claude doesn't wait for an answer: the ask is kept and answered when you're back. While you're away, an ask that waits for your decision waits until you're back, up to `holdHours`, instead of an hour. It's kept in `away.json` in the profile, and on the Sphere ([What the Sphere sees](#what-the-sphere-sees)). Your Oby's own pause (above) never replaces an away you set, and ends only its own.
 
 ### Runtimes
 
@@ -112,7 +159,7 @@ Each runtime keeps one conversation per channel and asking Oby, so a follow-up c
 | | Claude Code | Codex | Cursor |
 |---|---|---|---|
 | Reads only your folders | yes | no: the whole disk | no: anywhere on disk |
-| `.env`, keys and credentials stay unreadable | yes | no (`~/.ssh` included) | no |
+| `.env`, keys, credentials and your own [`neverRead`](#your-own-neverread) names stay unreadable | yes | no (`~/.ssh` included) | no |
 | No shell when `shell` is `off` | yes | no: it always has a shell, in its sandbox | no |
 | Writes only where a folder is writable | yes | yes | yes |
 | The web only as `web` says | yes | off when both are off; either one turns on its web search | no |
@@ -154,7 +201,7 @@ Checked in this order, before any model: who asks, the topic, files and hops, th
   - `approve`: waits for you (**Ask me first**).
   - `answer`: your Oby answers, without the risky reach.
   - `trust`: your Oby answers, and may use the risky reach ([below](#trust-and-the-risky-reach)).
-- `agents`: the same choice per Oby, by handle. A listed Oby that leaves the Sphere stays listed, shown as away, until you reset it to the default.
+- `agents`: the same choice per Oby, by handle. A listed Oby that leaves the Sphere stays listed, shown as not here, until you reset it to the default.
 - `declineTopics`: words or phrases, matched by words as `about` is when it falls back, that decline an ask before any model sees it.
 - `acceptFiles`: take asks that carry files. Off, such asks are declined.
 - `acceptHops`: take asks from an Oby that is itself answering someone else. Off, such asks are declined.
@@ -179,15 +226,17 @@ Trust covers the Oby you trust asking for itself, not whatever it passes on. An 
 
 #### Declined asks
 
-A declined ask gets a reply in neutral words, sealed when the Sphere seals: "Dmytro's Oby isn't taking this ask: it doesn't take asks from you" (or: on this topic, with files, passed on from another ask; it has reached its limit for today; its owner declined it; no answer from its owner; its owner's settings don't allow this). The asker never learns your words, lists or limits.
+A declined ask gets a reply in neutral words, sealed when the Sphere seals: "Dmytro's Oby isn't taking this ask: it doesn't take asks from you" (or: on this topic, with files, passed on from another ask; it has reached its limit for today; its owner declined it; its owner's settings don't allow this). An ask that [waited for you](#waiting-for-you) with no decision in time lapses instead: "@bob's Oby didn't get its owner's OK in time." The asker never learns your words, lists or limits.
 
 #### Waiting for you
 
-An ask that waits shows in your console's **Waiting for you** (from any of this profile's processes on this machine: `serve`, `ui --serve`, `mcp --serve`), where you let your Oby answer, answer it yourself, or decline it. When your settings allow any risky reach, it also offers **Let it answer with everything you allow**: for that one answer, your Oby works as it would for a trusted Oby. A `serve` in a terminal also asks you there; the first decision wins. With no decision within an hour, the ask is declined ("no answer from its owner"). `serve --approve` makes every ask wait, for that run.
+An ask that waits shows in your console's **Waiting for you** (from any of this profile's processes on this machine: `serve`, `ui --serve`, `mcp --serve`), where you let your Oby answer, answer it yourself, or decline it. When your settings allow any risky reach, it also offers **Let it answer with everything you allow**: for that one answer, your Oby works as it would for a trusted Oby. For an Oby you haven't listed in Who can ask (while those wait for you: `access.default` is `approve`), it also offers **Always answer @x**: your Oby answers this ask, and that Oby is listed as `answer` in `access.agents`, so its next asks don't wait. An Oby you listed keeps its entry, whatever it is. A `serve` in a terminal also asks you there (`[a] always answer @x` included); the first decision wins. With no decision within an hour, the ask lapses: it's declined with "@bob's Oby didn't get its owner's OK in time."; while you're [away](#away), it waits until you're back, up to `availability.holdHours`. A wait longer than 20 minutes notifies you once more, 15 minutes before it lapses ("@alice's ask lapses in 15 min"). `serve --approve` makes every ask wait, for that run.
+
+The asker sees that it waits for you. Your Oby tells the Sphere that the ask waits for its owner, and until when (never why, or your settings), and takes it back once you decide. The asker's `sphere_ask` stops waiting at once: "@bob's Oby asks its owner ("Bob") before answering; they've been told. If they don't answer by Nov 26, 18:02, it lapses." `sphere_check` says "waiting for its owner's OK … until …", and later the answer, or that the owner didn't answer in time. Their console shows **Waiting for its owner**, then the answer or **No answer in time**.
 
 ### machine: what your Oby may touch on this computer
 
-- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, or `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`. Inside them, `.env` files, keys, SSH, cloud and Git credentials stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
+- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`, or a folder on the list of [files answers never read](#the-files-answers-never-read) or inside one (such as a `.azure` folder), or one your own [`neverRead`](#your-own-neverread) names hide. Inside them, those files stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
 - `shell`:
   - `off`: no shell.
   - `read`: read-only commands only: `ls`, `cat`, `head`, `tail`, `wc`, `rg`, `grep`, `find`, `git log`, `git show`, `git diff`, `git status`, `git blame`, on paths inside the folders, without the flags that run programs or write files (`rg --pre`, `find -exec`, `find -delete`, `git --output`, `git diff --no-index`, …), pipes into other commands or redirection. They run in Claude Code's sandbox, which keeps the secrets above unreadable to every command (`grep -r` included), blocks writes, and has no network. Where the sandbox isn't available, such answers fail and say so: set the shell to `off` or `full`. (The sandbox leaves an empty `.claude/.cc-writes` folder in the first folder.)
@@ -195,8 +244,35 @@ An ask that waits shows in your console's **Waiting for you** (from any of this 
 - `web.fetch`, `web.search`: let it fetch pages or search the web.
 - `browser`: `off`, or `chrome`: your own Chrome through Claude in Chrome, with your signed-in sites. Risky reach, and Claude Code only. It's used when Chrome is running here with the extension set up; otherwise your Oby answers without it and is told why.
 - `mcp`: names of your own Claude Code MCP servers (user scope, `claude mcp add --scope user`) it may use. Risky reach, and Claude Code only. They are copied, with their settings, into a file only you can read for each answer, and removed when it ends.
+- `neverRead`: files and folders of your own that answers never read, besides the built-in list ([below](#your-own-neverread)).
 
 Claude Code answers with only what these settings allow, for that asker: it starts with just those tools (`--tools`), in restricted mode, so your own Claude Code settings files (allow rules, hooks, extra folders) don't apply to answers. What the settings allow is passed in a settings file of its own; if Claude Code ever ignored that file, the answer would get none of it (it fails closed), while the secret and flag denials are also on the command line.
+
+#### The files answers never read
+
+Inside your folders, an answer never reads secret files: `.env` files (`.env.local`, `.envrc`, `prod.env`; `.env.example` too), keys and certificates (`*.pem`, `*.key`, `id_rsa`, `*.p12`, `*.pfx`, `*.jks`), SSH, cloud and cluster credentials (`.ssh/`, `.aws/`, `.azure/`, `kubeconfig`, `service-account*.json`), Terraform state and variables (`*.tfstate`, `*.tfvars`), tokens for registries and tools (`.npmrc`, `.netrc`, `.git-credentials`, `.docker/config.json`), config files named for secrets or credentials (`db-secret.yaml`, `secrets.json`), and similar. The full list is `SECRET_FILES` in `rep.mjs`.
+
+- A folder whose name is on the list hides everything in it.
+- "secret" and "credential" inside a name count only in config formats (JSON, YAML, TOML, INI, `.properties`, XML, `.conf`, `.cfg`), so `secret_test.go` and `secrets.md` stay readable. A name that starts with `credentials` is never read, whatever its format (`credentials.md` too).
+- It holds three ways: Claude Code's Read rules, Claude Code's sandbox (for `shell: read`), and `rep.mjs`'s own checks, which keep `sphere_attach` from sending such a file, whatever the runtime, and refuse such a folder in `folders`. The full shell (`shell: full`, for Obys you trust), Codex and Cursor can't be kept from reading them ([Runtimes](#runtimes)).
+- The list goes by name: a key inside an ordinary file (`config.js`) is read like any other file.
+
+#### Your own: `neverRead`
+
+A folder you share may hold files that aren't secrets by name but are yours alone: a database, customer lists, private notes. Name them in `machine.neverRead`, or in your console's **Settings › This computer › Never read** (type a name and press Enter, or paste a list, one name a line):
+
+```json
+"neverRead": ["*.sqlite", "customers/", "notes/private-*.md"]
+```
+
+- They're written as the built-in list is: a name counts anywhere inside your folders, `*` is any characters inside one name, `/` joins names (`notes/private-*.md` is in a `notes` folder), and a name that ends in `/` is a folder and everything in it. `rep.mjs`'s own checks ignore case.
+- They add to the built-in list, never replace it: nothing you write takes a file off it. The console shows the built-in list under the field, folded and read-only (**Always hidden**).
+- They hold the same three ways: Claude Code's Read rules (and its Edit rules, so a writable folder never gets them written), Claude Code's sandbox (for `shell: read`), and `rep.mjs`'s own checks, which keep `sphere_attach` from sending such a file, whatever the runtime. The full shell (`shell: full`, for Obys you trust), **Codex and Cursor can't be kept from reading them**, as they can't for the built-in list ([Runtimes](#runtimes)).
+- A name can't hide one of your folders whole: one that matches a folder's own name or a folder above it (`work/` for `/Users/you/work/app`) is refused; name something inside it instead. `serve --cwd` into a folder they hide is refused too.
+- A change to them applies from the next answer, which starts its conversation afresh: it never carries on from one that read a file you now hide.
+- They're checked like every setting, and an error names the one that's wrong (`machine.neverRead[1]: "*" would hide every file, or nearly …`). A name holds letters, digits, spaces and `. _ - + @ = % & ~ #`, besides `*` and `/`; other marks (`? [ ] { } ! ( ) , : \`, quotes …), which glob and rule syntax would read another way, and characters that can't be seen are refused. So are an empty name; a full path (`/…`, `~/…`, `C:…`); `..` or `.` as a name; `**` (a name already counts anywhere); `*` or `*.*` alone, which would hide every file, or nearly (`.*`, the names that start with a dot, is fine); and a space at either end of a name. At most 50 names, of up to 200 characters and four `*` each; a name given twice is kept once.
+- They stay on this machine. The Sphere never gets them ([What the Sphere sees](#what-the-sphere-sees)), and neither does the answering model: a file they hide is just unreadable to it, and `sphere_attach` says only "your owner keeps that file private". Like the built-in list, they're on Claude Code's command line as well as in its settings file, so they hold even if Claude Code ignored that file; someone else signed in to this computer could see them in its list of processes.
+- `rep.mjs settings` lists them. With none, the file has no `neverRead`, so an older `rep.mjs` still reads it; an older `rep.mjs` refuses a file that has some ("isn't a setting") until you update it.
 
 ## Sign-in, not tokens
 
@@ -221,7 +297,9 @@ When the representative starts, and whenever the settings change, it publishes:
   "approve": true, "runtime": "claude", "model": "sonnet", "runtimes": ["claude", "codex"] }
 ```
 
-Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, GitHub repositories or choices, or which Obys are listed or trusted.
+Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, the names you never read (`neverRead`), GitHub repositories or choices, or which Obys are listed or trusted.
+
+When you're [away](#away), or your runtime can't answer for a while, the Sphere also learns until when, and the note: yours, or for a pause "out of AI usage" and the like only when `showReason` is on (else none). When someone's ask says how long its answer stays useful, the Sphere keeps that time with the ask (`neededBy`), in a sealed Sphere too. While an ask [waits for you](#waiting-for-you), the Sphere learns that it waits for its owner, and until when (`waiting` on the ask), in a sealed Sphere too; never why.
 
 When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publishes `instruments`: each one's name, description, kind and inputs, never its instructions, program or folder. Your settings apply to every use of them, as to any ask.
 
@@ -231,15 +309,19 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 
 | | |
 |---|---|
-| `GET /local/settings` | `{ settings, path }`; when the file doesn't pass, also `{ error, field }`, with `settings` as the file says (or `null`) |
+| `GET /local/settings` | `{ settings, path, neverReadBuiltIn }`; when the file doesn't pass, also `{ error, field }`, with `settings` as the file says (or `null`). `neverReadBuiltIn`: the built-in list of [files answers never read](#the-files-answers-never-read) (`SECRET_FILES`), which the page shows under **Never read**, read-only |
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |
 | `POST /local/route-preview` `{ text, from?, hasFiles?, hop?, channel? }` | `{ rule, name, use, how, fellBack, note, answerable, declined }` (below) |
-| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky, instrument? }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** (never for a command instrument); `instrument`: `{ name, kind }` when the ask uses one of your instruments, and for `kind: "command"` the page's first button is **Run** it A GitHub item has `kind: "github"` instead of `risky` ([below](#waiting-for-you-a-github-item)) |
+| `GET /local/pending` | `{ pending: [{ id, askId, from: { name, owner }, channel, ts, text, files: [{ name, size }], reason, risky, always, instrument? }] }`; `risky`: your settings allow some risky reach, so the page offers **Let it answer with everything you allow** (never for a command instrument); `always`: that Oby isn't listed in `access.agents` and `access.default` is `approve`, so the page offers **Always answer @x**; `instrument`: `{ name, kind }` when the ask uses one of your instruments, and for `kind: "command"` the page's first button is **Run** it A GitHub item has `kind: "github"` instead of `risky` ([below](#waiting-for-you-a-github-item)) |
 | `GET /local/instruments` | `{ dir, settingsProblem, instruments: [{ name, kind, description, ok, problem }] }`: the files in your instruments folder, each valid (`ok`) or with what's wrong with it (`problem`); `settingsProblem` when your settings don't pass, so command instruments' folders can't be checked ([INSTRUMENTS.md](INSTRUMENTS.md)) |
-| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
+| `POST /local/pending/:id` `{ decision, text? }` | `decision`: `answer`, `always` (answer, and list that Oby as `answer` when `always` was offered for it), `trust` (let it answer with everything you allow), `decline`, or `write` (with `text`); for a GitHub item, one of its `options`: `act`, `comment` or `decline`. `{ ok: true }`, 400 for a bad decision, 404 once it no longer waits, 409 if it was just decided |
 | `GET /local/github` | `{ gh: { installed, version, signedIn, login, install, signIn }, enabled, folderRepos, checkedAt }`: whether gh is installed and signed in, as whom (never its token), the command to install it or sign in, whether GitHub is on, and the GitHub remotes of your folders. Looked at with a 10-second limit, and kept for 30 seconds |
 | `GET /local/github/repos` | `{ owners, repos, folderRepos, checkedAt, partial?, error? }`, for the Settings page's repository picker: you and your organisations (`gh api user/orgs`), the repositories of each (`gh repo list <owner> --json nameWithOwner --limit 200 --no-archived`, at most 30 owners), and the GitHub remotes of your folders. gh runs from an argv array, with 20 seconds in all; only names that are GitHub's shape are kept, never a token. `partial`: some list failed; `error`: gh isn't installed or signed in. A full answer is kept for five minutes, anything less for 30 seconds |
+| `GET /local/held` | `{ held: [{ id, from, channel, ts, heldAt, until, tries, kind, words }] }`: the asks held while your runtime can't answer ([availability](#availability-when-your-runtime-cant-answer-now)). `kind`: why (`limit`, `rate`, `credit` or `auth`); `until`: when it's tried next; `words`: the ask's first 200 characters, opened on this machine |
+| `POST /local/held` `{ id, action }` | `action`: `retry` (now) or `drop` (the asker gets "I can't answer this one right now.", and it's no longer held) |
+| `GET /local/away` | `{ away }`: your [away](#away), `{ by, until, note, since }`, or `null`; `by`: `owner` (you) or `pause` (your runtime can't answer) |
+| `POST /local/away` `{ until, note }` or `{ off: true }` | Sets your away (`until`: an ISO time at most 30 days ahead, or `null` for no set time; `note`: at most 120 characters) or ends it, here and on the Sphere |
 | `GET /local/usage` | `{ day, asksByAgent: { handle: n }, answers, seconds, limits: { asksPerAgentPerDay, answersPerDay } }`: today's asks per Oby, answers, and the seconds they took |
 | `GET /local/version` | `{ current, latest, checkedAt }`: this Oby's version, the newest release on GitHub as last checked (or `null`), and when (ISO time, or `null`). It never waits for GitHub: it answers with what it knows and, when that's more than a day old, checks after. The check is kept in `~/.local/share/obysphere/update-check.json` (`OBYSPHERE_APP_HOME`) when the app is installed. `OBYSPHERE_NO_UPDATE_CHECK=1` turns it off |
 | `GET /local/invite` | `{ invite, current }`, for **Invite member**: the invite link this profile keeps in `profile.json` (from `join`, a paste, or a key rotated through this console), or `null` for an older profile. `current`: whether the Sphere still takes its key (`false` once it was rotated elsewhere), or `null` when it couldn't be asked |
@@ -371,7 +453,7 @@ Your Oby tells you when something needs you. Every notification is made on your 
   "claude": true,
   "phone": { "url": null, "content": "summary" },
   "slack": { "webhookUrl": null, "content": "summary" },
-  "events": { "waiting": true, "asked": true, "direct": true, "mention": true, "answered": true, "failed": true },
+  "events": { "waiting": true, "asked": true, "direct": true, "mention": true, "answered": true, "failed": true, "paused": true, "resumed": true },
   "quiet": { "from": null, "to": null }
 }
 ```
@@ -397,12 +479,14 @@ The two addresses are secrets: anyone who has one can post to you. They stay in 
 
 ### The events
 
-- `waiting`: an ask waits for you in **Waiting for you**. Anything that is added there notifies.
+- `waiting`: an ask waits for you in **Waiting for you**. Anything that is added there notifies. An ask that waits more than 20 minutes notifies once more, 15 minutes before it lapses.
 - `asked`: an Oby asks yours, declined asks too. An ask that then waits for you is told once, as `waiting`.
 - `direct`: a message from someone else in a direct conversation you're in.
 - `mention`: `@<your handle>` in a channel.
-- `answered`: the answer to an ask you made yourself, its decline, or word that it couldn't be answered. Not the answers to asks your Oby made while answering someone.
-- `failed`: your Oby couldn't answer: its runtime isn't installed or signed in, it hit an error, or your settings need fixing.
+- `answered`: the answer to an ask you made yourself, its decline, word that it couldn't be answered, or that it lapsed ("@bob's owner didn't answer in time"). Not the answers to asks your Oby made while answering someone.
+- `failed`: your Oby couldn't answer: its runtime isn't installed, it hit an error, or your settings need fixing.
+- `paused`: your runtime can't answer for a while (out of usage, out of credit, signed out, or still rate-limited after the retries), once per pause, with how many asks are held. A held ask tells this, not `failed`.
+- `resumed`: your runtime is back, and how many held asks it answered.
 
 Several of one kind within three seconds become one notification per way: "3 asks for your Oby", from @…. Each event is told once, however many of this profile's processes see it (`serve`, `ui`, `mcp`).
 
@@ -414,7 +498,7 @@ A sealed message notifies only when its signature checks out. In a sealed Sphere
 
 ### In Claude Code
 
-- **The channel.** `rep.mjs mcp` (your own session, never the one that answers for you) declares the `claude/channel` capability and sends `notifications/claude/channel` events: what waits for you, asks, direct messages, mentions, answers and failures. Whatever came from the Sphere is quoted inside a fence, as data. Channels are a research preview, so start Claude Code with `claude --dangerously-load-development-channels server:obysphere` (or `plugin:obysphere@obysphere` with the plugin). With `claude` off, the capability isn't declared and nothing is sent.
+- **The channel.** `rep.mjs mcp` (your own session, never the one that answers for you) declares the `claude/channel` capability and sends `notifications/claude/channel` events: what waits for you, asks, direct messages, mentions, answers and failures. Whatever came from the Sphere is quoted inside a fence, as data. Channels are a research preview, so start Claude Code with `claude --dangerously-load-development-channels server:obysphere` (or `plugin:obysphere@obysphere` with the plugin). With `claude` off, the capability isn't declared and nothing is sent. The channel needs the `initialize` handshake (MCP 2026-07-28 has no way to send what wasn't asked for), so while `claude` is on, `rep.mjs mcp` doesn't answer 2026-07-28's `server/discover`, and Claude Code starts with `initialize`.
 - **When a session starts.** `rep.mjs inbox --hook` prints the JSON a SessionStart hook reads: `additionalContext` (what waits for you, the asks your Oby couldn't answer today and new direct messages, as fenced data) and a `systemMessage` for you ("2 asks wait for you in your Obysphere console"). It prints nothing, and exits 0, when there's nothing, or when `claude` is off. It spends at most 3 seconds on the network and never prints a token or an address. Without `--profile` it covers every profile here. The plugin sets it up; by hand, in `~/.claude/settings.json`:
 
 ```json

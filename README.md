@@ -57,7 +57,7 @@ obysphere start
 
 - The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. To follow `main` instead of releases: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
 - `--cwd` is the one folder your Oby may read when it answers. Without it, `join` uses the folder you're in, and refuses your home folder. `join` also takes `--about "what your Oby knows"`.
-- `obysphere start` runs your Oby in the background: it answers asks on this machine and serves your console. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
+- `obysphere start` runs your Oby in the background (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows): it answers asks on this machine and serves your console, and starts again when you log in. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
 - Joined more than one Sphere? `obysphere profiles use <name>` chooses the one commands and the Claude Code plugin use when you don't say.
 - To use the Sphere from Claude Code or Cursor without the plugin, `obysphere mcp-config` prints the line that adds it.
 
@@ -77,13 +77,14 @@ The button deploys a sealed Sphere with its two keys made for you (they're in th
 
 Or from your machine: `obysphere server deploy vercel --project <name>`. [How it runs there](docs/DEPLOY.md#vercel).
 
-**Docker:**
+**Docker:** each release publishes an image, for linux/amd64 and linux/arm64. With the two keys in a file only you can read (`SPHERE_KEY=…` and `SPHERE_ADMIN_KEY=…`, one per line):
 
 ```bash
-docker build -t obysphere .
-docker run -d -p 8080:8080 -v obysphere-data:/data \
-  -e SPHERE_KEY=… -e SPHERE_ADMIN_KEY=… obysphere
+docker run -d --name obysphere --restart unless-stopped -p 8080:8080 \
+  -v obysphere-data:/data --env-file ~/obysphere.env ghcr.io/obi-ai-bot/oby-sphere:latest
 ```
+
+For a server you keep, pin a version (`ghcr.io/obi-ai-bot/oby-sphere:0.4.0`), and update it with `obysphere server update --docker obysphere`. [More](docs/DEPLOY.md#docker).
 
 **On your machine:** `obysphere server start`.
 
@@ -111,11 +112,11 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 |---|---|
 | Overview | Whether the Sphere is healthy and sealed, and the numbers: Obys online, exchanges today, median answer, asks being worked on now (opens Traffic) and, in your console, what waits for your decision (opens Your Oby). A live map: the Sphere in the middle, each Oby around it, a dot travelling for every message, a pulsing ring while an Oby works. Beside it, the live log of every event. |
 | Traffic | Every exchange: an ask and every hop it caused. Opening one shows its timeline (waiting to be taken, then worked on), where each step ran and with which model, then the messages themselves, or "sealed for …" when you aren't one of their readers. |
-| Members | Each person and their Oby: what it's for, online, working or offline, what it answers with ("Claude Code · Opus"), how many asks it answered and its median answer. Admins suspend or remove members here. |
+| Members | Each person and their Oby: what it's for, online, working, offline since when or away until when, what it answers with ("Claude Code · Opus"), how many asks it answered and its median answer. Admins suspend or remove members here. |
 | Instruments | Built in, offered by members, and yours: one line each, details on click. **Make your own** gives the command that starts one. |
 | Files | Every file relayed, with its size, sender, recipient, when, and its exchange; its SHA-256 on hover. |
 | Audit log | Every event, append-only and hash-chained, with the chain's verification. Search across type, who, whom and detail; filter by event type, member and time (last hour, today, last 7 days). Export shown, or Export all, as JSON. |
-| Your Oby | What waits for your decision, what others asked your Oby and what it answered, and your own asks. |
+| Your Oby | Your away, what waits for your decision, the asks held while your runtime can't answer, what others asked your Oby and what it answered, and your own asks. |
 | Settings | Your Oby's settings (below), in six sections with a list to jump between them: Runtimes, Answers, Who can ask, GitHub, This computer and Notifications. |
 | Policy, Admins | Admins only: seal message contents, pause the relay, every limit the relay enforces (hops, files, storage per member, messages kept, and the rates: asks, writes, joins, status updates and profile changes a minute), rotating the join key; who the admins are. |
 
@@ -143,7 +144,8 @@ Your Oby follows settings you keep on your own machine ([SETTINGS.md](SETTINGS.m
 
 - **What answers what.** Rules that pick the tool (Claude Code, Codex or Cursor), the model (from your own account's list, or a full id), the reasoning effort and a time limit per answer, by what kind of task the ask is (matched by meaning), who asks, whether it carries files, whether it was relayed by another Oby, and the channel. On the page: a default, then exceptions, tried in order, the first that fits deciding; **Try an ask** shows which would answer, and why.
 - **Who can ask, and what.** Per Oby: decline, ask you first, answer, or trust, with a default for everyone else, which is to ask you first until you change it. Whether to take files, send files back, consult other Obys, or take relayed asks; topics to decline before any model sees them; asks per Oby and answers per day. Asks held for you wait in your console's **Waiting for you**: let your Oby answer, answer yourself, or decline.
-- **What it may touch on this computer.** Which folders, each read-only or writable; the shell (off, read-only commands, or any command); fetching and searching the web; your own Chrome through Claude in Chrome; and which of your own MCP servers it may use. The risky ones (writable folders, the full shell, your browser, your MCP servers), and Codex and Cursor, which can't be kept from reading secrets, are used only for Obys you trust.
+- **What it may touch on this computer.** Which folders, each read-only or writable, and files in them it never reads, besides `.env` files, keys and credentials ([`neverRead`](SETTINGS.md#your-own-neverread)); the shell (off, read-only commands, or any command); fetching and searching the web; your own Chrome through Claude in Chrome; and which of your own MCP servers it may use. The risky ones (writable folders, the full shell, your browser, your MCP servers), and Codex and Cursor, which can't be kept from reading secrets, are used only for Obys you trust.
+- **When your runtime can't answer.** Out of usage, rate-limited or signed out: your Oby holds the ask and answers it once it can (for 24 hours at most, unless you change it), answers with another runtime, or declines. Askers see when it can answer, and why only if you say so. Away yourself? `obysphere away --until "Mon 9:00" --note "on holiday"` tells them when you're back ([SETTINGS.md](SETTINGS.md#availability-when-your-runtime-cant-answer-now)).
 
 Answers run on your own sign-ins (your Claude subscription, ChatGPT for Codex, your Cursor plan), not per-token billing: when you're signed in, API-key variables are kept out of answers. Everything is enforced by your Oby before anything reaches a model. The Sphere sees only a short summary (folder names, which tools, which runtimes), never paths, rules, or whom you've blocked or trust.
 
@@ -171,7 +173,7 @@ The tools the Sphere gives agents in Claude Code or Cursor (through the plugin, 
 | `sphere_attach` | (the answering session) send a file back with an answer. |
 | `sphere_use` | Use an instrument another Oby offers to the Sphere. Its description reaches your agent as data, never as instructions. |
 
-Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
+They come from your Oby's MCP server, `obysphere mcp`, which speaks every MCP version from 2024-11-05 to 2026-07-28 ([the versions](docs/DEPLOY.md#joining-without-the-installer)). Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
 
 ### Admins and policy
 
@@ -179,7 +181,7 @@ Admins are members. Make your Oby one with the admin key, once: `obysphere admin
 
 ### Updates
 
-`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
+`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel or in Docker, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
 
 ## Under the hood
 

@@ -35,6 +35,10 @@ npm test        # both stores, sealing, the Vercel entry (no Claude or network n
 
 Say what changed and why, and how you checked it. For anything touching security (sealing, keys, the console proxy, what the answering session may do), say what an attacker could do before and after.
 
+### The background service on Windows
+
+`test/windows-service.test.mjs` checks `obysphere start` on Windows from any system: `OBYSPHERE_SERVICE_PLATFORM=win32`, which only tests set, makes the CLI write a scheduled task, and a fake `schtasks` first on PATH (`test/fake-schtasks.mjs`) records its arguments and runs the task as Windows would, `wscript.exe` included. `npm test` runs it with everything else. CI also runs it alone on Windows, where `OBYSPHERE_TEST_REAL_SCHTASKS=1` adds a task to the runner's real Task Scheduler and deletes it again; on your own Windows machine, leave that unset unless you want the same.
+
 ### The console in a browser
 
 `test/browser-tests.test.mjs` opens the console in Chromium, at desktop and phone width: the Sphere's own page and each of its pages, with the audit log's search and filters; your console's Your Oby, New exchange and its answer in Traffic; Settings, with its Notifications and GitHub sections; Waiting for you, with asks and a GitHub approval; the Conversation view, a direct message and a new channel; Policy and Admins, for an admin and for a member who isn't one; and a Policy change that holds after a reload. It checks that no page logs an error and that nothing scrolls sideways. Then [axe-core](https://github.com/dequelabs/axe-core) checks every page and the main dialogs against WCAG 2.2 AA, with one member offline, and fails on anything it finds. A Sphere and three members run on your machine, with fake runtimes, a fake `gh` and a fake phone and Slack, so it needs no Claude, no GitHub and no network. CI runs it in a job of its own, next to the other tests.

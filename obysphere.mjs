@@ -4,7 +4,7 @@
 // This file runs your Oby in the background, keeps it up to date, and runs Spheres:
 //   start, stop, restart, status, logs, open, profiles   your console and Oby, as a per-user service
 //   update, version, doctor                              the installed app, from GitHub
-//   server start | deploy | update | status              a Sphere, on this machine or on Vercel
+//   server start | deploy | update | status              a Sphere, on this machine, on Vercel or in Docker
 // Every other command (join, ask, settings, mcp, admin, notify, github, ...) goes to
 // rep.mjs beside this file as it is: `obysphere join …` runs `node rep.mjs join …`.
 //
@@ -35,7 +35,9 @@ const BIN_DIR = path.resolve(process.env.OBYSPHERE_BIN_DIR || path.join(os.homed
 const RELEASES_API = trimSlash(process.env.OBYSPHERE_RELEASES_API || `https://api.github.com/repos/${REPO}`);
 const DOWNLOAD_BASE = trimSlash(process.env.OBYSPHERE_DOWNLOAD_BASE || `https://github.com/${REPO}`);
 const MAIN_TARBALL = process.env.OBYSPHERE_DOWNLOAD_BASE ? `${DOWNLOAD_BASE}/archive/refs/heads/main.tar.gz` : `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
-// tests and dry runs: which system's service to write, and whether to run launchctl, systemctl and open
+// for tests only: OBYSPHERE_SERVICE_PLATFORM (darwin, linux or win32) says which system's service
+// to write, whatever this one is; OBYSPHERE_SERVICE_DRYRUN writes down the launchctl, systemctl,
+// schtasks and open commands instead of running them
 const PLATFORM = process.env.OBYSPHERE_SERVICE_PLATFORM || process.platform;
 const DRY = /^(|0|false|no|off)$/i.test(process.env.OBYSPHERE_SERVICE_DRYRUN || '') ? null : process.env.OBYSPHERE_SERVICE_DRYRUN;
 const NO_CHECK = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_NO_UPDATE_CHECK || '');
@@ -65,6 +67,7 @@ Join and run your Oby
                  [--about "what your Oby knows"] [--profile <name>] [--insecure]
   obysphere start [--profile p | --all] [--foreground]
                                    run your console and Oby in the background; it starts again at login
+                                   (a LaunchAgent on macOS, a systemd user unit on Linux, a scheduled task on Windows)
   obysphere stop | restart [--profile p | --all]
   obysphere status [--json]        each profile: running or not, its console, its Sphere, versions, updates
   obysphere open [--profile p]     your console, in the browser
@@ -77,6 +80,9 @@ Ask and read
   obysphere ask <agent> "<message>" [--file <path>] [--channel <name>]
   obysphere post "<message>" [--channel <name>] [--file <path>]
   obysphere agents | whoami | inbox | read [channel]
+  obysphere away [--until <when>] [--note "<words>"] | --off
+                                   tell askers you're away until <when> (18:00, "Mon 9:00", 2h, 3d or a date);
+                                   plain away says what they see now
   obysphere serve [--approve]      answer asks in this terminal (start does it in the background)
   obysphere ui [--port 4849] [--open]   your console, from this terminal
 
@@ -109,6 +115,8 @@ Run a Sphere
   obysphere server deploy vercel --project <name> [--scope <team>] [--name "<Sphere name>"]
   obysphere server deploy docker | railway                the exact steps
   obysphere server update [<name>]                        deploy the installed version again
+  obysphere server update --docker <container> [--url <address>] [--tag <version>]
+                                   a Sphere in Docker here: pull the image, run it again the same way, record it
   obysphere server status [<name> | <url>]
 
 Profiles:  ${HOME}  (OBYSPHERE_HOME moves them)
@@ -290,6 +298,7 @@ async function consoleAnswers(port) {
 
 function serviceDir() {
   if (process.env.OBYSPHERE_SERVICE_DIR) return path.resolve(process.env.OBYSPHERE_SERVICE_DIR);
+  if (PLATFORM === 'win32') return taskDir();
   if (PLATFORM === 'darwin') return path.join(os.homedir(), 'Library', 'LaunchAgents');
   return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd', 'user');
 }
@@ -298,6 +307,7 @@ const unitName = (name) => `obysphere-${name}.service`;
 function serviceFile(name) {
   if (PLATFORM === 'darwin') return path.join(serviceDir(), `${label(name)}.plist`);
   if (PLATFORM === 'linux') return path.join(serviceDir(), unitName(name));
+  if (PLATFORM === 'win32') return taskFile(name, '.xml');
   return null;
 }
 function serviceInstalled(name) {
@@ -416,6 +426,7 @@ async function installService(name, port, app = appForService()) {
   rotate(s.log);
   const file = serviceFile(name);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (PLATFORM === 'win32') return installTask(name, port, s, app);
   if (PLATFORM === 'darwin') {
     fs.writeFileSync(file, plist(s), { mode: 0o644 });
     const domain = `gui/${uid()}`;
@@ -439,6 +450,7 @@ async function installService(name, port, app = appForService()) {
 
 function removeService(name) {
   const file = serviceFile(name);
+  if (PLATFORM === 'win32') return removeTask(name);
   if (PLATFORM === 'darwin') runOs('launchctl', ['bootout', `gui/${uid()}/${label(name)}`]);
   else runOs('systemctl', ['--user', 'disable', '--now', unitName(name)]);
   fs.rmSync(file, { force: true });
@@ -467,7 +479,7 @@ async function announce(name, port) {
 
 async function start() {
   const names = targets();
-  if (opt.foreground || (PLATFORM !== 'darwin' && PLATFORM !== 'linux')) {
+  if (opt.foreground || !serviceHere()) {
     if (names.length > 1) die('In the foreground it runs one profile at a time: pass --profile <name>.');
     if (!opt.foreground) say(dim("There's no background service on this system yet: your console runs in this terminal. Keep it open; Ctrl+C stops it."));
     const port = await consolePort(names[0]);
@@ -492,20 +504,20 @@ async function start() {
 }
 
 async function stop() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') die('Here your console runs in a terminal: stop it there with Ctrl+C.');
+  if (!serviceHere()) die('Here your console runs in a terminal: stop it there with Ctrl+C.');
   for (const n of targets()) {
     if (!serviceInstalled(n)) {
       const port = savedPort(n);
       say(port && (await consoleAnswers(port)) ? `${n} runs in a terminal, not in the background: stop it there (Ctrl+C).` : `${n} isn't running in the background.`);
       continue;
     }
-    removeService(n);
+    await removeService(n);
     say(`${dim('○')} ${bold(n)} stopped. It won't start at login until you run obysphere start again.`);
   }
 }
 
 async function restart() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') die('Here your console runs in a terminal: stop it there with Ctrl+C, then obysphere start.');
+  if (!serviceHere()) die('Here your console runs in a terminal: stop it there with Ctrl+C, then obysphere start.');
   for (const n of targets()) {
     const port = await consolePort(n);
     // a console in a terminal holds the port: a service started now would only fail to listen, again and again
@@ -521,7 +533,7 @@ async function restart() {
 
 // after an update or a rollback: every service again, from `current`
 async function restartServices() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') return;
+  if (!serviceHere()) return;
   const names = listProfiles().filter(serviceInstalled);
   for (const n of names) await installService(n, await consolePort(n), path.join(APP_HOME, 'current'));
   if (names.length)
@@ -577,6 +589,256 @@ async function openCmd() {
   const r = runOs(bin, args, { detach: true });
   if (r.status !== 0) die(`couldn't open a browser: open ${url} yourself`);
   say(`Opening ${cyan(url)}`);
+}
+
+// ================================================================ the background service on Windows
+//
+// A scheduled task of your own, made from an XML file as a LaunchAgent is from its plist. It
+// starts when you log on, runs only while you're logged on (InteractiveToken) and with the least
+// privileges, so it needs no admin rights and no UAC prompt. A task name belongs to the whole
+// computer, and a user without admin rights can't count on making a folder in Task Scheduler's
+// library, so yours sits in its root folder as Obysphere-<profile>-<your user name>, the way
+// per-user updaters name theirs.
+//
+// Its action is wscript.exe with a small JScript file, because Windows Script Host is a part of
+// Windows that can start a console program with no window at all (WshShell.Run, window style 0)
+// and wait for it. A .cmd file, or node.exe itself, opens a console window; PowerShell's
+// -WindowStyle Hidden still flashes one; `conhost --headless` is undocumented and security tools
+// flag it; Node's windowsHide hides only the windows of the programs Node starts; and VBScript is
+// being removed from Windows, while JScript stays.
+//
+// The JScript file runs `obysphere.mjs service-run`, a small supervisor that does what launchd
+// and systemd do on the other systems: it runs `rep.mjs ui --serve` as the plist and the unit
+// say (the same spec), writes its output to <profile>/logs/, starts it again 5 seconds after it
+// stops, and ends (with it) when the task is ended (schtasks /end), or when its spec changes or
+// goes (restart, stop). Task Scheduler's own restart on failure is only a backstop.
+//
+// What `schtasks /query` shows of the task is wscript.exe and that file's path. Nothing in the
+// three files (the task's XML, the JScript file, the spec) is secret: the profile, with its
+// token, is read from disk.
+
+const SERVICE_SYSTEMS = new Set(['darwin', 'linux', 'win32']);
+function serviceHere() {
+  return SERVICE_SYSTEMS.has(PLATFORM);
+}
+
+// %LOCALAPPDATA%\obysphere\services: the task's XML, its JScript file and the spec, per profile
+function taskDir() {
+  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'obysphere', 'services');
+}
+const taskFile = (name, ext) => path.join(serviceDir(), `obysphere-${name}${ext}`);
+function winUserName() {
+  if (process.env.USERNAME) return process.env.USERNAME;
+  try {
+    return os.userInfo().username;
+  } catch {
+    return 'me';
+  }
+}
+// who the task runs as, and whose logon starts it: you (DOMAIN\user)
+const winUser = () => (process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${winUserName()}` : winUserName());
+const taskName = (name) => `Obysphere-${name}-${winUserName().replace(/[^\w.-]+/g, '_').slice(0, 40)}`;
+
+// one argument as Windows programs read their command line (the C runtime's rules): quoted when
+// it has a space or a quote, with the backslashes before a quote, or before the closing one, doubled
+function winArg(a) {
+  const s = String(a);
+  if (s && !/[\s"]/.test(s)) return s;
+  return `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+}
+// a JScript string literal in plain ASCII: Windows Script Host reads a .js file in the system's
+// code page, so anything else is a \u escape
+const jsString = (s) => JSON.stringify(String(s)).replace(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
+function taskScript(name, command) {
+  return `// Obysphere: ${name}'s console and Oby. The scheduled task ${taskName(name)} runs this with
+// wscript.exe when you log on. Written by obysphere start; obysphere stop removes it.
+// Node starts with no window (0), and this waits for it (true) and ends with its exit code.
+var shell = WScript.CreateObject("WScript.Shell");
+WScript.Quit(shell.Run(${jsString(command)}, 0, true));
+`;
+}
+
+function taskXml(name, s, script) {
+  const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); // text only, no attributes
+  const wscript = path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
+  return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>${x(`Obysphere: ${name}'s console and Oby, written by obysphere start. obysphere stop removes it.`)}</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>${x(winUser())}</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>${x(winUser())}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>5</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${x(wscript)}</Command>
+      <Arguments>${x(`//B //Nologo //E:JScript ${winArg(script)}`)}</Arguments>
+      <WorkingDirectory>${x(s.cwd)}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+`;
+}
+
+// schtasks: the one first on your PATH, never one in the folder you're in (which Windows would
+// look in first); else Windows' own
+function schtasks(args) {
+  return runOs(DRY ? 'schtasks' : schtasksBin(), args);
+}
+function schtasksBin() {
+  if (process.platform !== 'win32') return which('schtasks') || 'schtasks';
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    const f = dir && path.isAbsolute(dir) ? path.join(dir, 'schtasks.exe') : null;
+    if (f && fs.existsSync(f)) return f;
+  }
+  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'schtasks.exe');
+}
+
+async function untilQuiet(port) {
+  for (let i = 0; i < 24 && !DRY && (await consoleAnswers(port)); i++) await sleep(250);
+}
+
+async function installTask(name, port, s, app) {
+  const task = taskName(name);
+  const [xmlFile, script, specFile] = ['.xml', '.js', '.json'].map((e) => taskFile(name, e));
+  const command = [s.args[0], '--preserve-symlinks-main', path.join(app, 'obysphere.mjs'), 'service-run', '--spec', specFile].map(winArg).join(' ');
+  // WshShell.Run and Task Scheduler both put a variable's value in place of %NAME%
+  const word = `${command} ${script} ${s.cwd}`.split('%').slice(1, -1).find((v) => v && process.env[v] !== undefined);
+  if (word !== undefined) throw new Error(`Windows would read %${word}% in these paths as a variable, so a task can't run them: obysphere start --foreground runs your console in this terminal.\n  ${command}`);
+  // a new id: a supervisor still running from before sees it and stops
+  writeSecret(specFile, { ...s, task, id: randomBytes(8).toString('hex') });
+  fs.writeFileSync(script, taskScript(name, command), { mode: 0o644 });
+  fs.writeFileSync(xmlFile, Buffer.from('\ufeff' + taskXml(name, s, script), 'utf16le'), { mode: 0o644 });
+  schtasks(['/end', '/tn', task]); // not running: fine
+  const made = schtasks(['/create', '/tn', task, '/xml', xmlFile, '/f']);
+  if (made.status !== 0) {
+    // nothing left behind: a task from before (a restart, an update) goes too, since without its
+    // files obysphere stop couldn't find it; its supervisor saw the spec change and stops
+    schtasks(['/delete', '/tn', task, '/f']); // none from before: fine
+    for (const f of [xmlFile, script, specFile]) fs.rmSync(f, { force: true });
+    await untilQuiet(port);
+    throw new Error(`schtasks couldn't create the task ${task}: ${clean(made.stderr || made.stdout, 300) || `exit code ${made.status}`}`);
+  }
+  await untilQuiet(port); // the one from before lets go of the port
+  const ran = schtasks(['/run', '/tn', task]);
+  if (ran.status !== 0) throw new Error(`schtasks couldn't start the task ${task}: ${clean(ran.stderr || ran.stdout, 300) || `exit code ${ran.status}`}`);
+}
+
+async function removeTask(name) {
+  const task = taskName(name);
+  fs.rmSync(taskFile(name, '.json'), { force: true }); // its supervisor stops within a second
+  schtasks(['/end', '/tn', task]);
+  schtasks(['/delete', '/tn', task, '/f']);
+  for (const e of ['.js', '.xml']) fs.rmSync(taskFile(name, e), { force: true });
+  await untilQuiet(savedPort(name));
+}
+
+// the spec's environment over this one's; on Windows, where PATH and Path are one name, without twins
+function specEnv(base, add) {
+  const env = { ...base };
+  const names = new Set(Object.keys(add).map((k) => k.toUpperCase()));
+  if (process.platform === 'win32') for (const k of Object.keys(env)) if (names.has(k.toUpperCase())) delete env[k];
+  return { ...env, ...add };
+}
+
+// obysphere.mjs service-run --spec <file>: what the task's JScript file starts, not a command for people
+async function serviceRun() {
+  if (typeof opt.spec !== 'string') die('usage: obysphere service-run --spec <file> (the Windows task runs it)');
+  const file = path.resolve(opt.spec);
+  const s = readJson(file, null);
+  const strings = (a) => Array.isArray(a) && a.length > 0 && a.every((v) => typeof v === 'string');
+  const ok = s && strings(s.args) && typeof s.cwd === 'string' && typeof s.log === 'string' && typeof s.id === 'string' && s.env && typeof s.env === 'object' && Object.values(s.env).every((v) => typeof v === 'string');
+  if (!ok) die(`${file} isn't a service spec`);
+  const note = (m) => {
+    try {
+      fs.appendFileSync(s.log, `[${new Date().toISOString()}] obysphere: ${m}\n`);
+    } catch {}
+  };
+  let child = null;
+  let done = false;
+  const end = (why) => {
+    if (done) return;
+    done = true;
+    note(why);
+    try {
+      child?.kill();
+    } catch {}
+    process.exit(0);
+  };
+  // the task ended: wscript.exe, which waits for this, is gone (on Windows a parent's id stays put)
+  const parent = process.ppid;
+  const parentGone = () => {
+    if (process.ppid !== parent) return true;
+    try {
+      process.kill(parent, 0);
+      return false;
+    } catch (e) {
+      return e.code !== 'EPERM';
+    }
+  };
+  // the spec's id now: null when it's gone, undefined when it can't be read just now (another
+  // program holding it open, say), which is no reason to stop
+  const specId = () => {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))?.id ?? null;
+    } catch (e) {
+      return e.code === 'ENOENT' ? null : undefined;
+    }
+  };
+  setInterval(() => {
+    const id = specId();
+    if (id !== undefined && id !== s.id) end('the service was changed or removed: stopping');
+    else if (parentGone()) end('its task ended: stopping');
+  }, 1000);
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGBREAK']) process.on(sig, () => end(`${sig}: stopping`));
+  const env = specEnv(process.env, s.env);
+  fs.mkdirSync(path.dirname(s.log), { recursive: true, mode: 0o700 });
+  while (!done) {
+    rotate(s.log);
+    note('starting your console and Oby');
+    const fd = fs.openSync(s.log, 'a');
+    const why = await new Promise((resolve) => {
+      // its own console, with no window; the runtimes it starts share it, so they open none either
+      child = spawn(s.args[0], s.args.slice(1), { cwd: s.cwd, env, stdio: ['ignore', fd, fd], windowsHide: true });
+      child.once('error', (e) => resolve(e.message));
+      child.once('exit', (code, signal) => resolve(signal || `exit code ${code}`));
+    });
+    fs.closeSync(fd);
+    child = null;
+    if (done) break;
+    note(`it stopped (${clean(why, 200)}); starting it again in 5 seconds`);
+    await sleep(5000);
+  }
 }
 
 // ================================================================ status, version, doctor
@@ -935,7 +1197,7 @@ async function server() {
   if (sub === 'deploy' && where === 'railway') return say(railwaySteps());
   if (sub === 'update') return serverUpdate();
   if (sub === 'status') return serverStatus();
-  die('usage: obysphere server start [flags] | deploy vercel|docker|railway | update [<name>] | status [<name> | <url>]');
+  die('usage: obysphere server start [flags] | deploy vercel|docker|railway | update [<name> | --docker <container>] | status [<name> | <url>]');
 }
 
 // server.mjs beside this file, in this terminal, with its own flags
@@ -963,7 +1225,7 @@ function pickRecord(name) {
   const all = records();
   if (name) return all.find((r) => r.name === name) || die(`No deployed Sphere named ${JSON.stringify(name)} here${all.length ? ` (there: ${all.map((r) => r.name).join(', ')})` : ''}.`);
   if (all.length === 1) return all[0];
-  if (!all.length) die('No deployed Sphere is recorded here. Deploy one: obysphere server deploy vercel --project <name>');
+  if (!all.length) die(`No deployed Sphere is recorded here. Deploy one: obysphere server deploy vercel --project <name>${DOCKER_HINT}`);
   die(`Several Spheres are recorded here (${all.map((r) => r.name).join(', ')}): name one.`);
 }
 
@@ -1103,7 +1365,9 @@ async function deployVercel({ project = opt.project, scope = opt.scope, sphereNa
 }
 
 async function serverUpdate() {
+  if (opt.docker !== undefined) return dockerServerUpdate(opt.docker); // ===== docker-image
   const rec = pickRecord(pos[1]);
+  if (rec.provider === 'docker') return dockerServerUpdate(rec.container, rec); // ===== docker-image
   if (rec.provider !== 'vercel') die(`${rec.name} isn't on Vercel: update it where it runs.`);
   await deployVercel({ project: rec.project, scope: rec.scope || undefined, sphereName: undefined, isUpdate: true });
 }
@@ -1111,10 +1375,14 @@ async function serverUpdate() {
 async function serverStatus() {
   const arg = pos[1];
   const list = arg && /^https?:\/\//.test(arg) ? [{ name: arg, url: arg }] : arg ? [pickRecord(arg)] : records();
-  if (!list.length) return say('No deployed Sphere is recorded here. Deploy one: obysphere server deploy vercel --project <name>');
+  if (!list.length) return say(`No deployed Sphere is recorded here. Deploy one: obysphere server deploy vercel --project <name>${DOCKER_HINT}`);
   const installed = String(readJson(path.join(appSource(), 'package.json'), {}).version || VERSION);
   let bad = 0;
   for (const r of list) {
+    if (!r.url && r.provider === 'docker') { // ===== docker-image: a container with no published port
+      say(`${bold(r.name)}  ${dim(`the container ${r.container}`)}\n  ${dim('○')} no address recorded: obysphere server update ${r.name} --url https://<its address>`);
+      continue;
+    }
     const h = await relayHealth(r.url);
     say(r.name === r.url ? bold(r.url) : `${bold(r.name)}  ${r.url}`);
     if (!h.ok) {
@@ -1123,28 +1391,32 @@ async function serverStatus() {
       continue;
     }
     say(`  ${green('✓')} up · relay ${h.version || '?'} · ${h.store || '?'} store${h.sealed ? ' · sealed' : ''}${h.paused ? ' · paused' : ''}${r.version ? dim(` · deployed ${r.version}${r.deployedAt ? ` on ${r.deployedAt.slice(0, 10)}` : ''}`) : ''}`);
-    if (r.provider === 'vercel' && h.version && handshake(installed, h.version) === 'relay-older') say(`  ${yellow('!')} you have ${installed}: obysphere server update ${r.name}`);
+    if ((r.provider === 'vercel' || r.provider === 'docker') && h.version && handshake(installed, h.version) === 'relay-older') say(`  ${yellow('!')} you have ${installed}: obysphere server update ${r.name}`);
   }
   process.exitCode = bad ? 1 : 0;
 }
 
 function dockerSteps() {
+  const v = String(readJson(path.join(appSource(), 'package.json'), {}).version || VERSION);
   return `A Sphere in Docker, on any machine with Docker:
 
   # the two keys, made once and kept in a file only you can read
-  umask 077
-  printf 'SPHERE_KEY=%s\\nSPHERE_ADMIN_KEY=%s\\n' "$(openssl rand -base64 24)" "$(openssl rand -base64 24)" > ~/obysphere.env
+  (umask 077; printf 'SPHERE_KEY=%s\\nSPHERE_ADMIN_KEY=%s\\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" > ~/obysphere.env)
 
-  docker build -t obysphere ${shq(appSource())}
+  # the published image, for your version (${v}), for linux/amd64 and linux/arm64.
+  # To build it yourself instead: docker build -t obysphere ${shq(appSource())}
+  # and run obysphere in place of the image's name below.
   docker run -d --name obysphere --restart unless-stopped -p 8080:8080 \\
-    -v obysphere-data:/data --env-file ~/obysphere.env -e SPHERE_NAME="Our Sphere" obysphere
+    -v obysphere-data:/data --env-file ~/obysphere.env -e SPHERE_NAME="Our Sphere" \\
+    ${DOCKER_IMAGE}:${v}
   curl -fs http://localhost:8080/healthz
 
 Put it behind HTTPS (a reverse proxy or your platform's). Add -e SPHERE_TRUST_PROXY=1 only
 when a proxy you control sets X-Forwarded-For.
 Your invite link: https://<your host>/#key=<SPHERE_KEY from ~/obysphere.env>
-To update: build the new version the same way, then docker rm -f obysphere and run it again
-(the data stays in the obysphere-data volume).`;
+To update: obysphere update, then obysphere server update --docker obysphere. It pulls the image
+for your new version and runs the container again with the same name, port, volume and variables
+(the data stays in the obysphere-data volume). From then on, obysphere server update finds it.`;
 }
 
 function railwaySteps() {
@@ -1164,6 +1436,335 @@ Or by hand:
 
 Your invite link: https://<that domain>/#key=<SPHERE_KEY>
 To update: redeploy from Railway (it builds the newest commit of the branch you chose).`;
+}
+
+// ===== docker-image: a Sphere in Docker, updated in place
+//
+// `obysphere server update --docker <container>` updates a Sphere that runs in Docker here: it
+// pulls the published image for the installed version (or --tag) and runs it as that container
+// again, with the same name, ports, volumes, variables, labels, restart policy, network,
+// arguments and limits. Then it records the Sphere in servers/<name>.json (no secrets), so
+// `server update` and `server status` find it later. A container that isn't a Sphere, one that
+// Docker Compose runs, or a setting this can't carry over is refused before anything changes.
+// The variables hold the keys. They're read from `docker container inspect` into memory and
+// reach `docker run` in a file only you can read (--env-file; labels in a --label-file), removed
+// as soon as docker has read it: never in an argument, never printed, and what docker says is
+// shown with their values hidden. The old container waits, stopped, as <name>-previous until
+// the new one runs and answers; if it doesn't, the old one comes back.
+
+const DOCKER_IMAGE = `ghcr.io/${REPO}`;
+const DOCKER_HINT = ', or update a Sphere in Docker here: obysphere server update --docker <container>';
+const DOCKER_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
+const DOCKER_REPO = /^(?:[a-z0-9.-]+(?::\d{1,5})?\/)?[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*$/;
+const DOCKER_WAIT_MS = 60e3;
+// log drivers whose options are sizes and names, never credentials, so they may go in arguments
+const DOCKER_LOGS = new Set(['json-file', 'local', 'journald', 'syslog', 'none']);
+
+// the docker command, without the Sphere's variables in its environment. It resolves with what
+// docker printed; a failure says what docker said on stderr (never stdout: inspect prints the
+// variables there), with `secrets` hidden.
+function docker(args, secrets = []) {
+  const bin = which('docker') || die('This needs Docker: the docker command, on your PATH.');
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    for (const k of Object.keys(env)) if (/^SPHERE_/.test(k) || k === 'OBYSPHERE_ADMIN_KEY') delete env[k];
+    const child = spawn(bin, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => reject(new Error(`couldn't run docker: ${e.message}`)));
+    child.on('close', (code) => {
+      if (code === 0) return resolve({ stdout, stderr });
+      const said = clean(hide(stderr, secrets), 2000, true);
+      reject(new Error(`docker ${args[0]}${args[0] === 'container' || args[0] === 'image' ? ` ${args[1]}` : ''} failed${said ? `:\n${indentText(said)}` : ''}`));
+    });
+  });
+}
+// every value in `secrets` (8 characters or more) taken out of `s`
+function hide(s, secrets) {
+  return secrets.filter((v) => v.length >= 8).reduce((t, v) => t.split(v).join('<hidden>'), String(s ?? ''));
+}
+async function dockerInspect(kind, ref, secrets = []) {
+  const { stdout } = await docker([kind, 'inspect', ref], secrets);
+  let j;
+  try {
+    j = JSON.parse(stdout);
+  } catch {}
+  if (!Array.isArray(j) || !j[0] || typeof j[0] !== 'object') throw new Error(`docker ${kind} inspect ${ref} said something this doesn't understand.`);
+  return j[0];
+}
+
+const splitVar = (e) => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)];
+const argOf = (cmd, flag) => {
+  const i = cmd.findIndex((a) => a === flag || a.startsWith(`${flag}=`));
+  return i < 0 ? undefined : cmd[i].includes('=') ? cmd[i].slice(flag.length + 1) : cmd[i + 1];
+};
+const listOf = (v) => (Array.isArray(v) ? v : []);
+const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+// a Sphere's container: its image comes from this repository (or a fork), by its label or its
+// name, or was built from its Dockerfile, which sets SPHERE_DATA
+function runsSphere(c, img) {
+  const source = String(img.Config?.Labels?.['org.opencontainers.image.source'] || '');
+  return /\/oby-?sphere(?:\.git)?$/i.test(source) || /(?:^|\/)oby-?sphere(?:[:@]|$)/i.test(String(c.Config?.Image || '')) || listOf(img.Config?.Env).some((e) => e.startsWith('SPHERE_DATA='));
+}
+
+// how a container runs, as `docker run` arguments, from `docker container inspect` and its image's
+// own inspect: only the variables and labels given to the container (not the image's own, like
+// PATH), and only what can be carried over safely. Anything else is refused before something changes.
+function dockerPlan(name, c, img) {
+  const cfg = c.Config || {};
+  const hc = c.HostConfig || {};
+  const ic = img.Config || {};
+  if (!runsSphere(c, img)) throw new Error(`${name} doesn't run a Sphere (its image: ${clean(cfg.Image, 120) || '?'}). Nothing changed.`);
+  if (Object.keys(cfg.Labels || {}).some((k) => k.startsWith('com.docker.compose.')))
+    throw new Error(`Docker Compose runs ${name}: update it there. Set its image to ${DOCKER_IMAGE}:<version>, then docker compose up -d. Nothing changed.`);
+
+  const imageEnv = new Set(listOf(ic.Env));
+  const env = listOf(cfg.Env).filter((e) => !imageEnv.has(e));
+  if (env.some((e) => !/^[A-Za-z_][A-Za-z0-9_.-]*=/.test(e) || /[\r\n\0]/.test(e)))
+    throw new Error(`One of ${name}'s variables has a name or a value (a line break) that can't be passed on safely: update it by hand.`);
+  const labels = Object.entries(cfg.Labels || {}).filter(([k, v]) => ic.Labels?.[k] !== v).map(([k, v]) => `${k}=${v}`);
+  if (labels.some((l) => !/^[^\s=#][^\s=]*=/.test(l) || /[\r\n\0]/.test(l))) throw new Error(`One of ${name}'s labels can't be passed on safely: update it by hand.`);
+  const all = Object.fromEntries(listOf(cfg.Env).map(splitVar));
+  const cmd = sameJson(cfg.Cmd, ic.Cmd) ? [] : listOf(cfg.Cmd).map(String);
+  if (argOf(cmd, '--key') !== undefined || argOf(cmd, '--admin-key') !== undefined)
+    throw new Error(`${name} has a key in its arguments (--key or --admin-key), where anyone on that machine can read it. Give it as a variable instead (SPHERE_KEY, SPHERE_ADMIN_KEY in an --env-file), then update.`);
+
+  const network = hc.NetworkMode || 'default';
+  const log = hc.LogConfig || {};
+  const odd = [
+    !sameJson(cfg.Entrypoint, ic.Entrypoint) && 'its entrypoint',
+    (cfg.WorkingDir || '') !== (ic.WorkingDir || '') && 'its working folder',
+    !sameJson(cfg.Healthcheck, ic.Healthcheck) && 'its health check',
+    hc.Privileged && 'privileged',
+    listOf(hc.Devices).length && 'devices',
+    (hc.PidMode || hc.UTSMode || hc.UsernsMode || !['', 'private', 'shareable'].includes(hc.IpcMode || '')) && 'a pid, ipc, uts or user namespace mode',
+    (listOf(hc.Links).length || listOf(hc.VolumesFrom).length) && 'links or volumes from another container',
+    (listOf(hc.Dns).length || listOf(hc.DnsSearch).length || listOf(hc.DnsOptions).length) && 'DNS settings',
+    Object.keys(hc.Tmpfs || {}).length && 'tmpfs',
+    Object.keys(hc.Sysctls || {}).length && 'sysctls',
+    // inspect shows a seccomp profile's contents, which docker run would read as a file name
+    listOf(hc.SecurityOpt).some((x) => /^seccomp[=:]/.test(x) && !/^seccomp[=:]unconfined$/.test(x)) && 'a seccomp profile',
+    listOf(hc.GroupAdd).length && 'extra groups',
+    (hc.CpuShares > 0 || hc.CpuQuota > 0 || hc.CpuPeriod > 0 || hc.CpusetCpus || hc.MemoryReservation > 0 || hc.PidsLimit > 0) && 'CPU shares, a pids limit or a memory reservation',
+    Object.keys(c.NetworkSettings?.Networks || {}).length > 1 && 'more than one network',
+    /^container:/.test(network) && "another container's network",
+    log.Type && !DOCKER_LOGS.has(log.Type) && `the ${log.Type} log driver`,
+  ].filter(Boolean);
+  if (odd.length) throw new Error(`${name} has settings this can't carry over: ${odd.join(', ')}. Nothing changed. Update it by hand: docker pull the new image, then run it again the same way.`);
+
+  const args = [];
+  const kept = [];
+  const rp = hc.RestartPolicy || {};
+  if (rp.Name && rp.Name !== 'no') args.push('--restart', rp.Name === 'on-failure' && rp.MaximumRetryCount > 0 ? `on-failure:${rp.MaximumRetryCount}` : rp.Name);
+  if (!['default', 'bridge'].includes(network)) args.push('--network', network);
+  const ports = [];
+  if (network !== 'host')
+    for (const [to, list] of Object.entries(hc.PortBindings || {}))
+      for (const b of list || []) {
+        const ip = b.HostIp ? (b.HostIp.includes(':') ? `[${b.HostIp}]` : b.HostIp) : '';
+        ports.push(ip ? `${ip}:${b.HostPort || ''}:${to}` : b.HostPort ? `${b.HostPort}:${to}` : to);
+      }
+  for (const p of ports) args.push('-p', p);
+  if (hc.PublishAllPorts) args.push('-P');
+  const mounts = [];
+  for (const m of c.Mounts || []) {
+    const from = m.Type === 'volume' ? m.Name : m.Type === 'bind' ? m.Source : null;
+    if (!from || !m.Destination || /[:,\n]/.test(from + m.Destination)) throw new Error(`${name} has a ${m.Type || 'kind of'} mount this can't carry over: update it by hand.`);
+    args.push('-v', `${from}:${m.Destination}${m.RW === false ? ':ro' : ''}`);
+    mounts.push(`${m.Type} ${from} at ${m.Destination}`);
+  }
+  // the rest, as it was: who it runs as, its limits, what it may do, its logs
+  const flag = (f, v, what) => {
+    args.push(f, ...(v === undefined ? [] : [String(v)]));
+    if (what) kept.push(what);
+  };
+  if (cfg.User && cfg.User !== (ic.User || '')) flag('--user', cfg.User, `user ${cfg.User}`);
+  if (cfg.Hostname && c.Id && !c.Id.startsWith(cfg.Hostname)) flag('--hostname', cfg.Hostname, `host name ${cfg.Hostname}`);
+  if (hc.ReadonlyRootfs) flag('--read-only', undefined, 'read-only');
+  if (hc.Init) flag('--init', undefined, 'init');
+  for (const x of listOf(hc.CapAdd)) flag('--cap-add', x, `cap-add ${x}`);
+  for (const x of listOf(hc.CapDrop)) flag('--cap-drop', x, `cap-drop ${x}`);
+  for (const x of listOf(hc.SecurityOpt)) flag('--security-opt', x, x);
+  for (const x of listOf(hc.ExtraHosts)) flag('--add-host', x, `host ${x}`);
+  for (const u of listOf(hc.Ulimits)) flag('--ulimit', `${u.Name}=${u.Soft}:${u.Hard}`);
+  if (hc.Memory > 0) flag('--memory', hc.Memory, 'a memory limit');
+  if (hc.Memory > 0 && hc.MemorySwap) flag('--memory-swap', hc.MemorySwap);
+  if (hc.NanoCpus > 0) flag('--cpus', hc.NanoCpus / 1e9, `${hc.NanoCpus / 1e9} CPUs`);
+  if (hc.Runtime && hc.Runtime !== 'runc') flag('--runtime', hc.Runtime, `runtime ${hc.Runtime}`);
+  if (log.Type) flag('--log-driver', log.Type);
+  for (const [k, v] of Object.entries(log.Config || {})) flag('--log-opt', `${k}=${v}`);
+
+  // its members and history: a new container must find them, unless they're in Redis
+  const data = argOf(cmd, '--data') || all.SPHERE_DATA || '/data';
+  const store = argOf(cmd, '--store') || all.SPHERE_STORE || 'fs';
+  const under = (d) => (c.Mounts || []).some((m) => m.Destination && (d === m.Destination || d.startsWith(m.Destination.replace(/\/?$/, '/'))));
+  if (store !== 'redis' && !under(data))
+    throw new Error(`${name} keeps its data inside the container (no volume at ${data}), so a new container would start empty. Copy it out first (docker cp ${name}:${data} ./sphere-data), then run it again with a volume (-v obysphere-data:${data}).`);
+  // --rm: Docker removes it when it stops, with any volume it made for it, so it couldn't come back
+  if (hc.AutoRemove)
+    throw new Error(`${name} runs with --rm: stopping it would remove it, and any volume Docker made for it, so it couldn't come back if the new one fails. Nothing changed. Copy its data out first (docker cp ${name}:${data} ./sphere-data), then run it again without --rm, with a named volume (-v obysphere-data:${data}).`);
+
+  // where it answers: its published port, on this machine
+  const port = `${argOf(cmd, '--port') || all.PORT || '8080'}/tcp`;
+  const b = (hc.PortBindings?.[port] || []).find((x) => x.HostPort);
+  const host = (ip) => (!ip || ip === '0.0.0.0' ? '127.0.0.1' : ip === '::' ? '[::1]' : ip.includes(':') ? `[${ip}]` : ip);
+  const url = network === 'host' ? `http://127.0.0.1:${parseInt(port, 10)}` : b ? `http://${host(b.HostIp)}:${b.HostPort}` : '';
+
+  const summary = [
+    ports.length && `${ports.length > 1 ? 'ports' : 'port'} ${ports.join(', ')}`,
+    ...mounts,
+    env.length && `${env.length} ${env.length > 1 ? 'variables' : 'variable'} (not shown)`,
+    labels.length && `${labels.length} ${labels.length > 1 ? 'labels' : 'label'}`,
+    rp.Name && rp.Name !== 'no' && `restart ${rp.Name}`,
+    !['default', 'bridge'].includes(network) && `network ${network}`,
+    cmd.length && 'its arguments',
+    ...kept,
+  ].filter(Boolean);
+  const secrets = [...env.map((e) => splitVar(e)[1]), ...labels.map((l) => splitVar(l)[1])];
+  return { args, cmd, env, labels, secrets, url, kept: summary.join(', ') || 'nothing else' };
+}
+
+// docker run, with the variables and labels in files only you can read, in a folder of its own,
+// removed at once
+async function dockerRun(container, plan, ref) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obysphere-docker-'));
+  try {
+    const args = ['run', '-d', '--name', container, ...plan.args];
+    for (const [what, lines, f] of [['env', plan.env, '--env-file'], ['labels', plan.labels, '--label-file']]) {
+      if (!lines.length) continue;
+      const file = path.join(dir, what);
+      fs.writeFileSync(file, lines.join('\n') + '\n', { mode: 0o600 });
+      args.push(f, file);
+    }
+    await docker([...args, ref, ...plan.cmd], plan.secrets);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// the new container runs (and answers, when its address answered before)
+async function dockerWait(container, url, byUrl, secrets) {
+  const t0 = Date.now();
+  for (;;) {
+    const st = (await dockerInspect('container', container, secrets)).State || {};
+    if (st.Restarting || (st.Status && !['created', 'running'].includes(st.Status))) throw new Error(`The new container stopped${st.ExitCode ? ` (exit code ${st.ExitCode})` : ''}.`);
+    if (st.Running && (byUrl ? (await relayHealth(url)).ok : Date.now() - t0 >= 5000)) return;
+    if (Date.now() - t0 > DOCKER_WAIT_MS) throw new Error(byUrl ? `The new container didn't answer at ${url}/healthz within a minute.` : "The new container didn't start within a minute.");
+    await sleep(1000);
+  }
+}
+
+async function dockerServerUpdate(container, rec = null) {
+  const usage = 'usage: obysphere server update --docker <container> [--url <its address>] [--tag <version>]';
+  if (typeof container !== 'string' || !DOCKER_NAME.test(container)) die(usage);
+  // an address, with no name, password, query or fragment in it
+  const plainUrl = (u) => {
+    try {
+      const x = new URL(u);
+      return /^https?:$/.test(x.protocol) && !/\s/.test(u) && !x.username && !x.password && !x.search && !x.hash && !u.includes('@');
+    } catch {
+      return false;
+    }
+  };
+  if (opt.url !== undefined && (typeof opt.url !== 'string' || !plainUrl(opt.url))) die(`${usage}\n  (--url: the Sphere's address, like https://sphere.example.com)`);
+  const tag = typeof opt.tag === 'string' ? opt.tag.replace(/^v/, '') : opt.tag;
+  if (tag !== undefined && (typeof tag !== 'string' || !VER.test(tag) || tag.includes('+'))) die(`${usage}\n  (--tag: a released version, like 0.4.0)`);
+  const name = rec?.name || container.toLowerCase();
+  const recFile = path.join(serversDir(), `${name}.json`);
+  const before = rec || readJson(recFile, null);
+  if (before && (before.provider !== 'docker' || before.container !== container))
+    die(`${name} is already recorded here for ${before.provider === 'docker' ? `the container ${before.container}` : before.provider || 'another Sphere'}: rename this container (docker rename) to record it too.`);
+  const image = DOCKER_REPO.test(before?.image || '') ? before.image : DOCKER_IMAGE;
+  const installed = String(readJson(path.join(appSource(), 'package.json'), {}).version || VERSION);
+  const version = tag || installed;
+  const ref = `${image}:${version}`;
+  const previous = `${container}-previous`;
+
+  const c = await dockerInspect('container', container).catch((e) => die(`${e.message}\nIs ${container} the container's name? docker ps -a lists them.`));
+  // docker also finds a container by its ID, but the new one takes the name given here
+  const named = String(c.Name || '').replace(/^\//, '');
+  if (named && named !== container) die(`${container} is the ID of the container ${named}. Name it, so it keeps its name: obysphere server update --docker ${named}. Nothing changed.`);
+  const old = await dockerInspect('image', String(c.Image || ''));
+  let plan;
+  try {
+    plan = dockerPlan(container, c, old);
+  } catch (e) {
+    die(e.message);
+  }
+  const was = [old.Config?.Labels?.['org.opencontainers.image.version'], /:([^/:@]+)$/.exec(c.Config?.Image || '')?.[1]].find((v) => v && VER.test(v)) || null;
+  if (!tag && was && cmpVersion(was, version) > 0) die(`${container} runs ${was}, newer than your ${version}. Update the CLI first (obysphere update), or go back to ${version} on purpose: --tag ${version}.`);
+  if (await dockerInspect('container', previous).then(() => true, () => false))
+    die(`${previous} is still there from an earlier update. Nothing changed. Remove it (docker rm ${previous}), or bring it back (docker rm -f ${container}, then docker rename ${previous} ${container}), and run this again.`);
+  const url = trimSlash(opt.url || before?.url || plan.url || '');
+  const record = (v, at) =>
+    writeSecret(recFile, { name, provider: 'docker', container, image, url, version: v, deployedAt: at, firstDeployedAt: before?.firstDeployedAt || before?.deployedAt || at });
+
+  say(`${dim('·')} pulling ${ref}…`);
+  try {
+    await docker(['pull', '--quiet', ref]);
+  } catch (e) {
+    die(`Couldn't pull ${ref}. Each release publishes its image: is ${version} released? Update the CLI first (obysphere update), or name a version: --tag <version>. Nothing changed.\n${e.message}`);
+  }
+  const next = await dockerInspect('image', ref);
+  if (next.Id && next.Id === c.Image) {
+    record(version, before?.deployedAt || new Date().toISOString());
+    say(`${green('✓')} ${bold(container)} already runs ${ref}: nothing to do.`);
+    if (!before) say(dim(`  Recorded as ${name}: obysphere server update and server status find it from now on.`));
+    return;
+  }
+
+  const answered = url ? (await relayHealth(url)).ok : false;
+  say(`${dim('·')} ${container} runs ${was || clean(c.Config?.Image, 120) || 'an older image'}; it keeps ${plan.kept}`);
+  try {
+    await docker(['rename', container, previous]);
+  } catch (e) {
+    die(`${e.message}\nNothing changed.`);
+  }
+  try {
+    if (c.State?.Running) await docker(['stop', previous]);
+  } catch (e) {
+    await docker(['rename', previous, container]).catch(() => {});
+    die(`${e.message}\nNothing changed.`);
+  }
+  try {
+    await dockerRun(container, plan, ref);
+    await dockerWait(container, url, answered, plan.secrets);
+  } catch (e) {
+    const logs = await docker(['logs', '--tail', '20', container]).catch(() => null);
+    await docker(['rm', '-f', container]).catch(() => {});
+    let back = false;
+    let renamed = false;
+    let why = '';
+    try {
+      await docker(['rename', previous, container]);
+      renamed = true;
+      if (c.State?.Running) await docker(['start', container]);
+      back = true;
+    } catch (err) {
+      why = hide(err.message, plan.secrets);
+    }
+    warn(`${red('✗')} ${hide(e.message, plan.secrets)}`);
+    const said = logs && clean(hide(`${logs.stdout}\n${logs.stderr}`, plan.secrets), 3000, true);
+    if (said) warn(dim(`  Its log:\n${indentText(said)}`));
+    if (why) warn(dim(`  ${why}`));
+    die(
+      back
+        ? `${container} is back on ${was || 'the image it had'}, as before.`
+        : renamed // the old one has its name again, but didn't start
+          ? `The old container is ${container} again, on ${was || 'the image it had'}, but it didn't start. Start it: docker start ${container}.`
+          : `Couldn't bring the old container back: it's ${previous}, stopped. docker rename ${previous} ${container}, then docker start ${container}.`
+    );
+  }
+  await docker(['rm', previous]).catch(() => warn(`${yellow('!')} the old container is still there, stopped: docker rm ${previous}`));
+  record(version, new Date().toISOString());
+  const h = url ? await relayHealth(url) : { ok: false };
+  say(`\n${green('✓')} ${bold(container)} runs ${cyan(ref)}${c.State?.Running ? '' : ' (it was stopped; now it runs)'}`);
+  if (h.ok) say(`  It answers: relay ${h.version || '?'}, ${h.store || '?'} store${h.sealed ? ', sealed' : ''}.`);
+  else say(url ? `  It doesn't answer at ${url}/healthz yet: give it a moment, then obysphere server status ${name}.` : `  Give its address once, so status can check it: obysphere server update ${name} --url https://<its address>`);
+  if (!before) say(dim(`  Recorded as ${name}: obysphere server update and server status find it from now on.`));
 }
 
 // ================================================================ plumbing
@@ -1187,7 +1788,7 @@ function parseArgs(list) {
 }
 
 function which(bin) {
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : ['']; // node.exe, as the file is named
   for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
     for (const e of exts) {
@@ -1280,7 +1881,7 @@ function die(m) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, update, version, doctor, server, help };
+const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, update, version, doctor, server, help, 'service-run': serviceRun };
 if (cmd === '--help' || cmd === '-h') help();
 else if (cmd === '--version' || cmd === '-v') version();
 else if (Object.hasOwn(OWN, cmd)) {
