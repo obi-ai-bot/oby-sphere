@@ -1500,10 +1500,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const waiting = S.pending?.length || 0;
     const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
     const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}</span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
-    $('#nav').innerHTML = NAV_GROUPS.map(([g, label]) => {
+    if (!a11yDraw($('#nav'), NAV_GROUPS.map(([g, label]) => {
       const items = shown.filter((x) => x[3] === g);
       return items.length ? `<h3 class="sidebar-group-head">${label}</h3>${items.map(item).join('')}` : '';
-    }).join('') + navFoot();
+    }).join('') + navFoot())) return renderHealth(); // the same markup: left as it is, with the focus in it
     $('#nav').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     $('#nav').querySelector('[data-admin-signin]')?.addEventListener('click', () => openAdmin('signin'));
     $('#nav').querySelector('[data-admin-signout]')?.addEventListener('click', adminSignOut);
@@ -1547,20 +1547,23 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (p === 'overview') return renderOverview(fresh);
     const el = $('#page');
     const keep = $('#console-scroll').scrollTop;
-    if (p.startsWith('exchange:')) el.innerHTML = pageExchange(p.slice(9));
-    else if (p === 'traffic') el.innerHTML = pageTraffic();
-    else if (p === 'members') el.innerHTML = pageMembers();
-    else if (p === 'instruments') renderInstruments(el, fresh);
-    else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
-    else if (p === 'audit') { if (!fresh && document.getElementById('au-results')) return updateAudit(); el.innerHTML = pageAudit(); }
-    else if (p === 'policy' && S.admin) el.innerHTML = pagePolicy();
-    else if (p === 'admins' && S.admin) el.innerHTML = pageAdmins();
+    let drawn = true;
+    const draw = (html) => (drawn = a11yDraw(el, html)); // the same markup is left as it is, with the focus in it
+    if (p.startsWith('exchange:')) draw(pageExchange(p.slice(9)));
+    else if (p === 'traffic') draw(pageTraffic());
+    else if (p === 'members') draw(pageMembers());
+    else if (p === 'instruments') renderInstruments(el, fresh); // it leaves an unchanged page as it is itself
+    else if (p === 'files') { draw(pageFiles()); if (!S.files) loadFiles(); }
+    else if (p === 'audit') { if (!fresh && document.getElementById('au-results')) return updateAudit(); draw(pageAudit()); }
+    else if (p === 'policy' && S.admin) draw(pagePolicy());
+    else if (p === 'admins' && S.admin) draw(pageAdmins());
     else if (p === 'you' && S.me) {
-      if (!fresh && document.getElementById('you-rest')) { $('#you-rest').innerHTML = youRest(); wirePage(); return; }
-      el.innerHTML = pageYou();
+      if (!fresh && document.getElementById('you-rest')) { if (a11yDraw($('#you-rest'), youRest())) wirePage(); return; }
+      draw(pageYou());
     }
     else if (p === 'settings' && S.me && CONSOLE) { if (fresh || !document.getElementById('settings-root')) loadSettings(); return; }
     else { S.page = 'overview'; return renderOverview(true); }
+    if (!drawn) return;
     if (!fresh) $('#console-scroll').scrollTop = keep;
     wirePage();
   }
@@ -1585,11 +1588,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       buildTopo();
       fillLog();
     }
-    $('#ov-head').innerHTML = head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}`);
+    a11yDraw($('#ov-head'), head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}`));
     updateKpis();
     updateTopo();
     const ex = exchanges().slice(0, 6);
-    $('#ov-recent').innerHTML = exchangeTable(ex);
+    a11yDraw($('#ov-recent'), exchangeTable(ex));
     wirePage();
   }
 
@@ -4676,13 +4679,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // ---------------------------------------------------------------- conversation: side panel
   function renderChannels() {
     const list = [...S.channels.values()].filter((c) => c.kind !== 'dm').sort((a, b) => (a.name === 'general' ? -1 : b.name === 'general' ? 1 : a.name.localeCompare(b.name)));
-    $('#channels').innerHTML =
+    if (!a11yDraw($('#channels'),
       list
         .map((c) => {
           const n = S.unread[c.name] || 0;
           return `<button class="connector${c.name === S.current ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-ch="${esc(c.name)}"${c.name === S.current ? ' aria-current="page"' : ''}${c.kind === 'private' ? ` aria-describedby="about-ch-${esc(c.name)}"` : ''} title="${esc(c.topic || (c.kind === 'private' ? 'Private: only its members see it' : ''))}"><span class="channel-hash" aria-hidden="true">${c.kind === 'private' ? lock(13) : '#'}</span>${c.kind === 'private' ? `<span id="about-ch-${esc(c.name)}" hidden>Private${c.topic ? `: ${esc(c.topic)}` : ': only its members see it'}</span>` : ''}<span class="connector-name">${esc(c.name)}</span>${unreadHtml(n)}</button>`;
         })
-        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash" aria-hidden="true">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : '');
+        .join('') + (S.me ? `<button class="connector" data-new-channel><span class="channel-hash" aria-hidden="true">${plusIcon()}</span><span class="connector-name">New channel</span></button>` : ''))) return; // the same markup: left as it is, with the focus in it
     $('#channels').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => switchTo(b.dataset.ch)));
     $('#channels').querySelector('[data-new-channel]')?.addEventListener('click', openChannelModal);
   }
@@ -4714,9 +4717,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     // an admin also sees other people's direct conversations
     const theirs = [...S.channels.values()].filter((c) => c.kind === 'dm' && !inCh(c));
     $('#people-head').textContent = S.me ? 'Direct messages' : 'Members';
-    $('#members').innerHTML = people.map(memberRow).join('') + theirs.map(theirDmRow).join('');
+    a11yDraw($('#members'), people.map(memberRow).join('') + theirs.map(theirDmRow).join(''));
     $('#bots-head').hidden = !bots.length;
-    $('#bots').innerHTML = bots.map(memberRow).join('');
+    a11yDraw($('#bots'), bots.map(memberRow).join(''));
     for (const box of [$('#members'), $('#bots')]) {
       box.querySelectorAll('[data-member]').forEach((b) => {
         b.onclick = () => {
@@ -5545,7 +5548,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // focus and give it back; focus that survives the page's re-renders (it redraws a part whenever
   // the Sphere moves); and a polite voice for what changes while you listen. The voice waits a
   // moment for more of the same, then says one sentence, so a busy Sphere never floods a screen reader.
-  const A11Y = { voice: null, from: null, fromKey: null, key: null, keyboard: false, opened: new Map() };
+  const A11Y = { voice: null, from: null, fromKey: null, key: null, keyboard: false, opened: new Map(), drawn: new WeakMap() };
   const FOCUSABLE = ['a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])', 'textarea:not([disabled])', 'summary', '[tabindex]'].map((s) => `${s}:not([tabindex="-1"])`).join(', ');
   const narrow = () => matchMedia('(max-width: 760px)').matches;
   // on screen and reachable: not hidden (a closed <details> keeps boxes for its contents), not behind
@@ -5705,6 +5708,16 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const scope = k.zone ? document.getElementById(k.zone) : document;
     const n = a11yFind(k) || (k.view !== viewKey() || k.zone === 'page' || scope?.closest?.('#page') ? a11yLanding() : null);
     if (n && reachable(n)) n.focus({ preventScroll: true });
+  }
+  // A part drawn again with the same markup is left as it is, so the control with the focus isn't
+  // swapped for a copy, focused again and read out again (Members redraws every 3 seconds, the
+  // side panel and the Overview with every message). Anything else drawing there is noticed.
+  function a11yDraw(el, html) {
+    const was = A11Y.drawn.get(el);
+    if (was && was.html === html && was.first === el.firstChild) return false;
+    el.innerHTML = html;
+    A11Y.drawn.set(el, { html, first: el.firstChild });
+    return true;
   }
 
   // a dialog: the rest of the page goes inert, focus goes in and stays, and comes back on close

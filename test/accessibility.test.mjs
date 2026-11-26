@@ -645,6 +645,35 @@ describe('focus, found again after a redraw', () => {
     assert.match(fn('a11ySetup'), /A11Y\.key = a11yKeyOf\(e\.target\);\s*if \(!e\.target\.closest\?\.\('\.modal-backdrop'\)\) \{ A11Y\.from = e\.target; A11Y\.fromKey = A11Y\.key; \}/);
   });
 
+  test('a part drawn again with the same markup is left as it is; anything else drawing there is noticed', () => {
+    const ctx = vm.createContext({ A11Y: { drawn: new WeakMap() } });
+    vm.runInContext(`${fn('a11yDraw')}; this.draw = a11yDraw;`, ctx);
+    let made = 0;
+    const el = { firstChild: null, set innerHTML(html) { this.html = html; this.firstChild = html ? { made: ++made } : null; } };
+    assert.equal(ctx.draw(el, '<button data-suspend="a_bob">Suspend</button>'), true);
+    const button = el.firstChild;
+    assert.equal(ctx.draw(el, '<button data-suspend="a_bob">Suspend</button>'), false, 'the same markup: the same button, with the focus in it');
+    assert.equal(el.firstChild, button);
+    assert.equal(ctx.draw(el, '<button data-suspend="a_bob">Resume</button>'), true);
+    el.innerHTML = '<p>Loading…</p>'; // another part of the page drew here
+    assert.equal(ctx.draw(el, '<button data-suspend="a_bob">Resume</button>'), true, 'drawn again over what was put there meanwhile');
+    assert.equal(el.html, '<button data-suspend="a_bob">Resume</button>');
+
+    // where the console redraws as the Sphere moves (Members every 3 seconds, the rest with each message)
+    assert.match(fn('renderNav'), /if \(!a11yDraw\(\$\('#nav'\), /);
+    const page = fn('renderPage');
+    assert.match(page, /const draw = \(html\) => \(drawn = a11yDraw\(el, html\)\);/);
+    for (const p of ['pageExchange', 'pageTraffic', 'pageMembers', 'pageInstruments', 'pageFiles', 'pageAudit', 'pagePolicy', 'pageAdmins', 'pageYou']) assert.match(page, new RegExp(`draw\\(${p}\\(`), p);
+    assert.ok(!/el\.innerHTML =/.test(page), 'every page goes through it');
+    // a page left as it is isn't wired again (Policy's switches would toggle twice)
+    assert.match(page, /if \(!drawn\) return;\s*if \(!fresh\) \$\('#console-scroll'\)\.scrollTop = keep;\s*wirePage\(\);/);
+    assert.match(page, /if \(a11yDraw\(\$\('#you-rest'\), youRest\(\)\)\) wirePage\(\);/);
+    assert.match(fn('renderOverview'), /a11yDraw\(\$\('#ov-head'\), head\(/);
+    assert.match(fn('renderOverview'), /a11yDraw\(\$\('#ov-recent'\), exchangeTable\(ex, true\)\);/);
+    assert.match(fn('renderChannels'), /if \(!a11yDraw\(\$\('#channels'\),[\s\S]*\)\) return;/);
+    assert.match(fn('renderMembers'), /a11yDraw\(\$\('#members'\), [\s\S]*a11yDraw\(\$\('#bots'\), /);
+  });
+
   test('a dialog that took you to another page puts the focus on its title', () => {
     const modal = h('div', { class: 'modal-backdrop', id: 'channel-modal' }, h('div', { role: 'dialog' }, h('button', { 'data-close': '' })));
     const doc = fakeDocument(h('div', { id: 'root' }, h('div', { class: 'window' }, h('div', { id: 'console-scroll' }, membersPage(false))), modal));
