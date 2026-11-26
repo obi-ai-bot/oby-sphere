@@ -100,6 +100,8 @@ const SAMPLES = [
   ['/home/sam/app/.m2/settings.xml', SECRET], // in a .m2 folder anywhere, as CI setups keep one
   ['/home/sam/.cargo/credentials.toml', SECRET],
   ['/home/sam/.gem/credentials', SECRET],
+  ['/home/sam/.codex/auth.json', SECRET], // Codex's sign-in token
+  ['C:\\Users\\sam\\.codex\\auth.json', SECRET],
   // clouds and clusters
   ['/home/sam/.aws/credentials', SECRET],
   ['/home/sam/.aws/config', SECRET],

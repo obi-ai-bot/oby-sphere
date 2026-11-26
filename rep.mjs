@@ -71,6 +71,8 @@ const SECRET_FILES = [
   'id_dsa*', '*.p12', '*.pfx', '*.p8', '*.jks', '*.keystore', '*.ppk', '*.kdbx', '*.ovpn', '.password-store/',
   // registries, build tools and CLIs that keep tokens (credentials* already has .cargo, .gem, Terraform's credentials.tfrc.json)
   '.yarnrc.yml', '_netrc', '.gitcookies', '.dockercfg', '.config/gh/', '.composer/auth.json', '.config/composer/auth.json', '.m2/settings*.xml', '.gradle/gradle.properties',
+  // the answering runtimes' own sign-ins (Claude Code's is *credential*.json)
+  '.codex/auth.json',
   // clouds and clusters
   '.azure/', '.config/gcloud/', '.boto', '.s3cfg', '*accessKeys.csv', 'rootkey.csv',
   '*service-account*.json', '*service_account*.json', '*serviceAccount*.json',
@@ -86,7 +88,7 @@ const SECRET_FILES = [
 const SECRET_HOME = [
   '.azure', '.config/gcloud', '.password-store', '.boto', '.s3cfg', '.dockercfg', '.gitcookies', '.yarnrc.yml', '.vault-token', '.terraformrc',
   '.terraform.d/credentials.tfrc.json', '.cargo/credentials', '.cargo/credentials.toml', '.gem/credentials', '.composer/auth.json', '.config/composer/auth.json',
-  '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf',
+  '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf', '.codex/auth.json',
 ];
 const SECRET_LISTS = (() => {
   const glob = (n) => (n.endsWith('/') ? `**/${n}**` : `**/${n}`);
