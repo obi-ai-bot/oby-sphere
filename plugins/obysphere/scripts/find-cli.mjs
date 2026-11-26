@@ -10,8 +10,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const NODE_MIN = 22;
-export const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh';
-export const INSTALL_MAIN = `${INSTALL} -s -- --channel main`;
+// where the installer's one-line command is: the plugin points there rather than carrying a
+// download-and-run command itself (the plugin directory flags those)
+export const INSTALL_DOCS = 'https://github.com/obi-ai-bot/oby-sphere#2-with-the-cli';
 
 const isFile = (p) => {
   try {

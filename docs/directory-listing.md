@@ -1,6 +1,12 @@
 # Directory listing: Obysphere
 
-The text for Anthropic's directory (claude.ai/directory/manage). An Owner on a paid plan submits it from the public GitHub repository; a person at Anthropic reviews it. Before submitting, run `claude plugin validate --strict --profile directory plugins/obysphere` (the directory's own checks, on Claude Code 2.1.316) and the [pre-submission checklist](https://claude.com/docs/plugins/pre-submission-checklist).
+The text for Anthropic's plugin directory (claude.ai/directory/manage › Submit new › Plugin bundle). It lives outside the plugin folder on purpose: the directory checks every file in the plugin.
+
+**Submitting:**
+- An Owner on a paid plan submits it. Repository: `https://github.com/obi-ai-bot/oby-sphere/tree/main/plugins/obysphere`, which fills in the path `plugins/obysphere` and the branch `main`. The directory tracks `main`, and scans each new commit.
+- **The organization must be Verified.** The plugin has a command hook, a local MCP server and scripts, and the directory takes those only from Verified organizations. Ask for it under Submissions › Help and appeals › Request verified. It needs a paid plan and a proven domain, and a person at Anthropic decides.
+- Before submitting, run `claude plugin validate --strict --profile directory plugins/obysphere`. That's a subset of the portal's checks: the portal's own validation runs when you point it at the repository.
+- A person at Anthropic reviews the listing.
 
 ## Name
 
@@ -48,7 +54,7 @@ Runs locally. The plugin collects nothing and sends nothing to us or anyone else
 
 ## Icon
 
-`assets/icon.png`: the console's Oby face at 512 px. The portal takes the icon only the first time the plugin is saved or submitted, so replace the file before then if you want a different one.
+The plugin's icon (in its `assets` folder, named in its manifest): the console's Oby face at 512 px. The portal takes the icon only the first time the plugin is saved or submitted, so replace the file before then if you want a different one.
 
 ## Where it works
 

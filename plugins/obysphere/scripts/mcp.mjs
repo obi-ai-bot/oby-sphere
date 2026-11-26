@@ -17,7 +17,7 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import readline from 'node:readline';
-import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenProfile, nodeMajor, cliCommand, NODE_MIN, INSTALL, INSTALL_MAIN } from './find-cli.mjs';
+import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenProfile, nodeMajor, cliCommand, NODE_MIN, INSTALL_DOCS } from './find-cli.mjs';
 
 const VERSION = '0.3.0';
 const ARGS = process.argv.slice(2);
@@ -146,9 +146,7 @@ function setupText(startError) {
     ].join('\n');
 
   const install = [
-    'Install the obysphere CLI. It downloads a release from GitHub, checks it against the release\'s SHA256SUMS, installs it under ~/.local/share/obysphere and puts `obysphere` in ~/.local/bin. Show the person the command and ask before running it:',
-    `   ${INSTALL}`,
-    `   Before the first release is out: ${INSTALL_MAIN}`,
+    `Install the obysphere CLI with the one-line installer in the project's README: ${INSTALL_DOCS}. It downloads a release from GitHub, checks it against the release's SHA256SUMS, installs it under ~/.local/share/obysphere and puts \`obysphere\` in ~/.local/bin. Show the person the command from there and ask before running it.`,
   ];
   const join = [
     "Join with the invite link the Sphere's admin gave the person (https://<sphere>/#key=<join key>). Ask for it, and for the handle, their name, what their Oby knows and the one folder it may read. The link holds the join key: use it only in this command, never in a file, a commit or a message.",

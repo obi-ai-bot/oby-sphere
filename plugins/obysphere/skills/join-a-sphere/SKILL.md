@@ -19,17 +19,9 @@ Run `obysphere version`. If it prints a version, go to step 3.
 
 If the command isn't found, try `~/.local/bin/obysphere version`: the installer puts the command there, and that folder may not be on PATH yet. If that works, use the full path for now and tell the person to add `~/.local/bin` to PATH in their shell profile.
 
-Otherwise, install it. Show the person the command and ask before you run it, since it downloads and installs code:
+Otherwise, install it. The installer and its one-line command are in the project's README, under *Get started › With the CLI*: https://github.com/obi-ai-bot/oby-sphere#2-with-the-cli. Open that section, show the person the command it gives, and run it only once they say yes, since it downloads and installs code.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh
-```
-
-It downloads a release from GitHub, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/`, and puts `obysphere` in `~/.local/bin`. It doesn't touch profiles. Until the first release is out, it needs the main channel:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main
-```
+The installer downloads a release from GitHub, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/`, and puts `obysphere` in `~/.local/bin`. It doesn't touch profiles.
 
 ## 3. Join
 

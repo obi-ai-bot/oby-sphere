@@ -186,9 +186,10 @@ describe('the plugin and its marketplace', () => {
     assert.equal(starts.length, 1);
     assert.equal(starts[0].type, 'command');
     assert.ok(starts[0].timeout > 5 && starts[0].timeout <= 30, 'a short timeout, above the script’s own 5 s');
-    const script = /"\$\{CLAUDE_PLUGIN_ROOT\}([^"]+)"/.exec(starts[0].command);
-    assert.ok(script, 'the path is quoted, so a folder with spaces works');
-    assert.ok(fs.existsSync(path.join(PLUGIN, script[1])));
+    // the interpreter in command, the file in args (no shell, so a folder with spaces works)
+    assert.equal(starts[0].command, 'node');
+    assert.deepEqual(starts[0].args, ['${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs']);
+    assert.ok(fs.existsSync(resolve(starts[0].args[0])));
   });
 
   test('no top-level bin/ (organization sync refuses it), and scripts without dependencies', () => {
@@ -220,7 +221,7 @@ describe('the plugin and its marketplace', () => {
   });
 
   test('every `obysphere <command>` in the skills and docs is in the CLI contract', () => {
-    const files = [...SKILLS.map((s) => path.join(PLUGIN, 'skills', s, 'SKILL.md')), path.join(PLUGIN, 'README.md'), path.join(PLUGIN, 'LISTING.md')];
+    const files = [...SKILLS.map((s) => path.join(PLUGIN, 'skills', s, 'SKILL.md')), path.join(PLUGIN, 'README.md'), path.join(ROOT, 'docs', 'directory-listing.md')];
     const all = new Set();
     const problems = [];
     for (const f of files) {
@@ -231,6 +232,14 @@ describe('the plugin and its marketplace', () => {
     assert.deepEqual(problems, []);
     // the checker sees what's there
     for (const c of ['join', 'start', 'open', 'status', 'update', 'settings', 'doctor', 'notify test', 'github status', 'admin claim', 'server deploy', 'server update']) assert.ok(all.has(c), `no skill mentions obysphere ${c}`);
+  });
+
+  // the plugin directory flags a download-and-run command anywhere in a plugin (skills and
+  // README included): the plugin points at the README's install section instead
+  test('no file in the plugin carries a download-and-run command', () => {
+    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+    const found = walk(PLUGIN).filter((f) => !/\.(png|jpe?g|gif|webp|ico)$/i.test(f)).filter((f) => /(curl|wget)[^\n]*\|\s*(ba|z)?sh\b/.test(fs.readFileSync(f, 'utf8')));
+    assert.deepEqual(found.map((f) => path.relative(ROOT, f)), []);
   });
 
   test('the checker catches a made-up command, subcommand or flag', () => {
@@ -244,7 +253,7 @@ describe('the plugin and its marketplace', () => {
   test('the privacy statements name everything the CLI may reach', () => {
     const privacy = (md) => /^## Privacy\n([\s\S]*?)(?=^## )/m.exec(md)?.[1] || '';
     const readme = fs.readFileSync(path.join(PLUGIN, 'README.md'), 'utf8');
-    const listing = fs.readFileSync(path.join(PLUGIN, 'LISTING.md'), 'utf8');
+    const listing = fs.readFileSync(path.join(ROOT, 'docs', 'directory-listing.md'), 'utf8');
     for (const [name, text] of [['README.md#privacy', privacy(readme)], ['LISTING.md#privacy', privacy(listing)], ['LISTING.md#what-it-accesses', /^## What it accesses\n([\s\S]*?)(?=^## )/m.exec(listing)?.[1] || '']]) {
       assert.ok(text.length > 100, `${name} is there`);
       assert.doesNotMatch(text, /talks only to the Sphere/, name);
@@ -382,7 +391,8 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
     const call = await m.request(4, 'tools/call', { name: 'obysphere_setup', arguments: {} });
     const text = call.result.content[0].text;
     assert.match(text, /isn't installed/);
-    assert.match(text, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/obi-ai-bot\/oby-sphere\/main\/install\.sh \| sh/);
+    assert.match(text, /https:\/\/github\.com\/obi-ai-bot\/oby-sphere#2-with-the-cli/);
+    assert.doesNotMatch(text, /curl[^\n]*\|\s*sh/, 'no download-and-run command in the plugin');
     assert.match(text, /obysphere join "<invite link>"/);
     assert.deepEqual(checkCommands(text.split('\n'), 'obysphere_setup').problems, []);
     assert.equal((await m.request(5, 'tools/call', { name: 'sphere_ask', arguments: {} })).error.code, -32602);
@@ -693,13 +703,14 @@ describe('the SessionStart hook (scripts/session-start.mjs)', () => {
     assert.match(fs.readFileSync(HOOK, 'utf8'), /Math\.min\(5000,/);
   });
 
-  test('hooks.json’s command, run through a shell as Claude Code runs it', { skip: !POSIX && 'sh' }, () => {
+  test('hooks.json’s command and args, run as Claude Code runs them (no shell)', { skip: !POSIX && 'a node on PATH' }, () => {
     const c = computer();
     c.installApp();
     c.join();
     fs.symlinkSync(process.execPath, path.join(c.node, 'node'));
-    const { command } = readJson(path.join(PLUGIN, 'hooks', 'hooks.json')).hooks.SessionStart[0].hooks[0];
-    const r = spawnSync('/bin/sh', ['-c', command], { env: { ...c.env, PATH: `${c.node}:${c.bin}`, CLAUDE_PLUGIN_ROOT: PLUGIN, FAKE_MODE: 'json' }, encoding: 'utf8', input: '{}' });
+    const { command, args } = readJson(path.join(PLUGIN, 'hooks', 'hooks.json')).hooks.SessionStart[0].hooks[0];
+    const env = { ...c.env, PATH: `${c.node}:${c.bin}`, CLAUDE_PLUGIN_ROOT: PLUGIN, FAKE_MODE: 'json' };
+    const r = spawnSync(path.join(c.node, command), args.map((a) => a.replaceAll('${CLAUDE_PLUGIN_ROOT}', PLUGIN)), { env, encoding: 'utf8', input: '{}' });
     assert.equal(r.status, 0, r.stderr);
     assert.equal(JSON.parse(r.stdout).systemMessage, '2 asks wait for you');
   });
