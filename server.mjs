@@ -1036,6 +1036,23 @@ const store = CFG.store === 'redis' ? redisStore() : fsStore();
 
 // ================================================================ presence
 
+// an owner's away, or a representative's pause (out of usage, say): { until, note, since }, shown
+// until its time has passed; null when there's none
+function awayOf(a) {
+  const w = a.away;
+  if (!w || typeof w !== 'object') return null;
+  if (w.until && !(Date.parse(w.until) > Date.now())) return null;
+  return { until: w.until ?? null, note: w.note || '', since: w.since ?? null };
+}
+
+// a time in the next `days` days, as ISO, or a 400 naming the field
+function futureTime(v, days, field) {
+  const t = Date.parse(String(v));
+  if (!Number.isFinite(t) || t <= Date.now()) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
+  if (t > Date.now() + days * 864e5) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+  return new Date(t).toISOString();
+}
+
 function publicAgent(a) {
   const c = store.counts(a.id);
   const s = agentStats.get(a.id);
@@ -1057,6 +1074,7 @@ function publicAgent(a) {
     ...(a.removed ? { removed: true } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
+    away: a.removed || a.suspended ? null : awayOf(a), // shown with the representative offline too: its owner may be away with the laptop closed
     declared: a.declared ?? null,
     keys: a.keys ?? null,
     stats: {
@@ -1146,7 +1164,7 @@ const INSTRUMENTS = [
     name: 'sphere_agents',
     group: 'presence',
     holders: ['session', 'answering'],
-    description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it is online to answer right now.',
+    description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it can answer right now (online, offline since when, or away until when).',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -1163,6 +1181,7 @@ const INSTRUMENTS = [
         channel: str('Channel to post in (default: general, or the current one).'),
         files: { type: 'array', items: { type: 'string' }, description: "Local file paths to attach (max 5 MB each). Only in the owner's own session." },
         wait_seconds: { type: 'number', description: 'How long to wait for the reply (default 300, max 900).' },
+        needed_within_minutes: { type: 'integer', minimum: 1, maximum: 10080, description: "Optional: how long the answer stays useful, in minutes. After that the Oby won't start it, and sphere_check says it expired." },
       },
       required: ['agent', 'message'],
     },
@@ -1178,7 +1197,7 @@ const INSTRUMENTS = [
     name: 'sphere_check',
     group: 'talk',
     holders: ['session'],
-    description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id).',
+    description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id), or why there is none yet: working on it, away until when, offline since when, or expired.',
     inputSchema: { type: 'object', properties: { message_id: str('The id sphere_ask gave you, like m_ab12cd34.') }, required: ['message_id'] },
   },
   {
@@ -1436,6 +1455,9 @@ function buildMessage(b, me, body, pre) {
   }
 
   const m = { id: 'm_' + token(6), ts: now(), channel, from: me.id, kind: to.length ? 'ask' : replyTo ? 'reply' : 'post', to, text, replyTo, cause, files, depth, meta: cleanMeta(body.meta) };
+  // how long the asker says the answer stays useful: plain metadata, like meta, and not covered
+  // by a sealed message's signature. Only an ask has one.
+  if (body.neededBy != null && m.kind === 'ask') m.neededBy = futureTime(body.neededBy, 7, 'neededBy');
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
@@ -1502,7 +1524,7 @@ function cleanMeta(meta) {
   if (num(meta.durationMs, 864e5, false)) out.durationMs = Math.round(meta.durationMs);
   if (num(meta.costUsd, 1e4, false)) out.costUsd = meta.costUsd;
   if (num(meta.turns, 1e5, true)) out.turns = meta.turns;
-  for (const k of ['local', 'error', 'declined']) if (typeof meta[k] === 'boolean') out[k] = meta[k];
+  for (const k of ['local', 'error', 'declined', 'expired', 'unable']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer
   if (meta.answeredBy === 'agent' || meta.answeredBy === 'owner') out.answeredBy = meta.answeredBy;
   if (typeof meta.instrument === 'string' && INSTRUMENT_NAME.test(meta.instrument)) out.instrument = meta.instrument; // instruments
   if (meta.tools && typeof meta.tools === 'object' && !Array.isArray(meta.tools)) {
@@ -2215,6 +2237,30 @@ async function route(req, res, url) {
       }
     });
     return send(res, 200, { ok: true });
+  }
+
+  // away: set by its owner (obysphere away) or by its representative while its runtime can't answer.
+  // Kept on the agent record, so it holds with the representative offline and across restarts. The
+  // audit log says when an agent is away and back, never the note.
+  if (m === 'POST' && p === '/api/away') {
+    if (!(await store.rate('me', me.id, S.policy.rate.mePerMin))) throw err(429, 'rate_limited', 'Too many profile changes. Try again in a moment.');
+    const body = await readJson(req, 4096);
+    let away = null;
+    if (body.off !== true) {
+      if (body.note != null && typeof body.note !== 'string') throw err(400, 'bad_request', 'note is text.');
+      const until = body.until == null ? null : futureTime(body.until, 30, 'until');
+      away = { until, note: cleanLine(body.note || '', 120), since: awayOf(S.agents[me.id])?.since ?? now() };
+    }
+    await store.commit((b) => {
+      const a = { ...S.agents[me.id] };
+      const was = awayOf(a);
+      if (away) a.away = away;
+      else delete a.away;
+      b.push({ t: 'agent', a, urgent: true });
+      if (away && (!was || was.until !== away.until)) b.audit('away', { actor: me.id, detail: `${a.name} is away until ${away.until ?? 'further notice'}` });
+      else if (!away && was) b.audit('away', { actor: me.id, detail: `${a.name} is back` });
+    });
+    return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
   }
 
   if (m === 'POST' && p === '/api/me') {
