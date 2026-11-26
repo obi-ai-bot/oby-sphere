@@ -735,7 +735,11 @@ async function installTask(name, port, s, app) {
   schtasks(['/end', '/tn', task]); // not running: fine
   const made = schtasks(['/create', '/tn', task, '/xml', xmlFile, '/f']);
   if (made.status !== 0) {
+    // nothing left behind: a task from before (a restart, an update) goes too, since without its
+    // files obysphere stop couldn't find it; its supervisor saw the spec change and stops
+    schtasks(['/delete', '/tn', task, '/f']); // none from before: fine
     for (const f of [xmlFile, script, specFile]) fs.rmSync(f, { force: true });
+    await untilQuiet(port);
     throw new Error(`schtasks couldn't create the task ${task}: ${clean(made.stderr || made.stdout, 300) || `exit code ${made.status}`}`);
   }
   await untilQuiet(port); // the one from before lets go of the port

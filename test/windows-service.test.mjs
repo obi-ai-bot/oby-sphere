@@ -335,13 +335,32 @@ describe('obysphere start on Windows: a scheduled task (schtasks faked)', () => 
     // schtasks refuses (as it does a logon task for anyone but you without admin rights): said, and undone
     const profiles = path.join(h, 'profiles');
     fakeProfile(profiles, 'alice');
+    const port = await freePort();
+    fs.writeFileSync(path.join(profiles, 'alice', 'service.json'), JSON.stringify({ port }));
     const env = envFor(h, { OBYSPHERE_HOME: profiles, OBYSPHERE_SERVICE_DIR: services, path: dirs, ...sched.env });
+    cleanups.push(() => run(cli, ['stop'], env));
     sched.control({ fail: { create: 'ERROR: Access is denied.' } });
     const no = await run(cli, ['start'], env);
     assert.equal(no.code, 1);
     assert.match(no.stderr, /schtasks couldn't create the task Obysphere-alice-sam: ERROR: Access is denied\./);
     assert.deepEqual(fs.readdirSync(services), []);
     assert.equal(JSON.parse((await run(cli, ['status', '--json'], env)).stdout).profiles[0].service, false);
+
+    // a restart (or an update) whose task can't be made again: the task from before goes too, so
+    // nothing is left that obysphere stop couldn't find, and its console stops
+    sched.control({});
+    assert.equal((await run(cli, ['start'], env)).code, 0);
+    assert.ok(await answers(port));
+    assert.deepEqual(Object.keys(sched.tasks()), ['Obysphere-alice-sam']);
+    sched.control({ fail: { create: 'ERROR: The Task Scheduler service is busy.' } });
+    const rs = await run(cli, ['restart'], env);
+    assert.equal(rs.code, 1);
+    assert.match(rs.stderr, /schtasks couldn't create the task Obysphere-alice-sam: ERROR: The Task Scheduler service is busy\./);
+    assert.deepEqual(sched.tasks(), {}, 'no task left registered');
+    assert.deepEqual(fs.readdirSync(services), []);
+    assert.equal(await answers(port), false, 'the console from before stopped');
+    sched.control({});
+    assert.match((await run(cli, ['stop'], env)).stdout, /alice isn't running in the background/);
   });
 
   test('a dry run, in %LOCALAPPDATA%\\obysphere\\services; help names the task', async () => {
