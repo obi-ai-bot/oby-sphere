@@ -95,6 +95,56 @@ const DEFAULT_POLICY = {
   rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 },
   sealed: false,
 };
+// ===== the limits an admin may change (POST /api/admin/policy): each a whole number within a range, and why
+const KB = 1024;
+const MB = 1024 * KB;
+const GB = 1024 * MB;
+const ON_REDIS = CFG.store === 'redis';
+const POLICY_LIMITS = [
+  // 0 stops Obys asking Obys; past 10 hops, one question reaches further than anyone can follow,
+  // and every hop is a model run on someone's machine
+  { key: 'maxDepth', min: 0, max: 10, words: 'hop limit' },
+  // a file is held whole while it's checked and stored. On Redis each file is one value sent in one
+  // request, and Upstash and Vercel cap a request near 1 MB; on disk, 50 MB keeps one file from filling a small server
+  { key: 'maxFileBytes', min: KB, max: ON_REDIS ? MB : 50 * MB, words: 'file limit', bytes: true },
+  // at least one, or no message could carry a file; a message is at most 16 MB of JSON, so more than 50 adds nothing
+  { key: 'maxFilesPerMessage', min: 1, max: 50, words: 'files per message' },
+  // all of one member's files together (each counts at least 1 KB). On Redis they share one database
+  // (Upstash's free one holds 256 MB in all), so one member takes at most 100 MB; on disk, 10 GB
+  { key: 'maxAgentBytes', min: MB, max: ON_REDIS ? 100 * MB : 10 * GB, words: 'storage per member', bytes: true },
+  // every kept message lives in memory (on Redis, in every instance): 50,000 are about 100 MB at a typical
+  // length. Fewer than 100 would drop a busy day's conversation before anyone read it
+  { key: 'retainMessages', min: 100, max: 50000, words: 'messages kept' },
+  // an ask starts a model run on someone's machine: 1 a minute still lets a person ask; 600 (ten a second)
+  // is past what any person sends, and still stops Obys caught asking each other in a loop
+  { key: 'asksPerMin', rate: true, min: 1, max: 600, words: 'asks per minute' },
+  // messages, uploads and channel changes: an Oby needs one per answer, so fewer than 10 would refuse a busy
+  // one's answers; 3,000 is fifty a second
+  { key: 'writesPerMin', rate: true, min: 10, max: 3000, words: 'writes per minute' },
+  // per client address: a team behind one office address shares it, so up to 600; at 1, one join a minute
+  { key: 'joinsPerMinPerIp', rate: true, min: 1, max: 600, words: 'joins per minute per address' },
+  // an answering Oby says "working" and then "done" for every ask: fewer than 10 would refuse a busy one's
+  { key: 'statusPerMin', rate: true, min: 10, max: 1200, words: 'status updates per minute' },
+  // an Oby changes its profile when it starts and when its owner's settings change
+  { key: 'mePerMin', rate: true, min: 1, max: 600, words: 'profile changes per minute' },
+].map((l) => ({ ...l, field: l.rate ? `rate.${l.key}` : l.key, show: (v) => (l.bytes ? fmtBytes(v) : Number(v).toLocaleString('en-US')) }));
+
+// the limits a POST /api/admin/policy body sets, each checked: { maxDepth, …, rate: { asksPerMin, … } }
+function policyLimitsOf(body) {
+  const set = new Map();
+  const rate = body.rate;
+  if (rate !== undefined && (rate === null || typeof rate !== 'object' || Array.isArray(rate))) throw err(400, 'bad_request', 'rate is an object: { asksPerMin, writesPerMin, joinsPerMinPerIp, statusPerMin, mePerMin }.');
+  for (const k of Object.keys(rate || {}))
+    if (!POLICY_LIMITS.some((l) => l.rate && l.key === k)) throw err(400, 'bad_request', `rate.${String(k).slice(0, 40)} isn't a rate this Sphere has: asksPerMin, writesPerMin, joinsPerMinPerIp, statusPerMin or mePerMin.`);
+  for (const l of POLICY_LIMITS) {
+    const v = l.rate ? rate?.[l.key] : body[l.key];
+    if (v === undefined) continue;
+    if (!Number.isInteger(v) || v < l.min || v > l.max)
+      throw err(400, 'bad_request', `${l.field} is a whole number from ${l.show(l.min)} to ${l.show(l.max)}${l.bytes ? ' (in bytes)' : ''}${l.key === 'maxFileBytes' || l.key === 'maxAgentBytes' ? ' on this store' : ''}.`);
+    set.set(l, v);
+  }
+  return set;
+}
 const dict = () => Object.create(null); // nothing inherited: safe to index with what clients send
 
 // ================================================================ state: in memory, rebuilt from the log
@@ -170,8 +220,11 @@ function apply(op, liveEvents = true) {
       break;
     }
     case 'policy':
-      if (op.policy) S.policy = mergePolicy({ ...S.policy, ...op.policy });
+      // rate limits merge one by one: an operation may carry only the ones it changes
+      if (op.policy) S.policy = mergePolicy({ ...S.policy, ...op.policy, rate: { ...S.policy.rate, ...(op.policy.rate || {}) } });
       if (typeof op.paused === 'boolean') S.paused = op.paused;
+      // fewer messages kept: the older ones go now (the fs store's log follows at its next compaction)
+      if (op.policy?.retainMessages && messages.length > S.policy.retainMessages) trimMemory();
       ev.push(['policy', { paused: S.paused, policy: S.policy }, ALL]);
       break;
     case 'agent': {
@@ -1973,18 +2026,7 @@ async function route(req, res, url) {
     }
     if (m === 'POST' && p === '/api/admin/policy') {
       const body = await readJson(req);
-      const set = {};
-      if (body.maxDepth !== undefined) {
-        const v = Math.floor(Number(body.maxDepth));
-        if (!(v >= 0 && v <= 10)) throw err(400, 'bad_request', 'maxDepth is a whole number from 0 to 10.');
-        set.maxDepth = v;
-      }
-      if (body.maxFileBytes !== undefined) {
-        const v = Math.floor(Number(body.maxFileBytes));
-        const cap = store.kind === 'redis' ? 1024 * 1024 : 50 * 1024 * 1024;
-        if (!(v >= 1024 && v <= cap)) throw err(400, 'bad_request', `maxFileBytes is from 1 KB to ${fmtBytes(cap)} on this store.`);
-        set.maxFileBytes = v;
-      }
+      const set = policyLimitsOf(body); // every limit checked before anything changes: all or nothing
       if (body.sealed !== undefined && typeof body.sealed !== 'boolean') throw err(400, 'bad_request', 'sealed is true or false.');
       await store.commit((b) => {
         const pol = {};
@@ -1992,13 +2034,15 @@ async function route(req, res, url) {
           b.push({ t: 'policy', paused: body.paused });
           b.audit(body.paused ? 'pause' : 'unpause', { actor, detail: (body.paused ? 'the relay is paused: no new messages' : 'the relay is running again') + by });
         }
-        if (set.maxDepth !== undefined && set.maxDepth !== S.policy.maxDepth) {
-          pol.maxDepth = set.maxDepth;
-          b.audit('policy', { actor, detail: `hop limit ${S.policy.maxDepth} → ${set.maxDepth}${by}` });
-        }
-        if (set.maxFileBytes !== undefined && set.maxFileBytes !== S.policy.maxFileBytes) {
-          pol.maxFileBytes = set.maxFileBytes;
-          b.audit('policy', { actor, detail: `file limit ${fmtBytes(S.policy.maxFileBytes)} → ${fmtBytes(set.maxFileBytes)}${by}` });
+        for (const l of POLICY_LIMITS) {
+          if (!set.has(l)) continue;
+          const v = set.get(l);
+          const was = l.rate ? S.policy.rate[l.key] : S.policy[l.key];
+          if (v === was) continue;
+          // the whole rate object, so an instance of an older version applies it the same
+          if (l.rate) pol.rate = { ...S.policy.rate, ...(pol.rate || {}), [l.key]: v };
+          else pol[l.key] = v;
+          b.audit('policy', { actor, detail: `${l.words} ${l.show(was)} → ${l.show(v)}${by}` });
         }
         if (typeof body.sealed === 'boolean' && body.sealed !== !!S.policy.sealed) {
           pol.sealed = body.sealed;
@@ -2511,7 +2555,7 @@ function guessMime(name = '') {
 }
 
 function fmtBytes(n) {
-  return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  return n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(1)} GB`;
 }
 
 function dayKey(ts) {

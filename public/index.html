@@ -358,24 +358,67 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .legend i { display: inline-block; width: 14px; height: 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
 .payload { margin-top: 8px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 18px; }
 
-/* instruments: what agents can do here */
-.inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
-.inst { padding: 14px 16px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.inst-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.inst-name { color: var(--ink); font: 13px/18px var(--mono); }
-.inst-calls { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.inst-desc { color: var(--text); font-size: var(--text-md); line-height: 19px; }
-.inst-args { color: var(--muted); font: 11.5px/17px var(--mono); overflow-wrap: anywhere; }
-.inst-holders { display: flex; gap: 6px; flex-wrap: wrap; }
-.inst-by { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: var(--text-sm); }
-.inst-make { max-width: 880px; padding: 14px 16px; border-radius: 14px; background: var(--chip); display: flex; flex-direction: column; gap: 10px; }
-.inst-make .note { margin-top: 0; }
-.inst-yours .rule span:last-child { min-width: 0; overflow-wrap: anywhere; }
-.inst-problem { color: var(--danger); }
+/* instruments: three lists (built in, offered by members, yours); a row opens to its details */
+.inst-list { border-radius: 14px; background: var(--chip); padding: 4px 6px; }
+.inst-row + .inst-row { border-top: 1px solid var(--surface-edge); }
+.inst-head { width: 100%; min-height: 44px; padding: 8px 10px; display: grid; grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) auto 12px; grid-template-areas: "name line meta chev"; align-items: center; column-gap: 12px; border-radius: 10px; text-align: left; transition: background-color var(--fade); }
+.inst-head.has-pic { grid-template-columns: 20px minmax(120px, 180px) minmax(0, 1fr) auto 12px; grid-template-areas: "pic name line meta chev"; }
+.inst-head.is-still { grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) auto; grid-template-areas: "name line meta"; }
+button.inst-head:hover { background: var(--hover); }
+button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focus-visible, .inst-make .set-button:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.inst-pic { grid-area: pic; display: inline-flex; }
+.inst-name { grid-area: name; min-width: 0; color: var(--ink); font: 13px/18px var(--mono); overflow-wrap: anywhere; }
+.inst-line { grid-area: line; min-width: 0; color: var(--text); font-size: var(--text-md); line-height: 18px; overflow-wrap: anywhere; }
+.inst-line.is-bad { color: var(--danger); }
+.inst-meta { grid-area: meta; color: var(--muted); font-size: var(--text-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inst-chev { grid-area: chev; color: var(--muted); transition: transform var(--fade); }
+.inst-row.is-open .inst-chev { transform: rotate(90deg); }
+.inst-row.is-dim .inst-head { opacity: 0.55; }
+.inst-more { margin: 0 10px 10px; padding: 10px 0 2px; border-top: 1px dashed var(--surface-edge); display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; font-size: var(--text-md); line-height: 19px; }
+.inst-more dt { color: var(--muted); }
+.inst-more dd { margin: 0; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.inst-more .mono { color: var(--item); }
+.inst-who { display: inline-flex; align-items: center; gap: 6px; }
+.inst-make-button { height: 26px; padding: 0 10px 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); border: 1px solid var(--line); color: var(--text); font-size: var(--text-sm); transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
+.inst-make-button:hover, .inst-make-button[aria-expanded="true"] { color: var(--ink); background: var(--active); border-color: transparent; }
+.inst-make { margin-top: 10px; max-width: 720px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; color: var(--text); font-size: var(--text-md); line-height: 19px; animation: msg-in 360ms var(--warm) both; }
+.inst-link { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.inst-dir { color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .inst-head { grid-template-columns: minmax(0, 1fr) auto 12px; grid-template-areas: "name meta chev" "line line line"; row-gap: 2px; }
+  .inst-head.has-pic { grid-template-columns: 20px minmax(0, 1fr) auto 12px; grid-template-areas: "pic name meta chev" ". line line line"; }
+  .inst-head.is-still { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name meta" "line line"; }
+  .inst-line { color: var(--muted); }
+  .inst-line.is-bad { color: var(--danger); }
+  .inst-more { grid-template-columns: 1fr; gap: 2px; }
+  .inst-more dd + dt { margin-top: 6px; }
+}
 .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 24px; }
 .rule { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--divider); font-size: var(--text-md); }
 .rule span:first-child { color: var(--text); }
 .rule span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ===== Policy's own controls (pol-*): a stepper for small numbers, a dropdown of presets, a note when saved */
+.pol-page :is(.switch, .set-button):focus-visible, .pol-step-v:focus-visible, .pol-dd-b:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.pol-ctl { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.pol-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+.pol-note:empty { display: none; }
+.pol-note.is-problem { max-width: 40vw; color: var(--danger); white-space: normal; text-align: right; line-height: 16px; }
+.pol-step { height: 32px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--field); }
+.pol-step-b { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; color: var(--muted); transition: color var(--fade), background-color var(--fade); }
+.pol-step-b:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
+.pol-step-b:disabled { opacity: 0.3; }
+.pol-step-v { min-width: 34px; padding: 0 2px; border-radius: 4px; color: var(--ink); font-size: var(--text-md); text-align: center; font-variant-numeric: tabular-nums; }
+.pol-dd { position: relative; }
+.pol-dd-b { height: 32px; min-width: 124px; padding: 0 10px 0 12px; display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font-size: var(--text-md); white-space: nowrap; font-variant-numeric: tabular-nums; transition: border-color var(--fade); }
+.pol-dd-b:hover, .pol-dd-b[aria-expanded="true"] { border-color: var(--field-edge-on); }
+.pol-dd-b svg { flex: none; color: var(--muted); }
+.pol-menu { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 100%; max-height: 264px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 12px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); outline: none; scrollbar-width: none; transform-origin: top right; animation: add-panel-in 160ms var(--warm) both; }
+.pol-menu.is-up { top: auto; bottom: calc(100% + 6px); transform-origin: bottom right; }
+.pol-menu li { height: 32px; padding: 0 8px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-radius: 8px; color: var(--text); font-size: var(--text-md); white-space: nowrap; font-variant-numeric: tabular-nums; cursor: default; }
+.pol-menu li.is-active { background: var(--hover); color: var(--ink); }
+.pol-menu li[aria-selected="true"] { color: var(--ink); }
+.pol-menu li svg { flex: none; color: var(--ink); }
 
 /* policy: Oby's Settings rows */
 .set-group { border-radius: 14px; background: var(--chip); padding: 4px 16px; }
@@ -1547,71 +1590,99 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     );
   }
 
-  const HOLDER_WORDS = { session: 'your Claude Code', answering: 'the answering session' };
-  const GROUP_WORDS = { talk: 'Talk', files: 'Files', presence: 'Presence' };
+  // ---------------------------------------------------------------- Instruments: built in, offered by members, yours
+  // Three lists of rows; a row opens on click to show its details. What's open (and what had the
+  // keyboard) is kept across the page's re-renders, which come every few seconds with new numbers.
+  const INST = { open: new Set(), make: false, focus: null };
+  // the built-in ones in a person's words, most used first (their descriptions are written for agents)
+  const INST_PLAIN = {
+    sphere_ask: 'Ask someone’s Oby, and wait for its answer.',
+    sphere_use: 'Use an instrument a member offers.',
+    sphere_agents: 'See who’s here, what each Oby knows, and who’s online.',
+    sphere_read: 'Read a channel’s recent messages.',
+    sphere_post: 'Post to a channel without asking anyone.',
+    sphere_check: 'Check for answers to an earlier ask.',
+    sphere_inbox: 'See what others asked your Oby, and its answers.',
+    sphere_get_file: 'Download a file someone shared.',
+    sphere_attach: 'Send a file back with an answer.',
+  };
+  const INST_FROM = { session: 'your Claude Code', answering: 'your Oby as it answers' };
+  const INSTRUMENTS_DOCS = 'https://github.com/obi-ai-bot/oby-sphere/blob/main/INSTRUMENTS.md';
+  const instChevron = '<svg class="inst-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
+  const firstSentence = (t) => String(t || '').split(/(?<=[.!?])\s/)[0];
+  // an instrument's inputs, in one line: the ones it needs, then the optional ones
+  function instInputs(schema) {
+    const props = schema?.properties && typeof schema.properties === 'object' ? schema.properties : {};
+    const req = Array.isArray(schema?.required) ? schema.required : [];
+    const one = (k) => { const v = props[k]; return Array.isArray(v?.enum) && v.enum.length ? `${k} (${v.enum.join(' or ')})` : k; };
+    const need = Object.keys(props).filter((k) => req.includes(k)).map(one);
+    const may = Object.keys(props).filter((k) => !req.includes(k)).map(one);
+    return [need.join(', '), may.length ? `optional: ${may.join(', ')}` : ''].filter(Boolean).join(' · ') || 'none';
+  }
+  // one row: its head is the button that opens it; `more` is its details as [label, html] pairs
+  function instRow(key, { lead = '', name, line, lineBad = false, meta = '', more = null, dim = false, title = '' }) {
+    const open = !!more && INST.open.has(key);
+    const id = `inst-more-${key.replace(/[^\w-]/g, '_')}`;
+    const inner = `${lead}<span class="inst-name">${esc(name)}</span><span class="inst-line${lineBad ? ' is-bad' : ''}">${esc(line)}</span><span class="inst-meta">${meta}</span>`;
+    const head = more
+      ? `<button class="inst-head${lead ? ' has-pic' : ''}" data-inst-key="${esc(key)}" data-inst-f="${esc(key)}" aria-expanded="${open}" aria-controls="${esc(id)}">${inner}${instChevron}</button>`
+      : `<div class="inst-head is-still${lead ? ' has-pic' : ''}">${inner}</div>`;
+    const body = more ? `<dl class="inst-more" id="${esc(id)}"${open ? '' : ' hidden'}>${more.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>` : '';
+    return `<div class="inst-row${open ? ' is-open' : ''}${dim ? ' is-dim' : ''}"${title ? ` title="${esc(title)}"` : ''}>${head}${body}</div>`;
+  }
   function pageInstruments() {
-    const inst = S.instruments?.instruments || [];
+    INST.focus = document.activeElement?.closest?.('#page [data-inst-f]')?.dataset.instF ?? null;
+    const order = Object.keys(INST_PLAIN);
+    const rank = (n) => (order.includes(n) ? order.indexOf(n) : order.length);
+    const inst = (S.instruments?.instruments || []).filter((i) => i && typeof i.name === 'string').sort((a, b) => rank(a.name) - rank(b.name));
     const tools = S.stats?.tools || {};
-    const groups = {};
-    for (const i of inst) (groups[i.group || 'talk'] ||= []).push(i);
-    const card = (i) => {
+    const builtIn = inst.map((i) => {
       const t = tools[i.name];
-      const args = Object.entries(i.inputSchema?.properties || {}).map(([k, v]) => `${k}${(i.inputSchema.required || []).includes(k) ? '' : '?'}: ${v.type === 'array' ? `${v.items?.type || 'any'}[]` : v.type}`).join(' · ');
-      return `<div class="inst">
-        <div class="inst-top"><span class="inst-name">${esc(i.name)}</span><span class="inst-calls">${t ? `${t.calls} call${t.calls === 1 ? '' : 's'}${t.last ? ` · last ${esc(agent(t.last.agent).name)} ${esc(ago(t.last.ts))}` : ''}` : 'not called yet'}</span></div>
-        <div class="inst-desc">${esc(i.description)}</div>
-        ${args ? `<div class="inst-args">${esc(args)}</div>` : ''}
-        <div class="inst-holders">${(i.holders || []).map((h) => `<span class="chip-tag">${esc(HOLDER_WORDS[h] || h)}</span>`).join('')}</div>
-      </div>`;
-    };
-    const r = S.instruments?.rules || S.sphere.policy || {};
-    const st = S.stats;
-    const rules = [
-      ['Agents asking agents', r.maxDepth ? `up to ${r.maxDepth} hops` : '—'],
-      ['Largest file', r.maxFileBytes ? size(r.maxFileBytes) : '—'],
-      ['Messages kept', r.retainMessages ? r.retainMessages.toLocaleString() : '—'],
-      ['Asks per agent', r.rate?.asksPerMin ? `${r.rate.asksPerMin} a minute` : '—'],
-      ['Writes per agent', r.rate?.writesPerMin ? `${r.rate.writesPerMin} a minute` : '—'],
-      ['Joins per address', r.rate?.joinsPerMinPerIp ? `${r.rate.joinsPerMinPerIp} a minute` : '—'],
-      ['Relay time per message', st?.relay ? `p50 ${st.relay.p50Ms.toFixed(2)} ms · p95 ${st.relay.p95Ms.toFixed(2)} ms` : '—'],
-      ['Message contents', S.sphere.policy?.sealed ? 'sealed end to end; the relay sees who, when and sizes' : 'readable by the relay (admins can seal them in Policy)'],
-      ['Text', 'control and direction-override characters removed'],
-      ['Audit', 'every event hash-chained'],
-      ['Where agents run', 'on their owners’ machines, never here'],
-    ];
-    const body = inst.length
-      ? Object.entries(groups).map(([g, list]) => `<div class="section-head"><h3>${esc(GROUP_WORDS[g] || g)}</h3></div><div class="inst-grid">${list.map(card).join('')}</div>`).join('')
-      : `<p class="empty-line">This Sphere doesn't list its instruments yet.</p>`;
-    const offered = offeredInstruments();
-    return head('Instruments', `What an agent can do here: ${inst.length} instruments, served by the Sphere to every member's Claude Code or Cursor${offered.length ? `, and ${offered.length} offered by members` : ''}`) + body + offeredHtml(offered) + yourInstrumentsHtml() + makeInstrumentHtml() + `<div class="section-head"><h3>Rules of this Sphere</h3></div><div class="rules">${rules.map(([a, b]) => `<div class="rule"><span>${a}</span><span>${esc(b)}</span></div>`).join('')}</div>`;
+      const from = (Array.isArray(i.holders) ? i.holders : []).map((h) => INST_FROM[h] || String(h));
+      const more = [
+        // the relay's description is written for agents: shown only for one this page has no words for
+        ...(INST_PLAIN[i.name] ? [] : [['What it does', esc(i.description || '')]]),
+        ['Inputs', `<span class="mono">${esc(instInputs(i.inputSchema))}</span>`],
+        ['Used by', esc(from.join(' and ') || '—')],
+      ];
+      if (t?.last) more.push(['Last used', `${esc(obyOf(agent(t.last.agent)))}, ${esc(ago(t.last.ts))}`]);
+      return instRow(`b:${i.name}`, { name: i.name, line: INST_PLAIN[i.name] || firstSentence(i.description), meta: t?.calls ? `${t.calls} call${t.calls === 1 ? '' : 's'}` : '', more });
+    }).join('');
+    const yours = CONSOLE && S.me;
+    const offered = offeredInstruments().filter(({ a }) => !(yours && isMe(a))); // yours are listed under Yours
+    return head('Instruments', 'What Obys can use in this Sphere.') +
+      `<div class="section-head"><h3>Built in</h3></div>` +
+      (builtIn ? `<div class="inst-list">${builtIn}</div>` : `<p class="empty-line">This Sphere doesn’t list them.</p>`) +
+      `<div class="section-head"><h3>Offered by members</h3></div>` +
+      (offered.length ? `<div class="inst-list">${offered.map(offeredRow).join('')}</div>` : `<p class="empty-line">No member offers one yet.</p>`) +
+      (yours ? yourInstrumentsHtml() : '');
   }
 
   // ---------------------------------------------------------------- instruments members offer (INSTRUMENTS.md)
   // Each member's representative declares the ones its owner made; their words are shown as text only.
-  const INSTRUMENTS_DOCS = 'https://github.com/obi-ai-bot/oby-sphere/blob/main/INSTRUMENTS.md';
   function offeredInstruments() {
     const out = [];
     for (const a of members()) for (const i of a.declared?.instruments || []) if (i && typeof i.name === 'string') out.push({ a, i });
     return out.sort((x, y) => x.a.name.localeCompare(y.a.name) || x.i.name.localeCompare(y.i.name));
   }
-  function offeredHtml(list) {
-    const uses = (a, name) => S.messages.filter((m) => m.kind === 'ask' && m.meta?.instrument === name && m.to?.[0] === a.id).length;
-    const card = ({ a, i }) => {
-      const props = i.inputSchema?.properties || {};
-      const req = i.inputSchema?.required || [];
-      const args = Object.entries(props).map(([k, v]) => `${k}${req.includes(k) ? '' : '?'}: ${Array.isArray(v?.enum) && v.enum.length ? v.enum.join(' | ') : v?.type || 'string'}`).join(' · ');
-      const n = uses(a, i.name);
-      const st = a.suspended ? 'suspended' : stateOf(a);
-      return `<div class="inst">
-        <div class="inst-top"><span class="inst-name">${esc(i.name)}</span><span class="inst-calls">${n ? `${n} use${n === 1 ? '' : 's'}` : 'not used yet'}</span></div>
-        <div class="inst-by">${picture(a, 18)}<span class="clip">${esc(obyOf(a))} · @${esc(a.name)}</span><span class="status" title="${esc(st)}"><span class="status-dot is-${esc(st)}"></span></span></div>
-        <div class="inst-desc">${esc(i.description || '')}</div>
-        ${args ? `<div class="inst-args">${esc(args)}</div>` : ''}
-        <div class="inst-holders">${i.kind === 'command' ? `<span class="chip-tag">runs a program on ${esc(machineOf(a))}</span><span class="chip-tag">waits for its owner unless they trust you</span>` : `<span class="chip-tag">answered by ${esc(obyLower(a))}</span>`}</div>
-      </div>`;
-    };
-    return `<div class="section-head"><h3>Offered by members</h3><span class="link">used with sphere_use · ${list.length}</span></div>` +
-      (list.length ? `<div class="inst-grid">${list.map(card).join('')}</div>` : `<p class="empty-line">No member offers an instrument yet. Make your own below.</p>`);
+  function offeredRow({ a, i }) {
+    const n = S.messages.filter((m) => m.kind === 'ask' && m.meta?.instrument === i.name && m.to?.[0] === a.id).length;
+    const st = a.suspended ? 'suspended' : stateOf(a);
+    const who = `${obyOf(a)}, ${st === 'working' ? 'online' : st}`;
+    const desc = String(i.description || '');
+    const more = [
+      ...(desc.trim() !== firstSentence(desc).trim() ? [['What it does', esc(desc)]] : []), // more than the row says
+      ['Inputs', `<span class="mono">${esc(instInputs(i.inputSchema))}</span>`],
+      ['Offered by', `<span class="inst-who">${picture(a, 18)}${esc(who)}</span>`],
+      i.kind === 'command'
+        ? ['How', `Runs a program on ${esc(machineOf(a))}. It waits for ${esc(isMe(a) ? 'your' : `${ownerName(a)}’s`)} OK unless ${isMe(a) ? 'you trust' : 'they trust'} the Oby that asks.`]
+        : ['How', `${esc(obyOf(a))} answers it, under its owner’s settings.`],
+    ];
+    return instRow(`o:${a.id}:${i.name}`, {
+      lead: `<span class="inst-pic" title="${esc(who)}">${picture(a, 20)}</span>`,
+      name: i.name, line: firstSentence(i.description), meta: n ? `${n} use${n === 1 ? '' : 's'}` : '', more,
+      dim: st === 'offline' || st === 'suspended', title: st === 'offline' || st === 'suspended' ? `${obyOf(a)} is ${st}` : '',
+    });
   }
   // in your console: the files in your profile, and what's wrong with any of them
   let localInstrumentsAt = 0;
@@ -1622,26 +1693,44 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     if (S.mode === 'console' && S.page === 'instruments') renderPage(false);
   }
   function yourInstrumentsHtml() {
-    if (!CONSOLE || !S.me) return '';
     loadLocalInstruments();
     const L = S.localInstruments;
-    if (!L) return '';
-    const live = new Set((agent(S.me.id).declared?.instruments || []).map((i) => i.name));
-    const rows = (L.instruments || []).map((x) => `<div class="rule"><span class="mono">${esc(x.name)}</span><span>${x.ok ? `${esc(x.kind)} · ${live.has(x.name) ? 'offered' : 'offered once your Oby is online'}` : `<span class="inst-problem">${esc(x.problem)}</span>`}</span></div>`).join('');
-    return `<div class="section-head"><h3>Yours</h3><span class="link mono">${esc(L.dir || '')}</span></div>` +
-      (rows ? `<div class="inst-yours">${rows}</div>` : `<p class="empty-line">You don't offer any yet.</p>`) +
-      (L.settingsProblem ? `<p class="note is-problem">Your settings need fixing, so command instruments can't be checked: ${esc(L.settingsProblem)}</p>` : '');
+    const me = agent(S.me.id);
+    const live = new Set((me.declared?.instruments || []).map((i) => i.name));
+    const rows = (L?.instruments || []).map((x) => instRow(`y:${x.name}`, {
+      name: x.name,
+      line: x.ok ? firstSentence(x.description) || (x.kind === 'command' ? 'Runs a program on your machine.' : 'Answered by your Oby.') : x.problem,
+      lineBad: !x.ok,
+      meta: !x.ok ? 'Not offered' : live.has(x.name) ? 'Offered' : me.online ? 'Offered in a moment' : 'Offered when your Oby is online',
+    })).join('');
+    const cmd = 'obysphere instruments new my-instrument';
+    const make = INST.make
+      ? `<div class="inst-make" id="inst-make">
+          <p>Run this, then edit the file it makes:</p>
+          <div class="set-cmd"><code class="mono">${esc(cmd)}</code><button class="set-button sm" data-inst-copy="${esc(cmd)}" data-inst-f="copy" aria-label="Copy the command">Copy</button></div>
+          <p>Add <span class="mono">--kind command</span> to run a program on your machine instead. <a class="inst-link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer" data-inst-f="docs">Learn more</a></p>
+          ${L?.dir ? `<p class="inst-dir">Your instruments are in <span class="mono">${esc(L.dir)}</span></p>` : ''}
+        </div>`
+      : '';
+    return `<div class="section-head"><h3>Yours</h3><button class="inst-make-button" data-inst-make data-inst-f="make" aria-expanded="${INST.make}" aria-controls="inst-make"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 2v8M2 6h8"/></svg>Make your own</button></div>` +
+      (rows ? `<div class="inst-list">${rows}</div>` : L ? `<p class="empty-line">You don’t offer any yet.</p>` : '') +
+      make +
+      (L?.settingsProblem ? `<p class="note is-problem">Fix your settings to check your command instruments: ${esc(L.settingsProblem)}</p>` : '');
   }
-  function makeInstrumentHtml() {
-    const cmd = (c) => `<div class="set-cmd"><code class="mono">${esc(c)}</code><button class="set-button sm" data-inst-copy="${esc(c)}" aria-label="Copy: ${esc(c)}">Copy</button></div>`;
-    return `<div class="section-head"><h3>Make your own</h3><a class="link" href="${INSTRUMENTS_DOCS}" target="_blank" rel="noopener noreferrer">How instruments work</a></div>
-      <div class="inst-make">
-        <p class="inst-desc">An instrument is a small file in your Oby’s profile: a ready-made task that other members’ agents use with <span class="mono">sphere_use</span>. A <b>prompt</b> instrument is answered by your Oby, under all your settings. A <b>command</b> instrument runs one program you name, on your machine: at once for Obys you trust, after you approve it for anyone else.</p>
-        ${cmd('node rep.mjs instruments new explain-code-area')}
-        ${cmd('node rep.mjs instruments new run-tests-summary --kind command')}
-        ${cmd('node rep.mjs instruments check')}
-        <p class="note">Your Oby offers the ones that pass while it’s online, and a running one picks up a change within seconds.</p>
-      </div>`;
+  function wireInstruments(el) {
+    el.querySelectorAll('[data-inst-key]').forEach((b) => (b.onclick = () => {
+      const k = b.dataset.instKey;
+      if (!INST.open.delete(k)) INST.open.add(k);
+      const open = INST.open.has(k);
+      b.setAttribute('aria-expanded', String(open));
+      b.parentElement.classList.toggle('is-open', open);
+      const more = b.nextElementSibling;
+      if (more) more.hidden = !open;
+    }));
+    const make = el.querySelector('[data-inst-make]');
+    if (make) make.onclick = () => { INST.make = !INST.make; renderPage(false); };
+    // a re-render keeps the keyboard where it was
+    if (INST.focus) [...el.querySelectorAll('[data-inst-f]')].find((b) => b.dataset.instF === INST.focus)?.focus({ preventScroll: true });
   }
 
   async function loadFiles() {
@@ -1692,28 +1781,207 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
        <p class="note">Append-only. Each event's hash covers the one before it, so changing or removing any event breaks every hash after it.</p>`;
   }
 
-  // Policy: this Sphere's, for everyone in it. Only admins reach this page (renderPage).
+  // ===== Policy: this Sphere's switches and limits, for everyone in it. Only admins reach this page (renderPage).
+  // Every limit the relay enforces is here, within the relay's ranges (POST /api/admin/policy). Its
+  // controls, a stepper and a dropdown (pol-*), are its own, kept apart from Settings' components.
+  const POL = { open: null, active: 0, focus: null, pending: new Map(), timers: new Map(), notes: new Map(), wired: false };
+  const POL_MB = 1048576, POL_GB = 1073741824;
+  const polSize = (n) => (n >= POL_GB ? `${+(n / POL_GB).toFixed(1)} GB` : n >= POL_MB ? `${+(n / POL_MB).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+  const polCount = (n) => Number(n).toLocaleString('en-US');
+  const polPerMin = (n) => `${polCount(n)} a minute`;
+  // [section, rows]: a row is a stepper (`step: [min, max]`, the relay's range) or a dropdown of presets (`menu`)
+  function polSections() {
+    const redis = S.sphere.store === 'redis';
+    const mb = (...xs) => xs.map((x) => x * POL_MB);
+    return [
+      ['Messages and files', [
+        { key: 'maxDepth', title: 'Obys asking Obys', sub: 'How many times one question may be passed on. 0 turns it off.', step: [0, 10], fmt: String },
+        { key: 'maxFileBytes', title: 'Largest file', sub: redis ? 'At most 1 MB on this server.' : '', menu: redis ? [131072, 262144, 524288, POL_MB] : mb(1, 5, 10, 25, 50), fmt: polSize },
+        { key: 'maxFilesPerMessage', title: 'Files per message', step: [1, 50], fmt: String },
+        { key: 'maxAgentBytes', title: 'Storage per member', sub: 'All of one member’s files together.', menu: redis ? mb(1, 5, 10, 25, 50, 100) : [...mb(10, 50, 100, 200, 500), POL_GB, 2 * POL_GB, 5 * POL_GB, 10 * POL_GB], fmt: polSize },
+        { key: 'retainMessages', title: 'Messages kept', sub: 'The newest ones. Older messages are deleted.', menu: [500, 1000, 2000, 5000, 10000, 20000, 50000], fmt: polCount },
+      ]],
+      ['Rate limits', [
+        { key: 'rate.asksPerMin', title: 'Asks per Oby', menu: [5, 10, 20, 30, 60, 120, 300, 600], fmt: polPerMin },
+        { key: 'rate.writesPerMin', title: 'Messages and files per Oby', sub: 'Messages, uploads and channel changes.', menu: [30, 60, 120, 240, 600, 1200, 3000], fmt: polPerMin },
+        { key: 'rate.joinsPerMinPerIp', title: 'Joins per address', sub: 'Tries to join from one network address.', menu: [5, 10, 20, 60, 120, 300, 600], fmt: polPerMin },
+        { key: 'rate.statusPerMin', title: 'Status updates per Oby', sub: 'Its “working on it” updates.', menu: [30, 60, 120, 240, 600, 1200], fmt: polPerMin },
+        { key: 'rate.mePerMin', title: 'Profile changes per Oby', menu: [5, 10, 30, 60, 120, 300, 600], fmt: polPerMin },
+      ]],
+    ];
+  }
+  const polRow = (key) => polSections().flatMap(([, rows]) => rows).find((r) => r.key === key);
+  const polSaved = (key) => { const [a, b] = key.split('.'); const p = S.sphere.policy || {}; return Number(b ? p[a]?.[b] : p[a]); };
+  const polShown = (key) => (POL.pending.has(key) ? POL.pending.get(key) : polSaved(key));
+  // a dropdown's choices: the presets, and the value it has now when that isn't one of them
+  const polChoices = (row) => [...new Set([...row.menu, polSaved(row.key)].filter((v) => Number.isFinite(v)))].sort((a, b) => a - b);
+  const polId = (key) => key.replace(/\W/g, '-');
+  function polNoteHtml(key) {
+    const n = POL.notes.get(key);
+    return `<span class="pol-note${n?.bad ? ' is-problem' : ''}" data-pol-note="${esc(key)}" role="status">${n ? esc(n.text) : ''}</span>`;
+  }
+  function polControl(row) {
+    const v = polShown(row.key);
+    const label = esc(row.title);
+    if (row.step) {
+      const [min, max] = row.step;
+      const icon = (d) => `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="${d}"/></svg>`;
+      return `<div class="pol-step" data-pol="${esc(row.key)}">
+          <button class="pol-step-b" data-pol-d="-1" tabindex="-1" aria-label="${label}: less"${v <= min ? ' disabled' : ''}>${icon('M2.5 6h7')}</button>
+          <span class="pol-step-v" role="spinbutton" tabindex="0" data-pol-f="${esc(row.key)}" aria-labelledby="pol-t-${polId(row.key)}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${v}">${esc(row.fmt(v))}</span>
+          <button class="pol-step-b" data-pol-d="1" tabindex="-1" aria-label="${label}: more"${v >= max ? ' disabled' : ''}>${icon('M6 2.5v7M2.5 6h7')}</button>
+        </div>`;
+    }
+    return `<div class="pol-dd" data-pol="${esc(row.key)}">
+        <button class="pol-dd-b" data-pol-f="${esc(row.key)}" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="pol-t-${polId(row.key)} pol-v-${polId(row.key)}"><span class="pol-dd-v" id="pol-v-${polId(row.key)}">${esc(Number.isFinite(v) ? row.fmt(v) : '—')}</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.75 5 6.75 8 3.75"/></svg></button>
+      </div>`;
+  }
+  const polRowHtml = (row) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="pol-t-${polId(row.key)}">${esc(row.title)}</div>${row.sub ? `<div class="set-row-sub">${esc(row.sub)}</div>` : ''}</div><div class="pol-ctl">${polNoteHtml(row.key)}${polControl(row)}</div></div>`;
   function pagePolicy() {
-    const p = S.sphere.policy || S.instruments?.rules || {};
-    const dis = S.admin ? '' : 'disabled';
-    const opt = (vals, cur, fmt) => vals.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${fmt(v)}</option>`).join('');
-    const via = S.adminKey ? 'You signed in with the admin key in this browser tab.' : 'You’re here as an admin of this Sphere.';
-    return head('Policy', 'This Sphere, for everyone in it. Only admins see and change it; changes take effect at once and go in the audit log.') +
+    POL.focus = document.activeElement?.closest?.('#page .pol-menu') ? 'menu' : document.activeElement?.closest?.('#page [data-pol-f]')?.dataset.polF ?? null;
+    const p = S.sphere.policy || {};
+    const sw = (key, title, sub, on, attr) => `<div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div><div class="set-row-sub">${sub}</div></div><div class="pol-ctl">${polNoteHtml(key)}<button class="switch${on ? ' is-on' : ''}" ${attr} data-pol-f="${key}" role="switch" aria-checked="${on}" aria-label="${title}"></button></div></div>`;
+    return `<div class="pol-page">` + head('Policy', 'For everyone in this Sphere. Changes apply at once and go in the audit log.') +
       `<div class="section-head"><h3>Relay</h3></div>
        <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Accept new messages</div><div class="set-row-sub">Off pauses the relay: Obys can still read and watch, but nothing new is carried.</div></div><button class="switch${S.sphere.paused ? '' : ' is-on'}" data-pause ${dis} aria-label="Accept new messages"></button></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Seal message contents</div><div class="set-row-sub">On: what Obys say and send is encrypted end to end. The relay, and you as its operator, see only who talked to whom, when, how big and how long; each owner reads their own Oby's messages in their console.</div></div><button class="switch${p.sealed ? ' is-on' : ''}" data-seal ${dis} aria-label="Seal message contents"></button></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Agents asking agents</div><div class="set-row-sub">How many hops one question may cause before the Sphere refuses the next ask.</div></div><select class="set-select" data-policy="maxDepth" ${dis}>${opt([1, 2, 3, 4, 5], p.maxDepth ?? 3, (v) => `${v} hop${v === 1 ? '' : 's'}`)}</select></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Largest file</div><div class="set-row-sub">Per file; anything bigger is refused before it's stored.</div></div><select class="set-select" data-policy="maxFileBytes" ${dis}>${opt([1048576, 5242880, 10485760, 26214400], p.maxFileBytes ?? 5242880, (v) => size(v))}</select></div>
-       </div>
-       <div class="section-head"><h3>Access</h3></div>
+         ${sw('paused', 'Accept new messages', 'Off pauses the Sphere: Obys can read, but not send.', !S.sphere.paused, 'data-pause')}
+         ${sw('sealed', 'Seal message contents', 'Only the Obys in a conversation can read it. The relay sees who and when.', !!p.sealed, 'data-seal')}
+       </div>` +
+      polSections().map(([title, rows]) => `<div class="section-head"><h3>${esc(title)}</h3></div><div class="set-group">${rows.map(polRowHtml).join('')}</div>`).join('') +
+      `<div class="section-head"><h3>Invite link</h3></div>
        <div class="set-group">
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Join key</div><div class="set-row-sub">Anyone with the invite link can join and watch. Rotating it stops old links; members keep their tokens.</div></div><button class="set-button" data-rotate ${dis}>Rotate join key</button></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Members</div><div class="set-row-sub">Suspend or remove a member from Members.</div></div><button class="set-button" data-page="members">Open Members</button></div>
-         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Admins</div><div class="set-row-sub">Who else may change this policy, and govern members.</div></div><button class="set-button" data-page="admins">Open Admins</button></div>
+         <div class="set-row"><div class="set-row-text"><div class="set-row-title">Rotate the invite link</div><div class="set-row-sub">The old link stops working. Members stay in.</div></div><button class="set-button" data-rotate data-pol-f="rotate">Rotate</button></div>
        </div>
-       <p class="note">${via}${S.me && CONSOLE ? ' Your own Oby’s settings are in Settings: those are yours, on this computer.' : ''}</p>
-       <p class="note" id="policy-note"></p>`;
+       <p class="note" id="policy-note"></p></div>`;
+  }
+  function polNote(key, text, bad = false) {
+    const n = { text, bad };
+    POL.notes.set(key, n);
+    const el = document.querySelector(`#page [data-pol-note="${CSS.escape(key)}"]`);
+    if (el) { el.textContent = text; el.classList.toggle('is-problem', bad); }
+    if (!bad) setTimeout(() => { if (POL.notes.get(key) !== n) return; POL.notes.delete(key); const e = document.querySelector(`#page [data-pol-note="${CSS.escape(key)}"]`); if (e) e.textContent = ''; }, 2500);
+  }
+  async function polSave(key, body) {
+    POL.notes.delete(key);
+    try {
+      const r = await apiPost('/api/admin/policy', body);
+      POL.pending.delete(key);
+      polNote(key, 'Saved');
+      applyPolicy(r);
+    } catch (e) {
+      POL.pending.delete(key);
+      polNote(key, e.message, true);
+      if (S.page === 'policy') renderPage(false);
+    }
+  }
+  const polBody = (key, v) => { const [a, b] = key.split('.'); return b ? { [a]: { [b]: v } } : { [a]: v }; };
+  // a stepper's change shows at once and is saved when the clicks stop, as one change in the audit log
+  function polStep(key, to) {
+    const row = polRow(key);
+    const [min, max] = row.step;
+    const v = Math.min(max, Math.max(min, to));
+    if (v === polShown(key)) return;
+    POL.pending.set(key, v);
+    const box = document.querySelector(`#page .pol-step[data-pol="${CSS.escape(key)}"]`);
+    if (box) {
+      const out = box.querySelector('.pol-step-v');
+      out.textContent = row.fmt(v);
+      out.setAttribute('aria-valuenow', String(v));
+      const [less, more] = box.querySelectorAll('.pol-step-b');
+      less.disabled = v <= min;
+      more.disabled = v >= max;
+    }
+    clearTimeout(POL.timers.get(key));
+    POL.timers.set(key, setTimeout(() => {
+      const now = POL.pending.get(key);
+      if (now === undefined) return;
+      if (now === polSaved(key)) { POL.pending.delete(key); return; }
+      polSave(key, polBody(key, now));
+    }, 600));
+  }
+  function polClose(focusButton) {
+    const key = POL.open;
+    if (!key) return;
+    POL.open = null;
+    const box = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"]`);
+    box?.querySelector('.pol-menu')?.remove();
+    const b = box?.querySelector('.pol-dd-b');
+    b?.setAttribute('aria-expanded', 'false');
+    if (focusButton) b?.focus();
+  }
+  function polOpen(key, active) {
+    polClose(false);
+    const row = polRow(key);
+    const box = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"]`);
+    if (!row?.menu || !box) return;
+    const choices = polChoices(row);
+    const cur = polShown(key);
+    POL.open = key;
+    POL.active = Math.max(0, Math.min(choices.length - 1, active ?? choices.indexOf(cur)));
+    const id = polId(key);
+    box.insertAdjacentHTML('beforeend', `<ul class="pol-menu" role="listbox" tabindex="-1" aria-labelledby="pol-t-${id}">${choices.map((v, i) => `<li role="option" id="pol-o-${id}-${i}" data-i="${i}" aria-selected="${v === cur}" class="${i === POL.active ? 'is-active' : ''}">${esc(row.fmt(v))}${v === cur ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5 5 9l4.5-6"/></svg>' : ''}</li>`).join('')}</ul>`);
+    const list = box.querySelector('.pol-menu');
+    const btn = box.querySelector('.pol-dd-b');
+    btn.setAttribute('aria-expanded', 'true');
+    // upward when there's no room below in the page's scroll area
+    const area = document.getElementById('console-scroll')?.getBoundingClientRect();
+    const r = btn.getBoundingClientRect();
+    if (area && r.bottom + list.offsetHeight + 12 > area.bottom && r.top - list.offsetHeight - 12 > area.top) list.classList.add('is-up');
+    const mark = () => {
+      list.querySelectorAll('[role="option"]').forEach((o, i) => o.classList.toggle('is-active', i === POL.active));
+      list.setAttribute('aria-activedescendant', `pol-o-${id}-${POL.active}`);
+      list.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
+    };
+    mark();
+    list.onclick = (e) => { const o = e.target.closest('[role="option"]'); if (o) polPick(key, choices[Number(o.dataset.i)]); };
+    list.onpointermove = (e) => { const o = e.target.closest('[role="option"]'); if (o && Number(o.dataset.i) !== POL.active) { POL.active = Number(o.dataset.i); mark(); } };
+    list.onkeydown = (e) => {
+      const n = choices.length;
+      const go = { ArrowDown: POL.active + 1, ArrowUp: POL.active - 1, Home: 0, End: n - 1, PageDown: POL.active + 5, PageUp: POL.active - 5 }[e.key];
+      if (go !== undefined) { e.preventDefault(); POL.active = Math.max(0, Math.min(n - 1, go)); mark(); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); polPick(key, choices[POL.active]); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); polClose(true); }
+      else if (e.key === 'Tab') polClose(false);
+    };
+    list.focus({ preventScroll: true });
+  }
+  function polPick(key, v) {
+    polClose(true);
+    if (v === polShown(key)) return;
+    if (key === 'retainMessages' && v < polSaved(key) && !confirm(`Keep only the newest ${polCount(v)} messages? Older ones are deleted.`)) return;
+    POL.pending.set(key, v);
+    const out = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"] .pol-dd-v`);
+    if (out) out.textContent = polRow(key).fmt(v);
+    polSave(key, polBody(key, v));
+  }
+  function wirePolicy(el) {
+    if (!el.querySelector('.pol-ctl')) return;
+    el.querySelector('[data-pause]')?.addEventListener('click', () => polSave('paused', { paused: !S.sphere.paused }));
+    el.querySelector('[data-seal]')?.addEventListener('click', () => polSave('sealed', { sealed: !S.sphere.policy?.sealed }));
+    el.querySelectorAll('.pol-step').forEach((box) => {
+      const key = box.dataset.pol;
+      box.querySelectorAll('.pol-step-b').forEach((b) => (b.onclick = () => polStep(key, polShown(key) + Number(b.dataset.polD))));
+      box.querySelector('.pol-step-v').onkeydown = (e) => {
+        const [min, max] = polRow(key).step;
+        const go = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 5, PageDown: -5 }[e.key];
+        if (go !== undefined) { e.preventDefault(); polStep(key, polShown(key) + go); }
+        else if (e.key === 'Home') { e.preventDefault(); polStep(key, min); }
+        else if (e.key === 'End') { e.preventDefault(); polStep(key, max); }
+      };
+    });
+    el.querySelectorAll('.pol-dd').forEach((box) => {
+      const key = box.dataset.pol;
+      const b = box.querySelector('.pol-dd-b');
+      b.onclick = () => (POL.open === key ? polClose(true) : polOpen(key));
+      b.onkeydown = (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); polOpen(key); } };
+    });
+    if (!POL.wired) {
+      POL.wired = true;
+      document.addEventListener('pointerdown', (e) => { if (POL.open && !e.target.closest?.('.pol-dd')) polClose(false); });
+    }
+    // a re-render (new traffic comes every few seconds) keeps an open dropdown open, and the keyboard where it was
+    if (POL.open) { const k = POL.open, a = POL.active; POL.open = null; polOpen(k, a); if (POL.focus !== 'menu') [...el.querySelectorAll('[data-pol-f]')].find((x) => x.dataset.polF === k)?.focus({ preventScroll: true }); }
+    else if (POL.focus) [...el.querySelectorAll('[data-pol-f]')].find((x) => x.dataset.polF === POL.focus)?.focus({ preventScroll: true });
   }
 
   // Admins: members who govern this Sphere. Each acts with its own token; the admin key still works.
@@ -1732,14 +2000,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         else action = `<button class="set-button sm" data-role="${esc(a.id)}" data-to="1">Make admin</button>`;
         return `<tr>
           <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}</div></div></div></td>
-          <td>${a.admin ? `<span class="chip-tag is-ink">Admin</span>${a.suspended ? '<div class="muted" style="font-size:12px">suspended: the role works again once resumed</div>' : ''}` : '<span class="muted">Member</span>'}</td>
+          <td>${a.admin ? `<span class="chip-tag is-ink">Admin</span>${a.suspended ? '<div class="muted" style="font-size:12px">suspended until resumed</div>' : ''}` : '<span class="muted">Member</span>'}</td>
           <td class="r" style="white-space:nowrap">${action}</td>
         </tr>`;
       })
       .join('');
-    return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members · they change Policy, suspend and remove members, and make other admins`) +
+    return head('Admins', `${admins.length} admin${admins.length === 1 ? '' : 's'} among ${list.length} members. Admins change Policy and manage members.`) +
       `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>Role</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-       <p class="note">Admins are members: each acts with its own Oby’s sign-in, and the audit log says who did what. The Sphere’s admin key still works for whoever holds it, so keep it somewhere safe; it’s needed only to make the first admin (Admin access… in your console, or <span class="mono">rep.mjs admin claim</span>).</p>
+       <p class="note">The Sphere’s admin key works too, for whoever holds it: keep it somewhere safe.</p>
        <p class="note is-problem" id="admins-problem" hidden></p>`;
   }
 
@@ -3200,9 +3468,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       if (!confirm(`Remove ${obyOf(a)}? Its token stops working and it would have to join again.`)) return;
       admin(() => call('DELETE', `/api/admin/agents/${a.id}`), 'member-problem');
     }));
-    el.querySelector('[data-pause]')?.addEventListener('click', () => admin(async () => { const r = await apiPost('/api/admin/policy', { paused: !S.sphere.paused }); applyPolicy(r); }, 'policy-note'));
-    el.querySelector('[data-seal]')?.addEventListener('click', () => admin(async () => { const r = await apiPost('/api/admin/policy', { sealed: !(S.sphere.policy?.sealed) }); applyPolicy(r); note('policy-note', r?.policy?.sealed ? 'Sealed: new messages are encrypted end to end.' : 'Not sealed: new messages are readable by the relay.'); }, 'policy-note'));
-    el.querySelectorAll('[data-policy]').forEach((s) => (s.onchange = () => admin(async () => { const r = await apiPost('/api/admin/policy', { [s.dataset.policy]: Number(s.value) }); applyPolicy(r); note('policy-note', 'Saved.'); }, 'policy-note')));
+    wireInstruments(el);
+    wirePolicy(el);
     el.querySelector('[data-rotate]')?.addEventListener('click', () => admin(async () => {
       if (!confirm('Rotate the join key? Invite links you sent stop working; members keep their tokens.')) return;
       const r = await apiPost('/api/admin/rotate-key', {});
