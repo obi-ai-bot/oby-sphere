@@ -52,6 +52,9 @@ const c = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const dim = c(2), bold = c(1), green = c(32), yellow = c(33), red = c(31), cyan = c(36);
 const say = (s = '') => process.stdout.write(s + '\n');
 const warn = (s) => process.stderr.write(s + '\n');
+// run from the menu bar icon, whose restart (update) or removal (the last stop, menubar off) closes
+// what reads this output: the work goes on without anyone reading it
+for (const out of [process.stdout, process.stderr]) out.on('error', () => {});
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] || 'help';
@@ -91,9 +94,10 @@ Claude Code and Cursor
   obysphere mcp [--serve]          the MCP server itself
   obysphere inbox --hook           what waits for you, as JSON (the plugin's SessionStart hook)
 
-Notifications
+Notifications and the menu bar
   obysphere notify test [--via desktop|slack|phone|all]
   obysphere notify app             macOS: build the app that shows them again
+  obysphere menubar [on | off]     macOS: the Obysphere icon in the menu bar (start puts it there)
 
 GitHub
   obysphere github status          how gh is signed in, and what your Oby may do on GitHub
@@ -332,15 +336,18 @@ function appForService() {
 
 // what the service runs: `rep.mjs ui --serve`, with the profiles folder fixed and your PATH
 // (so it finds claude, codex, cursor-agent and gh). No keys: the token stays in profile.json.
-function serviceSpec(name, port, app = appForService()) {
+function serviceEnv() {
   // OBYSPHERE_CLI: it runs for `obysphere`, so what the console says to type names it (as run() does)
   const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', OBYSPHERE_CLI: '1' };
-  for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK', 'OBYSPHERE_RELEASES_API']) if (process.env[k]) env[k] = process.env[k];
+  for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK', 'OBYSPHERE_RELEASES_API', 'OBYSPHERE_NOTIFIER_APP']) if (process.env[k]) env[k] = process.env[k];
+  return env;
+}
+function serviceSpec(name, port, app = appForService()) {
   return {
     profile: name,
     label: label(name),
     args: [stableNode(), '--preserve-symlinks-main', path.join(app, 'rep.mjs'), 'ui', '--serve', '--profile', name, '--port', String(port)],
-    env,
+    env: serviceEnv(),
     cwd: path.join(HOME, name),
     log: logFile(name),
   };
@@ -349,9 +356,17 @@ function serviceSpec(name, port, app = appForService()) {
 function plist(s) {
   const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const str = (v) => `<string>${x(v)}</string>`;
+  // the menu bar's: started again only when it fails (Hide this icon ends it for good: menubar off),
+  // in your login session only; and what it runs (obysphere stop, update) outlives it when they end it
+  const keep = s.menu
+    ? `<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>AbandonProcessGroup</key><true/>`
+    : '<key>KeepAlive</key><true/>';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Obysphere: a console and Oby, written by obysphere start. obysphere stop removes it. -->
+<!-- Obysphere: ${s.menu ? 'its menu bar icon' : 'a console and Oby'}, written by obysphere start. obysphere stop removes it. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>${str(s.label)}
@@ -365,7 +380,7 @@ ${Object.entries(s.env).map(([k, v]) => `    <key>${x(k)}</key>${str(v)}`).join(
   </dict>
   <key>WorkingDirectory</key>${str(s.cwd)}
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  ${keep}
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key>${str(s.log)}
   <key>StandardErrorPath</key>${str(s.log)}
@@ -500,6 +515,7 @@ async function start() {
     await installService(n, port);
     await announce(n, port);
   }
+  await ensureMenubar();
   say(dim('obysphere status · obysphere logs -f · obysphere stop'));
 }
 
@@ -514,6 +530,8 @@ async function stop() {
     await removeService(n);
     say(`${dim('○')} ${bold(n)} stopped. It won't start at login until you run obysphere start again.`);
   }
+  // the menu bar icon shows while an Oby runs in the background: with the last one stopped, it goes
+  if (!listProfiles().some(serviceInstalled) && removeMenubar()) say(dim('  The menu bar icon goes with it: obysphere start brings both back.'));
 }
 
 async function restart() {
@@ -529,15 +547,270 @@ async function restart() {
     await installService(n, port);
     await announce(n, port);
   }
+  await ensureMenubar();
 }
 
-// after an update or a rollback: every service again, from `current`
+// after an update or a rollback: every service again, from `current`; and the menu bar icon, built
+// again when that version's app is newer
 async function restartServices() {
   if (!serviceHere()) return;
   const names = listProfiles().filter(serviceInstalled);
   for (const n of names) await installService(n, await consolePort(n), path.join(APP_HOME, 'current'));
-  if (names.length)
+  if (names.length) {
     say(`${green('✓')} restarted ${names.join(', ')} ${dim("(asks that came in meanwhile are picked up when it's back)")}`);
+    await ensureMenubar({ app: path.join(APP_HOME, 'current') });
+  }
+}
+
+// ================================================================ the menu bar (macOS)
+//
+// Obysphere.app, the small app that shows notifications (rep.mjs builds it in ~/Applications),
+// also puts an icon in the menu bar: your Oby's state, what waits for you, away, start and stop,
+// and an update when one is out. Its own LaunchAgent opens it while an Oby runs in the background:
+// obysphere start writes it, and stopping the last one removes it. obysphere menubar off hides it
+// for good (menubar.json in the profiles folder), and on brings it back.
+//
+// What it shows comes from `obysphere menubar model` (JSON), which it runs every 30 seconds and
+// when you open it; what you choose runs `obysphere <words>` or opens a page of your console.
+
+const MENU_LABEL = 'com.obysphere.menubar';
+const menuFile = () => path.join(serviceDir(), `${MENU_LABEL}.plist`);
+const menuPrefs = () => path.join(HOME, 'menubar.json');
+const menubarWanted = () => PLATFORM === 'darwin' && readJson(menuPrefs(), {}).on !== false;
+// where rep.mjs builds the app (OBYSPHERE_NOTIFIER_APP moves it, for tests)
+const menuApp = () => (process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
+
+function menuSpec(app) {
+  return {
+    menu: true,
+    label: MENU_LABEL,
+    args: [path.join(menuApp(), 'Contents', 'MacOS', 'Obysphere'), '--menu', '--node', stableNode(), '--cli', path.join(app, 'obysphere.mjs')],
+    env: serviceEnv(),
+    cwd: HOME,
+    log: path.join(HOME, 'menubar.log'),
+  };
+}
+
+// the app built (when it's older than this version's) and its agent written and started (when
+// either changed, or force). Never fails start: without the Xcode command line tools, no icon.
+async function ensureMenubar({ app = appForService(), force = false } = {}) {
+  if (!menubarWanted()) return false;
+  let built = false;
+  if (!DRY) {
+    const r = spawnSync(stableNode(), ['--preserve-symlinks-main', path.join(app, 'rep.mjs'), 'notify', 'app', '--if-needed', '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'], // "building…" shows as it happens
+      timeout: 300e3,
+      env: { ...process.env, OBYSPHERE_HOME: HOME, OBYSPHERE_CLI: '1' },
+    });
+    let j = null;
+    try {
+      j = JSON.parse(r.stdout);
+    } catch {}
+    if (r.status !== 0 || !j?.app) {
+      say(dim(`  No menu bar icon: ${clean(j?.error || r.stdout || r.error?.message || 'the app for it was not built', 300)}`));
+      return false;
+    }
+    built = !!j.built;
+  }
+  const s = menuSpec(app);
+  const file = menuFile();
+  const text = plist(s);
+  let same = false;
+  try {
+    same = fs.readFileSync(file, 'utf8') === text;
+  } catch {}
+  if (same && !built && !force) return true;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  rotate(s.log);
+  fs.writeFileSync(file, text, { mode: 0o644 });
+  const domain = `gui/${uid()}`;
+  runOs('launchctl', ['bootout', `${domain}/${MENU_LABEL}`]);
+  let r;
+  for (let i = 0; i < 4; i++) {
+    r = runOs('launchctl', ['bootstrap', domain, file]);
+    if (r.status === 0) break;
+    await sleep(500);
+  }
+  if (r.status !== 0) {
+    warn(`${yellow('!')} the menu bar icon didn't start: ${clean(r.stderr, 300)}`);
+    return false;
+  }
+  if (!same && !DRY) say(`${green('●')} Obysphere is in your menu bar too: what waits for you, away, start and stop. ${dim('obysphere menubar off hides it.')}`);
+  return true;
+}
+
+// its agent stopped and removed; true when there was one
+function removeMenubar() {
+  const file = menuFile();
+  if (PLATFORM !== 'darwin' || !fs.existsSync(file)) return false;
+  runOs('launchctl', ['bootout', `gui/${uid()}/${MENU_LABEL}`]);
+  fs.rmSync(file, { force: true });
+  return true;
+}
+
+async function menubar() {
+  const sub = pos[0] || '';
+  if (sub === 'model') return say(JSON.stringify(await menuModel()));
+  if (PLATFORM !== 'darwin') die('The menu bar icon is for macOS. Here: obysphere status, and your console (obysphere open).');
+  if (sub === 'off') {
+    fs.mkdirSync(HOME, { recursive: true, mode: 0o700 });
+    writeSecret(menuPrefs(), { on: false });
+    removeMenubar();
+    return say(`${dim('○')} The menu bar icon is off. Your Oby keeps running. ${dim('obysphere menubar on brings it back.')}`);
+  }
+  if (sub === 'on') {
+    fs.rmSync(menuPrefs(), { force: true });
+    if (!listProfiles().some(serviceInstalled)) return say(`The menu bar icon is on: it shows while your Oby runs in the background ${dim('(obysphere start)')}.`);
+    if ((await ensureMenubar({ force: true })) && DRY) say(`${dim('○')} the menu bar icon is written ${dim(`(${menuFile()})`)}; dry run, so nothing was started.`);
+    return;
+  }
+  if (sub) die('usage: obysphere menubar [on | off]');
+  if (!menubarWanted()) return say(`${dim('○')} The menu bar icon is off. ${dim('obysphere menubar on brings it back.')}`);
+  if (fs.existsSync(menuFile())) return say(`${green('●')} The menu bar icon is on. ${dim('obysphere menubar off hides it; your Oby keeps running.')}`);
+  say(`${dim('○')} The menu bar icon is on, and shows while your Oby runs in the background ${dim('(obysphere start)')}.`);
+}
+
+// ---- what the menu shows: { icon: { state: on|away|off, count, tip }, items: [...] }. An item is
+// { kind: header|line|open|run|menu|separator, title, dot (line), url (open: your console only),
+// args (run: obysphere's own words), busy, confirm: { title, text, button } (run), items (menu) }.
+async function menuModel(now = new Date()) {
+  const client = clientVersion();
+  const [latest, rows] = await Promise.all([
+    latestKnown(),
+    Promise.all(
+      listProfiles().map(async (n) => {
+        const r = await statusOf(n, client);
+        return { ...r, ...(r.running ? await consoleState(r.port) : {}), held: heldCount(n) };
+      }),
+    ),
+  ]);
+  return menuOf(rows, { update: latest.latest && cmpVersion(latest.latest, client) > 0 ? latest.latest : null, now });
+}
+
+// what waits for you and your away, from the console's local API (this machine only, its header)
+async function consoleState(port) {
+  const get = async (route) => {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}${route}`, { headers: { 'x-obysphere-console': '1' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
+      return r.ok ? await r.json() : null;
+    } catch {
+      return null;
+    }
+  };
+  const [p, a] = await Promise.all([get('/local/pending'), get('/local/away')]);
+  const w = a?.away;
+  const iso = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+  const away = w && (w.by === 'owner' || w.by === 'pause') && (w.until === null || iso(w.until)) ? { by: w.by, until: w.until } : null;
+  return { waiting: Array.isArray(p?.pending) ? p.pending.length : 0, away };
+}
+
+// asks held while its runtime can't answer: the files rep.mjs keeps (reading them through the
+// console would fetch each ask from the Sphere)
+function heldCount(name) {
+  try {
+    return fs.readdirSync(path.join(HOME, name, 'held')).filter((f) => /^m_[A-Za-z0-9_-]{1,32}\.json$/.test(f)).length;
+  } catch {
+    return 0;
+  }
+}
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// a time as the console says it: 18:00, Mon 9:00, Dec 3, 9:00 (this machine's time zone)
+function whenWords(iso, now = new Date()) {
+  const d = new Date(iso);
+  const t = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (d.toDateString() === now.toDateString()) return t;
+  if (Math.abs(d - now) < 6 * DAY) return `${DAYS[d.getDay()]} ${t}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${t}`;
+}
+
+function awayItems(flag, now, page) {
+  // the next working day at 9:00 (Monday after a Friday), as the console offers it
+  const nine = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0, 0);
+  while ([0, 6].includes(nine.getDay())) nine.setDate(nine.getDate() + 1);
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toDateString() === nine.toDateString();
+  const away = (title, words) => ({ kind: 'run', title, args: ['away', ...words, ...flag], busy: 'Telling askers you’re away…' });
+  return [
+    away('For an hour', ['--until', '1h']),
+    away('For 3 hours', ['--until', '3h']),
+    away(`Until ${tomorrow ? 'tomorrow' : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nine.getDay()]} 9:00`, ['--until', nine.toISOString()]),
+    away('Until I’m back', ['--note=']),
+    { kind: 'separator' },
+    { kind: 'open', title: 'Another time, or a note…', url: page },
+  ];
+}
+
+function menuOf(all, { update = null, now = new Date() } = {}) {
+  const items = [];
+  const states = [];
+  let count = 0;
+  const running = all.filter((r) => r.service).length;
+  // a profile that isn't running, and isn't meant to (no service), is only a Start in a submenu
+  // while another one runs
+  const active = all.filter((r) => r.service || r.running);
+  const rows = active.length ? active : all;
+  const idle = active.length ? all.filter((r) => !active.includes(r)) : [];
+  const many = all.length > 1;
+  for (const r of rows) {
+    if (items.length) items.push({ kind: 'separator' });
+    const flag = ['--profile', r.profile];
+    const page = (hash) => `${r.console}${hash ? `#${hash}` : ''}`;
+    const until = (w) => (w.until ? ` until ${whenWords(w.until, now)}` : '');
+    let state = 'on';
+    let line = r.service ? 'Running' : 'Running in a terminal';
+    if (!r.running) [state, line] = ['off', r.service ? 'Not answering: obysphere logs shows why' : 'Stopped'];
+    else if (!r.relay?.reachable) [state, line] = ['off', 'Running, but it can’t reach the Sphere'];
+    else if (r.away?.by === 'owner') [state, line] = ['away', r.away.until ? `Away${until(r.away)}` : 'Away until you’re back'];
+    else if (r.away?.by === 'pause') [state, line] = ['away', `Paused${until(r.away)}: your runtime can’t answer`];
+    states.push(state);
+    items.push({ kind: 'header', title: many ? `${r.sphereName}: @${r.name}` : `${r.owner}’s Oby in ${r.sphereName}` });
+    items.push({ kind: 'line', title: line, dot: state });
+    if (r.running && r.console) {
+      if (r.waiting) {
+        count += r.waiting;
+        items.push({ kind: 'open', title: r.waiting === 1 ? '1 ask waits for you' : `${r.waiting} asks wait for you`, url: page('page=you') });
+      }
+      if (r.held) items.push({ kind: 'open', title: r.held === 1 ? '1 ask held until your runtime can answer' : `${r.held} asks held until your runtime can answer`, url: page('page=you') });
+      items.push({ kind: 'open', title: 'Open console', url: page('') });
+      if (r.away?.by === 'owner') {
+        items.push({ kind: 'run', title: 'I’m back', args: ['away', '--off', ...flag], busy: 'Telling askers you’re back…' });
+        items.push({ kind: 'open', title: 'Change away…', url: page('page=you') });
+      } else items.push({ kind: 'menu', title: 'Away', items: awayItems(flag, now, page('page=you')) });
+    }
+    const where = many ? ` in ${r.sphereName}` : '';
+    if (r.service && r.running)
+      items.push({
+        kind: 'run',
+        title: 'Stop',
+        args: ['stop', ...flag],
+        busy: 'Stopping your Oby…',
+        confirm: {
+          title: `Stop your Oby${where}?`,
+          text: running > 1 ? 'It stops answering asks until you start it again.' : 'It stops answering asks, and this icon goes too, until you run obysphere start.',
+          button: 'Stop',
+        },
+      });
+    else if (r.service) items.push({ kind: 'run', title: 'Restart', args: ['restart', ...flag], busy: 'Starting your Oby…' });
+    else if (!r.running) items.push({ kind: 'run', title: 'Start', args: ['start', ...flag], busy: 'Starting your Oby…' });
+  }
+  if (idle.length) {
+    items.push({ kind: 'separator' });
+    items.push({ kind: 'menu', title: 'Start another Oby', items: idle.map((r) => ({ kind: 'run', title: `${r.sphereName}: @${r.name}`, args: ['start', '--profile', r.profile], busy: 'Starting your Oby…' })) });
+  }
+  if (!all.length) {
+    states.push('off');
+    items.push({ kind: 'line', title: 'No profile here yet: obysphere join', dot: 'off' });
+  }
+  items.push({ kind: 'separator' });
+  if (update) items.push({ kind: 'run', title: `Update to ${update}`, args: ['update'], busy: `Updating to ${update}…` });
+  items.push({ kind: 'run', title: 'Hide this icon', args: ['menubar', 'off'], confirm: { title: 'Hide the Obysphere icon?', text: 'Your Oby keeps running. obysphere menubar on brings the icon back.', button: 'Hide' } });
+  const state = states.includes('away') ? 'away' : states.includes('on') ? 'on' : 'off';
+  const say = rows.length > 1 ? `${states.filter((s) => s !== 'off').length} of ${rows.length} Obys running` : items.find((i) => i.kind === 'line').title;
+  const tip = ['Obysphere', say, count ? (count === 1 ? '1 ask waits for you' : `${count} asks wait for you`) : null, update ? `${update} is out` : null].filter(Boolean).join(' · ');
+  return { icon: { state, count, tip }, items };
 }
 
 async function logs() {
@@ -952,6 +1225,8 @@ async function doctor() {
   for (const [bin, what] of [['codex', 'Codex'], ['cursor-agent', 'Cursor']]) if (which(bin)) ok(what, which(bin));
   if (which('gh')) ok('GitHub CLI (for reviews on GitHub)', which('gh'));
   else note('GitHub CLI (gh) not found: your Oby needs it to read and review PRs', 'https://cli.github.com, then gh auth login');
+  if (PLATFORM === 'darwin' && !menubarWanted()) note('the menu bar icon is off', 'obysphere menubar on brings it back');
+  else if (PLATFORM === 'darwin' && fs.existsSync(menuFile())) ok('the menu bar icon is on', menuApp());
 
   say(`\n${bold('Profiles')} in ${HOME} ${dim(`(${homeWhy()})`)}`);
   const names = listProfiles();
@@ -1881,7 +2156,7 @@ function die(m) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, update, version, doctor, server, help, 'service-run': serviceRun };
+const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, menubar, update, version, doctor, server, help, 'service-run': serviceRun };
 if (cmd === '--help' || cmd === '-h') help();
 else if (cmd === '--version' || cmd === '-v') version();
 else if (Object.hasOwn(OWN, cmd)) {

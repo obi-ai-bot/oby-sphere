@@ -130,9 +130,9 @@ describe('the obysphere command', () => {
     assert.equal(r.code, 0);
     for (const w of ['obysphere join', 'obysphere start', 'stop | restart', 'obysphere status', 'obysphere open', 'obysphere logs', '-f', 'obysphere profiles', 'obysphere settings',
       'obysphere ask', 'obysphere mcp-config', 'inbox --hook', 'notify test', 'admin claim', 'admin status | grant <handle> | revoke <handle> | rotate-key', 'admin policy', 'github status',
-      'instruments new | list | check | remove', 'update [--check] [--channel stable|main] [--rollback]', 'version | doctor', 'server start', 'server deploy vercel --project <name> [--scope <team>]', 'server deploy docker | railway', 'server update', 'server status'])
+      'instruments new | list | check | remove', 'menubar [on | off]', 'update [--check] [--channel stable|main] [--rollback]', 'version | doctor', 'server start', 'server deploy vercel --project <name> [--scope <team>]', 'server deploy docker | railway', 'server update', 'server status'])
       assert.ok(r.stdout.includes(w), `help mentions ${w}`);
-    for (const head of ['Join and run your Oby', 'Ask and read', 'Claude Code and Cursor', 'Notifications', 'GitHub', 'Admins', 'Keep it up to date', 'Run a Sphere']) assert.match(r.stdout, new RegExp(`^${head}$`, 'm'));
+    for (const head of ['Join and run your Oby', 'Ask and read', 'Claude Code and Cursor', 'Notifications and the menu bar', 'GitHub', 'Admins', 'Keep it up to date', 'Run a Sphere']) assert.match(r.stdout, new RegExp(`^${head}$`, 'm'));
     assert.equal((await cli(['--help'], envFor(h))).stdout, r.stdout);
     assert.equal((await cli([], envFor(h))).stdout, r.stdout);
   });
@@ -256,9 +256,12 @@ describe('the obysphere command', () => {
     assert.ok(plist.includes(`<key>OBYSPHERE_HOME</key><string>${profiles}</string>`));
     assert.ok(!plist.includes('tok_'), 'no token in the service file');
     assert.ok(fs.statSync(path.join(profiles, 'alice', 'logs')).isDirectory());
+    // and the menu bar icon's own agent (test/menubar.test.mjs)
     assert.deepEqual(dryrun(h), [
       { cmd: 'launchctl', args: ['bootout', `gui/${UID}/com.obysphere.alice`] },
       { cmd: 'launchctl', args: ['bootstrap', `gui/${UID}`, plistFile] },
+      { cmd: 'launchctl', args: ['bootout', `gui/${UID}/com.obysphere.menubar`] },
+      { cmd: 'launchctl', args: ['bootstrap', `gui/${UID}`, path.join(h, 'services', 'com.obysphere.menubar.plist')] },
     ]);
 
     // the port stays the profile's; a profile that already has one keeps it; a new one gets another
@@ -376,7 +379,14 @@ describe('update and install.sh, from a fake GitHub', () => {
     // the running service starts again, from `current`
     const plist = fs.readFileSync(path.join(h, 'services', 'com.obysphere.alice.plist'), 'utf8');
     assert.ok(plist.includes(`<string>${path.join(app, 'current', 'rep.mjs')}</string>`));
-    assert.deepEqual(dryrun(h).at(-1), { cmd: 'launchctl', args: ['bootstrap', `gui/${UID}`, path.join(h, 'services', 'com.obysphere.alice.plist')] });
+    // and the menu bar icon's agent (test/menubar.test.mjs), whose obysphere is current's now
+    assert.deepEqual(dryrun(h).slice(-4), [
+      { cmd: 'launchctl', args: ['bootout', `gui/${UID}/com.obysphere.alice`] },
+      { cmd: 'launchctl', args: ['bootstrap', `gui/${UID}`, path.join(h, 'services', 'com.obysphere.alice.plist')] },
+      { cmd: 'launchctl', args: ['bootout', `gui/${UID}/com.obysphere.menubar`] },
+      { cmd: 'launchctl', args: ['bootstrap', `gui/${UID}`, path.join(h, 'services', 'com.obysphere.menubar.plist')] },
+    ]);
+    assert.ok(fs.readFileSync(path.join(h, 'services', 'com.obysphere.menubar.plist'), 'utf8').includes(`<string>${path.join(app, 'current', 'obysphere.mjs')}</string>`));
     assert.match(first.stdout, /restarted alice/);
     // and the installed one runs
     const installed = await run(path.join(app, 'current', 'obysphere.mjs'), ['version'], env, { pre: ['--preserve-symlinks-main', path.join(app, 'current', 'obysphere.mjs')] });

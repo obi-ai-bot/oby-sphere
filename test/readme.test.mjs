@@ -36,6 +36,8 @@ const CONTRACT = {
   instruments: ['new', 'list', 'check', 'remove'],
   // #160: telling askers you're away
   away: true,
+  // #163: the menu bar icon
+  menubar: ['on', 'off'],
 };
 const DEPLOY_TARGETS = ['vercel'];
 
