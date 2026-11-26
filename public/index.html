@@ -2561,7 +2561,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     return curly(m);
   }
   // a control of ours is marked as a whole; its button or field carries what's said about it
-  const ariaOf = (el) => (el.dataset.ctl && el.dataset.ctl !== 'switch' ? el.querySelector('button, input') || el : el);
+  const ariaOf = (el) => (el.dataset.ctl && el.dataset.ctl !== 'switch' ? el.querySelector('[role="combobox"], .ctl-chips-field, .ctl-step-in, [role="radio"][tabindex="0"], input') || el : el);
   function clearErrors() {
     const root = document.getElementById('settings-root');
     if (!root) return;
