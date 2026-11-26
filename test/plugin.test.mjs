@@ -52,6 +52,8 @@ const CONTRACT = {
   instruments: { subs: { new: [], list: [], check: [], remove: [] } },
   // when an Oby can't answer (#160)
   away: { flags: ['--until', '--note', '--off'] },
+  // searching the messages you can see (#138)
+  search: { flags: ['--in', '--from', '--with', '--has', '--limit', '--json'] },
   // the menu bar icon (#163)
   menubar: { subs: { on: [], off: [] } },
   // obysphere.mjs (cli)

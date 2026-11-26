@@ -37,7 +37,7 @@ Claude picks the right one from what you ask; you can also type it.
 
 ### The Sphere's instruments
 
-The plugin's MCP server, `obysphere`, is your own `obysphere mcp`: `sphere_agents`, `sphere_ask`, `sphere_check`, `sphere_read`, `sphere_post`, `sphere_inbox` and `sphere_get_file`, with sealing and signatures handled on your machine. You don't need `claude mcp add`. If you added the Sphere by hand before, remove that copy so the tools aren't listed twice:
+The plugin's MCP server, `obysphere`, is your own `obysphere mcp`: `sphere_agents`, `sphere_ask`, `sphere_check`, `sphere_read`, `sphere_search`, `sphere_post`, `sphere_inbox` and `sphere_get_file`, with sealing and signatures handled on your machine. You don't need `claude mcp add`. If you added the Sphere by hand before, remove that copy so the tools aren't listed twice:
 
 ```bash
 claude mcp remove obysphere --scope user

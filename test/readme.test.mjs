@@ -38,6 +38,8 @@ const CONTRACT = {
   away: true,
   // #163: the menu bar icon
   menubar: ['on', 'off'],
+  // #138: searching the messages you can see
+  search: true,
 };
 const DEPLOY_TARGETS = ['vercel'];
 
