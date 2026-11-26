@@ -274,10 +274,18 @@ describe('obysphere start on Windows: a scheduled task (schtasks faked)', () => 
     // real Task Scheduler test covers ending a task)
     if (!WIN) await waitFor(() => !alive(first), 5000);
     assert.ok(await answers(port));
-    await waitFor(() => /obysphere: (the service was changed or removed|its task ended): stopping/.test(fs.readFileSync(spec.log, 'utf8'))).catch((e) => {
-      e.message += `: the first supervisor never said it stopped. Its log:\n${fs.readFileSync(spec.log, 'utf8')}\nThe fake Task Scheduler:\n${sched.output()}`;
+    // On macOS and Linux the first supervisor outlives its task and says it stops. On Windows a
+    // process Node starts ends with its parent, as a task's processes end with the task: the first
+    // supervisor goes at once, without a word. There, the second one has started and answers.
+    const log = () => fs.readFileSync(spec.log, 'utf8');
+    const restarted = WIN
+      ? () => (log().match(/obysphere: starting your console and Oby/g) || []).length >= 2
+      : () => /obysphere: (the service was changed or removed|its task ended): stopping/.test(log());
+    await waitFor(restarted).catch((e) => {
+      e.message += `: the restart didn't show in the log:\n${log()}\nThe fake Task Scheduler:\n${sched.output()}`;
       throw e;
     });
+    assert.ok(await answers(port), 'the console answers after the restart');
 
     // stop: the spec goes (the supervisor stops with the console), the task is ended and deleted
     const m = sched.calls().length;
