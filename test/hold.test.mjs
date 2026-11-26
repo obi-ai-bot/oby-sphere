@@ -201,7 +201,23 @@ describe("when your Oby's runtime can't answer", () => {
     await sleep(ms);
     assert.deepEqual(await repliesOf(m, from), [], `no reply yet\n${bobOut.slice(-2000)}`);
   };
-  const held = () => (fs.existsSync(path.join(bobDir(), 'held')) ? fs.readdirSync(path.join(bobDir(), 'held')).filter((n) => n.endsWith('.json')).map((n) => JSON.parse(fs.readFileSync(path.join(bobDir(), 'held', n), 'utf8'))) : []);
+  // the held asks now: a file can go between listing the folder and reading it (its ask was just answered)
+  const held = () => {
+    const dir = path.join(bobDir(), 'held');
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir)
+      .filter((n) => n.endsWith('.json'))
+      .map((n) => {
+        try {
+          return JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'));
+        } catch (e) {
+          if (e.code === 'ENOENT') return null;
+          throw e;
+        }
+      })
+      .filter(Boolean);
+  };
   const cooldown = () => JSON.parse(fs.existsSync(path.join(bobDir(), 'cooldown.json')) ? fs.readFileSync(path.join(bobDir(), 'cooldown.json'), 'utf8') : '{}');
   const bobAgent = async () => (await call('GET', '/api/agents', { tok: token('alice') })).agents.find((a) => a.id === ids.bob);
   const claudeCalls = () => fake.calls().filter((c) => c.bin === 'claude').length;
