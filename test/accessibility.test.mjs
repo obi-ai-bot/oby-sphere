@@ -309,7 +309,7 @@ describe('live updates', () => {
     assert.match(ov, /<span id="map-title">Map<\/span>[\s\S]*id="topo" role="group" aria-labelledby="map-title"/);
     assert.match(fn('buildTopo'), /<svg class="edges" id="edges" aria-hidden="true">/);
     assert.match(fn('buildTopo'), /id="nodes" role="list"/);
-    assert.match(fn('updateTopo'), /<div class="node is-\$\{st\}" role="listitem"/);
+    assert.match(fn('updateTopo'), /<div class="node is-\$\{st\}" role="listitem" aria-labelledby="node-n-\$\{esc\(a\.id\)\}"/);
     // the log: a named log that keyboard users can scroll; its rows aren't read one by one
     assert.match(ov, /id="log" role="log" aria-labelledby="log-title" aria-live="off" tabindex="0"/);
     // the thread: a log too (browser tests find it by that role), quiet for the same reason
@@ -657,6 +657,21 @@ describe('the markup, rendered', () => {
       E: e, clock: () => '12:01:02', routeWords: () => 'Your Oby → Bob Test’s Oby', STATUS_WORDS: {}, fmtMs: () => '5ms',
     });
     assert.match(html, /<button type="button" class="row-open" aria-label="Open the exchange at 12:01:02: Your Oby asks Bob Test’s Oby">12:01:02<\/button>/);
+  });
+
+  test("the map: a list of Obys, each named by its Oby's name, with what it's about as its description", () => {
+    const els = {};
+    const el = (k) => (els[k] ||= { innerHTML: '', setAttribute() {} });
+    const html = render(['updateTopo'], '(updateTopo(), EL("#nodes").innerHTML)', {
+      EL: el, $: el, document: { getElementById: () => ({ clientWidth: 600, clientHeight: 320 }) }, S: { byId: new Map() },
+      members: () => [{ id: 'a_bob', name: 'bob', owner: 'Bob Test', about: 'the mobile app', online: true }],
+      isMe: () => false, ownerName: (a) => a.owner, stateOf: () => 'online', obyOf: (a) => `${a.owner}’s Oby`,
+      picture: () => '<span class="owner-avatar" aria-hidden="true">BT</span>',
+    });
+    // (a title alone would be its name: "the mobile app", then "Bob Test’s Oby online")
+    assert.match(html, /<div class="node is-online" role="listitem" aria-labelledby="node-n-a_bob" style="[^"]*" title="the mobile app">/);
+    assert.match(html, /<span class="node-name" id="node-n-a_bob">Bob Test’s Oby<\/span>/);
+    assert.deepEqual(idsFound(html), []);
   });
 
   test('a route of pictures says who asked whom in words', () => {

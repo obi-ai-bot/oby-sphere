@@ -1685,9 +1685,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         const p = topoPos.get(a.id);
         const st = a.suspended ? 'suspended' : stateOf(a);
         const where = a.suspended ? 'suspended' : st === 'working' ? `working · <span class="num" data-since="${esc(a.status.since)}">${secs(a.status.since)}</span>` : st;
-        return `<div class="node is-${st}" role="listitem" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
+        // named by its Oby's name, not by its title (what the Oby is about: a tooltip, so its description)
+        return `<div class="node is-${st}" role="listitem" aria-labelledby="node-n-${esc(a.id)}" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
           <span class="pic">${picture(a, 36)}</span>
-          <span class="node-name">${esc(obyOf(a))}</span>
+          <span class="node-name" id="node-n-${esc(a.id)}">${esc(obyOf(a))}</span>
           <span class="node-where${st === 'working' ? ' sheen' : ''}">${where}</span>
         </div>`;
       })
