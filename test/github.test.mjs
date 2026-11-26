@@ -255,7 +255,8 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     deny = run.settings.permissions.deny;
     for (const d of ['Bash(gh)', 'Bash(gh *)', 'Bash(git push)', 'Bash(git push *)', 'Bash(git -C * push *)']) assert.ok(deny.includes(d), `denies ${d}`);
     s = session(run);
-    assert.deepEqual(await s.tools(), ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_attach', 'github_pr', 'github_review', 'github_comment']);
+    // (sphere_ask_owner: the ask it answers can go to its owner, test/ask-owner.test.mjs)
+    assert.deepEqual(await s.tools(), ['sphere_agents', 'sphere_ask', 'sphere_read', 'sphere_use', 'sphere_ask_owner', 'sphere_attach', 'github_pr', 'github_review', 'github_comment']);
     s.close();
     ({ run } = await ask('alice', 'please review acme/payments#7'));
     assert.equal(run.mcp.mcpServers.obysphere.env.SPHERE_GITHUB_TRUST, '0', 'an Oby you do not trust');

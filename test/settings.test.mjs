@@ -247,7 +247,7 @@ describe("your Oby's settings", () => {
       machine: { folders: [{ path: work, write: false }], shell: 'off', web: { fetch: false, search: false }, browser: 'off', mcp: [] },
       // a section the file doesn't have takes its defaults (GitHub off)
       github: { enabled: false, repos: [], read: true, comment: 'ask', requestChanges: 'ask', approve: 'ask', merge: 'never', push: 'never', protected: ['main', 'master', 'release/*'], signature: true },
-      availability: { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false },
+      availability: { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false, askOwner: true },
     };
     assert.deepEqual(JSON.parse(r.stdout), want);
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), want, 'the file is rewritten as version 2');
@@ -371,7 +371,7 @@ describe("your Oby's settings", () => {
     await bad((s) => (s.version = 1), 'version', /reads version 2/);
     await bad((s) => (s.version = 3), 'version');
     // availability: what happens to an ask when its runtime can't answer
-    await bad((s) => (s.availability = []), 'availability', /is \{ whenUnable, otherRuntime, holdHours, showReason \}/);
+    await bad((s) => (s.availability = []), 'availability', /is \{ whenUnable, otherRuntime, holdHours, showReason, askOwner \}/);
     await bad((s) => (s.availability = { whenUnable: 'later' }), 'availability.whenUnable', /is hold, other or decline, not "later"/);
     await bad((s) => (s.availability = { whenUnable: 'other' }), 'availability.otherRuntime', /the runtime that answers instead/);
     await bad((s) => (s.availability = { whenUnable: 'other', otherRuntime: 'copilot' }), 'availability.otherRuntime', /claude, codex or cursor, or null/);
@@ -379,7 +379,7 @@ describe("your Oby's settings", () => {
     await bad((s) => (s.availability = { holdHours: 169 }), 'availability.holdHours', /1 to 168/);
     await bad((s) => (s.availability = { holdHours: 2.5 }), 'availability.holdHours', /whole hours/);
     await bad((s) => (s.availability = { showReason: 'yes' }), 'availability.showReason', /true or false/);
-    await bad((s) => (s.availability = { holdHourz: 3 }), 'availability.holdHourz', /isn't a setting \(availability has whenUnable, otherRuntime, holdHours, showReason\)/);
+    await bad((s) => (s.availability = { holdHourz: 3 }), 'availability.holdHourz', /isn't a setting \(availability has whenUnable, otherRuntime, holdHours, showReason, askOwner\)/);
     // null time limit: 10; Cursor's effort: none; a rule with no condition is kept
     const loose = full();
     loose.routing.default.timeLimitMin = null;
@@ -392,14 +392,14 @@ describe("your Oby's settings", () => {
     assert.equal(ok.settings.machine.folders[1].write, true);
     assert.equal(fs.statSync(settingsPath()).mode & 0o777, 0o600);
     // availability left out: the defaults, which the console gets like any section
-    assert.deepEqual(ok.settings.availability, { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false });
-    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: holds the ask until it can, up to 24 h\n {2}asks older than 24 h when your Oby comes online get a short "expired" reply · askers see only when it can answer/);
+    assert.deepEqual(ok.settings.availability, { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false, askOwner: true });
+    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: holds the ask until it can, up to 24 h\n {2}when it can't answer an ask alone: it may hand it to you \(Waiting for you\)\n {2}asks older than 24 h when your Oby comes online get a short "expired" reply · askers see only when it can answer/);
     const av = await local('PUT', '/local/settings', { settings: { ...loose, availability: { whenUnable: 'other', otherRuntime: 'codex', holdHours: 48, showReason: true } } });
     assert.equal(av.status, 200, JSON.stringify(av));
-    assert.deepEqual((await local('GET', '/local/settings')).settings.availability, { whenUnable: 'other', otherRuntime: 'codex', holdHours: 48, showReason: true });
-    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: Codex answers instead \(Codex and Cursor only for Obys you trust; others are declined\)\n {2}asks older than 48 h/);
+    assert.deepEqual((await local('GET', '/local/settings')).settings.availability, { whenUnable: 'other', otherRuntime: 'codex', holdHours: 48, showReason: true, askOwner: true }, 'askOwner: on unless it is turned off');
+    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: Codex answers instead \(Codex and Cursor only for Obys you trust; others are declined\)\n {2}when it can't answer an ask alone: it may hand it to you \(Waiting for you\)\n {2}asks older than 48 h/);
     const dec = await local('PUT', '/local/settings', { settings: { ...loose, availability: { whenUnable: 'decline', holdHours: null } } });
-    assert.deepEqual(dec.settings.availability, { whenUnable: 'decline', otherRuntime: null, holdHours: 24, showReason: false }, 'null: the default');
+    assert.deepEqual(dec.settings.availability, { whenUnable: 'decline', otherRuntime: null, holdHours: 24, showReason: false, askOwner: true }, 'null: the default');
     assert.equal((await local('PUT', '/local/settings', { settings: loose })).status, 200);
 
     // this machine: each runtime, how it's signed in (never the email or org), its models and efforts
@@ -695,7 +695,7 @@ describe("your Oby's settings", () => {
     for (const x of ['approval_policy="never"', 'project_doc_max_bytes=0', 'shell_environment_policy.inherit=core', 'web_search="live"', 'model_reasoning_effort="xhigh"']) assert.ok(cs.includes(x), x);
     assert.equal(flagOf(c, '-m'), 'gpt-6.2-sol');
     const mcp = cs.find((x) => x.startsWith('mcp_servers.obysphere='));
-    assert.match(mcp, /^mcp_servers\.obysphere=\{command = ".+", args = \[".+rep\.mjs", "mcp", "--profile", "bob", "--as-session"\], env = \{OBYSPHERE_HOME = ".+", SPHERE_DEPTH = "1", .*SPHERE_ATTACH = "1", SPHERE_CONSULT = "1"\}, default_tools_approval_mode = "approve", required = true, startup_timeout_sec = 20\}$/);
+    assert.match(mcp, /^mcp_servers\.obysphere=\{command = ".+", args = \[".+rep\.mjs", "mcp", "--profile", "bob", "--as-session"\], env = \{OBYSPHERE_HOME = ".+", SPHERE_DEPTH = "1", .*SPHERE_ATTACH = "1", SPHERE_CONSULT = "1", SPHERE_ANSWERING = "m_[\w-]+", SPHERE_OWNER_HELP = "1"\}, default_tools_approval_mode = "approve", required = true, startup_timeout_sec = 20\}$/);
     assert.equal(c.argv.at(-1), '-');
     assert.ok(!c.argv.includes('--add-dir'), 'Codex writes only when the first folder is writable');
     assert.ok(c.prompt.includes(RULES) && c.prompt.includes('what changed this week?'));
@@ -872,7 +872,7 @@ describe("your Oby's settings", () => {
     assert.deepEqual(Object.keys(c.mcp.mcpServers), ['obysphere']);
     assert.deepEqual([c.mcp.mcpServers.obysphere.env.SPHERE_ATTACH, c.mcp.mcpServers.obysphere.env.SPHERE_CONSULT], ['0', '0']);
     assert.match(c.system, /your owner's own Chrome/);
-    assert.ok(!/sphere_ask|sphere_attach/.test(c.system));
+    assert.ok(!/sphere_ask(?!_owner)|sphere_attach/.test(c.system));
     // the same ask from an Oby that isn't trusted: no browser
     ({ call: c } = await answered('alice', 'review this again'));
     assert.ok(!c.argv.includes('--chrome') && c.argv.includes('--no-chrome'));
