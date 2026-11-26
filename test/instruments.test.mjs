@@ -202,6 +202,7 @@ describe('instruments', () => {
     const sf = path.join(state.home, 'bob', 'settings.json');
     const s = JSON.parse(fs.readFileSync(sf, 'utf8'));
     s.access.agents = { carol: 'trust' };
+    s.access.default = 'answer'; // anyone else is answered at once (a new profile asks its owner first)
     fs.writeFileSync(sf, JSON.stringify(s), { mode: 0o600 });
     const { agents } = await h.call('GET', '/api/agents', { key: KEY });
     ids = Object.fromEntries(agents.map((a) => [a.name, a.id]));
@@ -499,6 +500,11 @@ input:
     assert.equal(li.dir, bobDir());
     assert.deepEqual(li.instruments.find((x) => x.name === 'broken'), { name: 'broken', kind: null, description: null, ok: false, problem: 'kind: is prompt or command, not "nope"' });
     assert.equal(li.instruments.find((x) => x.name === 'env-report').kind, 'command');
+    // what Make your own says to run: with several profiles and none chosen, it names bob's; this
+    // console runs as rep.mjs (not through obysphere), so it names rep.mjs by its whole path
+    const self = path.join(ROOT, 'rep.mjs');
+    const quoted = /^[\w./@:-]+$/.test(self) ? self : `'${self.replace(/'/g, `'\\''`)}'`; // a path with spaces is quoted
+    assert.equal(li.newCmd, `node ${quoted} instruments new my-instrument --profile bob`);
 
     let ask = await use('alice', 'env-report', { text: 'from alice' });
     let w = await waiting(ask.id);
@@ -561,6 +567,9 @@ describe('instruments in a sealed Sphere', () => {
     for (const n of ['xena', 'yuri']) await h.join(n, work);
     const prof = path.join(state.home, 'yuri', 'profile.json');
     fs.writeFileSync(prof, JSON.stringify({ ...JSON.parse(fs.readFileSync(prof, 'utf8')), claudeBin: fake.claude }), { mode: 0o600 });
+    // yuri answers anyone at once (a new profile asks its owner first)
+    const sf = path.join(state.home, 'yuri', 'settings.json');
+    fs.writeFileSync(sf, JSON.stringify({ ...JSON.parse(fs.readFileSync(sf, 'utf8')), access: { ...JSON.parse(fs.readFileSync(sf, 'utf8')).access, default: 'answer' } }), { mode: 0o600 });
     const dir = path.join(state.home, 'yuri', 'instruments');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'echo-back.md'), fm('name: echo-back\ndescription: Says it back.\ninput:\n  topic: string', 'Say {{topic}} back.'));

@@ -375,40 +375,48 @@ describe('notifications', () => {
   test('asks: a burst becomes one notification per way; serve --notify keeps the desktop on; Slack escapes and clips the words', async () => {
     setBob({ desktop: false, slack: { webhookUrl: slackUrl(), content: 'full' }, phone: { url: phoneUrl(), content: 'summary' } });
     await startServe('--notify');
-    const mark = logLines().length;
-    const h = hits.length;
-    const asks = await Promise.all(['one', 'two', 'three'].map((w) => ask('alice', `burst ${w}`)));
-    for (const m of asks) assert.equal((await replyTo(m, 'alice')).meta?.declined, true);
-    const lines = await waitFor(() => {
-      const x = logLines().slice(mark).filter((l) => l.type === 'asked');
-      return x.length >= 5 && x;
-    }, 8000, 'the burst');
-    await sleep(COALESCE_MS + 500);
-    const all = logLines().slice(mark).filter((l) => l.type === 'asked');
-    assert.equal(all.length, 5, `one per way: ${JSON.stringify(all)}`);
-    assert.deepEqual(all.map((l) => l.way).sort(), ['claude', 'console', 'desktop', 'phone', 'slack'], 'the desktop too: serve --notify');
-    assert.ok(lines.every((l) => l.title === '3 asks for your Oby'), JSON.stringify(lines));
-    assert.equal(all.find((l) => l.way === 'console').body, 'From @alice.');
-    const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/')); return s.length && s; }, 4000, 'the Slack request');
-    assert.equal(slack.length, 1);
-    assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/>\n> From @alice\.$/);
+    try {
+      const mark = logLines().length;
+      const h = hits.length;
+      const asks = await Promise.all(['one', 'two', 'three'].map((w) => ask('alice', `burst ${w}`)));
+      for (const m of asks) assert.equal((await replyTo(m, 'alice')).meta?.declined, true);
+      const lines = await waitFor(() => {
+        const x = logLines().slice(mark).filter((l) => l.type === 'asked');
+        return x.length >= 5 && x;
+      }, 8000, 'the burst');
+      await sleep(COALESCE_MS + 500);
+      const all = logLines().slice(mark).filter((l) => l.type === 'asked');
+      assert.equal(all.length, 5, `one per way: ${JSON.stringify(all)}`);
+      assert.deepEqual(all.map((l) => l.way).sort(), ['claude', 'console', 'desktop', 'phone', 'slack'], 'the desktop too: serve --notify');
+      assert.ok(lines.every((l) => l.title === '3 asks for your Oby'), JSON.stringify(lines));
+      assert.equal(all.find((l) => l.way === 'console').body, 'From @alice.');
+      const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/')); return s.length && s; }, 4000, 'the Slack request');
+      assert.equal(slack.length, 1);
+      assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/>\n> From @alice\.$/);
 
-    // one ask alone: its words, escaped for Slack (no <!channel>), clipped at 600
-    const m2 = log2();
-    const words = `<!channel> & <@U123> ${'x'.repeat(700)}`;
-    await replyTo(await ask('alice', words), 'alice');
-    const one = await waitFor(() => logLines().slice(m2).find((l) => l.type === 'asked' && l.way === 'slack'), 8000, 'one ask');
-    assert.equal(one.title, '@alice asks your Oby');
-    const text = JSON.parse(hits.filter((x) => x.path.startsWith('/services/')).at(-1).body).text;
-    assert.ok(text.startsWith('@alice asks your Oby. Open your console: <http://bob.localhost:'), text);
-    assert.ok(text.includes('\n> &lt;!channel&gt; &amp; &lt;@U123&gt; xxx'), text);
-    assert.ok(!text.includes('<!channel>') && !text.includes('<@U123>'));
-    assert.ok(text.endsWith('x…'), 'clipped');
-    assert.equal(text.split('\n> ')[1].length, '&lt;!channel&gt; &amp; &lt;@U123&gt; '.length + 600 - '<!channel> & <@U123> '.length + 1);
-    // phone: the summary, never the words
-    assert.equal(hits.filter((x) => x.path === `/${TOPIC}`).at(-1).body, 'Open your Obysphere console to see it.');
-    // from here on, the settings alone decide the desktop
-    await startServe();
+      // one ask alone: its words, escaped for Slack (no <!channel>), clipped at 600
+      const m2 = log2();
+      const slackBefore = hits.filter((x) => x.path.startsWith('/services/')).length;
+      const phoneBefore = hits.filter((x) => x.path === `/${TOPIC}`).length;
+      const words = `<!channel> & <@U123> ${'x'.repeat(700)}`;
+      await replyTo(await ask('alice', words), 'alice');
+      const one = await waitFor(() => logLines().slice(m2).find((l) => l.type === 'asked' && l.way === 'slack'), 8000, 'one ask');
+      assert.equal(one.title, '@alice asks your Oby');
+      // the log line is written as the request goes out: wait for the fake Slack to get it
+      const slackNow = await waitFor(() => { const s = hits.filter((x) => x.path.startsWith('/services/')); return s.length > slackBefore && s; }, 4000, 'the Slack request for one ask');
+      const text = JSON.parse(slackNow.at(-1).body).text;
+      assert.ok(text.startsWith('@alice asks your Oby. Open your console: <http://bob.localhost:'), text);
+      assert.ok(text.includes('\n> &lt;!channel&gt; &amp; &lt;@U123&gt; xxx'), text);
+      assert.ok(!text.includes('<!channel>') && !text.includes('<@U123>'));
+      assert.ok(text.endsWith('x…'), 'clipped');
+      assert.equal(text.split('\n> ')[1].length, '&lt;!channel&gt; &amp; &lt;@U123&gt; '.length + 600 - '<!channel> & <@U123> '.length + 1);
+      // phone: the summary, never the words
+      const phoneNow = await waitFor(() => { const s = hits.filter((x) => x.path === `/${TOPIC}`); return s.length > phoneBefore && s; }, 4000, 'the phone request for one ask');
+      assert.equal(phoneNow.at(-1).body, 'Open your Obysphere console to see it.');
+    } finally {
+      // from here on, the settings alone decide the desktop, even when an assertion above failed
+      await startServe();
+    }
   });
 
   test("quiet hours: only what waits for you comes through, at high priority; an ask that waits is told once", async () => {
