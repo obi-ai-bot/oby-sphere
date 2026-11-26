@@ -129,6 +129,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .avatar-stack { display: flex; align-items: center; }
 .avatar-stack > * + * { margin-left: -6px; }
 .avatar-stack .owner-avatar { box-shadow: 0 0 0 2px var(--bg); }
+.avatar-stack > svg { flex: none; }
 .avatar-more { flex: none; height: 22px; min-width: 22px; padding: 0 6px; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--chip-hover); box-shadow: 0 0 0 2px var(--bg); color: var(--text); font-size: 10px; font-weight: 600; }
 
 /* ---------- the view: title bar, then a mode */
@@ -714,6 +715,17 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 @media (prefers-reduced-motion: reduce) { .ctl-pop { animation: none; } }
 .warn { color: var(--needs); }
 .saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+/* your Oby's look (Your Oby): its face, then a colour and eyes to pick from */
+#you-look { margin-bottom: 12px; }
+.look { display: flex; align-items: center; gap: 20px; padding: 14px 0; }
+.look-face { flex: none; display: grid; place-items: center; width: 76px; height: 76px; border-radius: 20px; background: rgba(255, 255, 255, 0.04); }
+.look-picks { display: grid; gap: 10px; min-width: 0; }
+.look-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.look-row .route-label-sm { width: 52px; flex: none; }
+.look-colors [role="radio"] { min-height: 30px; padding: 0 5px; }
+.look-dot { display: block; width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.look-colors [aria-checked="true"] .look-dot { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ink); }
+.look-note { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
 .icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
@@ -830,6 +842,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   /* on a phone the map shows names and arrows; a screen reader still hears each Oby's state (as .sr-only) */
   .node-where, .node-did { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .topo-key { display: none; }
+  .look { flex-direction: column; align-items: flex-start; gap: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .status-dot.is-working, .node.is-working .pic::after, .topo .link.is-busy { animation: none; }
@@ -1143,22 +1156,47 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const OBY_PATH = 'M70.6738 1.4132C71.0781 0.099296 72.6571 -0.424821 73.7666 0.386834C76.0714 2.07339 80.0073 4.97625 82.921 7.12762C85.3816 8.94448 88.192 10.212 90.91 11.615C99.2785 15.935 105 24.6647 105 34.7316V68.7316C105 83.091 93.3594 94.7316 79 94.7316H26C11.6406 94.7316 0 83.091 0 68.7316V34.7316C8.34945e-07 24.3936 6.03367 15.4655 14.7715 11.2754C17.9651 9.74397 21.2856 8.39647 24.144 6.30517L32.2334 0.386834C33.3429 -0.424821 34.9219 0.099296 35.3262 1.4132L36.9257 6.61352C37.3129 7.87244 38.476 8.73156 39.7931 8.73156H66.2069C67.524 8.73156 68.6871 7.87245 69.0743 6.61352L70.6738 1.4132Z';
   const AVATAR_COLORS = ['#3a5a8c', '#7a4a8c', '#2f7a6a', '#8c5a3a', '#8c3a52', '#5a6a2f', '#387688', '#6a4a3a']; // each keeps its letters at 4.5:1
   const djb2 = (s) => [...s].reduce((h, c) => ((h * 33) ^ c.charCodeAt(0)) >>> 0, 5381);
-  function obyFace(size, badge = false, color = '#f1f1ee') {
-    if (badge) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" overflow="visible" aria-hidden="true"><path class="oby-badge-cut" d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" stroke-linejoin="round"/><path d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" fill="${color}"/><rect x="7.4" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/><rect x="14" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/></svg>`;
-    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${OBY_PATH}" transform="translate(1.5 3.5) scale(0.2)" fill="${color}"/><g fill="#0d0d0e"><rect x="6" y="10.6" width="2.8" height="5" rx="1.4"/><rect x="14.6" y="10.6" width="2.8" height="5" rx="1.4"/></g></svg>`;
+  // an Oby's look: a colour and eyes, picked on Your Oby from these lists (the relay keeps only these
+  // names). One that hasn't picked has the usual eyes, and a colour from its id, so Obys differ.
+  const LOOK_COLORS = { bone: '#f1f1ee', sky: '#9ccbff', mint: '#8fe3bf', lemon: '#f4d96b', peach: '#ffb991', rose: '#ffa8c0', lilac: '#c9b0ff', sand: '#dcc7a4' };
+  const LOOK_EYES = ['pill', 'round', 'happy', 'sleepy'];
+  const LOOK_WORDS = { bone: 'Bone', sky: 'Sky', mint: 'Mint', lemon: 'Lemon', peach: 'Peach', rose: 'Rose', lilac: 'Lilac', sand: 'Sand', pill: 'Usual', round: 'Round', happy: 'Happy', sleepy: 'Sleepy' };
+  const EYES = {
+    pill: '<g fill="#0d0d0e"><rect x="6" y="10.6" width="2.8" height="5" rx="1.4"/><rect x="14.6" y="10.6" width="2.8" height="5" rx="1.4"/></g>',
+    round: '<g fill="#0d0d0e"><circle cx="7.4" cy="13.1" r="1.8"/><circle cx="16" cy="13.1" r="1.8"/></g>',
+    happy: '<g fill="none" stroke="#0d0d0e" stroke-width="1.5" stroke-linecap="round"><path d="M5.7 14.1q1.7-3 3.4 0"/><path d="M14.3 14.1q1.7-3 3.4 0"/></g>',
+    sleepy: '<g fill="#0d0d0e"><rect x="5.8" y="12.5" width="3.2" height="1.4" rx="0.7"/><rect x="14.4" y="12.5" width="3.2" height="1.4" rx="0.7"/></g>',
+  };
+  function lookOf(a) {
+    const l = a?.look && typeof a.look === 'object' ? a.look : {};
+    const colors = Object.keys(LOOK_COLORS);
+    return {
+      color: Object.hasOwn(LOOK_COLORS, l.color) ? l.color : colors[djb2(String(a?.id || a?.name || a?.owner || '')) % colors.length],
+      eyes: LOOK_EYES.includes(l.eyes) ? l.eyes : 'pill',
+    };
   }
+  function obyFace(size, badge = false, color = '#f1f1ee', eyes = 'pill') {
+    if (badge) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" overflow="visible" aria-hidden="true"><path class="oby-badge-cut" d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" stroke-linejoin="round"/><path d="${OBY_PATH}" transform="translate(1.5 2.5) scale(0.2)" fill="${color}"/><rect x="7.4" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/><rect x="14" y="10" width="2.6" height="5" rx="1.3" fill="#0d0d0e"/></svg>`;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${OBY_PATH}" transform="translate(1.5 3.5) scale(0.2)" fill="${color}"/>${EYES[eyes] || EYES.pill}</svg>`;
+  }
+  // an Oby, as everyone in the Sphere sees it: its face, in its look
+  const obyPic = (a, size = 22, look = lookOf(a)) => obyFace(size, false, LOOK_COLORS[look.color], look.eyes);
   const ownerName = (a) => String(a?.owner || a?.name || '?').replace(/\s*\([^)]*\)\s*/g, ' ').trim() || a?.name || '?';
   const isMe = (a) => !!S.me && !!a && a.id === S.me.id;
   const obyOf = (a) => (isMe(a) ? 'Your Oby' : `${ownerName(a)}’s Oby`);
   const obyLower = (a) => (isMe(a) ? 'your Oby' : obyOf(a));
   const machineOf = (a) => (isMe(a) ? 'your machine' : `${ownerName(a)}’s machine`);
-  function avatar(a, size = 22, badge = true) {
+  // a person (you, in the rail and your account button): their initials. The ones who talk in a
+  // Sphere are Obys, and every other picture is one (avatar, picture).
+  function person(a, size = 22) {
     const name = ownerName(a);
     const initials = name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
     const font = size <= 22 ? 9 : size <= 28 ? 11 : 13;
-    return `<span class="owner-avatar" style="width:${size}px;height:${size}px;font-size:${font}px;background:${AVATAR_COLORS[djb2(name) % AVATAR_COLORS.length]}" aria-hidden="true">${esc(initials)}${badge ? `<span class="owner-avatar-oby">${obyFace(Math.round(size * 0.5), true)}</span>` : ''}</span>`;
+    return `<span class="owner-avatar" style="width:${size}px;height:${size}px;font-size:${font}px;background:${AVATAR_COLORS[djb2(name) % AVATAR_COLORS.length]}" aria-hidden="true">${esc(initials)}</span>`;
   }
-  const picture = (a, size = 22) => (isMe(a) ? obyFace(size) : avatar(a, size));
+  // an Oby, by its record, or by its handle when that's all there is (an ask that waits for you)
+  const avatar = (a, size = 22) => obyPic(a?.id ? a : members().find((x) => x.name === a?.name) || a, size);
+  const picture = (a, size = 22) => avatar(a, size);
   const agent = (id) => S.agents.get(id) || { id, name: 'unknown', owner: 'Someone' };
   const members = () => [...S.agents.values()].filter((a) => !a.removed);
 
@@ -1238,7 +1276,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     initConversations();
 
     if (S.me) {
-      $('#rail-me').innerHTML = `<span class="rail-button" role="img" aria-label="You: ${esc(S.me.owner)} (${esc(S.me.name)})" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${avatar(S.me, 28, false)}</span>`;
+      $('#rail-me').innerHTML = `<span class="rail-button" role="img" aria-label="You: ${esc(S.me.owner)} (${esc(S.me.name)})" data-tip="You: ${esc(S.me.owner)} (${esc(S.me.name)})">${person(S.me, 28)}</span>`;
       setupComposer();
     } else $('#watch-foot').hidden = false;
     wire();
@@ -1581,7 +1619,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const page = S.page.startsWith('exchange:') || S.page.startsWith('traffic:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
     const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
-    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}<span class="sr-only"> waiting for you</span></span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
+    const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : S.me ? obyPic(S.me, 18) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}<span class="sr-only"> waiting for you</span></span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
     if (!a11yDraw($('#nav'), NAV_GROUPS.map(([g, label]) => {
       const items = shown.filter((x) => x[3] === g);
       return items.length ? `<h3 class="sidebar-group-head">${label}</h3>${items.map(item).join('')}` : '';
@@ -2793,8 +2831,56 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   function pageYou() {
-    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, youSub(), CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
-      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div id="you-rest">${youRest()}</div>`;
+    return head(`<span style="display:inline-flex;align-items:center;gap:10px" id="you-face">${obyPic(S.agents.get(S.me.id) || S.me, 28)}Your Oby</span>`, youSub(), CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
+      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div class="section-head"><h2>Look</h2></div><div id="you-look">${lookHtml()}</div><div id="you-rest">${youRest()}</div>`;
+  }
+
+  // ---------------------------------------------------------------- your Oby's look: everyone in the Sphere sees it
+  // A colour and eyes from LOOK_COLORS and LOOK_EYES, kept on the relay (POST /api/me { look }), and
+  // saved as soon as you pick one. A relay from before looks answers without one, and the page says so.
+  function lookHtml() {
+    const me = S.agents.get(S.me.id) || S.me;
+    const l = lookOf(me);
+    const colors = Object.keys(LOOK_COLORS);
+    CTL.data.set('you-look-color', { options: colors.map((value) => ({ value, label: LOOK_WORDS[value] })), value: l.color });
+    const swatches = colors
+      .map((c, i) => `<button type="button" role="radio" id="you-look-color-${i}" data-i="${i}" aria-checked="${c === l.color}" tabindex="${c === l.color ? 0 : -1}" title="${LOOK_WORDS[c]}"><span class="look-dot" style="background:${LOOK_COLORS[c]}" aria-hidden="true"></span><span class="sr-only">${LOOK_WORDS[c]}</span></button>`)
+      .join('');
+    return `<div class="set-group"><div class="look">
+      <span class="look-face" id="you-look-face">${obyPic(me, 56, l)}</span>
+      <div class="look-picks">
+        <div class="look-row"><span class="route-label-sm" id="you-look-color-l">Colour</span><div class="ctl-seg look-colors" id="you-look-color" data-ctl="seg" role="radiogroup" aria-labelledby="you-look-color-l">${swatches}</div></div>
+        <div class="look-row"><span class="route-label-sm" id="you-look-eyes-l">Eyes</span>${ctlSegmented({ id: 'you-look-eyes', value: l.eyes, options: LOOK_EYES.map((value) => ({ value, label: LOOK_WORDS[value] })), labelledby: 'you-look-eyes-l' })}</div>
+        <p class="look-note">How everyone in the Sphere sees your Oby: on the map, in conversations and in Traffic. <span class="saved-note" data-look-note></span></p>
+      </div>
+    </div></div>`;
+  }
+  function paintLook(l) {
+    const face = document.getElementById('you-look-face');
+    if (face) face.innerHTML = obyPic(null, 56, l);
+    const head = document.querySelector('#you-face > svg');
+    if (head) head.outerHTML = obyPic(null, 28, l);
+  }
+  async function saveLook(change) {
+    const box = document.getElementById('you-look');
+    const say = (words, bad = false) => { const n = box?.querySelector('[data-look-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } a11ySay(bad ? 'problem' : 'note', words); };
+    const me = S.agents.get(S.me.id) || S.me;
+    const was = lookOf(me);
+    const look = { ...was, ...change };
+    paintLook(look); // at once; the relay's answer keeps it, or the old one comes back
+    try {
+      const r = await apiPost('/api/me', { look });
+      if (!r?.agent || !r.agent.look) {
+        paintLook(was);
+        return say('This Sphere’s relay can’t keep a look yet: whoever runs it updates it (obysphere server update).', true);
+      }
+      upsertAgent(r.agent);
+      renderNav();
+      say('Saved');
+    } catch (e) {
+      paintLook(was);
+      say(e.message || 'Not saved.', true);
+    }
   }
   // the line under its name: whether it can answer (away, offline since when) and what it answers with
   function youSub() {
@@ -2967,6 +3053,14 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     } finally { card.querySelectorAll('button').forEach((x) => (x.disabled = false)); }
   }
   function wireYou() {
+    const look = document.getElementById('you-look');
+    if (look && !look.dataset.wired) {
+      look.dataset.wired = '1';
+      look.addEventListener('ctl-change', (e) => {
+        if (e.target.id === 'you-look-color' && Object.hasOwn(LOOK_COLORS, e.detail.value)) saveLook({ color: e.detail.value });
+        if (e.target.id === 'you-look-eyes' && LOOK_EYES.includes(e.detail.value)) saveLook({ eyes: e.detail.value });
+      });
+    }
     const box = document.getElementById('you-away');
     if (box && !box.dataset.wired) {
       box.dataset.wired = '1';
@@ -4968,7 +5062,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const el = document.getElementById('bar-account');
     if (!el) return;
     if (!(CONSOLE && S.me)) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="account"><button class="account-button" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-label="You: ${esc(S.me.owner)}" title="You: ${esc(S.me.owner)}">${avatar(S.me, 26, false)}</button></div>`;
+    el.innerHTML = `<div class="account"><button class="account-button" id="account-button" aria-haspopup="menu" aria-expanded="false" aria-label="You: ${esc(S.me.owner)}" title="You: ${esc(S.me.owner)}">${person(S.me, 26)}</button></div>`;
     $('#account-button').onclick = (e) => { e.stopPropagation(); toggleAccount(); };
   }
   function toggleAccount(open) {
@@ -4982,7 +5076,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     box.insertAdjacentHTML('beforeend', `<div class="account-menu" role="menu">
         <div class="account-who"><b>${esc(S.me.owner)}</b><span>@${esc(S.me.name)} · ${S.admin ? 'an admin of this Sphere' : 'a member of this Sphere'}</span></div>
         <div class="add-sep"></div>
-        ${it('you', obyFace(16), 'Your Oby')}
+        ${it('you', obyPic(S.me, 16), 'Your Oby')}
         ${it('settings', navIcon(ICON_GEAR, 16), 'Settings')}
         <div class="add-sep"></div>
         ${S.admin ? it('policy', navIcon(ICON_SHIELD, 16), 'Policy') + it('admins', navIcon(ICON_ADMINS, 16), 'Admins') : it('claim', navIcon(ICON_KEY, 16), 'Admin access…')}
