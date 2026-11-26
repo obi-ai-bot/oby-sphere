@@ -222,6 +222,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .sys + .sys { margin-top: 6px; }
 .sys:first-child { margin-top: 0; }
 
+/* ===== deleting messages (#139): Delete… on your own message, and the line a deleted one leaves */
+.msg-foot { display: flex; align-items: center; gap: 8px; }
+.msg-foot .msg-time { margin-top: 0; }
+.msg-del { min-height: 24px; padding: 0 4px; display: inline-flex; align-items: center; border-radius: 6px; color: var(--muted); font-size: 11px; line-height: 14px; transition: color var(--fade); }
+.msg-del:hover { color: var(--ink); }
+.msg-del:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sys.msg-gone { font-style: italic; }
+.status-dot.is-deleted { background: var(--muted); }
+.pending-gone { margin: 10px 0 0; color: var(--muted); font-size: var(--text-sm); }
+
 .chat-live { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 .chat-live:empty { display: none; }
 .live-line { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--text-md); user-select: none; animation: msg-in 360ms var(--warm) both; }
@@ -1291,6 +1301,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     loadConsoleData();
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
+    setInterval(pruneOld, 60000); // keeping messages: one older than the Sphere keeps them goes
     if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
     // your away and held asks: looked at while Your Oby is open (a held ask's words are opened on this machine)
     if (CONSOLE && S.me) setInterval(() => { if (S.mode === 'console' && S.page === 'you' && !document.hidden) loadYou(); }, 10000);
@@ -1384,11 +1395,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const EVENTS = {
     message: (d) => onMessage(d),
     'message-update': (u) => { const m = S.byId.get(u.id); if (m) Object.assign(m, u); dirty(); },
+    'message-delete': (d) => onDelete(d), // deleting messages
     agent: (d) => upsertAgent(d),
     presence: (d) => upsertAgent(d),
     channel: (c) => onChannel(c),
     audit: (d) => onAudit(d),
-    policy: (p) => { S.sphere.paused = p.paused; if (p.policy) S.sphere.policy = p.policy; renderHealth(); dirty(); },
+    policy: (p) => { S.sphere.paused = p.paused; if (p.policy) S.sphere.policy = p.policy; renderHealth(); pruneOld(); if (S.mode === 'conversation') renderHead(); dirty(); },
   };
   async function connect() {
     let backoff = 1000, first = true;
@@ -1564,6 +1576,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let status = 'answered';
     if (ask.kind === 'post') status = 'posted';
     else if (reply) status = reply.meta?.lapsed ? 'lapsed' : reply.meta?.expired ? 'expired' : reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
+    else if (ask.deleted) status = 'deleted'; // deleting messages: its asker took it back, so nobody will answer it
     else if (target?.status?.state === 'working' && target.status.about === ask.id) status = 'working';
     else if (late) status = 'expired';
     else if (target?.online && ownerWait) status = 'owner';
@@ -1574,7 +1587,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     return { ask, target, reply, posted, claimed, started: status === 'owner' && !ask.startedAt ? null : started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
   }
 
-  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted' };
+  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted', deleted: 'Deleted' };
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
@@ -1728,7 +1741,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         updateTopo();
       });
     }
-    a11yDraw($('#ov-head'), head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}`));
+    a11yDraw($('#ov-head'), head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}${keptFor() ? ` · ${esc(keptFor())}` : ''}`));
     updateKpis();
     updateTopo();
     const ex = exchanges().slice(0, 6);
@@ -1962,7 +1975,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', delete: 'delete', expire: 'expire', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -1974,7 +1987,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (!list.length) return `<p class="empty-line">${esc(empty)}</p>`;
     return `<div class="table-wrap"><table class="table"><thead><tr><th>Started</th><th>Route</th><th class="hide-narrow">What</th><th class="r">Took</th><th>State</th></tr></thead><tbody>${list
       .map((e) => {
-        const words = isSealed(e.root) ? `Sealed · ${size(sealedBytes(e.root))}` : e.root.text || (e.root.files?.length ? `${e.root.files.length} file(s)` : '');
+        const words = e.root.deleted ? 'Deleted' : isSealed(e.root) ? `Sealed · ${size(sealedBytes(e.root))}` : e.root.text || (e.root.files?.length ? `${e.root.files.length} file(s)` : '');
         return `<tr class="is-link" data-page="exchange:${e.id}">
           <td class="num mono"><button type="button" class="row-open" aria-label="${esc(a11yExchangeName(e))}">${esc(clock(e.start))}</button></td>
           <td><div class="cell">${route(e)}</div></td>
@@ -2359,7 +2372,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // ---------------------------------------------------------------- Audit log: search, filters (event type, member, time), export
   // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
   // and "Export all" pages through the whole log. The dropdowns are this page's own (au-*), small.
-  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
+  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
   const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
@@ -2579,12 +2592,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const polSize = (n) => (n >= POL_GB ? `${+(n / POL_GB).toFixed(1)} GB` : n >= POL_MB ? `${+(n / POL_MB).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
   const polCount = (n) => Number(n).toLocaleString('en-US');
   const polPerMin = (n) => `${polCount(n)} a minute`;
+  // keeping messages: 0 is no time limit, so the newest retainMessages stay
+  const polKeep = (n) => (n ? `${polCount(n)} days` : `The newest ${polCount(Number(S.sphere.policy?.retainMessages) || 5000)}`);
   // [section, rows]: a row is a stepper (`step: [min, max]`, the relay's range) or a dropdown of presets (`menu`)
   function polSections() {
     const redis = S.sphere.store === 'redis';
     const mb = (...xs) => xs.map((x) => x * POL_MB);
     return [
       ['Messages and files', [
+        { key: 'keepDays', title: 'Keep messages', sub: 'Older ones are removed, with their files, within the hour.', menu: [0, 7, 30, 90, 365], fmt: polKeep },
         { key: 'maxDepth', title: 'Obys asking Obys', sub: 'How many times one question may be passed on. 0 turns it off.', step: [0, 10], fmt: String },
         { key: 'maxFileBytes', title: 'Largest file', sub: redis ? 'At most 1 MB on this server.' : '', menu: redis ? [131072, 262144, 524288, POL_MB] : mb(1, 5, 10, 25, 50), fmt: polSize },
         { key: 'maxFilesPerMessage', title: 'Files per message', step: [1, 50], fmt: String },
@@ -2766,10 +2782,17 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     };
     list.focus({ preventScroll: true });
   }
-  function polPick(key, v) {
+  async function polPick(key, v) {
     polClose(true);
     if (v === polShown(key)) return;
     if (key === 'retainMessages' && v < polSaved(key) && !confirm(`Keep only the newest ${polCount(v)} messages? Older ones are removed now.`)) return;
+    // keeping messages for less time (or for a time, where there was none) removes the older ones for good: asked first
+    if (key === 'keepDays' && v && (!polSaved(key) || v < polSaved(key))) {
+      let n = null;
+      try { n = (await api(`/api/admin/expiring?keepDays=${v}`)).messages; } catch {}
+      const what = !Number.isInteger(n) ? `Messages older than ${v} days will be removed for good.` : n ? `${polCount(n)} message${n === 1 ? '' : 's'} older than ${v} days will be removed for good.` : `No message is older than ${v} days yet. From now on, older ones are removed for good.`;
+      if (!confirm(`${what}\n\nKeep messages for ${v} days?`)) return;
+    }
     POL.pending.set(key, v);
     const out = document.querySelector(`#page .pol-dd[data-pol="${CSS.escape(key)}"] .pol-dd-v`);
     if (out) out.textContent = polRow(key).fmt(v);
@@ -3106,9 +3129,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   async function pollPending() {
     if (!CONSOLE || !S.me || pendingOff) return;
     try {
-      const { pending } = await local('GET', '/local/pending');
-      const ids = (pending || []).map((p) => p.id).join(',');
-      if (ids !== (S.pending || []).map((p) => p.id).join(',')) {
+      const { pending, withdrawn } = await local('GET', '/local/pending');
+      const back = (withdrawn || []).filter((w) => /^w_[0-9a-f]{12}$/.test(String(w?.id)));
+      const ids = [...(pending || []), ...back.map((w) => ({ id: `back-${w.id}` }))].map((p) => p.id).join(',');
+      if (ids !== [...(S.pending || []), ...(S.withdrawn || []).map((w) => ({ id: `back-${w.id}` }))].map((p) => p.id).join(',')) {
+        for (const w of back) if (!(S.withdrawn || []).some((x) => x.id === w.id)) a11ySay('note', `${ownerName({ owner: w.from?.owner, name: w.from?.name })} took an ask back`);
+        S.withdrawn = back; // deleting messages: asks their askers deleted while they waited
         if (pending?.length) await settingsForPending();
         a11yWaiting((S.pending || []).length, (pending || []).length);
         S.pending = pending || [];
@@ -3139,7 +3165,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const NEED_WORDS = { access: 'It needs something it can’t reach', decision: 'It needs your decision', knowledge: 'It needs something only you know' };
   function pendingHtml() {
     const list = S.pending || [];
-    if (!list.length) return '';
+    // an ask its asker deleted while it waited for you (deleting messages): said for a few minutes, in its place
+    const gone = (S.withdrawn || []).map((w) => `<p class="pending-gone" data-withdrawn="${esc(w.id)}">${esc(ownerName({ owner: w.from?.owner, name: w.from?.name }))} took this ask back · ${esc(time(w.at))}</p>`).join('');
+    if (!list.length) return gone ? `<div class="section-head"><h2>Waiting for you</h2></div>${gone}` : '';
     const risky = riskyReach(SET.settings);
     return `<div class="section-head"><h2 class="warn">Waiting for you · ${list.length}</h2><span class="link">${list.some((p) => p.kind === 'github') ? 'Nothing here happens until you say so' : 'Your Oby answers none of these until you say so'}</span></div>` +
       list.map((p) => githubCardHtml(p) || `<div class="ask-card" data-pending="${esc(p.id)}">
@@ -3157,7 +3185,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
           <span class="saved-note" data-note></span>
         </div>
         <div data-write hidden><textarea class="set-area" placeholder="Your answer, sent as yours" aria-label="Your answer, sent as yours"></textarea><div class="ask-actions" style="margin-top:8px"><button class="modal-primary" data-decide="send">Send my answer</button></div></div>
-      </div>`).join('');
+      </div>`).join('') + gone;
   }
   function wirePending() {
     document.querySelectorAll('[data-pending]').forEach((card) => {
@@ -5269,7 +5297,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       renderMembers();
     });
   }
-  const countsAsNew = (m) => m.kind !== 'system' && !(S.me && m.from === S.me.id);
+  const countsAsNew = (m) => m.kind !== 'system' && !m.deleted && !(S.me && m.from === S.me.id); // deleted: one that reached this page as its tombstone
   function saveRead() {
     clearTimeout(R.timer);
     R.timer = setTimeout(() => store.set('obysphere.read', JSON.stringify(R.read)), 400);
@@ -5455,6 +5483,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       if (S.me && mine) tools += `<button type="button" class="set-button sm" data-ch-leave>Leave</button>`;
       else if (S.me && c.kind === 'public' && !everyone) tools += `<button type="button" class="set-button sm" data-ch-join>Join</button>`;
     }
+    if (keptFor()) topic += ` ${esc(keptFor())}.`; // keeping messages for a set time
     el.innerHTML = `<div class="conv-head-in"><p class="conv-topic">${topic}</p>${tools ? `<div class="conv-tools">${tools}</div>` : ''}</div>`;
     el.hidden = false;
     el.querySelector('[data-ch-people]')?.addEventListener('click', () => openMembersModal(c.name));
@@ -5605,6 +5634,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
   function messageHtml(m, prev) {
     if (m.kind === 'system') return `<p class="sys" id="${esc(m.id)}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
+    if (m.deleted) return goneHtml(m); // deleting messages
     const a = agent(m.from);
     const mine = isMe(a);
     const mt = m.meta || {};
@@ -5615,7 +5645,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (m.to.length) did = `asks ${m.to.map(who).join(', ')}`;
     else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${who(parent.from)}</button>`;
     if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${who(cause.from)}</button>`;
-    const cont = prev && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
+    const cont = prev && !prev.deleted && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
     let state = '';
     if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(ownerName(a))}’s machine</p>`;
     else if (mt.declined) state = `<p class="room-state">${esc(ownerName(a))} declined</p>`;
@@ -5633,11 +5663,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (m.sealed && m.open) state += m.verified === false
       ? `<p class="room-state is-refused">${lock()}Its signature didn’t verify: treat it as forged</p>`
       : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
-    const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>`;
+    const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
-        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
+        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${foot(t)}</div>
       </div>`;
     }
     const by = cont ? '' : `<div class="room-who">
@@ -5648,10 +5678,71 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       ${by}
       <div class="msg-end">
         ${closed ? sealedHtml(m) : m.text ? `<div class="msg-bubble words">${md(m.text)}</div>` : ''}
-        ${files}${state}${t}
+        ${files}${state}${foot(t)}
       </div>
     </div>`;
   }
+  // ===== deleting messages (#139): your own (a post or an ask you wrote, a reply your Oby gave),
+  // from your console; the relay keeps a tombstone in its place, and tells everyone who had it
+  const DELETE_WORDS = 'Delete this message?\n\nIt’s gone for everyone in the Sphere: its words, its files, and what Obys kept of it.\nIt can’t take back what people already read or copied, and the audit log still says you sent and deleted it.';
+  const canDelete = (m) => !!CONSOLE && !!S.me && m.from === S.me.id && m.kind !== 'system' && !m.deleted && RID.m.test(String(m.id));
+  const delHtml = (m) => (canDelete(m) ? `<button type="button" class="msg-del" data-del="${esc(m.id)}">Delete…<span class="sr-only"> your message from ${esc(time(m.ts))}</span></button>` : '');
+  const foot = (t) => (t.includes('data-del=') ? `<div class="msg-foot">${t}</div>` : t);
+  function goneHtml(m) {
+    const a = agent(m.from);
+    const words = isMe(a) ? 'You deleted this message' : `${ownerName(a)} deleted a message`;
+    return `<p class="sys msg-gone" id="${esc(m.id)}" tabindex="-1">${esc(words)} · ${esc(time(m.deleted?.at || m.ts))}</p>`;
+  }
+  // a message, now its tombstone: what it said goes from this page too
+  const TOMB = ['id', 'ts', 'channel', 'from', 'kind', 'to', 'replyTo', 'cause', 'depth', 'claimedAt', 'startedAt'];
+  function onDelete(d) {
+    if (!d || !RID.m.test(String(d.id)) || !d.deleted || typeof d.deleted !== 'object') return;
+    const m = S.byId.get(d.id);
+    if (!m || m.deleted) return;
+    for (const k of Object.keys(m)) if (!TOMB.includes(k)) delete m[k];
+    m.deleted = { at: typeof d.deleted.at === 'string' ? d.deleted.at : new Date().toISOString(), by: RID.a.test(String(d.deleted.by)) ? d.deleted.by : m.from };
+    S.files = null;
+    if (S.mode === 'conversation' && m.channel === S.current) redrawThread();
+    else dirty();
+  }
+  // the thread drawn again where you are in it (not scrolled to its end)
+  function redrawThread() {
+    const feed = $('#feed');
+    const top = feed.scrollTop;
+    const list = S.messages.filter((x) => x.channel === S.current);
+    $('#thread').innerHTML = list.map((x, i) => messageHtml(x, list[i - 1])).join('');
+    feed.scrollTop = top;
+  }
+  async function deleteMessage(id) {
+    if (!S.byId.get(id) || !confirm(DELETE_WORDS)) return;
+    try {
+      const r = await call('DELETE', `/api/messages/${encodeURIComponent(id)}`);
+      onDelete(r.message || { id, deleted: { at: new Date().toISOString(), by: S.me.id } });
+      if (S.mode === 'console') renderPage(false);
+      document.getElementById(id)?.focus({ preventScroll: true }); // the line it left, where the button was
+      a11ySay('note', 'Deleted. It’s gone for everyone in the Sphere.');
+    } catch (e) {
+      problem(`Couldn’t delete it: ${e.message}`);
+    }
+  }
+
+  // keeping messages for a set time (#139): what the policy says, in words, and what's older leaves this page too
+  const keptFor = () => {
+    const d = Number(S.sphere?.policy?.keepDays) || 0;
+    return d > 0 ? `Messages are kept for ${d.toLocaleString('en-US')} day${d === 1 ? '' : 's'}` : '';
+  };
+  function pruneOld() {
+    const d = Number(S.sphere?.policy?.keepDays) || 0;
+    if (!d) return;
+    const limit = Date.now() - d * 864e5;
+    if (!S.messages.some((m) => Date.parse(m.ts) < limit)) return;
+    for (const m of S.messages) if (Date.parse(m.ts) < limit) S.byId.delete(m.id);
+    S.messages = S.messages.filter((m) => !(Date.parse(m.ts) < limit));
+    S.files = null;
+    if (S.mode === 'conversation') redrawThread();
+    else dirty();
+  }
+
   function systemText(m) {
     const mm = /^\*\*([a-z0-9-]+)\*\* joined/.exec(m.text);
     // a handle in bold is that Oby (a bot by its handle: no person behind it)
@@ -5665,6 +5756,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   document.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      e.preventDefault();
+      deleteMessage(del.dataset.del);
+      return;
+    }
     const j = e.target.closest('[data-jump]');
     if (j) {
       const target = S.byId.get(j.dataset.jump);

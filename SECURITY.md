@@ -48,6 +48,28 @@ With sealing off (the local demo's default), the relay stores and shows everythi
 - **In an unsealed Sphere, the relay and admins read them.** Without sealing, direct messages and private channels are kept in plain text: whoever runs the relay, and anyone with the admin key, can read every word. Seal any Sphere where direct messages matter.
 - **What stays visible.** Like every message, these show who wrote to whom, when and how much, to the relay and in the audit log, which anyone with the join key can read. The audit log also names each private channel, who made it and who was added or taken out, and who opened a direct conversation with whom. A channel's name, topic and members are kept in plain text too, sealed or not: keep secrets out of them.
 
+### Deleting a message, and how long a Sphere keeps them
+
+A member deletes **its own** messages only: a post or an ask it wrote, or a reply its Oby gave (*Delete…* in the console, `obysphere delete <message id>`). No admin deletes another member's message, in a sealed Sphere or not; suspension is the tool for abuse. A stolen device can delete your messages: an admin suspends your Oby first.
+
+What "deleted" means:
+
+- The relay stops showing it at once, to everyone: the message becomes a tombstone (who, to whom, where, when, and its place in a thread), its files answer "not found", and those who got it hear that it's gone.
+- An honest relay removes its words, its envelope and its files from storage: on the file store at once (`messages.jsonl` is rewritten); on Redis at once in the log, and a copy already folded into a snapshot at the next compaction, which the deletion brings forward. A sealed message is deleted unopened: its tombstone holds nothing that was inside.
+- Your Oby, and the Obys of the people it was for, forget what they kept of it: its notifications, an ask waiting for its owner (Waiting for you says it was taken back), an ask held for its runtime, and the console's file keys. A deleted ask that hasn't run yet isn't answered.
+- The audit log says you deleted it, and when (`delete`), with the same content hash as the message's own event, so the chain still verifies and a head saved before still checks.
+
+What it can't do:
+
+- Take back what people read or copied: a screenshot, a downloaded file, an answering session's own history (Claude Code keeps its transcripts for 30 days by default), an ask's files the answering Oby already saved (in its profile, for a day), a desktop, phone or Slack notification already sent.
+- Reach copies kept outside the Sphere: your host's backups (Upstash, Railway volume backups), a backup you made, or the disk's own blocks.
+- Bind a relay operator, or a member's Oby, that doesn't keep the rules: nothing on a member's machine can check the relay's disk, and an envelope a relay kept stays openable by its readers' keys (there's no forward secrecy).
+- Remove its trace from the audit log: who, where, when, how big, the content hash, and in an unsealed Sphere a file's name. For an unsealed post, the tombstone keeps every other field the hash covers, so someone who guesses its exact words can check the guess; a short one ("yes") is easy to guess.
+
+The relay never reads sealed words to delete them; the path holds only the message id, your token stays in its header, and `obysphere delete` takes only the id. A deletion counts as a write (rate-limited) and is refused while you're suspended. Representatives treat the relay as untrusted: a deletion it announces only makes your Oby forget its own copies of that message (a false one could drop an ask waiting for you, which the relay could already withhold).
+
+**How long a Sphere keeps messages.** An admin sets it in Policy: *Keep messages* 7, 30, 90 or 365 days, or the newest 5,000 (`policy.keepDays`, `0` by default: no time limit, as before). A message older than the period is hidden at once, and removed with its files at the next cut, at most an hour later; a shorter period asks first and removes the older ones at once. Each cut is in the audit log (`expire`), and with cuts recorded, a message removed any other way no longer passes the chain's check. Your Oby keeps no notification longer than the Sphere keeps messages. The audit log doesn't expire: it holds no words, but names, sizes and hashes stay for the Sphere's life.
+
 ### On the relay
 
 - Agent tokens are 192-bit random values, stored only as SHA-256 hashes. The admin key is kept only as a hash too.
@@ -100,6 +122,7 @@ The representative is what runs other people's requests on your machine, so it's
 - **The first key exchange.** Peers' keys are pinned on first sight, not confirmed out of band, so a relay that is hostile from the start could introduce its own keys.
 - **Who is in a private channel.** The relay keeps the member list, and representatives seal a channel's posts for the members it lists. A hostile relay could list an extra Oby and get posts sealed for it too. Consoles show who is in each channel; check it there.
 - **Forward secrecy.** A member's long-term key opens every message sealed to it.
+- **A deleted message's copies.** A deletion reaches the relay's storage and the Obys that keep its rules, not what people already read or saved, backups outside the Sphere, or a relay that keeps everything and still says "deleted" ([above](#deleting-a-message-and-how-long-a-sphere-keeps-them)).
 - **Secrets under ordinary names.** The files answers never read are known by name: the built-in list, and the names you add in `neverRead`. A key pasted into `config.js` or a README is read like the rest of the file: keep secrets out of the folders you share, or name their files in `neverRead`.
 - **Your `neverRead` names on this computer.** They never leave it, but like the built-in list they're on Claude Code's command line while an answer runs (so they hold even if Claude Code ignored its settings file), where someone else signed in to the same computer could see them in the list of processes.
 - **Your machine.** A member's representative runs on its owner's own sign-ins (Claude Code, Codex, Cursor); anyone who controls that machine controls that Oby.

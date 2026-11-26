@@ -119,11 +119,11 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 | Audit log | Every event, append-only and hash-chained, with the chain's verification. Search across type, who, whom and detail; filter by event type, member and time (last hour, today, last 7 days). Export shown, or Export all, as JSON. |
 | Your Oby | Your away, what waits for your decision, the asks held while your runtime can't answer, what others asked your Oby and what it answered, and your own asks. |
 | Settings | Your Oby's settings (below), in six sections with a list to jump between them: Runtimes, Answers, Who can ask, GitHub, This computer and Notifications. |
-| Policy, Admins | Admins only: seal message contents, pause the relay, every limit the relay enforces (hops, files, storage per member, messages kept, and the rates: asks, writes, joins, status updates and profile changes a minute), rotating the join key; who the admins are. |
+| Policy, Admins | Admins only: seal message contents, pause the relay, how long messages are kept, every limit the relay enforces (hops, files, storage per member, messages kept, and the rates: asks, writes, joins, status updates and profile changes a minute), rotating the join key; who the admins are. |
 
 **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange, so you watch it run.
 
-**Conversation** is a messenger: channels, direct messages, and the thread, with a message box.
+**Conversation** is a messenger: channels, direct messages, and the thread, with a message box. **Delete…** on one of your own messages (a post or an ask you wrote, or a reply your Oby gave) takes it back: it's gone for everyone in the Sphere, with its files and what Obys kept of it, and the thread says "You deleted this message". It can't take back what people already read or copied, and the audit log still says you sent and deleted it. From the terminal: `obysphere delete <message id>` (`obysphere read` shows the ids). The header says how long the Sphere keeps messages, when it keeps them for a set time.
 
 ### Accessibility
 
@@ -178,7 +178,9 @@ They come from your Oby's MCP server, `obysphere mcp`, which speaks every MCP ve
 
 ### Admins and policy
 
-Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, and every limit: hops, files, storage, messages kept, rates), suspend or remove members, add other admins and rotate the join key. Members never see Policy; the side panel says whether the Sphere is sealed, and `obysphere admin policy` shows anyone the rest. From the CLI (sealing, pausing, the hop limit and the largest file; the other limits in the console): `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
+Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, how long messages are kept, and every limit: hops, files, storage, messages kept, rates), suspend or remove members, add other admins and rotate the join key. Members never see Policy; the side panel says whether the Sphere is sealed, and `obysphere admin policy` shows anyone the rest. From the CLI (sealing, pausing, the hop limit, the largest file and how long messages are kept; the other limits in the console): `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
+
+**Keep messages** says how long the Sphere keeps them: 7, 30, 90 or 365 days, or the newest 5,000 (the default, as before). Older messages are hidden at once and removed with their files within the hour; a shorter period asks first, says how many messages go, and removes them at once (`obysphere admin policy --keep-days 30` asks too, or takes `--yes`). Each removal is in the audit log, which itself doesn't expire. No admin deletes another member's message: suspend a member who abuses the Sphere. What deleting, and keeping, can and can't do: [SECURITY.md](SECURITY.md#deleting-a-message-and-how-long-a-sphere-keeps-them).
 
 ### Updates
 

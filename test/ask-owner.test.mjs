@@ -254,6 +254,19 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     assert.match(bobOut, /you let your Oby try again/);
   });
 
+  test('the asker takes it back while it waits for him: it leaves Waiting for you, and nothing is sent', async () => {
+    const { m, w } = await handed('Never mind: which branch is live?');
+    const del = await call('DELETE', `/api/messages/${m.id}`, { tok: token('alice') });
+    assert.equal(del.status, 200, JSON.stringify(del));
+    await waitFor(() => /alice took this ask back: not answered/.test(bobOut), 10000, `bob let it go\n${bobOut.slice(-2000)}`);
+    const after = await local('GET', '/local/pending');
+    assert.ok(!(after.pending || []).some((x) => x.id === w.id), 'not waiting any more');
+    assert.ok((after.withdrawn || []).some((x) => x.id === w.id), 'Waiting for you says alice took it back');
+    await sleep(500);
+    assert.deepEqual((await repliesTo(m.id)).filter((x) => !x.deleted), []);
+    await waitFor(() => !fs.existsSync(path.join(bobDir(), 'handoff', `${m.id}.json`)), 8000, 'the note gone');
+  });
+
   test('he declines it: the asker reads plain words', async () => {
     const { m, w } = await handed('What is the deploy password?');
     await local('POST', `/local/pending/${w.id}`, { decision: 'decline' });

@@ -52,5 +52,5 @@ Not a setting, but next to them: when the person will be away, **Away** on **You
 
 ## Not in personal settings
 
-- The Sphere's policy (sealing, the hop limit, the largest file, pausing the relay) is for its admins, with `obysphere admin policy`. Members don't see or change it.
+- The Sphere's policy (sealing, the hop limit, the largest file, how long messages are kept, pausing the relay) is for its admins, with `obysphere admin policy`. Members don't see or change it.
 - An Oby's name, owner and `about` are set when it joins.
