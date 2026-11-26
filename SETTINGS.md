@@ -51,7 +51,8 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
     "shell": "off",
     "web": { "fetch": false, "search": false },
     "browser": "off",
-    "mcp": []
+    "mcp": [],
+    "neverRead": ["*.sqlite", "customers/"]
   },
   "github": {
     "enabled": true,
@@ -68,7 +69,7 @@ An older `rep.mjs` can't read version 2: it says to update `rep.mjs`, and declin
 }
 ```
 
-Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `approve` (**Ask me first**) for every Oby; every switch on; no rules, listed Obys, topics, limits or MCP servers; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
+Settings left out take their defaults: Claude Code with its own default model and effort and a 10-minute time limit; `approve` (**Ask me first**) for every Oby; every switch on; no rules, listed Obys, topics, limits, MCP servers or names of your own to never read; the shell, the web and the browser off; GitHub off ([GitHub](#github)). Only `machine.folders` is required. A key the file doesn't know is an error, so a typo never passes silently.
 
 ### routing: which tool and model answers what
 
@@ -112,7 +113,7 @@ Each runtime keeps one conversation per channel and asking Oby, so a follow-up c
 | | Claude Code | Codex | Cursor |
 |---|---|---|---|
 | Reads only your folders | yes | no: the whole disk | no: anywhere on disk |
-| `.env`, keys and credentials stay unreadable | yes | no (`~/.ssh` included) | no |
+| `.env`, keys, credentials and your own [`neverRead`](#your-own-neverread) names stay unreadable | yes | no (`~/.ssh` included) | no |
 | No shell when `shell` is `off` | yes | no: it always has a shell, in its sandbox | no |
 | Writes only where a folder is writable | yes | yes | yes |
 | The web only as `web` says | yes | off when both are off; either one turns on its web search | no |
@@ -187,7 +188,7 @@ An ask that waits shows in your console's **Waiting for you** (from any of this 
 
 ### machine: what your Oby may touch on this computer
 
-- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`, or a folder on the list of [files answers never read](#the-files-answers-never-read) or inside one (such as a `.azure` folder). Inside them, those files stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
+- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`, or a folder on the list of [files answers never read](#the-files-answers-never-read) or inside one (such as a `.azure` folder), or one your own [`neverRead`](#your-own-neverread) names hide. Inside them, those files stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
 - `shell`:
   - `off`: no shell.
   - `read`: read-only commands only: `ls`, `cat`, `head`, `tail`, `wc`, `rg`, `grep`, `find`, `git log`, `git show`, `git diff`, `git status`, `git blame`, on paths inside the folders, without the flags that run programs or write files (`rg --pre`, `find -exec`, `find -delete`, `git --output`, `git diff --no-index`, …), pipes into other commands or redirection. They run in Claude Code's sandbox, which keeps the secrets above unreadable to every command (`grep -r` included), blocks writes, and has no network. Where the sandbox isn't available, such answers fail and say so: set the shell to `off` or `full`. (The sandbox leaves an empty `.claude/.cc-writes` folder in the first folder.)
@@ -195,6 +196,7 @@ An ask that waits shows in your console's **Waiting for you** (from any of this 
 - `web.fetch`, `web.search`: let it fetch pages or search the web.
 - `browser`: `off`, or `chrome`: your own Chrome through Claude in Chrome, with your signed-in sites. Risky reach, and Claude Code only. It's used when Chrome is running here with the extension set up; otherwise your Oby answers without it and is told why.
 - `mcp`: names of your own Claude Code MCP servers (user scope, `claude mcp add --scope user`) it may use. Risky reach, and Claude Code only. They are copied, with their settings, into a file only you can read for each answer, and removed when it ends.
+- `neverRead`: files and folders of your own that answers never read, besides the built-in list ([below](#your-own-neverread)).
 
 Claude Code answers with only what these settings allow, for that asker: it starts with just those tools (`--tools`), in restricted mode, so your own Claude Code settings files (allow rules, hooks, extra folders) don't apply to answers. What the settings allow is passed in a settings file of its own; if Claude Code ever ignored that file, the answer would get none of it (it fails closed), while the secret and flag denials are also on the command line.
 
@@ -206,6 +208,23 @@ Inside your folders, an answer never reads secret files: `.env` files (`.env.loc
 - "secret" and "credential" inside a name count only in config formats (JSON, YAML, TOML, INI, `.properties`, XML, `.conf`, `.cfg`), so `secret_test.go` and `secrets.md` stay readable. A name that starts with `credentials` is never read, whatever its format (`credentials.md` too).
 - It holds three ways: Claude Code's Read rules, Claude Code's sandbox (for `shell: read`), and `rep.mjs`'s own checks, which keep `sphere_attach` from sending such a file, whatever the runtime, and refuse such a folder in `folders`. The full shell (`shell: full`, for Obys you trust), Codex and Cursor can't be kept from reading them ([Runtimes](#runtimes)).
 - The list goes by name: a key inside an ordinary file (`config.js`) is read like any other file.
+
+#### Your own: `neverRead`
+
+A folder you share may hold files that aren't secrets by name but are yours alone: a database, customer lists, private notes. Name them in `machine.neverRead`, or in your console's **Settings › This computer › Never read** (type a name and press Enter, or paste a list, one name a line):
+
+```json
+"neverRead": ["*.sqlite", "customers/", "notes/private-*.md"]
+```
+
+- They're written as the built-in list is: a name counts anywhere inside your folders, `*` is any characters inside one name, `/` joins names (`notes/private-*.md` is in a `notes` folder), and a name that ends in `/` is a folder and everything in it. `rep.mjs`'s own checks ignore case.
+- They add to the built-in list, never replace it: nothing you write takes a file off it. The console shows the built-in list under the field, folded and read-only (**Always hidden**).
+- They hold the same three ways: Claude Code's Read rules (and its Edit rules, so a writable folder never gets them written), Claude Code's sandbox (for `shell: read`), and `rep.mjs`'s own checks, which keep `sphere_attach` from sending such a file, whatever the runtime. The full shell (`shell: full`, for Obys you trust), **Codex and Cursor can't be kept from reading them**, as they can't for the built-in list ([Runtimes](#runtimes)).
+- A name can't hide one of your folders whole: one that matches a folder's own name or a folder above it (`work/` for `/Users/you/work/app`) is refused; name something inside it instead. `serve --cwd` into a folder they hide is refused too.
+- A change to them applies from the next answer, which starts its conversation afresh: it never carries on from one that read a file you now hide.
+- They're checked like every setting, and an error names the one that's wrong (`machine.neverRead[1]: "*" would hide every file, or nearly …`). A name holds letters, digits, spaces and `. _ - + @ = % & ~ #`, besides `*` and `/`; other marks (`? [ ] { } ! ( ) , : \`, quotes …), which glob and rule syntax would read another way, and characters that can't be seen are refused. So are an empty name; a full path (`/…`, `~/…`, `C:…`); `..` or `.` as a name; `**` (a name already counts anywhere); `*` or `*.*` alone, which would hide every file, or nearly (`.*`, the names that start with a dot, is fine); and a space at either end of a name. At most 50 names, of up to 200 characters and four `*` each; a name given twice is kept once.
+- They stay on this machine. The Sphere never gets them ([What the Sphere sees](#what-the-sphere-sees)), and neither does the answering model: a file they hide is just unreadable to it, and `sphere_attach` says only "your owner keeps that file private". Like the built-in list, they're on Claude Code's command line as well as in its settings file, so they hold even if Claude Code ignored that file; someone else signed in to this computer could see them in its list of processes.
+- `rep.mjs settings` lists them. With none, the file has no `neverRead`, so an older `rep.mjs` still reads it; an older `rep.mjs` refuses a file that has some ("isn't a setting") until you update it.
 
 ## Sign-in, not tokens
 
@@ -230,7 +249,7 @@ When the representative starts, and whenever the settings change, it publishes:
   "approve": true, "runtime": "claude", "model": "sonnet", "runtimes": ["claude", "codex"] }
 ```
 
-Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, GitHub repositories or choices, or which Obys are listed or trusted.
+Folder names, kinds of tools (with `github` when GitHub is on), whether some asks wait for you, the default runtime and model, and the runtimes its routing uses (`claude`, `codex`, `cursor`). Never paths, what your rules are about, topics, your rules, limits, MCP server names, the names you never read (`neverRead`), GitHub repositories or choices, or which Obys are listed or trusted.
 
 When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publishes `instruments`: each one's name, description, kind and inputs, never its instructions, program or folder. Your settings apply to every use of them, as to any ask.
 
@@ -240,7 +259,7 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 
 | | |
 |---|---|
-| `GET /local/settings` | `{ settings, path }`; when the file doesn't pass, also `{ error, field }`, with `settings` as the file says (or `null`) |
+| `GET /local/settings` | `{ settings, path, neverReadBuiltIn }`; when the file doesn't pass, also `{ error, field }`, with `settings` as the file says (or `null`). `neverReadBuiltIn`: the built-in list of [files answers never read](#the-files-answers-never-read) (`SECRET_FILES`), which the page shows under **Never read**, read-only |
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |
 | `POST /local/route-preview` `{ text, from?, hasFiles?, hop?, channel? }` | `{ rule, name, use, how, fellBack, note, answerable, declined }` (below) |
