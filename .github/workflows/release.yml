@@ -51,8 +51,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # a pre-release (0.4.0-rc.1) is marked so: install.sh, obysphere update and the image's
+          # :latest all stay on the last release
+          pre=()
+          case "$version" in *-*) pre=(--prerelease) ;; esac
           gh release create "$GITHUB_REF_NAME" "obysphere-$version.tar.gz" SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag "${pre[@]}"
 
   # ===== docker-image: the published image, after the tests and the release above
   image:

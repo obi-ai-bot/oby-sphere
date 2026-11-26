@@ -500,6 +500,23 @@ describe('the release workflow publishes the image', () => {
     assert.match(bad.stderr, /can't be a Docker tag/);
   });
 
+  test('a pre-release is marked so on GitHub, so install.sh and obysphere update stay on the last release', { skip: !POSIX && 'needs bash' }, () => {
+    const create = parseYaml(read('.github/workflows/release.yml')).jobs.release.steps.find((s) => s.name === 'Create the release');
+    const runCreate = (tag) => {
+      const dir = tmp('gh');
+      const args = path.join(dir, 'args');
+      fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${args}'\n`, { mode: 0o755 });
+      // as GitHub runs a step's script, with a fake gh first on PATH
+      const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', create.run], { env: { PATH: `${dir}${path.delimiter}${process.env.PATH}`, GITHUB_REF_NAME: tag, GITHUB_REPOSITORY: 'obi-ai-bot/oby-sphere', GH_TOKEN: 'x' }, encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      return fs.readFileSync(args, 'utf8').trim().split('\n');
+    };
+    const rel = runCreate('v0.4.0');
+    assert.deepEqual(rel.slice(0, 5), ['release', 'create', 'v0.4.0', 'obysphere-0.4.0.tar.gz', 'SHA256SUMS']);
+    assert.ok(!rel.includes('--prerelease'), 'a release is the latest');
+    assert.ok(runCreate('v0.4.0-rc.1').includes('--prerelease'), 'a pre-release is marked so: GitHub\'s latest, which they ask for, stays on the last release');
+  });
+
   test('CI builds and checks the image on every pull request, and publishes nothing', () => {
     const ci = parseYaml(read('.github/workflows/ci.yml'));
     assert.ok('pull_request' in ci.on);
