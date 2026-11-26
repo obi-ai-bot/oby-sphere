@@ -95,7 +95,9 @@ const DEFAULT_POLICY = {
   rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 },
   sealed: false,
 };
-// ===== the limits an admin may change (POST /api/admin/policy): each a whole number within a range, and why
+// ===== the limits an admin may change (POST /api/admin/policy): each a whole number within a range, and why.
+// The command line and environment set some of them too (--max-file-bytes, --asks-per-min, --writes-per-min):
+// those are the operator's, applied at every start without these ranges.
 const KB = 1024;
 const MB = 1024 * KB;
 const GB = 1024 * MB;
@@ -104,13 +106,16 @@ const POLICY_LIMITS = [
   // 0 stops Obys asking Obys; past 10 hops, one question reaches further than anyone can follow,
   // and every hop is a model run on someone's machine
   { key: 'maxDepth', min: 0, max: 10, words: 'hop limit' },
-  // a file is held whole while it's checked and stored. On Redis each file is one value sent in one
-  // request, and Upstash and Vercel cap a request near 1 MB; on disk, 50 MB keeps one file from filling a small server
-  { key: 'maxFileBytes', min: KB, max: ON_REDIS ? MB : 50 * MB, words: 'file limit', bytes: true },
-  // at least one, or no message could carry a file; a message is at most 16 MB of JSON, so more than 50 adds nothing
+  // a file is held whole while it's checked and stored. On Redis each file is one value, sent in one
+  // request as base64 (a third bigger) and held in the database's memory: at most 1 MB, as before; on
+  // disk, 50 MB keeps one file from filling a small server
+  { key: 'maxFileBytes', min: KB, max: ON_REDIS ? MB : 50 * MB, words: 'largest file', bytes: true },
+  // at least one, or no message could carry a file. Each file is a record the relay keeps and every
+  // reader is sent; past 50, a message is an archive, and an archive is one file
   { key: 'maxFilesPerMessage', min: 1, max: 50, words: 'files per message' },
-  // all of one member's files together (each counts at least 1 KB). On Redis they share one database
-  // (Upstash's free one holds 256 MB in all), so one member takes at most 100 MB; on disk, 10 GB
+  // all of one member's files together (each counts at least 1 KB); at least 1 MB, so a member can share one
+  // file. On Redis everyone's files share one database (Upstash's free one holds 256 MB in all), so one
+  // member takes at most 100 MB there; on disk, 10 GB
   { key: 'maxAgentBytes', min: MB, max: ON_REDIS ? 100 * MB : 10 * GB, words: 'storage per member', bytes: true },
   // every kept message lives in memory (on Redis, in every instance): 50,000 are about 100 MB at a typical
   // length. Fewer than 100 would drop a busy day's conversation before anyone read it
@@ -118,14 +123,17 @@ const POLICY_LIMITS = [
   // an ask starts a model run on someone's machine: 1 a minute still lets a person ask; 600 (ten a second)
   // is past what any person sends, and still stops Obys caught asking each other in a loop
   { key: 'asksPerMin', rate: true, min: 1, max: 600, words: 'asks per minute' },
-  // messages, uploads and channel changes: an Oby needs one per answer, so fewer than 10 would refuse a busy
-  // one's answers; 3,000 is fifty a second
+  // every message (an ask and its answer too), upload and channel change: fewer than 10 would refuse a
+  // busy Oby's answers; 3,000 is fifty a second, past what one member's machine sends
   { key: 'writesPerMin', rate: true, min: 10, max: 3000, words: 'writes per minute' },
-  // per client address: a team behind one office address shares it, so up to 600; at 1, one join a minute
+  // per client address, failed tries too: a team behind one office address shares it, so up to 600;
+  // 1 still lets a person join, and slows anyone guessing the key
   { key: 'joinsPerMinPerIp', rate: true, min: 1, max: 600, words: 'joins per minute per address' },
-  // an answering Oby says "working" and then "done" for every ask: fewer than 10 would refuse a busy one's
+  // an answering Oby says "working" and then "done" for every ask: fewer than 10 would refuse a busy
+  // one's; 1,200 is twenty a second
   { key: 'statusPerMin', rate: true, min: 10, max: 1200, words: 'status updates per minute' },
-  // an Oby changes its profile when it starts and when its owner's settings change
+  // an Oby changes its profile when it starts and when its owner's settings change: 1 a minute is
+  // enough for that; 600 is past any owner's clicking
   { key: 'mePerMin', rate: true, min: 1, max: 600, words: 'profile changes per minute' },
 ].map((l) => ({ ...l, field: l.rate ? `rate.${l.key}` : l.key, show: (v) => (l.bytes ? fmtBytes(v) : Number(v).toLocaleString('en-US')) }));
 
@@ -223,7 +231,7 @@ function apply(op, liveEvents = true) {
       // rate limits merge one by one: an operation may carry only the ones it changes
       if (op.policy) S.policy = mergePolicy({ ...S.policy, ...op.policy, rate: { ...S.policy.rate, ...(op.policy.rate || {}) } });
       if (typeof op.paused === 'boolean') S.paused = op.paused;
-      // fewer messages kept: the older ones go now (the fs store's log follows at its next compaction)
+      // fewer messages kept: the older ones go now (the fs store compacts its log as it saves this)
       if (op.policy?.retainMessages && messages.length > S.policy.retainMessages) trimMemory();
       ev.push(['policy', { paused: S.paused, policy: S.policy }, ALL]);
       break;
@@ -561,9 +569,12 @@ function fsStore() {
         return appendLog({ f: op.f });
       case 'audit':
         return auditOut.write(JSON.stringify(op.e) + '\n');
+      case 'policy':
+        // fewer messages kept: the log on disk lets the older ones go now too
+        if (op.policy?.retainMessages && msgLines > op.policy.retainMessages + Object.keys(S.files).length) compact();
+        return save(true);
       case 'init':
       case 'sphere':
-      case 'policy':
       case 'role':
         return save(true);
       case 'agent':
