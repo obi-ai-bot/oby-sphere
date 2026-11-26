@@ -823,6 +823,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 /* when an Oby can't answer (#160): away (its owner's, or its runtime's pause), or offline since when.
    One line; a long away note is cut, and whole on hover */
 .status-dot.is-away { background: var(--needs); }
+/* an ask that waits for its Oby's owner to OK it, and one that lapsed without their OK */
+.status-dot.is-owner { background: var(--needs); }
+.status-dot.is-lapsed { background: var(--muted); }
 .mem-state .state { max-width: 220px; }
 @media (max-width: 980px) { .mem-state .state { max-width: 170px; } }
 .mem-avail { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1432,18 +1435,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const deadline = !reply && ask.kind === 'ask' && ask.neededBy ? Date.parse(ask.neededBy) : NaN;
     const late = deadline < Date.now();
     const endMs = reply ? Date.parse(reply.ts) : ask.kind === 'post' ? posted : late ? deadline : null;
+    // its owner's settings say "Ask me first": the Oby waits for their OK, until a time (an older Oby says nothing)
+    const w = ask.waiting;
+    const ownerWait = !reply && w?.for === 'owner' && (!w.by || w.by === target?.id) && Date.parse(w.until) > Date.now();
     let status = 'answered';
     if (ask.kind === 'post') status = 'posted';
-    else if (reply) status = reply.meta?.expired ? 'expired' : reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
+    else if (reply) status = reply.meta?.lapsed ? 'lapsed' : reply.meta?.expired ? 'expired' : reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
     else if (target?.status?.state === 'working' && target.status.about === ask.id) status = 'working';
     else if (late) status = 'expired';
+    else if (target?.online && ownerWait) status = 'owner';
     else if (target && awayOf(target)) status = 'away';
     else if (target && !target.online) status = 'offline';
     else status = 'waiting';
     return { ask, target, reply, posted, claimed, started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
   }
 
-  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', expired: 'Expired', error: 'Failed', posted: 'Posted' };
+  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted' };
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
@@ -1772,7 +1779,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
         if (r.model) meta.push(esc(plainModel(r.model)));
         if (s.endMs && s.started && r.answeredBy !== 'owner') meta.push(`worked ${fmtMs(s.endMs - s.started)}`);
-        if (s.status === 'waiting') meta.push('not taken yet');
+        if (s.status === 'waiting') meta.push(s.ask.claimedAt ? 'taken, not started yet' : 'not taken yet');
+        if (s.status === 'owner') meta.push(`waiting for ${esc(ownerName(s.target))}’s OK`, `lapses at ${esc(whenWords(s.ask.waiting.until))}`);
         if (s.status === 'expired' && !s.reply) meta.push('its deadline passed');
         if (s.status === 'away') { const w = awayOf(s.target); meta.push(`${esc(obyOf(s.target))} ${w?.until != null ? `can answer after ${esc(whenWords(w.until))}` : 'is away'}`); }
         if (s.status === 'offline') meta.push(`${esc(obyOf(s.target))} is offline${s.target.lastSeen && whenWords(s.target.lastSeen) ? ` since ${esc(whenWords(s.target.lastSeen))}` : ''}`);
@@ -2804,6 +2812,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : 'Let my Oby answer'}</button>
+          ${p.always === true && p.from?.name ? `<button class="set-button" data-decide="always" title="Answers this one, and adds @${esc(p.from.name)} to Who can ask: its asks are answered from now on">Always answer @${esc(p.from.name)}</button>` : ''}
           ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
           <button class="set-button" data-decide="decline">Decline</button>

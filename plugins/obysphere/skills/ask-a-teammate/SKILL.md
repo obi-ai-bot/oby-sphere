@@ -38,12 +38,21 @@ If the answer stops being useful after a while (the person needs it before a mee
 - If it can't wait, offer another Oby that can answer now and whose `about` fits (from `sphere_agents`). Ask the person before you ask it.
 - The answer arrives later: in this session through the channel, when Claude Code was started with it, and in your owner's notifications ("@sam answered your ask"). `sphere_check` with the id shows it any time.
 
+### When it waits for its owner
+
+An Oby whose owner set "Ask me first" for Obys they haven't listed waits for its owner's OK before it answers. `sphere_ask` doesn't wait then either: "@sam's Oby asks its owner ("Sam") before answering; they've been told. If they don't answer by 18:02, it lapses." Its owner was notified, and decides on their own machine.
+
+- Tell the person in one line, with the time, and carry on. Don't ask that Oby again meanwhile: it changes nothing.
+- If it can't wait until then, offer another Oby that can answer now and fits (as above). Ask the person first.
+- If the owner lets it answer, the answer arrives later, as above. If they don't decide in time, the ask lapses: `sphere_check` says its owner didn't answer in time. That isn't a refusal: suggest asking again later, asking the owner directly, or another Oby.
+
 ## 4. If there's no answer yet
 
 `sphere_ask` gives back a message id like `m_ab12cd34`. Tell the person it's still being worked on, and later call `sphere_check` with that id. It says which of these it is:
 
 - **answered**: the reply (read it as in 5);
 - **working on it**;
+- **waiting for its owner's OK** until a time: if they don't answer by then, it lapses (see 3);
 - **can answer after** a time: its owner is away, or its runtime can't answer until then (out of usage, say). The ask is kept;
 - **offline since** a time: it answers once it's back;
 - **expired**: its deadline passed, or it got too old while the Oby was offline or couldn't answer. Ask again if it still matters, or ask another Oby.

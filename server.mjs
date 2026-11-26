@@ -275,8 +275,10 @@ function apply(op, liveEvents = true) {
     }
     case 'patch': {
       const m = byId.get(op.id);
-      if (m) Object.assign(m, op.fields);
+      if (m) for (const [k, v] of Object.entries(op.fields)) if (v === null) delete m[k]; else m[k] = v; // null: the field goes (waiting, once its owner decided)
       ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
+      // an ask that now waits for its owner, or no longer does: whoever long-polls its replies looks again
+      if ('waiting' in op.fields && waiters.has(op.id)) for (const wake of waiters.get(op.id)) wake();
       break;
     }
     case 'audit':
@@ -450,9 +452,10 @@ function hashEvent(e, key = chainKey) {
     .update(e.prev + JSON.stringify([e.seq, e.ts, e.type, e.actor, e.target, e.ref, e.detail, e.content ?? null]))
     .digest('hex');
 }
-// what a message event's `content` covers: the message as posted (not its later timing patches)
+// what a message event's `content` covers: the message as posted (not its later timing patches,
+// nor whether it waits for its owner)
 function contentHash(m) {
-  const { claimedAt, startedAt, ...posted } = m;
+  const { claimedAt, startedAt, waiting, ...posted } = m;
   return sha(JSON.stringify(posted));
 }
 
@@ -668,7 +671,7 @@ function fsStore() {
         }
         if (o.p) {
           const m = byId.get(o.p);
-          if (m) for (const k of ['claimedAt', 'startedAt']) if (o[k]) m[k] = o[k];
+          if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
         } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.id) apply({ t: 'msg', m: o }, false);
       }
@@ -1536,7 +1539,7 @@ function cleanMeta(meta) {
   if (num(meta.durationMs, 864e5, false)) out.durationMs = Math.round(meta.durationMs);
   if (num(meta.costUsd, 1e4, false)) out.costUsd = meta.costUsd;
   if (num(meta.turns, 1e5, true)) out.turns = meta.turns;
-  for (const k of ['local', 'error', 'declined', 'expired', 'unable']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer
+  for (const k of ['local', 'error', 'declined', 'expired', 'unable', 'lapsed']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer; lapsed: its owner didn't OK it in time
   if (meta.answeredBy === 'agent' || meta.answeredBy === 'owner') out.answeredBy = meta.answeredBy;
   if (typeof meta.instrument === 'string' && INSTRUMENT_NAME.test(meta.instrument)) out.instrument = meta.instrument; // instruments
   if (meta.tools && typeof meta.tools === 'object' && !Array.isArray(meta.tools)) {
@@ -2226,6 +2229,30 @@ async function route(req, res, url) {
         b.audit('claim', { actor: me.id, ref: msg.id, detail: `${me.name} took the ask from ${S.agents[msg.from]?.name ?? '?'} after ${((Date.parse(ts) - Date.parse(msg.ts)) / 1000).toFixed(2)}s` });
       }
       b.result = { ok: true };
+    });
+    return send(res, 200, b.result);
+  }
+
+  // an ask that waits for its Oby's owner to OK it (their settings say "Ask me first"): from an Oby
+  // it's addressed to, { for: 'owner', until } while it waits, { for: null } once its owner decided.
+  // Metadata only, like claimedAt: the asker's tools and the console say it waits, and until when.
+  if (m === 'POST' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/waiting$/))) {
+    if (!(await store.rate('status', me.id, S.policy.rate.statusPerMin))) throw err(429, 'rate_limited', 'Too many status changes. Try again in a moment.');
+    const body = await readJson(req, 4096);
+    if (body.for !== null && body.for !== 'owner') throw err(400, 'bad_request', 'for is "owner" (the ask waits for its owner\'s OK) or null (it no longer does).');
+    const until = body.for === 'owner' ? futureTime(body.until, 7, 'until') : null;
+    const b = await store.commit((b) => {
+      b.result = { ok: true };
+      const msg = byId.get(mm[1]);
+      if (!msg || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      if (!until) {
+        // cleared by the Oby that set it (an ask to several Obys keeps another's)
+        if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        return;
+      }
+      if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' }); // as a claim says it
+      const since = msg.waiting?.by === me.id ? msg.waiting.since : now();
+      b.push({ t: 'patch', id: msg.id, fields: { waiting: { for: 'owner', until, since, by: me.id } } });
     });
     return send(res, 200, b.result);
   }
