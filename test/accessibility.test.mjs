@@ -838,12 +838,12 @@ function focusCode(doc, view = 'console|members') {
     $: (sel) => doc.querySelector(sel),
     openModal: () => null, FOCUSABLE: 'button', setTimeout: () => {},
   });
-  vm.runInContext(`const viewKey = () => view;\n${['a11yKeyOf', 'a11yFind', 'a11yRestore', 'a11yModal'].map(fn).join('\n')}
-    this.api = { a11yKeyOf, a11yFind, a11yRestore, a11yModal };`, ctx);
+  vm.runInContext(`const viewKey = () => view;\n${['a11yKeyOf', 'a11yFind', 'a11yRestore', 'a11yModal', 'a11yFocused'].map(fn).join('\n')}
+    this.api = { a11yKeyOf, a11yFind, a11yRestore, a11yModal, a11yFocused };`, ctx);
   return ctx;
 }
-// what has the focus, as the page's focusin handler records it
-const focusOn = (ctx, el) => { el.focus(); ctx.A11Y.key = ctx.api.a11yKeyOf(el); ctx.A11Y.from = el; ctx.A11Y.fromKey = ctx.A11Y.key; };
+// what has the focus, as the page's focusin handler records it (a11yFocused)
+const focusOn = (ctx, el) => { el.focus(); ctx.api.a11yFocused(el); };
 // a redraw: the part is replaced by new markup, and the focus it held is lost
 const redraw = (doc, old, fresh) => { const p = old.parentElement; old.remove(); p.append(fresh); doc.activeElement = doc.body; };
 
@@ -892,8 +892,31 @@ describe('focus, found again after a redraw', () => {
     ctx.api.a11yModal(modal);
     assert.equal(doc.querySelector('.window').inert, false);
     assert.equal(doc.activeElement, doc.querySelector('[data-invite]'), 'Invite member, as drawn now');
-    // the page's focusin handler keeps the key of what opened a dialog, beside the element
-    assert.match(fn('a11ySetup'), /A11Y\.key = a11yKeyOf\(e\.target\);\s*if \(!e\.target\.closest\?\.\('\.modal-backdrop'\)\) \{ A11Y\.from = e\.target; A11Y\.fromKey = A11Y\.key; \}/);
+    // the page's focusin handler is the one these tests run
+    assert.match(fn('a11ySetup'), /document\.addEventListener\('focusin', \(e\) => a11yFocused\(e\.target\)\);/);
+  });
+
+  test("a dialog opened from a menu gives the focus back to the menu's button: the item went with the menu", () => {
+    const modal = h('div', { class: 'modal-backdrop', id: 'admin-modal' }, h('div', { role: 'dialog' }, h('input', { id: 'adm-key' })));
+    const menu = h('div', { class: 'account-menu', role: 'menu' }, h('button', { role: 'menuitem', 'data-acc': 'claim' }));
+    const bar = h('span', { id: 'bar-account' }, h('div', { class: 'account' }, h('button', { class: 'account-button', id: 'account-button' }), menu));
+    const doc = fakeDocument(h('div', { id: 'root' }, h('div', { class: 'window' }, bar, h('div', { id: 'console-scroll' }, membersPage(false))), modal));
+    const ctx = focusCode(doc);
+    focusOn(ctx, doc.querySelector('[data-acc="claim"]')); // Admin access…
+    assert.equal(ctx.A11Y.from, doc.querySelector('#account-button'));
+    menu.remove(); // the menu closes as the dialog opens
+    doc.activeElement = doc.body;
+    modal.hidden = false;
+    ctx.api.a11yModal(modal);
+    focusOn(ctx, doc.querySelector('#adm-key')); // inside the dialog: what opened it stays as it was
+    modal.hidden = true;
+    ctx.api.a11yModal(modal);
+    assert.equal(doc.activeElement, doc.querySelector('#account-button'), 'not the page title');
+    // the + menu the same way (Add people or Obys…); its @ list never takes the focus, so it's no menu then
+    const plusDoc = fakeDocument(h('div', { id: 'root' }, h('button', { id: 'plus' }), h('div', { id: 'add-panel', role: 'menu' }, h('button', { role: 'menuitem', 'data-add': 'people' }))));
+    const plus = focusCode(plusDoc);
+    focusOn(plus, plusDoc.querySelector('[data-add="people"]'));
+    assert.equal(plus.A11Y.from, plusDoc.querySelector('#plus'));
   });
 
   test('a part drawn again with the same markup is left as it is; anything else drawing there is noticed', () => {

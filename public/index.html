@@ -5738,6 +5738,17 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // a part changed in place (a value shown before it's saved): the next draw draws it whatever its markup
   function a11yForget(el) { if (el) A11Y.drawn.delete(el); }
 
+  // what has the focus (to find it again after a redraw), and what a dialog opened now gives it back
+  // to. A menu's item counts as the menu's button: the item goes with the menu when it opens a
+  // dialog (Admin access…, Add people or Obys…), and the button is still there when the dialog closes.
+  function a11yFocused(t) {
+    A11Y.key = a11yKeyOf(t);
+    if (t.closest?.('.modal-backdrop')) return;
+    const owner = t.closest?.('#add-panel[role="menu"]') ? $('#plus') : t.closest?.('.account-menu') ? $('#account-button') : null;
+    A11Y.from = owner || t;
+    A11Y.fromKey = owner ? a11yKeyOf(owner) : A11Y.key;
+  }
+
   // a dialog: the rest of the page goes inert, focus goes in and stays, and comes back on close
   function a11yModal(m) {
     if (!m.hidden) {
@@ -5812,10 +5823,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     });
 
     // remember what has focus, and what opened a dialog
-    document.addEventListener('focusin', (e) => {
-      A11Y.key = a11yKeyOf(e.target);
-      if (!e.target.closest?.('.modal-backdrop')) { A11Y.from = e.target; A11Y.fromKey = A11Y.key; }
-    });
+    document.addEventListener('focusin', (e) => a11yFocused(e.target));
     document.addEventListener('focusout', (e) => {
       const t = e.target;
       queueMicrotask(() => { if (t.isConnected && (!document.activeElement || document.activeElement === document.body)) A11Y.key = null; });
