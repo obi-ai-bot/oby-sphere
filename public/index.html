@@ -799,7 +799,8 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   .page { padding: 8px 16px 40px; }
   .trace-axis, .span { grid-template-columns: 120px minmax(0, 1fr) 56px; gap: 8px; padding-left: 12px; padding-right: 12px; }
   .node { width: 96px; margin-left: -48px; }
-  .node-where { display: none; }
+  /* an Oby's state isn't shown on the map on a phone, but a screen reader still hears it (as .sr-only) */
+  .node-where { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .status-dot.is-working, .node.is-working .pic::after, .topo .edge.is-busy { animation: none; }

@@ -104,9 +104,11 @@ if (!chromium) {
         test("the Sphere's own page, opened with the join key, shows the Overview and reaches each page", EACH, async (t) => {
           await run(t, `${sphere.url}/#key=${encodeURIComponent(sphere.key)}`, vp, async (page) => {
             await title(page, sphere.name).waitFor();
-            // Carol's Oby is offline: Overview counts it, and the map has it (on a phone, without its state)
+            // Carol's Oby is offline: Overview counts it, and the map says so (on a phone, only to a screen reader)
             await page.getByRole('button', { name: /^Obys online 2\/ 3 1 offline$/ }).waitFor();
-            await page.getByRole('group', { name: 'Map' }).getByRole('listitem', { name: 'Carol Test’s Oby' }).waitFor();
+            const carolOnMap = page.getByRole('group', { name: 'Map' }).getByRole('listitem', { name: 'Carol Test’s Oby' });
+            await carolOnMap.waitFor();
+            await until(async () => /\boffline\b/.test(await carolOnMap.ariaSnapshot()), 'the map to say Carol’s Oby is offline');
             await page.getByRole('log', { name: 'Live log' }).waitFor();
             await noSidewaysScroll(page, vp, 'Overview');
             // someone holding only the join key watches: no member's pages, and no admin's
