@@ -196,6 +196,12 @@ export class World {
     fs.writeFileSync(this.settingsPath(name), JSON.stringify(s, null, 2), { mode: 0o600 });
   }
 
+  // the Sphere's policy, as the relay has it (asked with the join key, as its own page asks)
+  async policy() {
+    const r = await fetch(`${this.sphere.url}/api/info`, { headers: { 'x-sphere-key': this.sphere.key } });
+    return (await r.json()).sphere.policy;
+  }
+
   // a member's representative, online and answering
   async serve(name) {
     const p = this.start(`${name}: rep.mjs serve`, 'rep.mjs', ['serve', '--profile', name], this.env());
@@ -306,23 +312,28 @@ export async function withPage(browser, t, url, vp, fn) {
 export const title = (page, name) => page.getByRole('heading', { level: 1, name, exact: typeof name === 'string' });
 
 // The side panel: always there at desktop width; at phone width it slides in with "Side panel"
-// and out again after a choice. settled() waits for it to stop moving, then says if it's in view.
-async function settled(locator) {
+// and out again after a choice. settled() waits for it to stop moving (to be in view, or out of
+// it, when `inView` says which), then says if it's in view. A slide that has only just been asked
+// for may not have moved yet, so it waits for the panel's own transitions to end too.
+async function settled(locator, inView) {
   return locator.evaluate(
-    (el) =>
+    (el, want) =>
       new Promise((resolve) => {
         const end = performance.now() + 3000;
+        const seen = (r) => r.width > 0 && r.right > 0 && r.left < window.innerWidth;
         let last = null;
         let same = 0;
         const tick = () => {
           const r = el.getBoundingClientRect();
           same = r.left === last ? same + 1 : 0;
           last = r.left;
-          if (same >= 3 || performance.now() > end) return resolve(r.width > 0 && r.right > 0 && r.left < window.innerWidth);
+          const moving = el.getAnimations().some((a) => a.playState === 'running');
+          if ((same >= 3 && !moving && (want === null || seen(r) === want)) || performance.now() > end) return resolve(seen(r));
           requestAnimationFrame(tick);
         };
         tick();
       }),
+    inView ?? null,
   );
 }
 export async function sidePanel(page) {
@@ -330,7 +341,7 @@ export async function sidePanel(page) {
   await side.waitFor();
   if (!(await settled(side))) {
     await page.getByRole('button', { name: 'Side panel' }).click();
-    assert.ok(await settled(side), 'the side panel slides in');
+    assert.ok(await settled(side, true), 'the side panel slides in');
   }
   return side;
 }
@@ -340,8 +351,9 @@ export async function sidePanel(page) {
 const inSide = (page, name) => page.getByRole('complementary').getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+\\+?( new| waiting for you)?)?$`) });
 export async function goTo(page, name) {
   const side = await sidePanel(page);
+  const narrow = await page.getByRole('button', { name: 'Side panel' }).isVisible();
   await inSide(page, name).click();
-  await settled(side);
+  await settled(side, narrow ? false : undefined); // on a phone, it slides away
 }
 export async function hasPage(page, name) {
   return (await inSide(page, name).count()) > 0;
@@ -353,12 +365,13 @@ export async function switchView(page, name) {
   await side.getByRole('tab', { name, exact: true }).click();
   if (await page.getByRole('button', { name: 'Side panel' }).isVisible()) {
     await page.keyboard.press('Escape'); // at phone width, out of the way again
-    await settled(side);
+    await settled(side, false);
   }
 }
 
 // Anything that scrolls sideways: the page itself, or a part of it that scrolls but shouldn't.
-// Tables and code blocks are made to scroll sideways inside their own box, so they don't count.
+// Tables, code blocks and Settings' row of section buttons are made to scroll sideways inside
+// their own box, so they don't count.
 export async function sidewaysScroll(page) {
   return page.evaluate(() => {
     const out = [];
@@ -370,7 +383,7 @@ export async function sidewaysScroll(page) {
       if (!el.getClientRects().length) continue;
       const ox = getComputedStyle(el).overflowX;
       if (ox !== 'auto' && ox !== 'scroll') continue;
-      if (el.closest('.table-wrap, pre')) continue;
+      if (el.closest('.table-wrap, pre, .set-nav-in')) continue;
       if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${[...el.classList].map((c) => '.' + c).join('')} scrolls sideways (${el.scrollWidth}px in ${el.clientWidth}px)`);
     }
     return out;
@@ -378,6 +391,27 @@ export async function sidewaysScroll(page) {
 }
 export async function noSidewaysScroll(page, vp, where) {
   assert.deepEqual(await sidewaysScroll(page), [], `${where}, ${vp.viewport.width}px wide: nothing scrolls sideways`);
+}
+
+// A POST to a member's console (rep.mjs ui) from outside the page, as a script on that machine
+// could send it; the console sends it on with the member's token. { status, body }
+export function consolePost(consoleUrl, apiPath, body) {
+  const u = new URL(consoleUrl);
+  const data = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    // to 127.0.0.1 with the console's own Host, so no lookup of <handle>.localhost is needed
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: apiPath, method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-obysphere-console': '1' } }, (res) => {
+      let out = '';
+      res.on('data', (d) => (out += d));
+      res.on('end', () => {
+        let parsed = out;
+        try { parsed = JSON.parse(out); } catch {}
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
 }
 
 // A phone's ntfy server and a Slack incoming webhook, on 127.0.0.1: every request it gets is kept

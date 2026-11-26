@@ -1,9 +1,9 @@
 // The console (public/index.html) in a real browser: Chromium through Playwright, at desktop and
 // phone width. A sealed Sphere and three members run on this machine: alice, whose console most
-// flows drive; bob, an admin; and carol, who is in none of their conversations. Their Obys answer
-// with fake runtimes (test/fake-runtimes.mjs), gh is a fake (test/fake-gh.mjs), and so are the
-// phone's ntfy server and Slack: no model and no network. Each flow also checks that no page
-// logged an error and that nothing scrolls sideways.
+// flows drive; bob, an admin; and carol, who is in none of their conversations and whose Oby is
+// offline. Their Obys answer with fake runtimes (test/fake-runtimes.mjs), gh is a fake
+// (test/fake-gh.mjs), and so are the phone's ntfy server and Slack: no model and no network. Each
+// flow also checks that no page logged an error and that nothing scrolls sideways.
 //
 // Playwright is installed only for these tests, never as a dependency (CONTRIBUTING.md):
 //   npm install --no-save playwright@<version in test/browser-helpers.mjs>
@@ -14,19 +14,20 @@
 //
 // A new flow is a few lines on the helpers: World (the machine, and an answering session's own
 // tools with world.session), withPage (a page, and more pages with open), goTo (the side panel),
-// switchView, noSidewaysScroll and until.
+// switchView, noSidewaysScroll and until. Find things by role, label or text.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, startFakeHooks, until } from './browser-helpers.mjs';
+import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, startFakeHooks, until, consolePost } from './browser-helpers.mjs';
 
 const REQUIRED = process.env.OBYSPHERE_BROWSER_TESTS === '1';
 const ANSWER = 'Here is my answer, from a fake runtime on this machine.';
 const EACH = { timeout: 90000 }; // each flow; every wait inside it gives up sooner
 const VERSION_TEST = 'CI and CONTRIBUTING.md install the Playwright version these tests name';
 const { chromium, reason } = await loadChromium();
+const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test(VERSION_TEST, () => {
   const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
@@ -74,11 +75,14 @@ if (!chromium) {
       await world.join('carol', 'Carol Test', 'Knows the design system');
       // Bob's Oby is an admin of the Sphere; Alice's and Carol's are members
       await world.claimAdmin('bob');
-      // Alice's Oby waits for her on asks from Bob (Waiting for you)
-      world.editSettings('alice', (s) => (s.access.agents = { bob: 'approve' }));
+      // Obys you haven't listed wait for you by default: here Bob's and Alice's Obys answer them,
+      // and Alice's waits for her on asks from Bob (Waiting for you)
+      world.editSettings('bob', (s) => (s.access.default = 'answer'));
+      world.editSettings('alice', (s) => Object.assign(s.access, { default: 'answer', agents: { bob: 'approve' } }));
       await world.serve('bob');
       alice = await world.console('alice', { serve: true });
       bob = await world.console('bob');
+      // Carol's console runs, but her Oby doesn't: it's offline, as a member often is
       carol = await world.console('carol');
     });
     after(async () => {
@@ -95,26 +99,48 @@ if (!chromium) {
         test("the Sphere's own page, opened with the join key, shows the Overview and reaches each page", EACH, async (t) => {
           await run(t, `${sphere.url}/#key=${encodeURIComponent(sphere.key)}`, vp, async (page) => {
             await title(page, sphere.name).waitFor();
-            await page.getByText('Agents run here').waitFor();
-            await page.getByText('Live log').waitFor();
+            // Carol's Oby is offline: Overview counts it, and the map has it (on a phone, without its state)
+            await page.getByRole('button', { name: /^Obys online 2\/ 3 1 offline$/ }).waitFor();
+            await page.getByRole('group', { name: 'Map' }).getByRole('listitem', { name: 'Carol Test’s Oby' }).waitFor();
+            await page.getByRole('log', { name: 'Live log' }).waitFor();
             await noSidewaysScroll(page, vp, 'Overview');
             // someone holding only the join key watches: no member's pages, and no admin's
             for (const name of ['Your Oby', 'Settings', 'Policy', 'Admins']) assert.equal(await hasPage(page, name), false, `no ${name}`);
             assert.equal(await hasPage(page, 'Admin sign-in'), true);
             const pages = [
-              ['Traffic', 'Traffic', /exchanges · \d+ in flight/],
-              ['Members', 'Members', /Bob Test.s Oby/],
-              ['Instruments', 'Instruments', 'sphere_ask'],
-              ['Files', 'Files', /No files yet|files relayed/],
-              ['Audit log', 'Audit log', /Chain verified/],
-              ['Overview', sphere.name, 'Agents run here'],
+              ['Traffic', 'Traffic', () => page.getByText(/^\d+ exchanges?\b/)],
+              ['Members', 'Members', () => page.getByRole('row').filter({ hasText: '@carol' }).getByText('Offline')],
+              ['Instruments', 'Instruments', () => page.getByRole('button', { name: /^sphere_ask\b/ })],
+              ['Files', 'Files', () => page.getByText(/No files yet|^\d+ files? · /)],
+              ['Audit log', 'Audit log', () => page.getByText(/^Chain verified · \d+ events$/)],
+              ['Overview', sphere.name, () => page.getByRole('group', { name: 'Map' })],
             ];
             for (const [nav, heading, shows] of pages) {
               await goTo(page, nav);
               await title(page, heading).waitFor();
-              await page.getByText(shows).first().waitFor();
+              await shows().first().waitFor();
               await noSidewaysScroll(page, vp, nav);
             }
+
+            // the audit log's search and its dropdowns: each row's event and its detail
+            await goTo(page, 'Audit log');
+            const events = page.getByRole('region', { name: 'Events' });
+            const shown = () => events.getByRole('row').evaluateAll((rows) => rows.slice(1).map((r) => ({ type: r.cells[2].innerText, detail: r.cells[3].innerText })));
+            await page.getByRole('textbox', { name: 'Search events' }).fill('joined');
+            await until(async () => { const d = await shown(); return d.every((e) => e.detail.includes('joined')) && ['alice', 'bob', 'carol'].every((n) => d.some((e) => e.detail.startsWith(`${n} joined`))); }, 'only the joins');
+            await page.getByRole('button', { name: 'Member: Everyone' }).click();
+            await page.getByRole('listbox', { name: 'Member' }).getByRole('option', { name: /@carol/ }).click();
+            await until(async () => { const d = await shown(); return d.length === 1 && d[0].detail.startsWith('carol joined'); }, "carol's join alone");
+            await page.getByRole('button', { name: /^Member: / }).click();
+            await page.getByRole('listbox', { name: 'Member' }).getByRole('option', { name: 'Everyone' }).click();
+            await page.getByRole('textbox', { name: 'Search events' }).fill('');
+            await page.getByRole('button', { name: 'Event type: All events' }).click();
+            await page.getByRole('listbox', { name: 'Event type' }).getByRole('option', { name: /^Members\b/ }).click();
+            await page.getByRole('button', { name: 'Event type: Members' }).waitFor();
+            await until(async () => { const d = await shown(); return d.length >= 3 && d.every((e) => ['join', 'online', 'offline', 'session', 'keys', 'channel'].includes(e.type)); }, 'only members’ events');
+            await noSidewaysScroll(page, vp, 'the audit log, filtered');
+            await page.getByRole('button', { name: 'Clear filters' }).click();
+            await page.getByRole('button', { name: 'Event type: All events' }).waitFor();
           });
         });
 
@@ -129,8 +155,9 @@ if (!chromium) {
             await side.getByRole('img', { name: 'You: Alice Test (alice)', exact: true }).waitFor({ state: 'attached' });
             await goTo(page, 'Your Oby');
             await title(page, 'Your Oby').waitFor();
-            await page.getByText('@alice · represents Alice Test').waitFor();
-            await page.getByText('Asked of your Oby').first().waitFor();
+            await page.getByText('answers with Claude Code').waitFor();
+            await page.getByRole('heading', { name: 'Asked of your Oby', level: 2 }).waitFor();
+            await page.getByRole('heading', { name: 'Your asks', level: 2 }).waitFor();
             await noSidewaysScroll(page, vp, 'Your Oby');
           });
         });
@@ -147,7 +174,7 @@ if (!chromium) {
             await noSidewaysScroll(page, vp, 'New exchange');
             await dialog.getByRole('button', { name: 'Send', exact: true }).click();
             // the exchange opens, then fills in when Bob's Oby answers on "his" machine
-            await title(page, /^Exchange m_/).waitFor();
+            await title(page, 'Exchange').waitFor();
             await page.getByText(question).first().waitFor();
             await page.getByText(ANSWER).first().waitFor({ timeout: 30000 });
             await noSidewaysScroll(page, vp, 'the exchange');
@@ -159,33 +186,37 @@ if (!chromium) {
             await row.getByText('Answered').waitFor();
             await noSidewaysScroll(page, vp, 'Traffic');
             await row.click();
-            await title(page, /^Exchange m_/).waitFor();
+            await title(page, 'Exchange').waitFor();
             await page.getByText(question).first().waitFor();
             await page.getByText(ANSWER).first().waitFor();
           });
         });
 
         test("Settings: a change saves, and it's still there after a reload", EACH, async (t) => {
-          const topics = `salary, hiring, ${vp.name} roadmap`;
+          const topic = `${vp.name} roadmap`;
           await run(t, alice.url, vp, async (page) => {
             await goTo(page, 'Settings');
             await title(page, 'Settings').waitFor();
-            const box = page.getByRole('textbox', { name: 'Decline asks about' });
             const sendFiles = page.getByRole('switch', { name: 'Send files back' });
             const wasOn = (await sendFiles.getAttribute('aria-checked')) === 'true';
-            await box.fill(topics);
+            // what saving says, by the section buttons (on a phone it isn't shown)
+            const state = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('status', { includeHidden: true });
+            // a list of words: each one a chip, added with Enter
+            await page.getByRole('textbox', { name: 'Decline asks about: add' }).fill(`salary, hiring, ${topic}`);
+            await page.keyboard.press('Enter');
+            await page.getByRole('button', { name: `Remove ${topic}` }).waitFor();
             await sendFiles.click();
-            await page.getByText('Saved', { exact: true }).waitFor();
+            await until(async () => (await state.textContent()) === 'Saved', 'Saved');
             // kept where rep.mjs keeps it
             await until(() => {
               const a = world.settings('alice').access;
-              return a.declineTopics.join(', ') === topics && a.sendFiles === !wasOn;
+              return ['salary', 'hiring', topic].every((w) => a.declineTopics.includes(w)) && a.sendFiles === !wasOn;
             }, 'settings.json to have the change');
             await noSidewaysScroll(page, vp, 'Settings');
 
             await page.reload();
             await title(page, 'Settings').waitFor();
-            await until(async () => (await box.inputValue()) === topics, 'the topics after a reload');
+            for (const w of ['salary', 'hiring', topic]) await page.getByRole('button', { name: `Remove ${w}`, exact: true }).waitFor();
             assert.equal(await sendFiles.getAttribute('aria-checked'), String(!wasOn));
           });
         });
@@ -200,6 +231,7 @@ if (!chromium) {
             await title(page, 'Your Oby').waitFor();
             const ask = (text) => world.repInBackground(['ask', 'alice', text, '--profile', 'bob', '--wait', '60']);
             const [askYes, askNo, askMine] = [ask(yes), ask(no), ask(mine)];
+            // an item that waits for you (it has no role of its own)
             const card = (text) => page.locator('[data-pending]').filter({ hasText: text });
 
             await page.getByRole('heading', { name: /^Waiting for you/ }).waitFor();
@@ -219,7 +251,7 @@ if (!chromium) {
             assert.match(declined.out, /Alice Test's Oby isn't taking this ask: its owner declined it/, declined.out);
 
             await card(mine).getByRole('button', { name: 'Answer myself' }).click();
-            await card(mine).getByPlaceholder('Your answer, sent as yours').fill(myAnswer);
+            await card(mine).getByRole('textbox', { name: 'Your answer, sent as yours' }).fill(myAnswer);
             await noSidewaysScroll(page, vp, 'Answer myself');
             await card(mine).getByRole('button', { name: 'Send my answer' }).click();
             await card(mine).waitFor({ state: 'detached' });
@@ -265,8 +297,9 @@ if (!chromium) {
           await run(t, alice.url, vp, async (page) => {
             await title(page, sphere.name).waitFor();
             await switchView(page, 'Conversation');
-            const thread = page.getByRole('log');
+            const thread = page.getByRole('log', { name: 'Messages' });
             await thread.waitFor();
+            await title(page, 'general').waitFor();
             // to everyone in #general, not to an Oby in particular
             await page.getByText(/^Everyone in #general sees it/).waitFor();
             await page.getByRole('textbox', { name: 'Message', exact: true }).fill(mine);
@@ -349,7 +382,7 @@ if (!chromium) {
             await page.getByRole('log').getByText(words).waitFor();
             await noSidewaysScroll(page, vp, `#${name}`);
             // Bob reads it; Carol, who isn't in it, doesn't
-            assert.match((await world.rep(['read', name, '--profile', 'bob'])).out, new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+            assert.match((await world.rep(['read', name, '--profile', 'bob'])).out, new RegExp(reEscape(words)));
             assert.ok(!(await world.rep(['read', name, '--profile', 'carol'])).out.includes(words), 'Carol reads nothing of it');
           });
         });
@@ -360,11 +393,13 @@ if (!chromium) {
             await goTo(page, 'Policy');
             await title(page, 'Policy').waitFor();
             assert.equal(await page.getByRole('switch', { name: 'Seal message contents' }).getAttribute('aria-checked'), 'true', 'sealed');
-            await page.getByRole('button', { name: 'Rotate join key' }).waitFor();
+            await page.getByRole('heading', { name: 'Invite link', level: 2 }).waitFor();
+            await page.getByRole('button', { name: 'Rotate', exact: true }).waitFor();
             await noSidewaysScroll(page, vp, 'Policy');
             await goTo(page, 'Admins');
             await title(page, 'Admins').waitFor();
             await page.getByRole('row').filter({ hasText: 'Your Oby' }).getByText('Admin', { exact: true }).waitFor();
+            await page.getByRole('row').filter({ hasText: '@carol' }).getByRole('button', { name: 'Make admin' }).waitFor();
             await noSidewaysScroll(page, vp, 'Admins');
             // the invite: one text for the new member's AI agent, with this Sphere's link in it
             await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -401,18 +436,64 @@ if (!chromium) {
           });
         });
 
+        test("Policy: an admin's change holds after a reload; a member who isn't an admin can't make it", EACH, async (t) => {
+          await run(t, bob.url, vp, async (page, { open }) => {
+            await goTo(page, 'Policy');
+            await title(page, 'Policy').waitFor();
+            const before = await world.policy();
+            // a stepper: one more file per message, saved when the clicks stop
+            const files = page.getByRole('spinbutton', { name: 'Files per message' });
+            const was = Number(await files.getAttribute('aria-valuenow'));
+            assert.equal(was, before.maxFilesPerMessage);
+            await page.getByRole('button', { name: 'Files per message: more' }).click();
+            assert.equal(await files.getAttribute('aria-valuenow'), String(was + 1));
+            await page.locator('.set-row').filter({ has: files }).getByText('Saved', { exact: true }).waitFor();
+            // a dropdown: the largest file, between 5 MB and 10 MB
+            const to = before.maxFileBytes === 5 * 1048576 ? '10 MB' : '5 MB';
+            const largest = page.getByRole('button', { name: /^Largest file / });
+            await largest.click();
+            await page.getByRole('listbox', { name: 'Largest file' }).getByRole('option', { name: to, exact: true }).click();
+            await page.getByRole('button', { name: `Largest file ${to}` }).waitFor();
+            await page.locator('.set-row').filter({ has: largest }).getByText('Saved', { exact: true }).waitFor();
+            await noSidewaysScroll(page, vp, 'Policy, changed');
+            // the relay has them, for everyone in the Sphere
+            const toBytes = Number.parseInt(to, 10) * 1048576;
+            await until(async () => { const p = await world.policy(); return p.maxFilesPerMessage === was + 1 && p.maxFileBytes === toBytes; }, "the relay's policy to have both changes");
+
+            await page.reload();
+            await title(page, 'Policy').waitFor();
+            await until(async () => (await files.getAttribute('aria-valuenow')) === String(was + 1), 'files per message after a reload');
+            await page.getByRole('button', { name: `Largest file ${to}` }).waitFor();
+            // and the audit log says who changed what
+            await goTo(page, 'Audit log');
+            await page.getByRole('textbox', { name: 'Search events' }).fill('files per message');
+            await page.getByRole('region', { name: 'Events' }).getByRole('row').filter({ hasText: `files per message ${was} → ${was + 1} · by bob` }).waitFor();
+
+            // Alice's Oby isn't an admin: her console has no Policy page, and the relay refuses a
+            // change sent through her console all the same
+            const hers = await open(`${alice.url}#mode=console&page=policy`);
+            await title(hers, sphere.name).waitFor();
+            assert.equal(await title(hers, 'Policy').count(), 0);
+            assert.equal(await hasPage(hers, 'Policy'), false);
+            const refused = await consolePost(alice.url, '/api/admin/policy', { maxFilesPerMessage: 42 });
+            assert.equal(refused.status, 403, JSON.stringify(refused.body));
+            assert.match(refused.body.error, /needs an admin/);
+            assert.equal((await world.policy()).maxFilesPerMessage, was + 1, 'unchanged');
+          });
+        });
+
         test('Settings › Notifications: Send a test reaches a phone (ntfy) or Slack', EACH, async (t) => {
           // desktop: a phone's ntfy topic; phone: a Slack incoming webhook. Both are fakes on 127.0.0.1
-          const way = vp.name === 'desktop' ? { field: 'Your phone (ntfy)', path: '/obysphere-browser-topic' } : { field: 'Slack', path: '/services/T000/B000/browserTestHook0123' };
+          const way = vp.name === 'desktop' ? { field: 'Your phone', test: 'Send a test: your phone', path: '/obysphere-browser-topic' } : { field: 'Slack', test: 'Send a test: Slack', path: '/services/T000/B000/browserTestHook0123' };
           await run(t, alice.url, vp, async (page) => {
             await goTo(page, 'Settings');
             await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
             const address = page.getByRole('textbox', { name: way.field, exact: true });
-            const row = page.locator('.set-row').filter({ has: address });
             await address.fill(hooks.url + way.path);
             const sent = hooks.hits.length;
-            await row.getByRole('button', { name: 'Send a test' }).click();
-            await row.getByRole('status').getByText('Sent (summary).').waitFor();
+            await page.getByRole('button', { name: way.test, exact: true }).click();
+            // what the test did is said under the address
+            await page.getByRole('region', { name: 'Notifications' }).getByRole('status').getByText('Sent (summary).').waitFor();
             const hit = hooks.hits.slice(sent).find((h) => h.path === way.path);
             assert.ok(hit, `the fake ${way.field} got the test`);
             assert.ok((hit.headers.title || hit.body).includes('A test from your Obysphere'), JSON.stringify(hit));
@@ -428,10 +509,11 @@ if (!chromium) {
         test('Settings › GitHub: gh’s sign-in (a fake gh first on PATH), and the switch saved', EACH, async (t) => {
           await run(t, alice.url, vp, async (page) => {
             await goTo(page, 'Settings');
-            await page.getByRole('heading', { name: 'GitHub', exact: true }).waitFor();
-            await page.getByText(/Signed in to GitHub as octo-bob · gh 2\.99\.0\./).waitFor();
+            const github = page.getByRole('region', { name: 'GitHub' });
+            await github.getByRole('heading', { name: 'GitHub', exact: true }).waitFor();
+            await github.getByText('As octo-bob, with gh’s sign-in.').waitFor();
             assert.ok(world.gh.calls().some((c) => c.argv.join(' ').startsWith('auth status')), 'asked the fake gh');
-            const on = page.getByRole('switch', { name: 'Let your Oby work on GitHub' });
+            const on = github.getByRole('switch', { name: 'Work on GitHub' });
             const was = (await on.getAttribute('aria-checked')) === 'true';
             await on.click();
             await until(() => world.settings('alice').github?.enabled === !was, 'settings.json to have GitHub turned ' + (was ? 'off' : 'on'));
