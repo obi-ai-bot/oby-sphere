@@ -33,7 +33,9 @@ const readKv = (f) => {
 };
 const [a, b] = argv;
 
-if (a === 'container' && b === 'inspect') ok(JSON.stringify([container(argv[2])], null, 2));
+// like docker, inspect finds a container by its name or by the start of its ID
+const byId = (n) => (n && n.length >= 4 ? Object.values(state.containers).find((c) => c.Id.startsWith(n)) : undefined);
+if (a === 'container' && b === 'inspect') ok(JSON.stringify([state.containers[argv[2]] || byId(argv[2]) || container(argv[2])], null, 2));
 if (a === 'image' && b === 'inspect') { const i = image(argv[2]); if (!i) fail('Error response from daemon: No such image: ' + argv[2]); ok(JSON.stringify([i], null, 2)); }
 if (a === 'pull') {
   const ref = argv[argv.length - 1];

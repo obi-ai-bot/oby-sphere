@@ -1422,6 +1422,9 @@ async function dockerServerUpdate(container, rec = null) {
   const previous = `${container}-previous`;
 
   const c = await dockerInspect('container', container).catch((e) => die(`${e.message}\nIs ${container} the container's name? docker ps -a lists them.`));
+  // docker also finds a container by its ID, but the new one takes the name given here
+  const named = String(c.Name || '').replace(/^\//, '');
+  if (named && named !== container) die(`${container} is the ID of the container ${named}. Name it, so it keeps its name: obysphere server update --docker ${named}. Nothing changed.`);
   const old = await dockerInspect('image', String(c.Image || ''));
   let plan;
   try {

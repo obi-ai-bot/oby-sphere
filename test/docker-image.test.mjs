@@ -370,6 +370,20 @@ describe('obysphere server update for a Sphere in Docker', { skip: !POSIX && 'th
       assertNoKeys(m, r);
     });
 
+  // docker finds a container by its ID too; run under that ID, the new one would lose its name
+  test("a container's ID is refused, with its name to use instead, and nothing changes", async () => {
+    const m = machine('by-id');
+    const before = m.docker.state().containers;
+    const id = before.obysphere.Id.slice(0, 12);
+    const r = await m.cli(['server', 'update', '--docker', id]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.stderr, new RegExp(`${id} is the ID of the container obysphere\\. Name it, so it keeps its name: obysphere server update --docker obysphere\\. Nothing changed`));
+    assert.deepEqual(m.docker.calls().map(verb), ['container inspect'], 'nothing pulled, renamed or run');
+    assert.deepEqual(m.docker.state().containers, before);
+    assert.deepEqual(fs.readdirSync(m.app).filter((f) => f === 'servers'), [], 'nothing recorded');
+    assertNoKeys(m, r);
+  });
+
   test('bad arguments are refused before docker runs; a name taken by another Sphere too', async () => {
     const m = machine('usage');
     for (const args of [['--docker'], ['--docker', '-x'], ['--docker', 'obysphere', '--tag', 'latest'], ['--docker', 'obysphere', '--url', 'https://alice:pw@sphere.example.com'], ['--docker', 'obysphere', '--url', 'ftp://x']]) {
