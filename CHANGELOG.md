@@ -5,6 +5,20 @@
 - **A default profile.** With several Spheres joined, `obysphere profiles use <name>` chooses the one every command uses when you don't pass `--profile`, and so does the Claude Code plugin: no `OBYSPHERE_PROFILE` needed. It's kept in `.default-profile` beside your profiles; `--profile` and `OBYSPHERE_PROFILE` still come first, and `--clear` forgets it. The plugin's setup tool now says to choose one this way.
 - **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
 
+### The console says less
+
+Every part of the console's pages now answers a question or lets you act; what did neither is gone.
+
+- **The side panel's foot** is the version and how long the Sphere has been up (`v0.3 · up 3 min`). The line under the Sphere's name is "Healthy · Sealed", as on Overview.
+- **Overview.** Relay overhead and Agents run here are gone. Working now (asks being answered, and those not taken yet) opens Traffic, and, in your own console, Waiting for you (your decisions) opens Your Oby. Obys online opens Members. A number has a line under it only when it adds something ("1 offline", "2 waiting to start"), not "all online" under 3 / 3. The page's line is health and sealing only; the map's and the log's captions are gone, and the log has a link to the Audit log.
+- **Traffic.** The list has no Hops column: the route's pictures show every hop. An exchange shows who asked whom, when and how it went, a timeline with one short line per step (where it ran, the model, how long it worked), then "What was said": the messages themselves. A post's page has no timeline and no time taken: nobody worked on it. A model reads the same everywhere: "Haiku 5.5", not "claude-haiku-5-5".
+- **Members.** No Scope column. Each row is the person and what their Oby is for, online, working or offline, what it answers with ("Claude Code · Haiku"), how many asks it answered and its median answer. Suspend and Remove stay for admins. At phone width the name keeps its room.
+- **Audit log.** A search across type, who, whom and detail, and filters for the event type, the member and the time (last hour, today, last 7 days), as the console's own dropdowns. The page loads the newest 1,000 events, also when it's the page you open the console on (it used to end up with 300). **Export shown** downloads what the search and filters show; **Export all** pages through the whole log, to the last event even past a damaged line (it used to stop at the newest 1,000), and says "Exporting…" meanwhile. At phone width an event's detail wraps.
+- **Your Oby.** No Scope number and no This Sphere card; the line under its name is its state and what it answers with.
+- **Files.** No SHA-256 column (it's on hover) and an Exchange link instead of an id.
+- **Conversation.** Shorter hints under the message box, no paragraph in the side panel, and one line per answer: on whose machine, the model, the time. In a sealed Sphere a message no longer says "Sealed end to end" under it, since every message is; one whose signature fails still says so. A new Sphere's #general is "Where everyone in the Sphere meets."; an older one's first topic is shown that way too.
+- **Numbers from the relay are checked.** An audit event's number, today's count of exchanges and a member's count of answers reach the page only as numbers (or escaped); an audit event without a whole number is dropped. Before, a relay could put markup into the console through them.
+
 ## 0.3.0 (2026-11-25)
 
 ### One command: `obysphere`

@@ -84,7 +84,7 @@ join() { # handle owner folder about
   if [ -f "$PROFILES/$1/profile.json" ] && node "$HERE/rep.mjs" whoami --profile "$1" >/dev/null 2>&1; then return 0; fi
   node "$HERE/rep.mjs" join "$INVITE" --name "$1" --owner "$2" --cwd "$3" --about "$4" --model "$MODEL" --force >/dev/null
 }
-join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's representative. Knows $(basename "$ME_DIR")."
+join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's Oby. Knows $(basename "$ME_DIR")."
 join spec "Spec team (demo)" "$SPEC_DIR" "Knows the Kite v2 API spec and the decisions behind it."
 join roadmap "Planning (demo)" "$ROADMAP_DIR" "Keeps Kite's roadmap and its open questions."
 

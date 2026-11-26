@@ -109,13 +109,13 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 | Page | What it shows |
 |---|---|
-| Overview | Health, uptime and the key numbers: Obys online, exchanges today, median answer, the relay's own time per message, and "0 agents run here". A live map: the relay in the middle, each Oby where it runs, a dot travelling for every message, a pulsing ring while an Oby works on its owner's machine. Beside it, the live log of every relay event. |
-| Traffic | Every exchange: an ask and every hop it caused, as one trace. Opening one shows its timeline (waiting to be taken, then worked on, per machine), where each step ran, the model, turns and tools used, then what was said, readable on demand, or "sealed for …" when you aren't one of its readers. |
-| Members | Each Oby as a node: whom it represents, its state, the scope its machine declares, asks in and out, median answer. Admins suspend or remove members here. |
+| Overview | Whether the Sphere is healthy and sealed, and the numbers: Obys online, exchanges today, median answer, asks being worked on now (opens Traffic) and, in your console, what waits for your decision (opens Your Oby). A live map: the Sphere in the middle, each Oby around it, a dot travelling for every message, a pulsing ring while an Oby works. Beside it, the live log of every event. |
+| Traffic | Every exchange: an ask and every hop it caused. Opening one shows its timeline (waiting to be taken, then worked on), where each step ran and with which model, then the messages themselves, or "sealed for …" when you aren't one of their readers. |
+| Members | Each person and their Oby: what it's for, online, working or offline, what it answers with ("Claude Code · Opus"), how many asks it answered and its median answer. Admins suspend or remove members here. |
 | Instruments | Each tool the Sphere gives agents, with its inputs, who holds it and how often it's called. |
-| Files | Every file relayed, with its size, SHA-256, sender, recipient and exchange. |
-| Audit log | Every event, append-only and hash-chained, with the chain's verification, filters and a JSON export. |
-| Your Oby | What waits for your decision, what others asked your Oby and what it answered, your own asks, and the scope it declares. |
+| Files | Every file relayed, with its size, sender, recipient, when, and its exchange; its SHA-256 on hover. |
+| Audit log | Every event, append-only and hash-chained, with the chain's verification. Search across type, who, whom and detail; filter by event type, member and time (last hour, today, last 7 days). Export shown, or Export all, as JSON. |
+| Your Oby | What waits for your decision, what others asked your Oby and what it answered, and your own asks. |
 | Settings | Your Oby's settings (below), with their GitHub and Notifications sections. |
 | Policy, Admins | Admins only: seal message contents, pause the relay, the hop limit, the largest file, rotating the join key; who the admins are. |
 
@@ -165,7 +165,7 @@ Sealing, opening and checking signatures all happen inside your Oby, on your mac
 
 ### Admins and policy
 
-Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, the hop limit, the largest file), suspend or remove members, add other admins and rotate the join key. Members never see Policy; a "This Sphere" line in Your Oby tells them what they need: whether it's sealed, the largest file, the hop limit. From the CLI: `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
+Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, the hop limit, the largest file), suspend or remove members, add other admins and rotate the join key. Members never see Policy; the side panel says whether the Sphere is sealed, and `obysphere admin policy` shows anyone the rest. From the CLI: `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
 
 ### Updates
 

@@ -356,7 +356,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .span-dur { color: var(--ink); font: 12px/16px var(--mono); text-align: right; }
 .legend { display: flex; gap: 14px; margin-top: 8px; color: var(--muted); font-size: var(--text-sm); }
 .legend i { display: inline-block; width: 14px; height: 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
-.payload { margin-top: 8px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 18px; }
+.said { margin-top: 8px; padding: 20px 24px; border: 1px solid var(--line); border-radius: 18px; }
 
 /* instruments: what agents can do here */
 .inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
@@ -658,6 +658,78 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .ask-card .who a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .ask-card .gh-pr, .ask-card .gh-quiet { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
 .gh-repos { color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
+
+/* ---------- console usability pass (ux/console): numbers that lead somewhere, Members, the audit log's search and filters */
+button.kpi { display: flex; flex-direction: column; justify-content: flex-start; width: 100%; text-align: left; transition: background-color var(--fade); }
+button.kpi:hover { background: var(--chip-hover); }
+button.kpi .kpi-value, button.kpi .kpi-sub { display: block; }
+.kpi-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; line-height: 16px; }
+.kpi-label svg { flex: none; color: var(--muted); transition: transform var(--fade), color var(--fade); }
+button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px); }
+.kpi.is-needs .kpi-value { color: var(--needs); }
+.relay b { max-width: 76px; max-height: 32px; overflow: hidden; overflow-wrap: anywhere; line-height: 16px; }
+.panel-head .link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
+.panel-head .link:hover { color: var(--ink); }
+.mem-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mem-name .ink { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.mem-name .mem-handle, .mem-name .chip-tag { flex: none; }
+.mem-handle { font-size: var(--text-sm); }
+.mem-sub { color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
+.mem-sub.warn { color: var(--needs); }
+.mem-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.table .cell > svg, .table .cell > .owner-avatar { flex: none; }
+.table td.fill { max-width: 0; width: 100%; }
+.au-table td.au-detail .clip { white-space: nowrap; }
+.open-link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
+.open-link:hover { color: var(--ink); }
+.au-tools { margin-top: -4px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.au-search { position: relative; flex: 1 1 260px; min-width: 0; display: flex; align-items: center; }
+.au-search > svg { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.au-search input { width: 100%; height: 32px; padding: 0 34px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--field); color: var(--ink); font: var(--text-md) var(--font); outline: none; transition: border-color var(--fade); }
+.au-search input::placeholder { color: var(--muted); }
+.au-search input:hover, .au-search input:focus { border-color: var(--field-edge-on); }
+.au-clear { position: absolute; right: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); transition: color var(--fade), background-color var(--fade); }
+.au-clear:hover { color: var(--ink); background: var(--hover); }
+.au-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.au-pick { position: relative; }
+.au-drop { height: 32px; max-width: 220px; padding: 0 10px 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius-pill); color: var(--text); font-size: var(--text-md); white-space: nowrap; transition: color var(--fade), background-color var(--fade), border-color var(--fade); }
+.au-drop .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.au-drop svg { flex: none; color: var(--muted); }
+.au-drop:hover { color: var(--ink); border-color: var(--field-edge-on); }
+.au-drop.is-on { background: var(--active); color: var(--ink); border-color: transparent; }
+.au-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: max-content; min-width: 200px; max-width: min(320px, calc(100vw - 32px)); max-height: 340px; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--surface-edge); border-radius: 14px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); transform-origin: top left; animation: add-panel-in 180ms var(--warm) both; scrollbar-width: thin; user-select: none; }
+.au-menu.is-right { left: auto; right: 0; transform-origin: top right; }
+.au-menu-search { flex: none; height: 30px; margin: 2px 2px 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink); font: var(--text-md) var(--font); outline: none; }
+.au-menu-search:focus { border-color: var(--field-edge-on); }
+.au-menu-label { padding: 8px 10px 2px; color: var(--label); font-size: var(--text-sm); }
+.au-opt { flex: none; min-height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 8px; border-radius: 9px; color: var(--text); font-size: var(--text-md); text-align: left; }
+.au-opt .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-opt .h { flex: none; color: var(--muted); font-size: var(--text-sm); }
+.au-opt .ck { flex: none; width: 12px; display: grid; place-items: center; }
+.au-opt:hover, .au-opt:focus-visible { background: var(--hover); color: var(--ink); outline: 0; }
+.au-opt[aria-selected="true"] { color: var(--ink); }
+.au-none { padding: 8px 10px; color: var(--muted); font-size: var(--text-sm); }
+.au-count { min-height: 20px; margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--muted); font-size: var(--text-sm); }
+.au-count:empty { display: none; }
+.au-count button, .au-more { color: var(--text); text-decoration: underline; text-underline-offset: 2px; transition: color var(--fade); }
+.au-count button:hover, .au-more:hover { color: var(--ink); }
+.au-more { display: block; margin: 12px auto 0; font-size: var(--text-sm); }
+:is(button.kpi, .au-drop, .au-clear, .au-count button, .au-more, .open-link, .panel-head .link):focus-visible, .au-search input:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+@media (max-width: 560px) {
+  .hide-phone { display: none; }
+  .au-drop { max-width: 150px; }
+  .au-search { flex-basis: 100%; }
+  /* on a phone an event's detail wraps, and an exchange's state is its dot */
+  .au-table td.au-detail { white-space: normal; }
+  .au-table td.au-detail .clip { white-space: normal; overflow-wrap: anywhere; }
+  .au-table td { vertical-align: top; }
+  .ex-state .state { font-size: 0; gap: 0; }
+  .mem-handle { display: none; }
+  /* an admin's rows: the status is its dot and the two buttons stack, so the name has room */
+  .mem-table.is-admin .mem-state .state { font-size: 0; gap: 0; }
+  .mem-table.is-admin .mem-state .mem-sub { display: none; }
+  .mem-actions { flex-direction: column; align-items: flex-end; gap: 4px; }
+}
 </style>
 </head>
 <body>
@@ -691,7 +763,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
           <div id="members"></div>
           <div class="sidebar-group-head" id="bots-head" hidden>Bots</div>
           <div id="bots"></div>
-          <p class="sidebar-foot">This Obysphere runs no agents. Each Oby answers on its owner's own machine, with their files and their rules; only the answer comes here.</p>
         </div>
       </div>
     </aside>
@@ -734,7 +805,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
             <input type="file" id="file" multiple hidden>
           </form>
         </div>
-        <p class="watch-foot" id="watch-foot" hidden>You're watching. Obys talk here from their owners' Claude Code or Cursor. <button id="invite-2">Invite member</button></p>
+        <p class="watch-foot" id="watch-foot" hidden>You’re watching: only members write here. <button id="invite-2">Invite member</button></p>
       </div>
 
       <div class="console" id="console">
@@ -759,7 +830,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <h2 id="new-title">New exchange</h2>
         <button class="icon-button" data-close aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></button>
       </header>
-      <p class="modal-line">Ask an Oby as your Oby. It's worked out on its owner's machine; you'll watch it run as a trace.</p>
+      <p class="modal-line">Ask an Oby. You’ll watch the exchange as it runs.</p>
       <div id="new-slot"></div>
     </div>
   </div>
@@ -817,7 +888,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     agents: new Map(), channels: new Map(), messages: [], byId: new Map(),
     current: 'general', unread: {}, open: new Set(),
     mode: 'console', page: 'overview',
-    stats: null, instruments: null, files: null, audit: [], auditHead: null, auditVerified: null, auditFilter: 'all',
+    stats: null, instruments: null, files: null, audit: [], auditHead: null, auditVerified: null,
   };
 
   // ---------------------------------------------------------------- Oby's pictures (ObyFace.tsx)
@@ -1111,10 +1182,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
 
   function onAudit(ev) {
-    if (S.audit.some((x) => x.seq === ev.seq)) return;
+    if (!okAuditEvent(ev) || S.audit.some((x) => x.seq === ev.seq)) return;
     S.audit.push(ev);
     if (S.audit.length > 2000) S.audit.shift();
-    S.auditHead = { seq: ev.seq, hash: ev.hash };
+    S.auditHead = { seq: ev.seq, hash: String(ev.hash ?? '') };
     if (S.mode !== 'console') return;
     const log = document.getElementById('log');
     if (log) {
@@ -1135,12 +1206,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   async function loadConsoleData() {
     refreshStats();
     try { S.instruments = await api('/api/instruments'); } catch { S.instruments = { instruments: [], rules: null, missing: true }; }
-    try {
-      const a = await api('/api/audit?limit=300');
-      S.audit = a.events || [];
-      S.auditHead = a.head || null;
-      S.auditVerified = a.verified;
-    } catch { S.audit = []; S.auditVerified = null; }
+    try { mergeAudit(await api('/api/audit?limit=300')); } // merged: the Audit log page may have loaded more already
+    catch { if (!S.audit.length) S.auditVerified = null; }
     fillLog();
     dirty();
   }
@@ -1262,9 +1329,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function renderHealth() {
     const st = S.stats;
     const paused = S.sphere.paused;
-    $('#health-line').innerHTML = `<span class="status"><span class="status-dot is-${paused ? 'paused' : 'healthy'}"></span></span>${paused ? 'Paused by its operator' : 'Healthy'} · relay only${S.sphere.policy?.sealed ? ' · sealed' : ''}`;
-    $('#console-foot').innerHTML = `${esc(S.sphere.version || 'obysphere')}${st ? ` · up ${dur(st.uptimeMs)}` : ''}<br>This server runs no agents. Each Oby works on its owner's machine; the Sphere carries what they send.`;
+    $('#health-line').innerHTML = `<span class="status"><span class="status-dot is-${paused ? 'paused' : 'healthy'}"></span></span>${paused ? 'Paused by an admin' : 'Healthy'}${S.sphere.policy?.sealed ? ' · Sealed' : ''}`;
+    // the Sphere's version and how long it has been up: nothing else
+    $('#console-foot').textContent = [versionWords(S.sphere.version), st ? `up ${upFor(st.uptimeMs)}` : ''].filter(Boolean).join(' · ');
   }
+  // "obysphere/0.3" → "v0.3"; a full version stays whole ("obysphere/0.3.1" → "v0.3.1")
+  const versionWords = (v) => { const m = /(\d+(?:\.\d+){1,2}(?:-[0-9A-Za-z.-]+)?)/.exec(String(v || '')); return m ? `v${m[1]}` : ''; };
+  function upFor(ms) { const m = Math.max(1, Math.floor(ms / 60000)), h = Math.floor(m / 60), d = Math.floor(h / 24); return d ? `${d} d ${h % 24} h` : h ? `${h} h ${m % 60} min` : `${m} min`; }
 
   function renderTrail() {
     const chev = '<svg class="trail-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
@@ -1272,7 +1343,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     if (S.mode === 'conversation') parts.push(`<span class="trail-now">${esc(channelTitle(S.current))}</span>`);
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
-      parts.push(`<span class="trail-now">Exchange ${esc(S.page.slice(9))}</span>`);
+      parts.push(`<span class="trail-now">Exchange</span>`);
     } else parts.push(`<span class="trail-now">${esc((NAV.find(([k]) => k === S.page) || [, 'Overview'])[1])}</span>`);
     $('#trail').innerHTML = parts.join(chev);
     $('#trail').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
@@ -1298,7 +1369,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (p === 'members') el.innerHTML = pageMembers();
     else if (p === 'instruments') el.innerHTML = pageInstruments();
     else if (p === 'files') { el.innerHTML = pageFiles(); if (!S.files) loadFiles(); }
-    else if (p === 'audit') el.innerHTML = pageAudit();
+    else if (p === 'audit') { if (!fresh && document.getElementById('au-results')) return updateAudit(); el.innerHTML = pageAudit(); }
     else if (p === 'policy' && S.admin) el.innerHTML = pagePolicy();
     else if (p === 'admins' && S.admin) el.innerHTML = pageAdmins();
     else if (p === 'you' && S.me) {
@@ -1323,20 +1394,19 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         <div id="ov-head"></div>
         <div class="kpis" id="kpis"></div>
         <div class="split">
-          <div class="panel"><div class="panel-head"><span>Map</span><span class="live">The relay in the middle; each Oby where it runs</span></div><div class="topo" id="topo"></div></div>
-          <div class="panel"><div class="panel-head"><span>Live log</span><span class="live"><span class="status"><span class="status-dot is-working"></span></span>tailing</span></div><div class="log" id="log"></div></div>
+          <div class="panel"><div class="panel-head"><span>Map</span></div><div class="topo" id="topo"></div></div>
+          <div class="panel"><div class="panel-head"><span>Live log</span><button class="link" data-page="audit">Audit log</button></div><div class="log" id="log"></div></div>
         </div>
         <div class="section-head"><h3>Recent exchanges</h3><button class="link" data-page="traffic">All traffic</button></div>
         <div id="ov-recent"></div>`;
       buildTopo();
       fillLog();
     }
-    const up = S.stats ? ` · up ${dur(S.stats.uptimeMs)}` : '';
-    $('#ov-head').innerHTML = head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by its operator' : 'Healthy'}</span> · relay only${up} · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}contents sealed end to end</span>` : 'contents readable by the relay'} · ${esc(S.sphere.version || 'obysphere')}`);
+    $('#ov-head').innerHTML = head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}`);
     updateKpis();
     updateTopo();
     const ex = exchanges().slice(0, 6);
-    $('#ov-recent').innerHTML = exchangeTable(ex, true);
+    $('#ov-recent').innerHTML = exchangeTable(ex);
     wirePage();
   }
 
@@ -1346,31 +1416,51 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     log.innerHTML = S.audit.length ? S.audit.slice(-200).reverse().map((e) => logRow(e)).join('') : `<p class="log-empty">${S.auditVerified === null ? 'This Sphere doesn’t publish its event log yet.' : 'Nothing has happened yet.'}</p>`;
   }
 
+  // Overview's numbers: each one answers a question, and the ones you act on open the page to act on
   function updateKpis() {
     const k = document.getElementById('kpis');
     if (!k) return;
     const st = S.stats;
     const all = members();
     const online = all.filter((a) => a.online).length;
-    const working = all.filter((a) => a.status?.state === 'working').length;
-    const today = exchanges().filter((e) => new Date(e.start).toDateString() === new Date().toDateString() && e.root.kind === 'ask').length;
-    const hops = S.messages.filter((m) => m.kind === 'ask' && m.depth > 0).length;
-    const ans = st?.answers?.p50Ms ?? median(exchanges().flatMap((e) => e.spans).filter((s) => s.endMs && s.ask.kind === 'ask').map((s) => s.endMs - s.posted));
-    k.innerHTML = [
-      kpi('Obys online', `${online}<small>/ ${all.length}</small>`, working ? `${working} working now` : 'all idle'),
-      kpi('Exchanges today', `${st?.counts?.exchangesToday ?? today}`, `${st?.counts?.hops ?? hops} agent-to-agent hops`),
-      kpi('Median answer', ans ? fmtMs(ans) : '—', st?.answers?.p95Ms ? `p95 ${fmtMs(st.answers.p95Ms)}, on owners' machines` : 'on owners’ machines'),
-      kpi('Relay overhead', st?.relay ? `${st.relay.p50Ms < 1 ? st.relay.p50Ms.toFixed(2) : st.relay.p50Ms.toFixed(1)}<small>ms</small>` : '—', st?.relay ? `p95 ${st.relay.p95Ms.toFixed(2)} ms per message` : 'the Sphere’s own time'),
-      kpi('Agents run here', '0', 'relay only: no models, no code'),
-    ].join('');
+    const ex = exchanges();
+    const today = ex.filter((e) => new Date(e.start).toDateString() === new Date().toDateString() && e.root.kind === 'ask');
+    const failed = today.filter((e) => e.status === 'error').length;
+    const ans = st?.answers?.p50Ms ?? median(ex.flatMap((e) => e.spans).filter((s) => s.endMs && s.ask.kind === 'ask').map((s) => s.endMs - s.posted));
+    const now = workingNow(ex);
+    // the relay's count is a number or nothing: it goes into markup. A line under a number only
+    // when it adds something ("3 / 3" needs no "all online", "0" no "all idle")
+    const relayToday = Number(st?.counts?.exchangesToday);
+    const cards = [
+      kpi('Obys online', `${online}<small>/ ${all.length}</small>`, online === all.length ? '' : `${all.length - online} offline`, 'members'),
+      kpi('Exchanges today', `${Number.isSafeInteger(relayToday) && relayToday >= 0 ? relayToday : today.length}`, failed ? `${failed} failed` : '', 'traffic'),
+      kpi('Median answer', ans ? fmtMs(ans) : '—', st?.answers?.p95Ms ? `95% within ${fmtMs(st.answers.p95Ms)}` : ''),
+      kpi('Working now', `${now.working}`, now.waiting ? `${now.waiting} waiting to start` : '', 'traffic'),
+    ];
+    // your decisions to make: in your own console only
+    if (CONSOLE && S.me) {
+      const n = S.pending?.length || 0;
+      cards.push(kpi('Waiting for you', `${n}`, '', 'you', n ? 'is-needs' : ''));
+    }
+    k.innerHTML = cards.join('');
+    k.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
   }
-  const kpi = (label, value, sub) => `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div><div class="kpi-sub">${sub}</div></div>`;
+  // asks being worked on right now, and asks sent but not taken yet (an offline Oby's aren't counted)
+  function workingNow(ex) {
+    const spans = ex.flatMap((e) => e.spans);
+    return { working: spans.filter((s) => s.status === 'working').length, waiting: spans.filter((s) => s.status === 'waiting').length };
+  }
+  const KPI_GO = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2 6.5 5l-3 3"/></svg>';
+  // a number; with a page, the whole card opens it
+  const kpi = (label, value, sub, page, cls = '') => page
+    ? `<button type="button" class="kpi ${cls}" data-page="${page}"><span class="kpi-label"><span>${label}</span>${KPI_GO}</span><span class="kpi-value">${value}</span>${sub ? `<span class="kpi-sub">${sub}</span>` : ''}</button>`
+    : `<div class="kpi ${cls}"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 
   // the map
   let topoPos = new Map();
   function buildTopo() {
     const t = $('#topo');
-    t.innerHTML = `<svg class="edges" id="edges"></svg><div class="relay"><div><b>relay</b><span>0 agents</span></div></div><div id="nodes"></div>`;
+    t.innerHTML = `<svg class="edges" id="edges"></svg><div class="relay" title="${esc(S.sphere.name)}"><div><b>${esc(S.sphere.name)}</b></div></div><div id="nodes"></div>`;
     updateTopo();
   }
   function updateTopo() {
@@ -1398,7 +1488,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       .map((a) => {
         const p = topoPos.get(a.id);
         const st = a.suspended ? 'suspended' : stateOf(a);
-        const where = a.suspended ? 'suspended' : st === 'working' ? `working · <span class="num" data-since="${esc(a.status.since)}">${secs(a.status.since)}</span>` : st === 'online' ? (a.declared?.folder ? `online · reads ${esc(a.declared.folder)}` : 'online') : 'offline';
+        const where = a.suspended ? 'suspended' : st === 'working' ? `working · <span class="num" data-since="${esc(a.status.since)}">${secs(a.status.since)}</span>` : st;
         return `<div class="node is-${st}" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
           <span class="pic">${picture(a, 36)}</span>
           <span class="node-name">${esc(obyOf(a))}</span>
@@ -1432,21 +1522,21 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
-    return `<div class="log-row${isNew ? ' is-new' : ''}" title="#${e.seq} ${esc(e.hash || '')}"><span class="t">${time}</span><span class="k is-${esc(e.type)}">${esc(TYPE_WORDS[e.type] || e.type)}</span><span class="d">${esc(e.detail || '')}</span></div>`;
+    return `<div class="log-row${isNew ? ' is-new' : ''}" title="#${esc(e.seq)} ${esc(e.hash || '')}"><span class="t">${time}</span><span class="k is-${esc(e.type)}">${esc(TYPE_WORDS[e.type] || e.type)}</span><span class="d">${esc(e.detail || '')}</span></div>`;
   }
 
-  function exchangeTable(list, compact) {
-    if (!list.length) return `<p class="empty-line">No exchanges yet. When one Oby asks another, it shows up here.</p>`;
-    return `<div class="table-wrap"><table class="table"><thead><tr><th>Started</th><th>Route</th><th class="hide-narrow">What</th><th>Hops</th><th class="r">Took</th><th>State</th></tr></thead><tbody>${list
+  // the route's pictures already show every hop, so there's no hop count; on a phone the state is its dot
+  function exchangeTable(list, empty = 'No exchanges yet. When one Oby asks another, it shows up here.') {
+    if (!list.length) return `<p class="empty-line">${esc(empty)}</p>`;
+    return `<div class="table-wrap"><table class="table"><thead><tr><th>Started</th><th>Route</th><th class="hide-narrow">What</th><th class="r">Took</th><th>State</th></tr></thead><tbody>${list
       .map((e) => {
         const words = isSealed(e.root) ? `Sealed · ${size(sealedBytes(e.root))}` : e.root.text || (e.root.files?.length ? `${e.root.files.length} file(s)` : '');
         return `<tr class="is-link" data-page="exchange:${e.id}">
           <td class="num mono">${esc(clock(e.start))}</td>
           <td><div class="cell">${route(e)}</div></td>
-          <td class="hide-narrow" style="max-width:0;width:100%"><div class="clip muted">${esc(words)}</div></td>
-          <td class="num">${e.root.kind === 'post' ? '—' : e.hops}</td>
+          <td class="hide-narrow fill"><div class="clip muted">${esc(words)}</div></td>
           <td class="r num mono ink">${e.root.kind === 'post' ? '—' : fmtMs(e.durationMs)}</td>
-          <td>${stateHtml(e.status)}</td>
+          <td class="ex-state" title="${esc(STATUS_WORDS[e.status] || e.status)}">${stateHtml(e.status)}</td>
         </tr>`;
       })
       .join('')}</tbody></table></div>`;
@@ -1455,9 +1545,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function pageTraffic() {
     const ex = exchanges();
     const live = ex.filter((e) => e.status === 'working' || e.status === 'waiting').length;
-    return head('Traffic', `${ex.length} exchanges · ${live} in flight · each one an ask and every hop it caused`) + exchangeTable(ex, false);
+    return head('Traffic', `${ex.length} exchange${ex.length === 1 ? '' : 's'}${live ? ` · ${live} in progress` : ''}`) + exchangeTable(ex);
   }
 
+  // an exchange: who asked whom and how it went, its timeline, then the messages themselves
   function pageExchange(id) {
     const ex = exchanges().find((e) => e.id === id);
     if (!ex) return head('Exchange', 'Not found. It may be older than this Sphere keeps.');
@@ -1465,13 +1556,16 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const msgs = [ex.root, ...spans.filter((s) => s.ask.id !== ex.root.id).map((s) => s.ask), ...spans.map((s) => s.reply).filter(Boolean)]
       .filter((m, i, a) => a.indexOf(m) === i)
       .sort((a, b) => a.ts.localeCompare(b.ts));
-    const sub = `${esc(routeWords(ex))} · ${esc(where(ex.channel))} · started ${esc(clock(ex.start))} · ${ex.machines} machine${ex.machines === 1 ? '' : 's'} · ${ex.hops} hop${ex.hops === 1 ? '' : 's'} · ${stateHtml(ex.status)}`;
+    // the words and the state are two items of the line, so on a phone the state wraps whole, with no "·" left hanging.
+    // A post already says where it went ("… to #general"), and has no time taken and no timeline: nobody worked on it
+    const post = ex.root.kind === 'post';
+    const sub = `<span>${[routeWords(ex), post ? '' : where(ex.channel), clock(ex.start)].filter(Boolean).map(esc).join(' · ')}</span>${stateHtml(ex.status)}`;
     return (
-      head(`Exchange <span class="mono" style="font-size:18px;color:var(--muted)">${esc(ex.id)}</span>`, sub, `<span class="kpi-value" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
-      `<div id="trace-box">${traceHtml(ex)}</div>
-       <div class="legend"><span><i style="background:rgba(255,255,255,.14)"></i>sent, waiting to be taken</span><span><i style="background:rgba(255,255,255,.75)"></i>worked on, on its owner's machine</span></div>
-       <div class="section-head"><h3>Payload · what was said, as data</h3><span class="link">${msgs.length} message${msgs.length === 1 ? '' : 's'}${ex.files.length ? ` · ${ex.files.length} file${ex.files.length === 1 ? '' : 's'}` : ''}</span></div>
-       <div class="payload"><div class="chat-thread">${msgs.map((m, i) => messageHtml(m, msgs[i - 1])).join('')}</div></div>`
+      head('Exchange', sub, post ? '' : `<span class="kpi-value" title="How long it took" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
+      (post ? '' : `<div id="trace-box">${traceHtml(ex)}</div>
+       <div class="legend"><span><i style="background:rgba(255,255,255,.14)"></i>Waiting to be taken</span><span><i style="background:rgba(255,255,255,.75)"></i>Working</span></div>`) +
+      `<div class="section-head"><h3>What was said</h3>${ex.files.length ? `<span class="link">${ex.files.length} file${ex.files.length === 1 ? '' : 's'}</span>` : ''}</div>
+       <div class="said"><div class="chat-thread">${msgs.map((m, i) => messageHtml(m, msgs[i - 1])).join('')}</div></div>`
     );
   }
 
@@ -1487,64 +1581,91 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const endT = s.endMs ?? Date.now();
         const qEnd = s.started ?? endT;
         const running = !s.endMs && s.status === 'working';
+        // one short line: where it ran, with what, and for how long (the bar shows the waiting)
         const meta = [];
-        if (s.target) meta.push(`ran on ${machineOf(s.target)}`);
-        if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
         const r = s.reply?.meta || {};
-        if (r.model) meta.push(esc(r.model));
-        if (r.turns) meta.push(`${r.turns} turns`);
-        if (r.tools && Object.keys(r.tools).length) meta.push(Object.entries(r.tools).map(([k, v]) => `${esc(k)} ×${v}`).join(', '));
-        if (s.started && s.claimed !== null) meta.push(`queued ${fmtMs(s.started - s.posted)}`);
-        if (s.endMs && s.started) meta.push(`worked ${fmtMs(s.endMs - s.started)}`);
-        if (r.answeredBy === 'owner') meta.push('written by its owner');
-        if (s.status === 'waiting') meta.push('waiting for its representative to take it');
-        if (s.status === 'offline') meta.push(`${ownerName(s.target)}’s representative is offline`);
+        if (r.answeredBy === 'owner') meta.push(`written by ${esc(ownerName(s.target))}`);
+        else if (s.target && (s.started || s.endMs)) meta.push(`on ${esc(machineOf(s.target))}`);
+        if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
+        if (r.model) meta.push(esc(plainModel(r.model)));
+        if (s.endMs && s.started && r.answeredBy !== 'owner') meta.push(`worked ${fmtMs(s.endMs - s.started)}`);
+        if (s.status === 'waiting') meta.push('not taken yet');
+        if (s.status === 'offline') meta.push(`${esc(obyOf(s.target))} is offline`);
         const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → ${esc(postTo(s.ask))}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
         return `<div class="span">
-          <div class="span-who" style="padding-left:${indent}px">${s.depth ? '<span class="muted">↳</span>' : ''}${picture(s.from, 18)}<span class="clip">${label}</span>${s.depth ? `<span class="chip-tag">hop ${s.depth}</span>` : ''}</div>
+          <div class="span-who" style="padding-left:${indent}px">${s.depth ? '<span class="muted">↳</span>' : ''}${picture(s.from, 18)}<span class="clip">${label}</span></div>
           <div class="bar-track">
             <div class="bar q" style="left:${pct(s.posted)}%;width:${Math.max(0.4, pct(qEnd) - pct(s.posted))}%"></div>
             ${s.started || s.endMs ? `<div class="bar w${running ? ' is-running' : ''}${s.status === 'error' ? ' is-error' : ''}" style="left:${pct(s.started ?? s.posted)}%;width:${Math.max(0.6, pct(endT) - pct(s.started ?? s.posted))}%"></div>` : ''}
           </div>
           <div class="span-dur" ${running ? `data-run="${s.posted}"` : ''}>${s.ask.kind === 'post' ? '—' : fmtMs(endT - s.posted)}</div>
-          <div class="span-meta" style="padding-left:${indent}px">${stateHtml(s.status)} · ${meta.join(' · ')}</div>
+          <div class="span-meta" style="padding-left:${indent}px">${[stateHtml(s.status), ...meta].join(' · ')}</div>
         </div>`;
       })
       .join('');
-    return `<div class="trace"><div class="trace-axis"><span>Span</span><span class="ticks"><span>0</span><span>${fmtMs(total / 2)}</span><span>${fmtMs(total)}</span></span><span style="text-align:right">took</span></div>${rows}</div>`;
+    return `<div class="trace"><div class="trace-axis"><span></span><span class="ticks"><span>0</span><span>${fmtMs(total / 2)}</span><span>${fmtMs(total)}</span></span><span style="text-align:right">Took</span></div>${rows}</div>`;
   }
 
   const stateOf = (a) => (a.status?.state === 'working' ? 'working' : a.online ? 'online' : 'offline');
+  // Members: the person and their Oby, whether it's there, and what it answers with
+  const MEMBER_STATE = { online: 'Online', working: 'Working', offline: 'Offline', suspended: 'Suspended' };
   function pageMembers() {
     const list = members().sort((a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
     const online = list.filter((a) => a.online).length;
     const rows = list
       .map((a) => {
         const st = a.suspended ? 'suspended' : stateOf(a);
-        const d = a.declared;
-        const nokeys = S.sphere.policy?.sealed && a.keys === null ? '<div style="color:var(--needs);font-size:12px">has no keys: update its rep.mjs to take part while the Sphere is sealed</div>' : '';
-        const scope = d ? `reads ${esc(d.folder || '?')}${d.tools?.length ? ` · ${esc(d.tools.join(', '))}` : ''}${d.approve ? ' · owner approves each ask' : ' · answers by itself'}` : '<span class="muted">not declared</span>';
         const s = a.stats || {};
-        const conns = a.connections ? [a.connections.rep ? 'representative' : '', a.connections.session ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected' : [a.online ? 'representative' : '', a.inSession ? 'owner in a session' : ''].filter(Boolean).join(' · ') || 'not connected';
+        const seen = st === 'offline' && a.lastSeen ? `seen ${ago(a.lastSeen)}` : '';
+        // an older Oby in a sealed Sphere can't open what's sent to it
+        const nokeys = S.sphere.policy?.sealed && a.keys === null ? 'can’t read sealed messages: needs an update' : '';
         const actions = S.admin && !isMe(a) && agentIdOk(a.id)
-          ? `<button class="set-button sm" data-suspend="${esc(a.id)}" data-to="${a.suspended ? 0 : 1}">${a.suspended ? 'Resume' : 'Suspend'}</button> <button class="set-button sm is-danger" data-remove="${esc(a.id)}">Remove</button>`
+          ? `<button class="set-button sm" data-suspend="${esc(a.id)}" data-to="${a.suspended ? 0 : 1}" title="${a.suspended ? 'It can talk again' : 'Stops its messages both ways until you resume it'}">${a.suspended ? 'Resume' : 'Suspend'}</button><button class="set-button sm is-danger" data-remove="${esc(a.id)}" title="Ends its sign-in: it would have to join again">Remove</button>`
           : '';
         return `<tr>
-          <td><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="clip ink">${esc(obyOf(a))}</div><div class="clip muted" style="font-size:12px">@${esc(a.name)} · ${esc(a.owner)}${a.bot ? ' · bot' : ''}${a.admin ? ' · admin' : ''}</div></div></div></td>
-          <td>${a.suspended ? `<span class="state"><span class="status"><span class="status-dot is-suspended"></span></span>Suspended</span>` : st === 'working' ? `<span class="state"><span class="status"><span class="status-dot is-working"></span></span>Working</span>` : stateHtml(st === 'online' ? 'answered' : 'offline').replace('Answered', 'Online').replace('Waiting, offline', 'Offline')}<div class="muted" style="font-size:12px">${esc(conns)}${a.lastSeen && !a.online ? ` · seen ${esc(ago(a.lastSeen))}` : ''}</div></td>
-          <td class="hide-narrow"><div class="clip" style="max-width:220px">${scope}</div><div class="muted" style="font-size:12px">${esc(a.runtime || '')}</div>${nokeys}</td>
-          <td class="num hide-narrow">${s.asksIn ?? '—'} <span class="muted">in</span> · ${s.asksOut ?? '—'} <span class="muted">out</span></td>
-          <td class="num mono r">${s.medianAnswerMs ? fmtMs(s.medianAnswerMs) : '—'}</td>
-          <td class="r" style="white-space:nowrap">${actions}</td>
+          <td class="fill"><div class="cell">${picture(a, 28)}<div style="min-width:0">
+            <div class="mem-name"><span class="clip ink">${esc(label(a))}${isMe(a) ? ' <span class="muted">(you)</span>' : ''}</span><span class="muted mem-handle">@${esc(a.name)}</span>${a.admin ? '<span class="chip-tag">admin</span>' : ''}${a.bot ? '<span class="chip-tag">bot</span>' : ''}</div>
+            <div class="clip mem-sub" title="${esc(a.about || '')}">${esc(a.about || (a.bot ? 'A bot: no person behind it' : obyOf(a)))}</div>
+          </div></div></td>
+          <td class="mem-state" title="${MEMBER_STATE[st]}"><span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${nokeys || seen ? `<div class="mem-sub${nokeys ? ' warn' : ''}">${esc(nokeys || seen)}</div>` : ''}</td>
+          <td class="hide-phone">${esc(answersWith(a)) || '<span class="muted">—</span>'}</td>
+          <td class="num r hide-narrow">${esc(s.answered ?? s.asksIn ?? '—')}</td>
+          <td class="num mono r hide-phone">${s.medianAnswerMs ? fmtMs(s.medianAnswerMs) : '—'}</td>
+          ${S.admin ? `<td class="r"><div class="mem-actions">${actions}</div></td>` : ''}
         </tr>`;
       })
       .join('');
     return (
-      head('Members', `${list.length} Obys · ${online} online · what each one's machine says it may do`, `<button class="set-button" data-invite>Invite member</button>`) +
-      `<div class="table-wrap"><table class="table"><thead><tr><th>Oby</th><th>State</th><th class="hide-narrow">Scope, as declared</th><th class="hide-narrow">Asks</th><th class="r">Median answer</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-       <p class="note">Scope is what each member's own machine declares; the Sphere can't see inside it. ${S.admin ? 'Suspending stops a member’s messages both ways; removing ends its token.' : 'Admins suspend and remove members.'}</p>
+      head('Members', `${list.length} member${list.length === 1 ? '' : 's'} · ${online} online`, `<button class="set-button" data-invite>Invite member</button>`) +
+      `<div class="table-wrap"><table class="table mem-table${S.admin ? ' is-admin' : ''}"><thead><tr><th>Member</th><th>Status</th><th class="hide-phone">Answers with</th><th class="r hide-narrow">Answered</th><th class="r hide-phone">Median answer</th>${S.admin ? '<th></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
+  }
+  // what an Oby answers with, in plain words: "Claude Code · Haiku", or nothing when it doesn't say
+  const RUNTIME_NAMES = { claude: 'Claude Code', 'claude code': 'Claude Code', codex: 'Codex', cursor: 'Cursor' };
+  // a model in plain words, the same in Members, an exchange's timeline and the conversation:
+  // "claude-haiku-5-5" → "Haiku 5.5", "claude-sonnet-4-20250514" → "Sonnet 4" (a date isn't a version),
+  // "claude-3-5-haiku-20241022" → "Haiku 3.5"; any other model as it is, cut at 24 characters.
+  // (Not "modelWords": Settings has one, and in one script the later declaration wins.)
+  function plainModel(m) {
+    const t = String(m ?? '').trim();
+    const name = (f) => f[0].toUpperCase() + f.slice(1).toLowerCase();
+    const fam = /^(?:claude-)?(opus|sonnet|haiku)(?:-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?)?/i.exec(t);
+    if (fam) return name(fam[1]) + (fam[2] ? ` ${fam[2]}${fam[3] ? `.${fam[3]}` : ''}` : '');
+    const old = /^claude-(\d)(?:-(\d))?-(opus|sonnet|haiku)\b/i.exec(t);
+    if (old) return `${name(old[3])} ${old[1]}${old[2] ? `.${old[2]}` : ''}`;
+    return t.length > 24 ? t.slice(0, 23) + '…' : t;
+  }
+  function answersWith(a) {
+    const rt = (x) => RUNTIME_NAMES[String(x ?? '').trim().toLowerCase()] || '';
+    const model = plainModel;
+    const d = a?.declared;
+    let main = '', m = '';
+    if (d && rt(d.runtime)) { main = rt(d.runtime); m = d.model; }
+    else if (a?.runtime) { const [r, mm] = String(a.runtime).split('·'); main = rt(r); m = mm; }
+    if (!main) return '';
+    const also = (Array.isArray(d?.runtimes) ? d.runtimes : []).map(rt).filter((x) => x && x !== main);
+    return [main, model(m)].filter(Boolean).join(' · ') + (also.length ? `, or ${also.join(', ')}` : '');
   }
 
   const HOLDER_WORDS = { session: 'your Claude Code', answering: 'the answering session' };
@@ -1656,40 +1777,230 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         const m = S.byId.get(f.messageId);
         const to = f.to?.length ? f.to : m?.replyTo ? [S.byId.get(m.replyTo)?.from].filter(Boolean) : [];
         const ex = m ? exchanges().find((e) => e.spans.some((s) => s.ask.id === m.id || s.reply?.id === m.id) || e.id === m.id) : null;
+        // its SHA-256 stays a hover away: for checking a copy, not for reading
+        const sha = f.sha256 ? `SHA-256 ${f.sha256}` : '';
         return `<tr>
-          <td>${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
-          <td class="num mono">${esc(size(f.size))}</td>
-          <td class="mono muted hide-narrow" title="${esc(f.sha256 || '')}">${f.sha256 ? esc(f.sha256.slice(0, 12)) + '…' : '—'}</td>
+          <td class="fill">${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>Sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}" title="${esc(sha)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
+          <td class="num mono hide-phone">${esc(size(f.size))}</td>
           <td><span class="route">${picture(agent(f.from), 20)}${to.length ? arrow + to.map((id) => picture(agent(id), 20)).join('') : ''}</span></td>
-          <td class="hide-narrow">${ex ? `<button class="jump mono" data-page="exchange:${ex.id}">${esc(ex.id)}</button>` : '—'}</td>
           <td class="mono muted">${esc(clock(Date.parse(f.ts)))}</td>
+          <td class="r hide-phone">${ex ? `<button class="open-link" data-page="exchange:${ex.id}">Exchange</button>` : ''}</td>
         </tr>`;
       })
       .join('');
-    return head('Files', S.files ? `${list.length} files relayed · ${size(total)} · each with its SHA-256` : 'Loading…') +
-      (list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Size</th><th class="hide-narrow">SHA-256</th><th>From → to</th><th class="hide-narrow">Exchange</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
+    return head('Files', S.files && list.length ? `${list.length} file${list.length === 1 ? '' : 's'} · ${size(total)}` : S.files ? '' : 'Loading…') +
+      (list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th class="hide-phone">Size</th><th>From → to</th><th>When</th><th class="hide-phone"></th></tr></thead><tbody>${rows}</tbody></table></div>` : S.files ? `<p class="empty-line">No files yet. When an Oby attaches one, it shows up here.</p>` : '');
   }
 
-  const AUDIT_FILTERS = { all: null, traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'remove'], governance: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], denials: ['deny'] };
+  // ---------------------------------------------------------------- Audit log: search, filters (event type, member, time), export
+  // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
+  // and "Export all" pages through the whole log. The dropdowns are this page's own (au-*), small.
+  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'keys', 'channel'], admin: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
+  const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
+  const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
+  const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
+  // relay data: an event without a whole-number seq is dropped, since its seq reaches the nav, the header and the export
+  function okAuditEvent(e) { return !!e && typeof e === 'object' && Number.isSafeInteger(e.seq) && e.seq > 0; }
+  function auditHeadOf(h) { return h && Number.isSafeInteger(h.seq) && h.seq >= 0 ? { seq: h.seq, hash: String(h.hash ?? '') } : null; }
+  // what a GET /api/audit gave, merged into what's here by seq (never replacing it), so two loads
+  // finishing in either order keep the most events; the newest 2,000 stay
+  function mergeAudit(a) {
+    const have = new Set(S.audit.map((e) => e.seq));
+    S.audit = S.audit.concat((a?.events || []).filter((e) => okAuditEvent(e) && !have.has(e.seq))).sort((x, y) => x.seq - y.seq).slice(-2000);
+    const h = auditHeadOf(a?.head);
+    if (h && !(S.auditHead && S.auditHead.seq > h.seq)) S.auditHead = h;
+    if (a && 'verified' in a) S.auditVerified = a.verified;
+  }
+  // events that match a filter { q, type, member, time }, newest first. `type` is 'all', a group,
+  // or 't:<type>'; `member` an agent id or 'operator' (the admin key); every word of `q` must
+  // appear in the event's type, #seq, who did it, whom it was about, or its detail
+  function auditFilter(list, f, { now = Date.now(), nameOf = () => '' } = {}) {
+    const words = String(f.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+    const types = f.type && f.type !== 'all' ? (String(f.type).startsWith('t:') ? [String(f.type).slice(2)] : AUDIT_GROUPS[f.type] || []) : null;
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    const since = f.time === 'hour' ? now - 3600e3 : f.time === 'today' ? day.getTime() : f.time === 'week' ? now - 7 * 86400e3 : null;
+    return list
+      .filter((e) => {
+        if (types && !types.includes(e.type)) return false;
+        if (f.member && e.actor !== f.member && e.target !== f.member) return false;
+        if (since !== null && !(Date.parse(e.ts) >= since)) return false;
+        if (!words.length) return true;
+        const hay = [e.type, `#${e.seq}`, nameOf(e.actor), nameOf(e.target), e.detail].join(' ').toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+      .sort((a, b) => b.seq - a.seq);
+  }
+  const auditNameOf = (id) => (id === 'operator' ? 'admin key' : id && S.agents.has(id) ? `${agent(id).name} ${ownerName(agent(id))}` : '');
+  const auditFiltering = () => !!(AU.q.trim() || AU.type !== 'all' || AU.member || AU.time !== 'all');
+  const auditShown = () => auditFilter(S.audit, AU, { nameOf: auditNameOf });
+  const auditExportLabel = () => (auditFiltering() ? 'Export shown' : 'Export all');
+  function auditOptions(key) {
+    if (key === 'time') return Object.entries(AUDIT_TIMES).map(([v, t]) => ({ v, t }));
+    if (key === 'type') {
+      const count = {};
+      for (const e of S.audit) count[e.type] = (count[e.type] || 0) + 1;
+      const groups = Object.entries(AUDIT_GROUP_WORDS).map(([v, t]) => ({ v, t, h: v === 'all' ? '' : String(AUDIT_GROUPS[v].reduce((n, x) => n + (count[x] || 0), 0)) }));
+      const one = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b)).map((x) => ({ v: `t:${x}`, t: x, h: String(count[x]), mono: true }));
+      return [...groups, ...(one.length ? [{ label: 'One type' }, ...one] : [])];
+    }
+    const ids = new Set();
+    for (const e of S.audit) for (const id of [e.actor, e.target]) if (id) ids.add(id);
+    const people = [...ids].filter((id) => S.agents.has(id)).map(agent).sort((a, b) => label(a).localeCompare(label(b))).map((a) => ({ v: a.id, t: label(a), h: `@${a.name}` }));
+    return [{ v: '', t: 'Everyone' }, ...people, ...(ids.has('operator') ? [{ v: 'operator', t: 'The admin key' }] : [])];
+  }
+  const AU_ARIA = { type: 'Event type', member: 'Member', time: 'Time' };
+  function auditPick(key) {
+    const opt = auditOptions(key).find((o) => o.v === AU[key]);
+    const now = opt ? opt.t : key === 'member' && AU.member ? auditNameOf(AU.member) || 'Someone' : AUDIT_GROUP_WORDS[AU[key]] || AU[key];
+    const on = key === 'member' ? !!AU.member : AU[key] !== 'all';
+    return `<div class="au-pick" data-au-pick="${key}"><button type="button" class="au-drop${on ? ' is-on' : ''}" aria-haspopup="listbox" aria-expanded="false" aria-label="${AU_ARIA[key]}: ${esc(now)}"><span class="v">${esc(now)}</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.75 5 6.75 8 3.75"/></svg></button></div>`;
+  }
   function pageAudit() {
-    const f = AUDIT_FILTERS[S.auditFilter];
-    const list = S.audit.filter((e) => !f || f.includes(e.type)).slice().reverse();
-    const chain = S.auditVerified === null ? '<span class="chain">No event log on this Sphere yet</span>'
-      : S.auditVerified ? `<span class="chain"><span class="status"><span class="status-dot is-healthy"></span></span>Chain verified · ${S.auditHead?.seq ?? S.audit.length} events · head <span class="mono">${esc((S.auditHead?.hash || '').slice(0, 12))}</span></span>`
+    if (!AU.loaded) loadAudit();
+    return `<div id="au-head">${auditHead()}</div>
+      <div class="au-tools" role="search">
+         <label class="au-search"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="4.25"/><path d="m9.25 9.25 3 3"/></svg><input type="text" id="au-q" placeholder="Search events" aria-label="Search events" autocomplete="off" spellcheck="false" value="${esc(AU.q)}"><button type="button" class="au-clear" data-au-clear aria-label="Clear the search"${AU.q ? '' : ' hidden'}>${xIcon()}</button></label>
+         <div class="au-picks" id="au-picks">${['type', 'member', 'time'].map(auditPick).join('')}</div>
+       </div>
+       <div id="au-results">${auditResults()}</div>`;
+  }
+  function auditHead() {
+    const chain = S.auditVerified === null ? '<span class="chain">This Sphere doesn’t publish its event log yet</span>'
+      : S.auditVerified ? `<span class="chain" title="Each event’s hash covers the one before it, so changing or removing one breaks every hash after it"><span class="status"><span class="status-dot is-healthy"></span></span>Chain verified · ${esc(Number(S.auditHead?.seq ?? S.audit.length).toLocaleString())} events</span>`
       : `<span class="chain is-bad"><span class="status"><span class="status-dot is-error"></span></span>Chain broken: an event was changed or removed</span>`;
-    const filters = `<div class="filters">${Object.keys(AUDIT_FILTERS).map((k) => `<button data-filter="${k}" class="${S.auditFilter === k ? 'is-on' : ''}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>`;
-    const rows = list.slice(0, 500)
+    return head('Audit log', chain, `<button class="set-button" data-export title="Download as JSON"${AU.exporting ? ' disabled' : ''}>${AU.exporting ? 'Exporting…' : auditExportLabel()}</button>`);
+  }
+  function auditResults() {
+    const list = auditShown();
+    const filtering = auditFiltering();
+    const n = list.length;
+    const partial = AU.total && AU.total > S.audit.length ? ` in the newest ${S.audit.length.toLocaleString()}` : '';
+    const count = filtering ? `<span>${n.toLocaleString()} ${n === 1 ? 'event' : 'events'}${partial}</span><button type="button" data-au-reset>Clear filters</button>` : '';
+    const rows = list.slice(0, AU.shown)
       .map((e) => `<tr>
-        <td class="mono muted num">#${e.seq}</td>
-        <td class="mono num">${esc(new Date(e.ts).toLocaleTimeString([], { hour12: false }))}.${String(new Date(e.ts).getMilliseconds()).padStart(3, '0')}</td>
+        <td class="mono muted num hide-phone">#${esc(e.seq)}</td>
+        <td class="mono num" title="${esc(e.ts)}">${esc(clock(Date.parse(e.ts)))}</td>
         <td class="mono ink">${esc(e.type)}</td>
-        <td><div class="clip" style="max-width:460px">${esc(e.detail || '')}</div></td>
+        <td class="fill au-detail"><div class="clip">${esc(e.detail || '')}</div></td>
         <td class="mono muted hide-narrow" title="${esc(e.hash || '')}">${esc((e.hash || '').slice(0, 10))}</td>
       </tr>`)
       .join('');
-    return head('Audit log', chain, `<button class="set-button" data-export>Export JSON</button>`) + filters +
-      `<div class="table-wrap"><table class="table" style="margin-top:12px"><thead><tr><th>Seq</th><th>Time</th><th>Event</th><th>Detail</th><th class="hide-narrow">Hash</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="muted">Nothing here.</td></tr>`}</tbody></table></div>
-       <p class="note">Append-only. Each event's hash covers the one before it, so changing or removing any event breaks every hash after it.</p>`;
+    const more = n > AU.shown ? `<button type="button" class="au-more" data-au-more>Show ${Math.min(200, n - AU.shown)} more</button>` : '';
+    return `<p class="au-count" id="au-count">${count}</p>` + (n
+      ? `<div class="table-wrap"><table class="table au-table"><thead><tr><th class="hide-phone">Seq</th><th>Time</th><th>Event</th><th>Detail</th><th class="hide-narrow">Hash</th></tr></thead><tbody>${rows}</tbody></table></div>${more}`
+      : `<p class="empty-line">${filtering ? 'No events match.' : 'Nothing has happened yet.'}</p>`);
+  }
+  // the newest 1,000 (the most one request gives), the first time the page opens; new ones arrive live
+  async function loadAudit() {
+    AU.loaded = true;
+    try {
+      const a = await api('/api/audit?limit=1000');
+      mergeAudit(a);
+      AU.total = Number.isSafeInteger(a?.total) ? a.total : null;
+    } catch { return; }
+    if (S.mode === 'console' && S.page === 'audit') updateAudit();
+  }
+  // after a change: the results, the count and the export button; the search box keeps its focus
+  function updateAudit() {
+    const box = document.getElementById('au-results');
+    if (!box) return;
+    const top = document.getElementById('au-head');
+    // a button with the focus (Export, Show more) is drawn again: the new one gets the focus, so a
+    // live event doesn't throw a keyboard user back to the top of the page
+    const was = document.activeElement;
+    const focused = was && (box.contains(was) || top?.contains(was)) ? ['data-export', 'data-au-more'].find((k) => was.hasAttribute(k)) : null;
+    box.innerHTML = auditResults();
+    if (top) top.innerHTML = auditHead(); // the chain's state, and what Export exports
+    const clear = document.querySelector('#page [data-au-clear]');
+    if (clear) clear.hidden = !AU.q;
+    wireAuditResults();
+    if (focused) document.querySelector(`#au-head [${focused}], #au-results [${focused}]`)?.focus();
+  }
+  function wireAuditResults() {
+    const box = document.getElementById('au-results');
+    document.querySelector('#au-head [data-export]')?.addEventListener('click', exportAudit);
+    box?.querySelector('[data-au-more]')?.addEventListener('click', () => { AU.shown += 200; updateAudit(); });
+    box?.querySelector('[data-au-reset]')?.addEventListener('click', () => {
+      Object.assign(AU, { q: '', type: 'all', member: '', time: 'all', shown: 200 });
+      const q = document.getElementById('au-q');
+      if (q) q.value = '';
+      renderAuditPicks();
+      updateAudit();
+      q?.focus(); // the button is gone with the filters: the search is where to go on
+    });
+  }
+  function renderAuditPicks(focusKey) {
+    const picks = document.getElementById('au-picks');
+    if (!picks) return;
+    picks.innerHTML = ['type', 'member', 'time'].map(auditPick).join('');
+    picks.querySelectorAll('[data-au-pick]').forEach(wireAuditPick);
+    if (focusKey) picks.querySelector(`[data-au-pick="${focusKey}"] .au-drop`)?.focus();
+  }
+  function wireAudit(el) {
+    const q = el.querySelector('#au-q');
+    if (!q) return;
+    q.oninput = () => { AU.q = q.value; AU.shown = 200; updateAudit(); };
+    q.onkeydown = (e) => { if (e.key === 'Escape' && q.value) { e.stopPropagation(); q.value = ''; q.oninput(); } };
+    el.querySelector('[data-au-clear]').onclick = () => { q.value = ''; q.oninput(); q.focus(); };
+    el.querySelectorAll('[data-au-pick]').forEach(wireAuditPick);
+    wireAuditResults();
+    if (!AU.wired) {
+      AU.wired = true;
+      document.addEventListener('pointerdown', (e) => { if (!e.target.closest?.('.au-pick')) closeAuditMenu(); });
+    }
+  }
+  function closeAuditMenu(focus) {
+    const m = document.querySelector('.au-menu');
+    if (!m) return;
+    const btn = m.parentElement.querySelector('.au-drop');
+    m.remove();
+    btn.setAttribute('aria-expanded', 'false');
+    if (focus) btn.focus();
+  }
+  // a dropdown: a list of options, a search field when there are many, arrows, Enter, Escape
+  function wireAuditPick(pick) {
+    const key = pick.dataset.auPick;
+    const btn = pick.querySelector('.au-drop');
+    const open = () => {
+      closeAuditMenu();
+      const opts = auditOptions(key);
+      const find = opts.filter((o) => !o.label).length > 8;
+      pick.insertAdjacentHTML('beforeend', `<div class="au-menu" role="listbox" aria-label="${AU_ARIA[key]}">${find ? `<input class="au-menu-search" placeholder="Find" aria-label="Find a ${AU_ARIA[key].toLowerCase()}" autocomplete="off" spellcheck="false">` : ''}${opts
+        .map((o) => (o.label ? `<div class="au-menu-label" role="presentation">${esc(o.label)}</div>` : `<button type="button" class="au-opt" role="option" data-v="${esc(o.v)}" aria-selected="${o.v === AU[key]}"><span class="ck">${o.v === AU[key] ? '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 6.2 2.3 2.3 4.7-5"/></svg>' : ''}</span><span class="t${o.mono ? ' mono' : ''}">${esc(o.t)}</span>${o.h ? `<span class="h">${esc(o.h)}</span>` : ''}</button>`))
+        .join('')}<p class="au-none" hidden>No match</p></div>`);
+      const menu = pick.querySelector('.au-menu');
+      btn.setAttribute('aria-expanded', 'true');
+      if (menu.getBoundingClientRect().right > window.innerWidth - 8) menu.classList.add('is-right');
+      const visible = () => [...menu.querySelectorAll('.au-opt')].filter((b) => !b.hidden);
+      const search = menu.querySelector('.au-menu-search');
+      menu.querySelectorAll('.au-opt').forEach((b) => (b.onclick = () => {
+        AU[key] = b.dataset.v;
+        AU.shown = 200;
+        closeAuditMenu();
+        renderAuditPicks(key);
+        updateAudit();
+      }));
+      menu.onkeydown = (e) => {
+        const list = visible();
+        const i = list.indexOf(document.activeElement);
+        // from the search field (not in the list), down is the first option and up the last
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const down = e.key === 'ArrowDown'; list[i < 0 ? (down ? 0 : list.length - 1) : (i + (down ? 1 : -1) + list.length) % list.length]?.focus(); }
+        else if (e.key === 'Home' || e.key === 'End') { if (document.activeElement !== search) { e.preventDefault(); list[e.key === 'Home' ? 0 : list.length - 1]?.focus(); } }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAuditMenu(true); }
+        else if (e.key === 'Tab') closeAuditMenu();
+        else if (e.key === 'Enter' && document.activeElement === search) { e.preventDefault(); list[0]?.click(); }
+      };
+      if (search) search.oninput = () => {
+        const w = search.value.trim().toLowerCase();
+        menu.querySelectorAll('.au-opt').forEach((b) => (b.hidden = !!w && !b.textContent.toLowerCase().includes(w)));
+        menu.querySelectorAll('.au-menu-label').forEach((l) => (l.hidden = !!w));
+        menu.querySelector('.au-none').hidden = visible().length > 0;
+      };
+      (search || menu.querySelector('.au-opt[aria-selected="true"]') || visible()[0])?.focus();
+    };
+    btn.onclick = () => (pick.querySelector('.au-menu') ? closeAuditMenu() : open());
+    btn.onkeydown = (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); } };
   }
 
   // Policy: this Sphere's, for everyone in it. Only admins reach this page (renderPage).
@@ -1746,7 +2057,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   function pageYou() {
     const me = S.agents.get(S.me.id) || S.me;
     const st = me.suspended ? 'suspended' : stateOf(me);
-    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `@${esc(me.name)} · represents ${esc(me.owner)} · ${st === 'working' ? 'working now' : st}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
+    const answers = answersWith(me);
+    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `<span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${answers ? `<span aria-hidden="true">·</span><span>answers with ${esc(answers)}</span>` : ''}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
       `<div id="pending-box">${pendingHtml()}</div><div id="you-rest">${youRest()}</div>`;
   }
 
@@ -1754,29 +2066,13 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const me = S.agents.get(S.me.id) || S.me;
     const asked = exchanges().filter((e) => e.spans.some((s) => s.target?.id === me.id));
     const mine = exchanges().filter((e) => e.root.from === me.id && e.root.kind === 'ask');
-    const d = me.declared;
     return `<div class="kpis">
-        ${kpi('Asked of your Oby', `${asked.length}`, 'answered on your machine')}
-        ${kpi('Your asks', `${mine.length}`, 'from your Claude Code or this console')}
-        ${kpi('Median answer', me.stats?.medianAnswerMs ? fmtMs(me.stats.medianAnswerMs) : '—', 'its own, on your machine')}
-        ${kpi('Scope', d?.folder ? esc(d.folder) : '—', d ? `${d.approve ? 'you approve each ask' : 'answers by itself'} · ${esc((d.tools || []).join(', ') || 'reads only')}` : 'starts with `rep.mjs serve`')}
+        ${kpi('Asked of your Oby', `${asked.length}`)}
+        ${kpi('Your asks', `${mine.length}`)}
+        ${kpi('Median answer', me.stats?.medianAnswerMs ? fmtMs(me.stats.medianAnswerMs) : '—', 'how fast your Oby answers')}
       </div>
-      ${thisSphere()}
-      <div class="section-head"><h3>Asked of your Oby</h3></div>${exchangeTable(asked.slice(0, 20), true)}
-      <div class="section-head"><h3>Your asks</h3></div>${exchangeTable(mine.slice(0, 20), true)}`;
-  }
-
-  // what everyone in the Sphere needs to know of its policy, read-only (admins change it in Policy)
-  function thisSphere() {
-    const pol = S.sphere.policy || {};
-    const depth = Number(pol.maxDepth);
-    const hops = !Number.isFinite(depth) ? '—' : depth === 0 ? 'none: Obys can’t ask Obys' : `up to ${depth} hop${depth === 1 ? '' : 's'}`;
-    return `<div class="section-head"><h3>This Sphere</h3><span class="link">${S.admin ? 'Yours to change in Policy' : 'Set by its admins, for everyone in it'}</span></div>
-      <div class="rules">
-        <div class="rule"><span>Message contents</span><span>${pol.sealed ? 'sealed end to end' : 'readable by the relay'}</span></div>
-        <div class="rule"><span>Largest file</span><span>${pol.maxFileBytes ? esc(size(pol.maxFileBytes)) : '—'}</span></div>
-        <div class="rule"><span>Agents asking agents</span><span>${esc(hops)}</span></div>
-      </div>`;
+      <div class="section-head"><h3>Asked of your Oby</h3></div>${exchangeTable(asked.slice(0, 20), 'No one has asked your Oby yet.')}
+      <div class="section-head"><h3>Your asks</h3></div>${exchangeTable(mine.slice(0, 20), 'You haven’t asked anyone yet.')}`;
   }
 
   // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
@@ -1797,6 +2093,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         S.pending = pending || [];
         renderNav();
         if (S.mode === 'console' && S.page === 'you') renderPending();
+        if (S.mode === 'console' && S.page === 'overview') updateKpis(); // Waiting for you
       }
     } catch (e) { if (e.status === 404) pendingOff = true; }
   }
@@ -3192,8 +3489,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
     el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } setTimeout(() => (b.textContent = 'Copy'), 1400); }));
-    el.querySelectorAll('[data-filter]').forEach((b) => (b.onclick = () => { S.auditFilter = b.dataset.filter; renderPage(false); }));
-    el.querySelector('[data-export]')?.addEventListener('click', exportAudit);
+    wireAudit(el);
     el.querySelectorAll('[data-suspend]').forEach((b) => (b.onclick = () => admin(() => apiPost(`/api/admin/agents/${b.dataset.suspend}/suspend`, { suspended: b.dataset.to === '1' }), 'member-problem')));
     el.querySelectorAll('[data-remove]').forEach((b) => (b.onclick = () => {
       const a = agent(b.dataset.remove);
@@ -3356,12 +3652,44 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     n.hidden = false;
     n.classList.toggle('is-problem', !!bad);
   }
+  // Export shown: the events the search and filters show. Export all: every event, page by page
+  // (a request gives at most 1,000), in the shape GET /api/audit has. The button says "Exporting…" meanwhile.
   async function exportAudit() {
-    const r = await fetch('/api/audit?limit=100000', { headers: headers() });
-    const blob = new Blob([await r.text()], { type: 'application/json' });
+    if (AU.exporting) return;
+    const shown = auditFiltering();
+    let out = null;
+    AU.exporting = true;
+    updateAudit();
+    try {
+      if (shown) out = { events: auditShown().reverse(), head: S.auditHead, verified: S.auditVerified, total: AU.total, filter: { search: AU.q.trim(), type: AU.type, member: AU.member, time: AU.time } };
+      else {
+        const events = [];
+        let r = null, after = 0;
+        for (let i = 0; i < 10000; i++) {
+          r = await api(`/api/audit?after=${after}&limit=1000`);
+          const got = r?.events || [];
+          events.push(...got);
+          if (!got.length) break;
+          const last = Number(got[got.length - 1].seq);
+          if (!Number.isFinite(last) || last <= after) break; // a relay that doesn't move on
+          after = last;
+          // the head says where the log ends: a page short of 1,000 (a damaged line leaves a gap) isn't always the last
+          const end = Number(r?.head?.seq);
+          if (Number.isFinite(end) ? last >= end : got.length < 1000) break;
+        }
+        out = { events, head: r?.head ?? null, verified: r?.verified ?? null, total: r?.total ?? events.length };
+      }
+    } catch { out = null; }
+    AU.exporting = false;
+    updateAudit();
+    if (!out) {
+      const b = document.querySelector('#au-head [data-export]');
+      if (b) { b.textContent = 'Couldn’t export'; setTimeout(() => { if (!AU.exporting && b.isConnected) b.textContent = auditExportLabel(); }, 2000); }
+      return;
+    }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${S.sphere.name.replace(/\W+/g, '-').toLowerCase()}-audit.json`;
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
+    a.download = `${S.sphere.name.replace(/\W+/g, '-').toLowerCase()}-audit${shown ? '-shown' : ''}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
@@ -3521,7 +3849,6 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function memberRow(a) {
     const st = a.suspended ? 'suspended' : stateOf(a);
-    const doing = st === 'working' ? `working on ${ownerName(a)}'s machine` : st === 'online' ? 'online, answers on its owner\'s machine' : st;
     const c = S.me ? dmWith(a) : null;
     const n = c ? S.unread[c.name] || 0 : 0;
     const active = !!c && c.name === S.current;
@@ -3534,8 +3861,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       </button>` +
       (S.me ? '' : `<div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
         ${a.about ? `<div>${esc(a.about)}</div>` : ''}
-        <div>@${esc(a.name)} · ${esc(a.owner)} · ${esc(a.runtime || 'claude code')}${a.bot ? ' · a bot' : ''}</div>
-        <div>${esc(doing)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
+        <div>@${esc(a.name)} · ${esc(a.owner)}${answersWith(a) ? ` · ${esc(answersWith(a))}` : ''}${a.bot ? ' · a bot' : ''}</div>
+        <div>${esc(MEMBER_STATE[st] || st)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
       </div>`);
   }
   function theirDmRow(c) {
@@ -3585,7 +3912,9 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     } else {
       const mine = inCh(c);
       const adminHere = !S.me && !!S.adminKey;
-      topic = c.topic ? esc(c.topic) : c.kind === 'private' ? 'Private: only the people and Obys in it see it.' : c.name === 'general' ? 'Where everyone in the Sphere meets.' : 'Anyone in the Sphere can read it and post in it.';
+      // an older Sphere's #general still has the relay's first topic, in its old words
+      const told = c.topic && !(c.name === 'general' && c.topic === 'Where representatives meet.') ? c.topic : '';
+      topic = told ? esc(told) : c.kind === 'private' ? 'Private: only the people and Obys in it see it.' : c.name === 'general' ? 'Where everyone in the Sphere meets.' : 'Anyone in the Sphere can read it and post in it.';
       if (c.kind === 'private' && !c.topic && sealed) topic += ' What’s said here is sealed for them.';
       // #general is everyone's: nobody is added to it or leaves it
       const everyone = c.kind === 'public' && c.name === 'general';
@@ -3717,7 +4046,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     const c = chOf(S.current);
     const peer = c.kind === 'dm' && inCh(c) ? dmPeer(c) : null;
     $('#empty-1').textContent = peer ? `This is your conversation with ${label(peer)}` : c.kind === 'dm' ? `Nothing between ${channelTitle(c.name)} yet` : `Nothing in #${S.current} yet`;
-    $('#empty-2').textContent = peer ? `Ask ${obyOf(peer)} below; it answers on ${ownerName(peer)}’s machine.` : S.me ? 'Write below; @ and a name asks an Oby, and it answers on its owner’s machine.' : 'What the Obys here say shows up here.';
+    $('#empty-2').textContent = peer ? `Ask ${obyOf(peer)} below.` : S.me ? 'Write below. Type @ to ask an Oby.' : 'What the Obys here say shows up here.';
     const feed = $('#feed');
     feed.scrollTop = feed.scrollHeight;
     if (list.length && !document.hidden) markRead(S.current, list[list.length - 1].ts);
@@ -3761,22 +4090,23 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     else if (mt.declined) state = `<p class="room-state">${esc(ownerName(a))} declined</p>`;
     else if (mt.answeredBy === 'owner') state = `<p class="room-state">Written by ${esc(ownerName(a))}</p>`;
     else if (mt.local) {
-      const bits = [`Worked out on ${esc(machineOf(a))}`];
-      if (mt.model) bits.push(esc(mt.model));
+      const bits = [`On ${esc(machineOf(a))}`];
+      if (mt.model) bits.push(esc(plainModel(mt.model)));
       if (mt.durationMs) bits.push((mt.durationMs / 1000).toFixed(1) + 's');
-      if (mt.tools && Object.keys(mt.tools).length) bits.push(Object.entries(mt.tools).map(([k, v]) => `${esc(k)} ×${v}`).join(', '));
       state = `<p class="room-state">${laptop()}${bits.join(' · ')}</p>`;
     }
     const closed = isSealed(m);
     const files = m.files?.length && !closed ? `<div class="msg-attached">${m.files.map(fileHtml).join('')}</div>` : '';
+    // in a sealed Sphere every message is sealed (the side panel and the hint say so): a message
+    // says it only when that's news, or when its signature failed
     if (m.sealed && m.open) state += m.verified === false
       ? `<p class="room-state is-refused">${lock()}Its signature didn’t verify: treat it as forged</p>`
-      : `<p class="room-state">${lock()}Sealed end to end; opened on your machine</p>`;
+      : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
     const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>`;
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
-        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
+        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
       </div>`;
     }
     const by = cont ? '' : `<div class="room-who">
@@ -3841,7 +4171,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       .map((a) => {
         const about = a.status.about && S.byId.get(a.status.about);
         const asker = about ? ` ${obyLower(agent(about.from))}` : '';
-        return `<div class="live-line" data-live="${esc(a.id)}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)} on ${esc(machineOf(a))}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
+        return `<div class="live-line" data-live="${esc(a.id)}">${picture(a, 22)}<span class="status"><span class="status-dot is-working"></span></span><span class="live-step sheen">${esc(obyOf(a))} is answering${esc(asker)}</span><span class="live-secs">${secs(a.status.since)}</span></div>`;
       })
       .join('');
     if (atEnd && here.length) feed.scrollTop = feed.scrollHeight;
@@ -4041,12 +4371,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
       $('#tags').innerHTML = fileTags;
       wireTags();
       $('#text').placeholder = C.just ? `Just for ${ownerName(peer)}…` : `Ask ${obyOf(peer)}…`;
-      hint.textContent = (S.sphere.paused
-        ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
+      hint.textContent = ((S.sphere.paused
+        ? 'The Sphere is paused by an admin: nothing new is sent until it resumes.'
         : C.just
           ? `${obyOf(peer)} doesn’t answer this; ${ownerName(peer)} reads it in their console.`
-          : peer.suspended ? `${obyOf(peer)} is suspended by the Sphere's operator.` : peer.online ? `${obyOf(peer)} answers on ${ownerName(peer)}’s machine, with their files and their rules.` : `${obyOf(peer)} is offline; it will answer once ${ownerName(peer)}’s representative is back.`) +
-        (sealed ? ' Sealed for the two of you.' : '');
+          : peer.suspended ? `${obyOf(peer)} is suspended by an admin.` : peer.online ? '' : `${obyOf(peer)} is offline; it answers when it’s back.`) +
+        (sealed ? ' Sealed for the two of you.' : '')).trim();
       $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
       return;
     }
@@ -4058,12 +4388,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     wireTags();
     $('#text').placeholder = t ? `Ask ${obyOf(t)}…` : `Message #${c.name}…`;
     const n = (c.members || []).length;
-    const sealedNote = sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : c.kind === 'private' ? ` Sealed for the ${n} in #${c.name}.` : ' Sealed for every member; the relay can’t read it.') : '';
-    hint.textContent = (S.sphere.paused
-      ? 'The relay is paused by its operator: nothing new is carried until it resumes.'
+    const sealedNote = sealed ? (t ? ` Sealed: only ${obyOf(t)} and you can read it.` : c.kind === 'private' ? ` Sealed for the ${n} in #${c.name}.` : ' Sealed end to end.') : '';
+    hint.textContent = ((S.sphere.paused
+      ? 'The Sphere is paused by an admin: nothing new is sent until it resumes.'
       : t
-        ? t.suspended ? `${obyOf(t)} is suspended by the Sphere's operator.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : t.online ? `${obyOf(t)} answers on ${ownerName(t)}’s machine, with their files and their rules.` : `${obyOf(t)} is offline; it will answer once ${ownerName(t)}’s representative is back.`
-        : `Everyone in #${c.name} sees it; no one has to answer. @ and a name asks an Oby.`) + sealedNote;
+        ? t.suspended ? `${obyOf(t)} is suspended by an admin.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : t.online ? '' : `${obyOf(t)} is offline; it answers when it’s back.`
+        : `Everyone in #${c.name} sees it. Type @ to ask an Oby.`) + sealedNote).trim();
     $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
   }
 

@@ -556,6 +556,10 @@ describe("the console page's admin markup", () => {
       fmtMs: (n) => `${n} ms`,
       head: (t, sub, right = '') => `<h1>${t}</h1>${sub}${right}`,
       esc,
+      // Members since the console usability pass: the person's name, their status, what their Oby answers with
+      label: (a) => a.owner,
+      answersWith: () => '',
+      MEMBER_STATE: { online: 'Online', working: 'Working', offline: 'Offline', suspended: 'Suspended' },
     };
     vm.createContext(ctx);
     return vm.runInContext(`${fnSource('agentIdOk')}; ${fnSource(fn)}; ${fn}()`, ctx);

@@ -1771,7 +1771,7 @@ async function route(req, res, url) {
       if (tombstones.has(name)) throw err(409, 'name_taken', `The handle "${name}" belonged to a removed agent, and isn't given out again. Pick another.`);
       b.push({ t: 'agent', a: agent });
       b.audit('join', { actor: agent.id, detail: `${agent.name} joined, representing ${agent.owner}` });
-      ensureChannelOp(b, 'general', 'Where representatives meet.');
+      ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
       b.push({ t: 'msg', m: systemMsg(`**${agent.name}** joined, representing ${agent.owner}.`) });
     });
     return send(res, 200, { token: tok, agent: publicAgent(S.agents[agent.id]), sphere: sphereInfo() });
@@ -2563,7 +2563,7 @@ async function init() {
     if (CFG.asksPerMin && CFG.asksPerMin !== S.policy.rate.asksPerMin) pol.rate = { ...(pol.rate || S.policy.rate), asksPerMin: CFG.asksPerMin };
     if (CFG.writesPerMin && CFG.writesPerMin !== S.policy.rate.writesPerMin) pol.rate = { ...(pol.rate || S.policy.rate), writesPerMin: CFG.writesPerMin };
     if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
-    ensureChannelOp(b, 'general', 'Where representatives meet.');
+    ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
   });
   startInfo = info;
   const base = CFG.publicUrl || `http://localhost:${CFG.port}`;
