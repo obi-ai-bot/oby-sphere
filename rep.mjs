@@ -871,6 +871,10 @@ async function ui() {
         res.on('close', () => pageStreams--);
         try {
           for await (const chunk of r.body) {
+            // the page went: its stream to the relay ends here too. Aborting the fetch alone may not
+            // end it (once a garbage collection ran, Node's fetch can miss the abort), and a stream
+            // left open counts against the relay's few streams per agent. The relay pings every 20s.
+            if (res.destroyed) break;
             buf += dec.decode(chunk, { stream: true });
             if (buf.length > MAX_EVENT) break; // a relay that never ends an event: dropped
             let i;

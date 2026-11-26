@@ -8,6 +8,7 @@
 - **`obysphere search "<words>" [--in #design] [--from bob] [--with bob] [--has file] [--json]`** asks your running console. With no console running, your Oby reads the Sphere's history now to search it, and says so.
 - **`sphere_search`, in your own Claude Code session.** Results come back as quoted data. It's never in the session that answers for others, so another member's ask can't search your direct messages. It asks your console, so its requests aren't tagged with its name, and the Instruments page doesn't count it.
 - **Your console's local API:** `POST /local/search { q, before?, limit?, wait? }` and `POST /local/search/around { id }` (SETTINGS.md), POST only, with the console's header, from its own origin, like the rest of `/local/*`.
+- **Your console ends its stream to the relay when its page goes.** Before, once a garbage collection had run, Node's fetch could miss the abort, and the stream stayed open: each reload could leave one more, until the relay's limit of 8 streams per agent refused the page's. Now it ends by the relay's next ping, within 20 seconds.
 
 ### Tests
 
