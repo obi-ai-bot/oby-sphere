@@ -3877,13 +3877,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const fs = SET.settings.machine.folders;
     if (fs.some((f) => f.path === v || f.path === v.replace(/\/+$/, ''))) return addFolderError('That folder is already on the list.');
     const before = fs.slice();
+    // never-read: an error Never read already has is about your folders as they are, not the new one
+    const neverReadBefore = !!SET.error && /^machine\.neverRead/.test(dotted(SET.error.field || ''));
     SET.settings.machine.folders = [...fs, { path: v, write: false }];
     SET.rev++;
     clearTimeout(SET.timer); SET.timer = null;
     SET.state = 'Saving…'; paintState();
     const ok = await saveSettings();
     // never-read: one of your Never read names would hide the new folder whole
-    const hidden = !!SET.error && /^machine\.neverRead/.test(dotted(SET.error.field || '')) && /would hide your whole folder/.test(SET.error.message || '');
+    const hidden = !neverReadBefore && !!SET.error && /^machine\.neverRead/.test(dotted(SET.error.field || '')) && /would hide your whole folder/.test(SET.error.message || '');
     if (!ok && SET.error && (/^machine\.folders/.test(dotted(SET.error.field || '')) || hidden)) {
       // the new folder didn't pass: take it back off and say why next to the field
       const err = SET.error;

@@ -526,6 +526,10 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     const add = fnSource('addFolder');
     assert.match(add, /\/\^machine\\\.neverRead\/\.test\(dotted\(SET\.error\.field \|\| ''\)\) && \/would hide your whole folder\//);
     assert.match(add, /`Under Never read, \$\{errorWords\(err\)/);
+    // but not for an error Never read already had: that one is about the folders already there, so
+    // the new folder stays and the error stays under Never read
+    assert.match(add, /const neverReadBefore = !!SET\.error && \/\^machine\\\.neverRead\/\.test\(dotted\(SET\.error\.field \|\| ''\)\);\n\s*SET\.settings\.machine\.folders = \[\.\.\.fs, /);
+    assert.match(add, /const hidden = !neverReadBefore && /);
   });
 
   test('serve --cwd into a folder your names hide is refused', async () => {
