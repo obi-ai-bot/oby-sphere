@@ -156,6 +156,21 @@ describe('away and neededBy on the relay', () => {
     }
   });
 
+  test("only answers count in an Oby's answer time: not a decline, a lapse or an expired reply", async () => {
+    for (const n of ['carol', 'dave']) ag[n] = await call('POST', '/api/join', { body: { key: KEY, name: n, owner: n } });
+    const ask = async () => (await call('POST', '/api/messages', { tok: ag.carol.token, body: { to: ['dave'], text: 'q?' } })).message;
+    const reply = async (m, meta) => call('POST', '/api/messages', { tok: ag.dave.token, body: { replyTo: m.id, text: 'r', meta } });
+    await reply(await ask(), { declined: true, lapsed: true });
+    await reply(await ask(), { expired: true });
+    await reply(await ask(), { declined: true });
+    let dave = await agentOf('dave');
+    assert.deepEqual([dave.stats.answered, dave.stats.declined, dave.stats.medianAnswerMs], [0, 3, null]);
+    await reply(await ask(), {});
+    dave = await agentOf('dave');
+    assert.deepEqual([dave.stats.answered, dave.stats.declined], [1, 3]);
+    assert.ok(dave.stats.medianAnswerMs !== null && dave.stats.medianAnswerMs < 5000, String(dave.stats.medianAnswerMs));
+  });
+
   test('away holds across a restart', async () => {
     const until = inMin(120);
     await call('POST', '/api/away', { tok: ag.bob.token, body: { until, note: 'back at noon' } });

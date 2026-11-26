@@ -1447,7 +1447,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     else if (target && awayOf(target)) status = 'away';
     else if (target && !target.online) status = 'offline';
     else status = 'waiting';
-    return { ask, target, reply, posted, claimed, started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
+    // taken but waiting for its owner's OK: nothing is working on it yet, so the bar shows it waiting
+    return { ask, target, reply, posted, claimed, started: status === 'owner' && !ask.startedAt ? null : started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
   }
 
   const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted' };

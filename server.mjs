@@ -405,17 +405,19 @@ function account(m) {
     const parent = byId.get(m.replyTo);
     if (parent && parent.kind === 'ask' && parent.to.includes(m.from)) {
       const s = statsOf(m.from);
+      const answer = !m.meta?.error && !m.meta?.declined && !m.meta?.expired;
       if (m.meta?.error) s.errors++;
-      else if (m.meta?.declined || m.meta?.expired) s.declined++; // an ask too old to answer is no answer
+      else if (!answer) s.declined++; // declined, lapsed waiting for its owner, or too old to answer: no answer
       else s.answered++;
       const earlier = repliesOf.get(parent.id) || [];
       const ms = Date.parse(m.ts) - Date.parse(parent.ts);
-      // how fast an Oby answers: its answers only (an "expired" reply after a weekend offline isn't one)
-      if (!m.meta?.expired && !earlier.some((r) => r.from === m.from)) {
+      // how fast an Oby answers: its answers only (an hour's wait that lapsed, or an "expired" reply
+      // after a weekend offline, isn't one)
+      if (answer && !earlier.some((r) => r.from === m.from)) {
         s.samples.push(ms);
         if (s.samples.length > 200) s.samples.shift();
       }
-      if (!m.meta?.expired && !earlier.length) answerRing.push(ms);
+      if (answer && !earlier.length) answerRing.push(ms);
     }
   }
 }
