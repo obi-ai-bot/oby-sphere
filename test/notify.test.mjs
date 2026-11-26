@@ -392,16 +392,19 @@ describe('notifications', () => {
       assert.equal(all.find((l) => l.way === 'console').body, 'From @alice.');
       const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/')); return s.length && s; }, 4000, 'the Slack request');
       assert.equal(slack.length, 1);
-      assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/>\n> From @alice\.$/);
+      assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/#page=traffic>\n> From @alice\.$/);
+      assert.ok(all.every((l) => /^http:\/\/bob\.localhost:\d+\/#page=traffic$/.test(l.link)), `several asks lead to Traffic: ${JSON.stringify(all.map((l) => l.link))}`);
 
       // one ask alone: its words, escaped for Slack (no <!channel>), clipped at 600
       const m2 = log2();
       const slackBefore = hits.filter((x) => x.path.startsWith('/services/')).length;
       const phoneBefore = hits.filter((x) => x.path === `/${TOPIC}`).length;
       const words = `<!channel> & <@U123> ${'x'.repeat(700)}`;
-      await replyTo(await ask('alice', words), 'alice');
+      const single = await ask('alice', words);
+      await replyTo(single, 'alice');
       const one = await waitFor(() => logLines().slice(m2).find((l) => l.type === 'asked' && l.way === 'slack'), 8000, 'one ask');
       assert.equal(one.title, '@alice asks your Oby');
+      assert.ok(logLines().slice(m2).filter((l) => l.type === 'asked').every((l) => l.link.endsWith(`/#page=exchange:${single.id}`)), 'one ask leads to its exchange');
       // the log line is written as the request goes out: wait for the fake Slack to get it
       const slackNow = await waitFor(() => { const s = hits.filter((x) => x.path.startsWith('/services/')); return s.length > slackBefore && s; }, 4000, 'the Slack request for one ask');
       const text = JSON.parse(slackNow.at(-1).body).text;
@@ -438,6 +441,7 @@ describe('notifications', () => {
     await waitFor(() => logLines().slice(mark).some((l) => l.type === 'waiting'), 8000, 'waiting');
     const waiting = await waitFor(() => { const x = logLines().slice(mark).filter((l) => l.type === 'waiting'); return x.length >= 3 && x; }, 4000, 'every way');
     assert.equal(waiting[0].title, "@alice's ask waits for you");
+    assert.ok(waiting.every((l) => l.link.endsWith('/#page=you')), 'what waits for you leads to Your Oby');
     assert.deepEqual(logLines().slice(mark).map((l) => l.way).sort(), ['claude', 'console', 'phone']);
     // the log line is written as the request goes out: wait for the fake server to have it
     const phone = await waitFor(() => hits.slice(h).find((x) => x.path === `/${TOPIC}`), 4000, 'the phone request');
@@ -536,6 +540,7 @@ describe('notifications', () => {
     const answered = logLines().slice(mark).filter((l) => l.type === 'answered');
     assert.deepEqual(answered.map((l) => l.way).sort(), ['claude', 'console'], `once, across processes: ${JSON.stringify(answered)}`);
     assert.equal(answered[0].title, '@alice answered your ask');
+    assert.ok(answered.every((l) => l.link.endsWith(`/#page=exchange:${own.message.id}`)), `an answer leads to the exchange of your ask: ${answered[0].link}`);
     const pushed = await waitFor(() => mcp.channel().find((x) => x.params.meta.kind === 'answered'), 5000, 'the channel');
     assert.deepEqual(pushed.params.meta, { kind: 'answered', count: '1', from: 'alice', channel: 'general' });
     const fence = /QUOTED-[0-9A-F]{12}/.exec(pushed.params.content)?.[0];
@@ -562,6 +567,7 @@ describe('notifications', () => {
     await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: 'hey @bob, a look at this?' } });
     const mention = await waitFor(() => logLines().slice(mark).find((l) => l.type === 'mention' && l.way === 'console'), 8000, 'the mention');
     assert.equal(mention.title, '@alice mentioned you in #general');
+    assert.ok(mention.link.endsWith('/#mode=conversation&c=general'), `a mention leads to its conversation: ${mention.link}`);
     assert.equal(mention.body, 'hey @bob, a look at this?');
     await waitFor(() => mcp.channel().some((x) => x.params.meta.kind === 'mention'), 5000, 'the mention on the channel');
 
@@ -569,6 +575,7 @@ describe('notifications', () => {
     await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'dm-alice-bob', text: 'just for you, bob' } });
     const direct = await waitFor(() => logLines().slice(mark).find((l) => l.type === 'direct' && l.way === 'console'), 8000, 'the direct message');
     assert.equal(direct.title, '@alice wrote to you');
+    assert.ok(direct.link.endsWith('/#mode=conversation&c=dm-alice-bob'), `a direct message leads to its conversation: ${direct.link}`);
     await sleep(COALESCE_MS + 500);
     const since = logLines().slice(mark);
     assert.deepEqual(since.filter((l) => l.type === 'mention').length, 2, 'one mention, console and Claude Code');
@@ -712,6 +719,8 @@ describe('notifications', () => {
     const real = env();
     delete real.NODE_TEST_CONTEXT; // as a person runs it
     delete real.OBYSPHERE_NOTIFY_LOG;
+    // macOS: Obysphere's own app would come first; here there's none, and no tools on this PATH to build it
+    real.OBYSPHERE_NOTIFIER_APP = path.join(tmp, 'no-notifier', 'Obysphere.app');
     const run = () =>
       new Promise((resolve) => {
         const c = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'notify', 'test', '--via', 'desktop', '--profile', 'bob'], { env: { ...real, PATH: bin } });
@@ -748,7 +757,7 @@ describe('notifications', () => {
       const r = await run();
       assert.equal(r.code, 0, r.out);
       const [c] = got();
-      assert.deepEqual(c.args, ['--app-name=Obysphere', '--', 'A test from your Obysphere', 'Open your Obysphere console to see it.'], 'the summary only');
+      assert.deepEqual(c.args, ['--app-name=Obysphere', `--icon=${path.join(ROOT, 'plugins', 'obysphere', 'assets', 'icon.png')}`, '--', 'A test from your Obysphere', 'Open your Obysphere console to see it.'], "the summary only, with Obysphere's icon");
     }
     assert.ok(got().every((c) => !c.args.join(' ').includes('reach you here')), 'never the words on a command line');
     // no notifier at all: said, once, and the command fails
