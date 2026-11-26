@@ -98,9 +98,10 @@ const stop = (proc) =>
     proc.kill();
   });
 
-async function call(base, method, url, { token, body } = {}) {
+async function call(base, method, url, { token, body, admin } = {}) {
   const h = {};
   if (token) h.authorization = `Bearer ${token}`;
+  if (admin) h['x-admin-key'] = admin;
   if (body !== undefined) h['content-type'] = 'application/json';
   const r = await fetch(base + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
   return { status: r.status, ...(await r.json().catch(() => ({}))) };
@@ -616,10 +617,74 @@ describe('audit export and verify on the Redis store', () => {
   });
 });
 
-// ---- deleted messages (#139): DELETE /api/messages/:id leaves a tombstone and writes a `delete`
-// event with the content hash its ask, reply or post event carried. Built here, as #139 will.
+// ---- deletions and cuts on a real relay (#139): what the relay writes for them checks with
+// rep.mjs's rules, on both stores, and a message taken out of the data folder after the last cut
+// is caught, by the relay's own check and by this one.
 
-describe('deleted messages, against logs built by hand', () => {
+describe('deleted and cut messages on a real relay', () => {
+  for (const store of ['fs', 'redis']) {
+    test(`${store}: a deletion and a cut by count check; a message removed by hand after the cut doesn't`, async () => {
+      const m = machine(`cut-${store}`);
+      const data = path.join(path.dirname(m.home), 'relay');
+      const fake = store === 'redis' ? await startFakeUpstash({ port: await freePort() }) : null;
+      const env = fake ? { SPHERE_STORE: 'redis', UPSTASH_REDIS_REST_URL: fake.url, UPSTASH_REDIS_REST_TOKEN: fake.token, SPHERE_REDIS_PREFIX: 'audit-cut:', SPHERE_COMPACT_WAIT_MS: '0' } : {};
+      let relay = await startRelay({ data: fake ? null : data, env });
+      try {
+        for (const n of ['alice', 'bob']) await m.join(relay.base, n);
+        assert.equal((await m.rep(['admin', 'claim', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN })).code, 0);
+        const bob = m.token('bob');
+        const ids = [];
+        for (let i = 0; i < 130; i += 50) {
+          const batch = [];
+          for (let j = i; j < Math.min(130, i + 50); j++) batch.push(call(relay.base, 'POST', '/api/messages', { token: bob, body: { channel: 'general', text: `Post ${j + 1}` } }));
+          for (const r of await Promise.all(batch)) {
+            assert.equal(r.status, 200, JSON.stringify(r));
+            ids.push(r.message.id);
+          }
+        }
+        const del = await call(relay.base, 'DELETE', `/api/messages/${ids[119]}`, { token: bob });
+        assert.equal(del.status, 200, JSON.stringify(del));
+        assert.ok(del.message.deleted && !('text' in del.message), JSON.stringify(del.message));
+        // fewer kept: a cut, in the same commit, down to the newest 100
+        assert.equal((await call(relay.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { retainMessages: 100 } })).status, 200);
+        const audit = await relayPages(relay.base, bob);
+        assert.ok(audit.events.some((e) => e.type === 'delete' && e.ref === ids[119]));
+        assert.ok(audit.events.some((e) => e.type === 'expire' && e.ref), 'the cut is recorded');
+        let r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 0, r.out);
+        assert.equal(r.j.messages.deleted, 1);
+        assert.ok(r.j.messages.notHeld >= 30, JSON.stringify(r.j.messages));
+        assert.ok(r.j.messages.checked + r.j.messages.deleted <= 100, JSON.stringify(r.j.messages));
+        assert.equal(r.j.relay.verified, true);
+        r = await verifyJson(m, ['--profile', 'bob']);
+        assert.equal(r.code, 0, r.out);
+        if (fake) return;
+        // fs: Post 125 taken out of messages.jsonl while the relay is stopped
+        await stop(relay.proc);
+        const file = path.join(data, 'messages.jsonl');
+        const ls = fs.readFileSync(file, 'utf8').split('\n');
+        const i = ls.findIndex((l) => l.includes('"text":"Post 125"'));
+        assert.ok(i >= 0);
+        ls.splice(i, 1);
+        fs.writeFileSync(file, ls.join('\n'));
+        relay = await startRelay({ data, port: relay.port });
+        r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.equal(r.j.relay.verified, false, "the relay's own check says so too");
+        assert.match(r.j.failure.message, new RegExp(`^The post ${ids[124]} \\(#[\\d,]+, .*\\) isn't held, and no cut removed it: it was removed by hand\\.$`));
+      } finally {
+        await stop(relay.proc);
+        await fake?.close?.();
+      }
+    });
+  }
+});
+
+// ---- deleted and cut messages (#139): DELETE /api/messages/:id leaves a tombstone and writes a
+// `delete` event with the content hash its ask, reply or post event carried; a cut writes an
+// `expire` event naming the newest message it removed. Built here, as the relay writes them.
+
+describe('deleted and cut messages, against logs built by hand', () => {
   let m;
   const ts = (i) => new Date(Date.UTC(2026, 10, 20, 14, i)).toISOString();
   const msgA = { id: 'm_aaaa0001', ts: ts(1), channel: 'general', from: 'a_bob001', kind: 'post', to: [], text: 'A thing I said', replyTo: null, cause: null, files: [], depth: 0, meta: {} };
@@ -632,11 +697,14 @@ describe('deleted messages, against logs built by hand', () => {
   };
   const ev = (type, extra = {}) => ({ ts: ts(5), type, actor: 'a_bob001', target: null, ref: null, detail: `bob · ${type}`, ...extra });
   const base = () => [ev('join', { detail: 'bob joined, representing Bob' }), ev('post', { ref: msgA.id, content: contentHash(msgA) }), ev('post', { ref: msgB.id, content: contentHash(msgB) })];
+  const msgC = { ...msgA, id: 'm_cccc0003', ts: ts(3), text: 'A third thing' };
+  const withC = () => [...base(), ev('post', { ref: msgC.id, content: contentHash(msgC) })]; // #1 join, #2 A, #3 B, #4 C
+  const cut = (ref) => ev('expire', { actor: null, ref, detail: `1 message past the newest 5,000 removed, up to ${ref}` });
   // `more`: events written while the check runs, after the log was read and before the messages
   // were (chained on from `events`, unless they come chained already)
-  const check = async (events, messages, { more = [], chained = null } = {}) => {
+  const check = async (events, messages, { more = [], chained = null, info = {} } = {}) => {
     const all = chained ?? chain([...events, ...more], ADMIN);
-    const fake = await fakeRelay({ events: all.slice(0, events.length), more: all.slice(events.length), messages });
+    const fake = await fakeRelay({ events: all.slice(0, events.length), more: all.slice(events.length), messages, info });
     m.fakeProfile('hand', fake.base);
     try {
       return { ...(await verifyJson(m, ['--profile', 'hand'])), paths: fake.paths };
@@ -721,6 +789,61 @@ describe('deleted messages, against logs built by hand', () => {
     const r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [msgB]);
     assert.equal(r.code, 0, r.out);
     assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 1]);
+  });
+
+  test('after a cut, a message at or before the one it names may be missing; one after it fails for an admin, and is counted for a member', async () => {
+    let r = await check([...withC(), cut(msgA.id)], [msgB, msgC]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [2, 1]);
+    // B is missing too, though no cut reached it: removed by hand
+    r = await check([...withC(), cut(msgA.id)], [msgC]);
+    assert.equal(r.code, 1, r.out);
+    assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [3, 'content']);
+    assert.match(r.j.failure.message, /^The post m_bbbb0002 \(#3, \d+ \w{3}( \d{4})? \d\d:\d\d\) isn't held, and no cut removed it: it was removed by hand\.$/);
+    // an Oby that doesn't see every channel can't tell it from one in a channel it isn't in
+    r = await check([...withC(), cut(msgA.id)], [msgC], { info: { admin: false } });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld, r.j.messages.hidden], [1, 1, 1]);
+    // before any cut is recorded, a missing message passes: older relays trimmed without a trace
+    r = await check(withC(), [msgC]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 2]);
+  });
+
+  test('a cut that names a message the log never recorded being posted fails', async () => {
+    let r = await check([...base(), cut('m_ffff0006')], [msgA, msgB]);
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.j.failure.seq, 4);
+    assert.match(r.j.failure.message, /^The cut #4 \(\d+ \w{3}( \d{4})? \d\d:\d\d\) names message m_ffff0006, but the log never recorded it being posted before\.$/);
+    // nor one posted after the cut
+    r = await check([...base(), cut(msgC.id), ev('post', { ref: msgC.id, content: contentHash(msgC) })], [msgA, msgB, msgC]);
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.j.failure.seq, 4);
+  });
+
+  test('a cut while the check runs passes: the log read on after the messages has it', async () => {
+    const r = await check([...withC(), cut(msgA.id)], [msgC], { more: [cut(msgB.id)] });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 2]);
+    assert.ok(r.paths.includes('/api/audit?after=5&limit=1000'), `it read the log on from #5: ${r.paths.join(' ')}`);
+  });
+
+  test('a message older than the Sphere keeps messages may be missing before its cut: the relay hides it at once', async () => {
+    const recent = { ...msgA, id: 'm_rrrr0007', ts: new Date().toISOString(), text: 'Just now' };
+    const events = [...withC(), cut(msgA.id), ev('post', { ts: recent.ts, ref: recent.id, content: contentHash(recent) })];
+    const day = { info: { sphere: { policy: { keepDays: 1 } } } };
+    // B and C are days old, and this Sphere keeps messages for a day
+    let r = await check(events, [recent], day);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 3]);
+    // with no time limit, they were removed by hand
+    r = await check(events, [recent]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.j.failure.message, /^The post m_bbbb0002 .* removed by hand\.$/);
+    // the newest is within the day: missing, it was removed by hand
+    r = await check(events, [msgB, msgC], day);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.j.failure.message, /^The post m_rrrr0007 .* removed by hand\.$/);
   });
 });
 
@@ -816,7 +939,7 @@ describe("the console's Audit log", () => {
 // ---- fakes: a relay that serves what it's given, and a proxy that records every request
 
 // `more`: events written once the messages were asked for (a message deleted while a check runs)
-async function fakeRelay({ events, head, messages = [], more = [] }) {
+async function fakeRelay({ events, head, messages = [], more = [], info = {} }) {
   const paths = [];
   let log = events;
   const server = http.createServer((req, res) => {
@@ -826,7 +949,7 @@ async function fakeRelay({ events, head, messages = [], more = [] }) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(o));
     };
-    if (u.pathname === '/api/info') return send({ sphere: { name: 'Fake Sphere' }, me: { id: 'a_fake01', name: 'fake' }, admin: true });
+    if (u.pathname === '/api/info') return send({ sphere: { name: 'Fake Sphere', ...(info.sphere || {}) }, me: { id: 'a_fake01', name: 'fake' }, admin: info.admin ?? true });
     if (u.pathname === '/api/audit') {
       const after = Number(u.searchParams.get('after')) || 0;
       const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 200);

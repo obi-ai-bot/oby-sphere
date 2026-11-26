@@ -1705,7 +1705,7 @@ async function auditVerify(file) {
       says = page.verified;
     }
     check = auditCheck(items, k, { full: true });
-    relay = { api, head, says, all: info.admin === true, who: p.agent.name };
+    relay = { api, head, says, all: info.admin === true, who: p.agent.name, keepDays: Number(info.sphere?.policy?.keepDays) || 0 };
     res.relay = { head, verified: says };
   }
   res.events = check.count;
@@ -1770,7 +1770,7 @@ async function auditVerify(file) {
   if (!res.failure && relay) {
     const events = items.map((x) => x.e);
     const held = await auditMessages(relay.api);
-    let c = auditContent(events, held, { all: relay.all });
+    let c = auditContent(events, held, { all: relay.all, keepDays: relay.keepDays });
     if (c.fail?.later) {
       // a message shown as deleted, with no event for it in the log as it was read: it may have been
       // deleted (or posted and deleted) since. The log from there on, read now that the messages are
@@ -1778,7 +1778,7 @@ async function auditVerify(file) {
       const more = [];
       for await (const page of auditPages(relay.api, check.to ?? 0)) for (const e of page.events) more.push({ e });
       const on = auditCheck(more, k, check.last ? { after: check.last } : { full: true });
-      c = on.ok ? auditContent(events, held, { all: relay.all, later: more.map((x) => x.e) }) : { ...c, fail: on.fail };
+      c = on.ok ? auditContent(events, held, { all: relay.all, keepDays: relay.keepDays, later: more.map((x) => x.e) }) : { ...c, fail: on.fail };
     }
     res.messages = { checked: c.checked, deleted: c.deleted, notHeld: c.notHeld, hidden: c.hidden, everyChannel: relay.all };
     if (c.fail) fail(c.fail.kind ?? 'content', c.fail.message, c.fail.seq);
@@ -1806,12 +1806,17 @@ function auditOlder(file) {
 // holds must hash to its event's content. One it shows as deleted needs a delete event that names
 // it with that same content, and a delete event's message may no longer be served with its words.
 // A message it doesn't serve is counted: not held any more, or, for an Oby that doesn't see every
-// channel, held in a channel it isn't in when it's newer than one it was served. Every rule about
-// a message's content is here, so later events about messages are checked here too.
+// channel, held in a channel it isn't in when it's newer than one it was served. Once cuts are
+// recorded (#139: an expire event names the newest message each cut removed), a message at or
+// before the last cut's is not held any more, for anyone; after it, an admin's Oby (which sees
+// every channel) fails a missing one, unless it's older than the Sphere keeps messages (hidden, cut
+// within the hour: by its event's time, give or take an hour for clocks that differ). Every
+// rule about a message's content is here, so later events about messages are checked here too.
 // `events` is the log as read before the messages; `later`, the log from there on, read after them.
-// A message deleted (or posted and deleted) in between is shown as deleted, with its events only in
-// `later`: without it, such a failure says `later: true`, to be asked again with it.
-function auditContent(events, held, { all, later = null }) {
+// A message deleted (or posted and deleted) in between is shown as deleted, and one cut in between
+// is missing, with their events only in `later`: without it, such a failure says `later: true`, to
+// be asked again with it.
+function auditContent(events, held, { all, later = null, keepDays = 0 }) {
   const out = { checked: 0, deleted: 0, notHeld: 0, hidden: 0, fail: null };
   const index = (list) => {
     const posted = new Map(); // message id -> its ask, reply or post event
@@ -1829,6 +1834,18 @@ function auditContent(events, held, { all, later = null }) {
     out.fail = { seq, message, ...(maybeLater && !later ? { later: true } : {}) };
     return out;
   };
+  // cuts (#139): each expire event that names a message comes after that message's own event; the
+  // last one in the whole log says how far cuts reached
+  let cutRef = null;
+  for (const e of [...events, ...(later ?? [])]) {
+    if (e.type !== 'expire' || !e.ref) continue;
+    const own = posted.get(e.ref) ?? since.posted.get(e.ref);
+    if (!own || own.seq >= e.seq) return failed(e.seq, `The cut #${auditN(e.seq)} (${auditWhen(e.ts)}) names message ${printable(e.ref)}, but the log never recorded it being posted before.`);
+    cutRef = e.ref;
+  }
+  const cutSeq = cutRef ? (posted.get(cutRef) ?? since.posted.get(cutRef)).seq : 0;
+  const keepMs = Number.isInteger(keepDays) && keepDays > 0 ? keepDays * 864e5 : 0;
+  const expired = (e) => !!keepMs && Date.parse(e.ts) < Date.now() - keepMs + 3600e3; // hidden by the relay now, cut within the hour
   // retention drops the oldest first: a message posted after one the relay served is still held
   let oldest = Infinity;
   for (const id of held.keys()) if (posted.has(id)) oldest = Math.min(oldest, posted.get(id).seq);
@@ -1837,7 +1854,11 @@ function auditContent(events, held, { all, later = null }) {
     const del = deletes.get(id);
     const name = `The ${e.type} ${printable(id)} (#${auditN(e.seq)}, ${auditWhen(e.ts)})`; // "The post m_… (#2, 20 Nov 14:01)"
     if (!m) {
-      if (all || e.seq < oldest) out.notHeld++;
+      if (e.seq <= cutSeq || expired(e)) out.notHeld++;
+      else if (!cutRef) {
+        if (all || e.seq < oldest) out.notHeld++; // an older relay trimmed without a trace
+        else out.hidden++;
+      } else if (all) return failed(e.seq, `${name} isn't held, and no cut removed it: it was removed by hand.`, true);
       else out.hidden++;
     } else if (m.deleted) {
       const d = del ?? since.deletes.get(id);
