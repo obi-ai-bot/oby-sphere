@@ -50,6 +50,8 @@ const CONTRACT = {
   github: { subs: { status: [] } },
   // added during the build (instruments)
   instruments: { subs: { new: [], list: [], check: [], remove: [] } },
+  // #160: away (stream C adds the command; its flags are the contract's)
+  away: { flags: ['--until', '--note', '--off'] },
   // obysphere.mjs (cli)
   start: {},
   stop: {},

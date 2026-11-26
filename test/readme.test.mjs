@@ -34,6 +34,8 @@ const CONTRACT = {
   server: ['start', 'deploy', 'update', 'status'],
   // the instruments stream (plans/wave3.md, "Added during the build")
   instruments: ['new', 'list', 'check', 'remove'],
+  // #160: telling askers you're away
+  away: true,
 };
 const DEPLOY_TARGETS = ['vercel'];
 
