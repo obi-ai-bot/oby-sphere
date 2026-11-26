@@ -973,6 +973,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 .au-count button, .au-more { color: var(--text); text-decoration: underline; text-underline-offset: 2px; transition: color var(--fade); }
 .au-count button:hover, .au-more:hover { color: var(--ink); }
 .au-more { display: block; margin: 12px auto 0; font-size: var(--text-sm); }
+.au-own { max-width: 76ch; margin: -12px 0 16px; color: var(--muted); font-size: var(--text-sm); line-height: 20px; }
+.au-own code { display: inline-block; max-width: 100%; padding: 1px 6px; border-radius: 5px; background: var(--surface-edge); color: var(--text); font: 11.5px/18px var(--mono); overflow-wrap: anywhere; } /* the command kept whole, on a line of its own when it must */
 :is(button.kpi, .au-drop, .au-clear, .au-count button, .au-more, .open-link, .panel-head .link):focus-visible, .au-search input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 @media (max-width: 560px) {
   .hide-phone { display: none; }
@@ -2403,7 +2405,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- Audit log: search, filters (event type, member, time), export
   // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
-  // and "Export all" pages through the whole log. The dropdowns are this page's own (au-*), small.
+  // and "Export all" pages through the whole log, saved as JSON Lines for `obysphere admin audit
+  // verify`. The dropdowns are this page's own (au-*), small.
   const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
@@ -2478,7 +2481,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const chain = S.auditVerified === null ? '<span class="chain">This Sphere doesn’t publish its event log yet</span>'
       : S.auditVerified ? `<span class="chain" title="Each event’s hash covers the one before it, so changing or removing one breaks every hash after it"><span class="status"><span class="status-dot is-healthy"></span></span>Chain verified · ${esc(Number(S.auditHead?.seq ?? S.audit.length).toLocaleString())} events</span>`
       : `<span class="chain is-bad"><span class="status"><span class="status-dot is-error"></span></span>Chain broken: an event was changed or removed</span>`;
-    return head('Audit log', chain, `<button class="set-button" data-export title="Download as JSON"${AU.exporting ? ' disabled' : ''}>${AU.exporting ? 'Exporting…' : auditExportLabel()}</button>`);
+    const title = auditFiltering() ? 'Download the events shown, as JSON' : 'Download the whole log, as JSON Lines';
+    // the relay checks its own chain: the check that doesn't come from the relay is the CLI's, on your machine (#141)
+    const own = S.auditVerified === null ? '' : `<p class="au-own" id="au-own">That’s the relay’s own word. To check the log yourself, export all of it and run <code>obysphere admin audit verify &lt;file&gt;</code> on your machine, with the admin key.</p>`;
+    return head('Audit log', chain, `<button class="set-button" data-export title="${title}"${AU.exporting ? ' disabled' : ''}>${AU.exporting ? 'Exporting…' : auditExportLabel()}</button>`) + own;
   }
   function auditResults() {
     const list = auditShown();
@@ -5237,8 +5243,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     n.hidden = false;
     n.classList.toggle('is-problem', !!bad);
   }
-  // Export shown: the events the search and filters show. Export all: every event, page by page
-  // (a request gives at most 1,000), in the shape GET /api/audit has. The button says "Exporting…" meanwhile.
+  // Export all: every event, a page of 1,000 at a time (a request gives at most that), saved as JSON
+  // Lines (one event per line, as the relay sent it: the format `obysphere admin audit verify` checks,
+  // and the fs store's own audit.jsonl). Export shown: the events the search and filters show, as JSON
+  // with the filter, to read. The button says "Exporting…" meanwhile.
   async function exportAudit() {
     if (AU.exporting) return;
     const shown = auditFiltering();
@@ -5246,35 +5254,38 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     AU.exporting = true;
     updateAudit();
     try {
-      if (shown) out = { events: auditShown().reverse(), head: S.auditHead, verified: S.auditVerified, total: AU.total, filter: { search: AU.q.trim(), type: AU.type, member: AU.member, time: AU.time } };
+      if (shown) out = JSON.stringify({ events: auditShown().reverse(), head: S.auditHead, verified: S.auditVerified, total: AU.total, filter: { search: AU.q.trim(), type: AU.type, member: AU.member, time: AU.time } }, null, 2);
       else {
         const events = [];
-        let r = null, after = 0;
-        for (let i = 0; i < 10000; i++) {
-          r = await api(`/api/audit?after=${after}&limit=1000`);
-          const got = r?.events || [];
+        let after = 0;
+        for (let i = 0; i < 100000; i++) {
+          const r = await api(`/api/audit?after=${after}&limit=1000`);
+          const got = Array.isArray(r?.events) ? r.events : [];
           events.push(...got);
           if (!got.length) break;
-          const last = Number(got[got.length - 1].seq);
+          const last = Number(got[got.length - 1]?.seq);
           if (!Number.isFinite(last) || last <= after) break; // a relay that doesn't move on
           after = last;
           // the head says where the log ends: a page short of 1,000 (a damaged line leaves a gap) isn't always the last
           const end = Number(r?.head?.seq);
           if (Number.isFinite(end) ? last >= end : got.length < 1000) break;
         }
-        out = { events, head: r?.head ?? null, verified: r?.verified ?? null, total: r?.total ?? events.length };
+        out = events.map((e) => JSON.stringify(e) + '\n').join('');
       }
     } catch { out = null; }
     AU.exporting = false;
     updateAudit();
-    if (!out) {
+    if (out === null) {
       const b = document.querySelector('#au-head [data-export]');
       if (b) { b.textContent = 'Couldn’t export'; setTimeout(() => { if (!AU.exporting && b.isConnected) b.textContent = auditExportLabel(); }, 2000); }
       return;
     }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
-    a.download = `${S.sphere.name.replace(/\W+/g, '-').toLowerCase()}-audit${shown ? '-shown' : ''}.json`;
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const name = S.sphere.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'sphere';
+    a.href = URL.createObjectURL(new Blob([out], { type: shown ? 'application/json' : 'application/jsonl' }));
+    a.download = shown ? `${name}-audit-shown.json` : `${name}-audit-${day}.jsonl`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }

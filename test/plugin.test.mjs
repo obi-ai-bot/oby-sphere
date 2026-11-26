@@ -46,7 +46,7 @@ const CONTRACT = {
   'mcp-config': {},
   // rep.mjs, new in wave 3 (notify, admin, github)
   notify: { subs: { test: ['--via'] } },
-  admin: { subs: { claim: [], status: [], grant: [], revoke: [], policy: ['--sealed', '--max-depth', '--max-file-bytes', '--keep-days', '--yes', '--pause', '--resume'], 'rotate-key': [] } },
+  admin: { subs: { claim: [], status: [], grant: [], revoke: [], policy: ['--sealed', '--max-depth', '--max-file-bytes', '--keep-days', '--yes', '--pause', '--resume'], 'rotate-key': [], audit: ['--out', '--after', '--force', '--since', '--json'] } }, // audit: #141
   github: { subs: { status: [] } },
   // added during the build (instruments)
   instruments: { subs: { new: [], list: [], check: [], remove: [] } },
