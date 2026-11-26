@@ -195,7 +195,7 @@ function seal({ keys, from, channel, to = [], readers, text }) {
 // adds an event to the live streams going through it.
 function startProxy(target) {
   const log = [];
-  const streams = new Set();
+  const streams = new Map(); // a live stream going through it -> its URL
   const rewrite = new Map();
   const t = new URL(target);
   const server = http.createServer((req, res) => {
@@ -203,7 +203,7 @@ function startProxy(target) {
     const up = http.request({ host: t.hostname, port: t.port, path: req.url, method: req.method, headers: { ...req.headers, host: t.host } }, (r) => {
       if (/^text\/event-stream/.test(r.headers['content-type'] || '')) {
         res.writeHead(r.statusCode, r.headers);
-        streams.add(res);
+        streams.set(res, req.url);
         res.on('close', () => streams.delete(res));
         r.pipe(res);
         return;
@@ -246,9 +246,10 @@ function startProxy(target) {
         url: `http://127.0.0.1:${server.address().port}`,
         log,
         rewrite,
-        inject: (ev, data) => streams.forEach((s) => s.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)),
+        inject: (ev, data) => streams.forEach((u, s) => s.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)),
+        streams: () => [...streams.values()], // the URLs of the live streams open through it
         close: () => {
-          for (const s of streams) s.destroy();
+          for (const s of streams.keys()) s.destroy();
           return new Promise((r) => server.close(r));
         },
       }),
@@ -312,7 +313,7 @@ function mcpSession(world, args, env = {}) {
 // ---------------------------------------------------------------- your Oby's index, in your console
 
 describe("your Oby's index, in your console: a sealed Sphere with alice, bob and sam", { timeout: 300000 }, () => {
-  let world, proxy, alice, base, stream;
+  let world, proxy, alice, base, stream, plainFile;
   const at = {}; // handle -> { id, token, keys }
   const id = {}; // what was said -> message id
   const KEY = 'join-key-search-tests-0123456789';
@@ -379,7 +380,8 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     id.cafe = (await post('sam', { channel: 'design', text: 'Le café est prêt.' })).id;
     id.japanese = (await post('sam', { channel: 'general', text: '支払いの再試行は三回です' })).id;
     const file = await relayCall('POST', '/api/files', { tok: at.bob.token, body: Buffer.from('Retry three times.\n'), headers: { 'content-type': 'text/plain', 'x-file-name': 'retry-plan.md' } });
-    id.file = (await post('bob', { channel: 'general', text: 'The plan, attached.', files: [{ id: file.file.id }] })).id;
+    plainFile = file.file.id;
+    id.file = (await post('bob', { channel: 'general', text: 'The plan, attached.', files: [{ id: plainFile }] })).id;
     await many(2250, (i) => post(i % 2 ? 'sam' : 'bob', { channel: 'general', text: `Filler note ${i}, about nothing much.` }));
 
     // sealed from here on; bob's posts before alice joins aren't sealed for her
@@ -438,6 +440,12 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     assert.ok(all.searched + all.notOpenable >= 2400, `${all.searched} searched, ${all.notOpenable} not openable`);
     assert.equal(all.total, 0);
     assert.ok(all.oldest && Date.parse(all.oldest) <= Date.now());
+  });
+
+  test('a file sent in the open still comes through the console, the index built: it keeps only the keys of sealed files', async () => {
+    const r = await toConsole(alice.url, { path: `/api/files/${plainFile}`, headers: LOCAL });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.text, 'Retry three times.\n');
   });
 
   test('alice finds her direct messages and public posts, never a conversation she is not in, though she is an admin', async () => {
@@ -587,6 +595,31 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     assert.equal(r.notOpenable, 1, 'what was sealed in it for bob and sam: counted');
   });
 
+  test('a catch-up reads back to where the last read stopped, though the page read the newest messages first', async () => {
+    // no page has its stream open now: what's said reaches the index by what the page reads, and the catch-ups
+    // and the console's stream to the relay ends with it, by the next thing the relay sends (its
+    // ping, every 20 seconds; here an event), though a garbage collection made Node's fetch miss the abort
+    stream.destroy();
+    await until(() => {
+      proxy.inject('nothing', {});
+      return !proxy.streams().some((u) => /role=console/.test(u));
+    }, "the console's live stream to the relay to end");
+    const dm = (await relayCall('POST', '/api/dm', { tok: at.bob.token, body: { with: 'alice' } })).channel.name;
+    id.gannet = (await sealedPost('bob', { channel: dm, readers: ['bob', 'alice'], text: 'A gannet, the first of many.' })).id;
+    await many(259, (i) => sealedPost(i % 2 ? 'sam' : 'bob', { channel: 'general', readers: ['bob', 'sam', 'alice'], text: `Gap filler ${i}.` }));
+    // more than a page of history (200) since the last read; a page opens and reads the newest few first
+    const newest = await toConsole(alice.url, { path: '/api/messages?limit=10', headers: LOCAL });
+    assert.equal(newest.status, 200, newest.text);
+    const last = newest.json.messages.at(-1);
+    await until(async () => (await find(last.text)).json.results.some((x) => x.id === last.id), 'what the page read, in the index');
+    assert.equal((await find('gannet')).json.total, 0, 'not read yet');
+    // the page loads: a catch-up, back to the last message an earlier read reached
+    assert.equal((await toConsole(alice.url)).status, 200);
+    const r = (await find('gannet', { wait: true })).json;
+    assert.deepEqual(words({ json: r }), ['gannet'], 'the oldest of what was said since the last read');
+    assert.equal((await find('"gap filler"', { limit: 1 })).json.total, 259);
+  });
+
   test('with no console running, obysphere search reads the history itself, and says so', async () => {
     alice.proc.proc.kill('SIGTERM');
     await alice.proc.exited;
@@ -599,6 +632,20 @@ describe("your Oby's index, in your console: a sealed Sphere with alice, bob and
     assert.ok(reads.some((x) => /^\/api\/messages\?limit=/.test(x.url)), 'it read the history');
     assert.ok(reads.every((x) => !x.tool), 'untagged');
     assert.ok(reads.every((x) => !decodeURIComponent(x.url).includes('flamingo')), 'the words in no URL');
+
+    // sphere_search too: its own read, untagged, so the Sphere counts no sphere_search
+    const again = proxy.log.length;
+    const mine = mcpSession(world, ['--profile', 'alice'], env());
+    await mine.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    const call = await mine.request('tools/call', { name: 'sphere_search', arguments: { query: 'gannet' } });
+    mine.close();
+    const text = call.result.content[0].text;
+    assert.match(text, /^1 message matches\..*Your console isn't running, so your Oby read the Sphere's history just now to search it\./s);
+    const its = proxy.log.slice(again).filter((x) => x.url.startsWith('/api/messages'));
+    assert.ok(its.length >= 2, `it read the history (${its.length} pages)`);
+    assert.deepEqual(its.filter((x) => x.tool), [], 'untagged');
+    const stats = await relayCall('GET', '/api/stats', { key: KEY });
+    assert.equal(stats.tools?.sphere_search, undefined, JSON.stringify(stats.tools));
   });
 });
 
@@ -655,5 +702,73 @@ describe('a relay that sends an endless history', { timeout: 180000 }, () => {
     assert.equal(out.results.length, 20);
     assert.equal(out.results[0].snippet, 'hello number 1', 'the newest first');
     assert.ok(messageReads <= 101, `${messageReads} pages read`);
+  });
+});
+
+// ---------------------------------------------------------------- a relay that says odd things (#139's tombstones, a channel it listed late)
+
+// Its history, oldest first: 50 notes, then 250 messages deleted on the Sphere (#139's tombstones,
+// more than a page of them), 10 newer notes, and one in a private channel the reader isn't in,
+// which /api/channels lists only from its second answer on (as if it was made a moment after).
+describe('a relay that sends a page of deleted messages, and a private channel it listed late', { timeout: 180000 }, () => {
+  let world, server, url;
+  let channelReads = 0;
+  const reader = { id: 'a_reader', name: 'reader', owner: 'Reader Test' };
+  const writer = { id: 'a_writer', name: 'writer', owner: 'Writer Test' };
+  const history = [];
+  const t0 = Date.UTC(2026, 10, 20);
+  const note = (id, channel, text) => ({ id, ts: new Date(t0 + history.length * 1000).toISOString(), channel, from: writer.id, kind: 'post', to: [], text, files: [], depth: 0, replyTo: null, cause: null, meta: {} });
+  for (let i = 0; i < 50; i++) history.push(note(`m_old${i}`, 'general', `An osprey, old note ${i}.`));
+  for (let i = 0; i < 250; i++) {
+    const at = new Date(t0 + history.length * 1000).toISOString();
+    history.push({ id: `m_gone${i}`, ts: at, channel: 'general', from: writer.id, kind: 'post', to: [], replyTo: null, cause: null, depth: 0, claimedAt: null, startedAt: null, deleted: { at, by: writer.id } });
+  }
+  for (let i = 0; i < 10; i++) history.push(note(`m_new${i}`, 'general', `A newer note ${i}.`));
+  history.push(note('m_secret', 'secret', 'A secret osprey, for the writer only.'));
+
+  before(async () => {
+    world = new World();
+    server = http.createServer((req, res) => {
+      const u = new URL(req.url, 'http://x');
+      const send = (o, status = 200) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(o));
+      };
+      if (u.pathname === '/api/info') return send({ sphere: { name: 'Odd', policy: { sealed: false } }, me: reader });
+      if (u.pathname === '/api/agents') return send({ agents: [reader, writer] });
+      if (u.pathname === '/api/channels') {
+        channelReads++;
+        return send({ channels: [{ name: 'general', kind: 'public', members: [] }, ...(channelReads > 1 ? [{ name: 'secret', kind: 'private', members: [writer.id] }] : [])] });
+      }
+      if (u.pathname === '/api/messages') {
+        const ch = u.searchParams.get('channel');
+        const list = ch ? history.filter((m) => m.channel === ch) : history;
+        const b = u.searchParams.get('before');
+        const hi = b ? list.findIndex((m) => m.id === b) : list.length;
+        const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 100);
+        return send({ messages: hi < 0 ? [] : list.slice(Math.max(0, hi - limit), hi) });
+      }
+      send({ error: 'not here' }, 404);
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    url = `http://127.0.0.1:${server.address().port}`;
+    const dir = path.join(world.home, 'reader');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ profile: 'reader', sphere: url, sphereName: 'Odd', token: 'reader-token-0123456789', agent: reader, cwd: world.tmp, runtime: 'claude', joinedAt: new Date().toISOString() }), { mode: 0o600 });
+  });
+  after(async () => {
+    await new Promise((r) => server?.close(r));
+    await world?.stop();
+  });
+
+  test('a page of deleted messages is read past, and a channel listed late is asked about before anything in it is kept', async () => {
+    const r = await world.rep(['search', 'osprey', '--profile', 'reader', '--json'], { env: { TMPDIR: world.tmp } });
+    assert.equal(r.code, 0, r.out.slice(-2000));
+    const out = JSON.parse(r.out.slice(r.out.indexOf('{')));
+    assert.equal(out.via, 'oby');
+    assert.equal(out.total, 50, 'the notes from before the deleted ones');
+    assert.ok(out.results.every((x) => /^m_old\d+$/.test(x.id)), JSON.stringify(out.results.map((x) => x.id)));
+    assert.equal(out.searched, 60, "every note it could open: none deleted, none in the private channel it isn't in");
+    assert.ok(channelReads >= 2, 'it asked the relay again about a channel it had not heard of');
   });
 });

@@ -4004,7 +4004,9 @@ function searchSnippet(text, terms, max = 220) {
 // onFiles(files): the file keys of a message it opened (the console decrypts files with them).
 function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   const me = p.agent.id;
-  let cur = null; // the index searched: { list (in time order), byId, seen (every id read), chars, cut }
+  // the index searched: { list (in time order), byId, seen (every id it was given), walked (every id
+  // a finished read of the history reached: they run unbroken back from the newest it read), chars, cut }
+  let cur = null;
   let next = null; // a rebuild in progress, searched once it's done
   let complete = false; // a build reached the start (or the cap)
   let building = false; // the first build, which searches see as it fills
@@ -4016,7 +4018,13 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   let channels = new Map();
   let channelsAt = 0;
   const gone = new Set(); // deleted on the Sphere (#139): never indexed again
-  const fresh = () => ({ list: [], byId: new Map(), seen: new Set(), chars: 0, cut: false });
+  const asked = new Set(); // channels it asked the relay about once, on hearing of them
+  const fresh = () => ({ list: [], byId: new Map(), seen: new Set(), walked: new Set(), chars: 0, cut: false });
+  // a set of ids that keeps the newest SEARCH_READS (what a relay sends can't make it grow for ever)
+  const remember = (set, id) => {
+    set.add(id);
+    if (set.size > SEARCH_READS) set.delete(set.values().next().value);
+  };
   const people = () => (known ? known() : lastAgents);
   const ctx = () => ({ me, agents: people(), channels });
   const queue = (fn) => {
@@ -4033,9 +4041,13 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     channels = new Map((Array.isArray(list) ? list : []).filter((c) => c && okName(c.name)).map((c) => [c.name, channelOf(c)]));
     channelsAt = Date.now();
   }
-  // a message in a channel not heard of yet: a new one, whose kind decides whether it's yours
+  // a message in a channel not heard of yet: a new one, whose kind decides whether it's yours (until
+  // the relay lists it, it's taken for a public one). Asked at once the first time a channel is
+  // heard of, even just after a read (a private one made a moment ago), then at most every 5 seconds.
   async function knowChannels(list) {
-    if (!list.some((m) => !channels.has(m.channel) && !m.channel.startsWith('dm-')) || Date.now() - channelsAt < 5000) return;
+    const unheard = [...new Set(list.filter((m) => !channels.has(m.channel) && !m.channel.startsWith('dm-')).map((m) => m.channel))];
+    if (!unheard.length || (unheard.every((n) => asked.has(n)) && Date.now() - channelsAt < 5000)) return;
+    for (const n of unheard) remember(asked, n);
     await loadChannels().catch(() => {});
   }
   // the agents, asked again for a sealed message from one it has no keys for (at most every 5 seconds)
@@ -4092,12 +4104,9 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   // one message the relay gave (checked first: the relay isn't trusted), in time order
   function add(into, m, amap) {
     if (!m || typeof m !== 'object') return;
-    if (typeof m.id === 'string') {
-      into.seen.add(m.id);
-      if (into.seen.size > SEARCH_READS) into.seen.delete(into.seen.values().next().value);
-    }
+    if (typeof m.id === 'string') remember(into.seen, m.id);
     if (m.deleted && ID.m.test(String(m.id))) {
-      gone.add(m.id); // #139: a tombstone has no words to find, and the message it was leaves
+      remember(gone, m.id); // #139: a tombstone has no words to find, and the message it was leaves
       for (const ix of [cur, next]) drop(ix, m.id);
       return;
     }
@@ -4109,7 +4118,9 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
     } catch {
       o = { readable: false, readers: [] };
     }
-    if (o.readable && onFiles) onFiles(o.files);
+    // a sealed message's file keys, for the console to open its files with; a plain message's files
+    // have no keys, and pass through the console as they are
+    if (o.readable && m.sealed && onFiles) onFiles(o.files);
     const e = entryOf(m, o);
     // after the last one at or before it: the newest go on the end at once
     let i = into.list.length;
@@ -4133,15 +4144,18 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
   }
 
   // The history read back from the newest, a page at a time, into `into`: to the start or the cap,
-  // or with `stopAtKnown` until a page holds a message it has read before. `channel`: that one only,
-  // read again whole (a channel you were just added to: its messages were read before, and left out).
+  // or with `stopAtKnown` until a page holds a message an earlier read reached (not one the page
+  // read, or the live stream brought: there may be more before it that nothing read yet). `channel`:
+  // that one only, read again whole (a channel you were just added to: its messages were read
+  // before, and left out). Pages are stepped back by the oldest id in each, a tombstone (#139)
+  // too, so a page of deleted messages doesn't end the read.
   async function walk(into, { stopAtKnown = false, channel = null } = {}) {
     let amap = await agentsFor([], true);
     await loadChannels();
     let before = null;
     let limit = SEARCH_PAGE;
     let reads = 0;
-    const seen = new Set();
+    const seen = new Set(); // the ids this read reached
     // back to the start, or until the newest SEARCH_CAP are in (or SEARCH_CHARS of words)
     while (reads < SEARCH_READS && (stopAtKnown || (into.list.length < SEARCH_CAP && !into.cut))) {
       let page;
@@ -4168,15 +4182,20 @@ function searchIndex(p, api, { open, agents, known = null, onFiles = null }) {
         if (!id || seen.has(id)) continue;
         seen.add(id);
         novel++;
-        if (into.seen.has(id) && !channel) {
+        if (!channel && into.walked.has(id)) {
           met = true;
           continue;
         }
+        if (!channel && into.seen.has(id) && !m.deleted) continue; // the page read it, or the stream brought it: in already (or left out)
         add(into, m, amap);
       }
-      if (!novel || !list.length || (stopAtKnown && met) || raw.length < limit) break;
-      before = list[0].id;
+      const oldest = raw.find((m) => ID.m.test(String(m?.id)));
+      if (!novel || !oldest || (stopAtKnown && met) || raw.length < limit) break;
+      before = oldest.id;
     }
+    // read through, unbroken: what it reached marks where the next catch-up may stop (a read that
+    // failed half way marks nothing, so the next one reads on past it)
+    if (!channel) for (const id of seen) remember(into.walked, id);
   }
 
   const fail = (e) => (problem = cleanLine(e?.message || e, 300));
