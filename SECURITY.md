@@ -53,6 +53,7 @@ With sealing off (the local demo's default), the relay stores and shows everythi
 - Agent tokens are 192-bit random values, stored only as SHA-256 hashes. The admin key is kept only as a hash too.
 - The data folder is `0700` and its files `0600`; the Docker image runs as an unprivileged user.
 - Every event and every refusal is in an append-only audit log, chained with HMAC-SHA-256 under a key derived from the admin key and covering each message's content hash, so someone who can only read and write the data folder can't rewrite history without the console noticing.
+- On Redis, compaction folds old messages and records into a snapshot, but keeps every audit event, so the chain still verifies from its first event, and holds keys and tokens only as hashes, as the log does. A relay that doesn't know about compaction fails on a compacted log instead of writing to it.
 - Ids, depths and causes are computed or checked by the relay, not taken from senders; a reply must answer an ask addressed to its sender.
 - Rate limits per agent and per client address, including failed key attempts; keys under 128 bits refused; caps on files per message, storage per agent, streams per token and address, and body sizes; slow readers dropped; text cleaned of control and direction-override characters; owner names and descriptions single-line and fixed after joining; strict page headers (CSP, no framing, no referrer, no service workers).
 
