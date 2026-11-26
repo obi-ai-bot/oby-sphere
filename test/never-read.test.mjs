@@ -449,7 +449,7 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     assert.match(fn, /const k = 'machine\.neverRead';/);
     assert.match(fn, />Never read</);
     // a list, so the page's own chips, as for "Decline asks about"; no field of its own kind
-    assert.match(fn, /ctlChips\(\{ id: fid\(k\), values: m\.neverRead \|\| \[\], label: 'Never read', [^)]*max: NEVER_READ_MAX, each: NEVER_READ_LEN, attrs: `data-k="\$\{k\}"` \}\)/);
+    assert.match(fn, /ctlChips\(\{ id: fid\(k\), values: m\.neverRead \|\| \[\], label: 'Never read', [^)]*max: NEVER_READ_MAX, each: NEVER_READ_LEN, exact: true, attrs: `data-k="\$\{k\}"` \}\)/);
     assert.doesNotMatch(fn, /<textarea|data-t=/);
     assert.match(fn, /<details class="set-always"><summary>Always hidden: \.env files, keys, credentials and similar<\/summary>/);
     assert.match(fn, /Files and folders your Oby never reads or sends, in any of your folders, such as/);
@@ -483,7 +483,8 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     assert.match(html, /<div class="ctl-chips" id="set-machine-neverRead" data-ctl="chips" data-k="machine\.neverRead">/);
     assert.match(html, /<span class="ctl-chip-t">\*\.sqlite<\/span>[\s\S]*<span class="ctl-chip-t">a&lt;b&gt;\/<\/span>/);
     assert.match(html, /aria-label="Never read: add"/);
-    assert.deepEqual(JSON.parse(JSON.stringify(ctx.chips('set-machine-neverRead'))), { value: ['*.sqlite', 'a<b>/'], max: R.NEVER_READ_MAX, each: R.NEVER_READ_LEN });
+    assert.deepEqual(JSON.parse(JSON.stringify(ctx.chips('set-machine-neverRead'))), { value: ['*.sqlite', 'a<b>/'], max: R.NEVER_READ_MAX, each: R.NEVER_READ_LEN, exact: true });
+    assert.doesNotMatch(html, /maxlength=/, 'nothing typed or pasted is cut short');
     // the row, then the list: the row's own </div> comes before <details>
     const row = html.indexOf('<div class="set-row is-stack set-never">');
     assert.equal(row, 0);
@@ -523,6 +524,14 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     assert.deepEqual(sent, [['*.sqlite', 'notes/private-*.md', 'customers/', 'ledger-*.xlsx']]);
     assert.equal(f.value, '', 'the field is emptied');
     assert.match(list.innerHTML, /<span class="ctl-chip-t">ledger-\*\.xlsx<\/span>/);
+    // a name past the limits is kept as written, not cut into a different name that may hide
+    // nothing: rep.mjs refuses it, and the page shows that under the field
+    sent.length = 0;
+    const long = `docs/${'x'.repeat(R.NEVER_READ_LEN)}.md`;
+    ctx.paste(root, { value: '', selectionStart: 0, selectionEnd: 0 }, `${long}\nwork  notes/\n`);
+    assert.deepEqual(sent.at(-1).slice(-2), [long, 'work  notes/']);
+    for (let i = sent.at(-1).length; i <= R.NEVER_READ_MAX; i++) ctx.paste(root, { value: '' }, `n${i}.db\n`);
+    assert.equal(sent.at(-1).length, R.NEVER_READ_MAX + 1, 'one past the most is kept too, for rep.mjs to refuse');
     // adding a folder that a name would hide: taken back off, and said by the add field
     const add = fnSource('addFolder');
     assert.match(add, /\/\^machine\\\.neverRead\/\.test\(dotted\(SET\.error\.field \|\| ''\)\) && \/would hide your whole folder\//);

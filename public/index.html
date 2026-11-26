@@ -2914,18 +2914,20 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // a chips input: a list of words or phrases. Enter or a comma adds what's typed, × or Backspace
   // in the empty field takes one off; a pasted list is split at its commas and line breaks
-  function ctlChips({ id, values = [], label = '', placeholder = '', max = 200, each = 80, attrs = '' }) {
-    CTL.data.set(id, { value: [...values], max, each });
-    return `<div class="ctl-chips" id="${esc(id)}" data-ctl="chips"${ctlAttrs(attrs)}><span class="ctl-chips-list">${ctlChipsInner(id)}</span><input class="ctl-chips-field" id="${esc(id)}-in" aria-label="${esc(`${label}: add`)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false" enterkeyhint="done" maxlength="${each * 4}"></div>`;
+  // exact: a name is kept as written (trimmed), never cut to `each` or past `max`, so the settings
+  // file's own check refuses one that's too long, under the field, instead of a different one being saved
+  function ctlChips({ id, values = [], label = '', placeholder = '', max = 200, each = 80, exact = false, attrs = '' }) {
+    CTL.data.set(id, { value: [...values], max, each, exact });
+    return `<div class="ctl-chips" id="${esc(id)}" data-ctl="chips"${ctlAttrs(attrs)}><span class="ctl-chips-list">${ctlChipsInner(id)}</span><input class="ctl-chips-field" id="${esc(id)}-in" aria-label="${esc(`${label}: add`)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false" enterkeyhint="done"${exact ? '' : ` maxlength="${each * 4}"`}></div>`;
   }
   function ctlChipsInner(id) {
     return CTL.data.get(id).value.map((v, i) => `<span class="ctl-chip"><span class="ctl-chip-t">${esc(v)}</span><button type="button" class="ctl-chip-x" id="${esc(id)}-x${i}" data-ctl-x="${i}" aria-label="Remove ${esc(v)}">${CTL_X}</button></span>`).join('');
   }
   function ctlChipsAdd(root, text) {
     const d = CTL.data.get(root.id);
-    const add = String(text).split(',').map((x) => x.replace(/\s+/g, ' ').trim().slice(0, d.each)).filter(Boolean);
+    const add = String(text).split(',').map((x) => (d.exact ? x.trim() : x.replace(/\s+/g, ' ').trim().slice(0, d.each))).filter(Boolean);
     const next = [...d.value];
-    for (const w of add) if (next.length < d.max && !next.some((x) => x.toLowerCase() === w.toLowerCase())) next.push(w);
+    for (const w of add) if ((d.exact || next.length < d.max) && !next.some((x) => x.toLowerCase() === w.toLowerCase())) next.push(w);
     if (next.length === d.value.length) return false;
     d.value = next;
     root.querySelector('.ctl-chips-list').innerHTML = ctlChipsInner(root.id);
@@ -3698,7 +3700,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (!always && !Array.isArray(m.neverRead)) return '';
     const k = 'machine.neverRead';
     const how = 'A * is any characters inside a name, / joins names, and a name that ends in / is a folder and everything in it. They stay on this computer: the Sphere never sees them.';
-    return `<div class="set-row is-stack set-never"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">Never read</div><div class="set-row-sub">Files and folders your Oby never reads or sends, in any of your folders, such as <code>*.sqlite</code> or <code>customers/</code>. Codex, Cursor and a shell set to Any command can still read them.${ctlInfo(how)}</div></div>${ctlChips({ id: fid(k), values: m.neverRead || [], label: 'Never read', placeholder: 'Add a file or folder name', max: NEVER_READ_MAX, each: NEVER_READ_LEN, attrs: `data-k="${k}"` })}</div>
+    return `<div class="set-row is-stack set-never"><div class="set-row-text"><div class="set-row-title" id="${fid(k)}-l">Never read</div><div class="set-row-sub">Files and folders your Oby never reads or sends, in any of your folders, such as <code>*.sqlite</code> or <code>customers/</code>. Codex, Cursor and a shell set to Any command can still read them.${ctlInfo(how)}</div></div>${ctlChips({ id: fid(k), values: m.neverRead || [], label: 'Never read', placeholder: 'Add a file or folder name', max: NEVER_READ_MAX, each: NEVER_READ_LEN, exact: true, attrs: `data-k="${k}"` })}</div>
           ${always ? `<details class="set-always"><summary>Always hidden: .env files, keys, credentials and similar</summary><div class="set-always-list">${always.map((n) => `<code>${esc(n)}</code>`).join(' ')}</div></details>` : ''}`;
   }
   // ===== end of never-read
