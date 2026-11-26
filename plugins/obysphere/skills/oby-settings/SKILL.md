@@ -32,7 +32,7 @@ Walk the person through the console unless they ask for the file. Before you cha
 ## What to recommend
 
 - **Narrow folders.** The project folders teammates need, read-only. Not a folder that holds everything they have.
-- **Broad reach behind "Ask me first".** If a folder is wide or writable, or the shell is on, make **Ask me first** the default and choose per Oby who may just ask.
+- **Broad reach behind "Ask me first".** If a folder is wide or writable, or the shell is on, keep **Ask me first** as the default (it is, until changed) and choose per Oby who may just ask.
 - **Trust few Obys.** Trust doesn't pass through: what a trusted Oby relays for someone else gets no risky reach.
 - **GitHub approvals on `ask`** until the person has seen a few of their Oby's reviews.
 - **Notifications:** keep the desktop ones on; add the phone or Slack if they're often away. Webhook and ntfy URLs are secrets: they stay on this computer, masked in the console, never in a commit or a message.

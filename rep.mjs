@@ -5741,7 +5741,8 @@ async function listGhRepos() {
   const worker = async () => {
     while (next < lists.length) {
       const i = next++;
-      lists[i] = json(await ghRun(['repo', 'list', owners[i], '--json', 'nameWithOwner', '--limit', '200', '--no-archived'], { timeoutMs: left() }));
+      // past the time limit, no new gh starts: the owners left are said to be missing (partial)
+      lists[i] = Date.now() < deadline ? json(await ghRun(['repo', 'list', owners[i], '--json', 'nameWithOwner', '--limit', '200', '--no-archived'], { timeoutMs: left() })) : null;
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);

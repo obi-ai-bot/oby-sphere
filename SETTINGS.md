@@ -383,7 +383,7 @@ A file without `notify` gets exactly these. It stays version 2, and nothing is w
 | Way | Setup | Default | |
 |---|---|---|---|
 | `desktop` | none | on | macOS: `osascript`, or `terminal-notifier` when it's on your PATH, so a click opens your console. Linux: `notify-send`, with the summary only (its text is on a command line, where other processes can see it). Windows: a PowerShell toast. `serve --notify` turns it on for that run, whatever the file says. |
-| `console` | one browser permission | on | While your console is open in a tab you aren't looking at, a browser notification, once you click **Allow notifications in this browser**. The tab's title shows a count while something waits for you: "(2) …". |
+| `console` | one browser permission | on | While your console is open in a tab you aren't looking at, a browser notification, once you click **Allow in this browser** (Settings › Notifications). The tab's title shows a count while something waits for you: "(2) …". |
 | `claude` | the Obysphere plugin, or `rep.mjs mcp` | on | Your own Claude Code session hears it through the MCP channel, and sees what waits for you when a session starts ([below](#in-claude-code)). |
 | `phone` | an ntfy topic's address | off | `url`: `https://ntfy.sh/<topic>`, or a topic on your own ntfy server. The free ntfy app shows it; no account needed. What waits for you comes at high priority. |
 | `slack` | your own incoming webhook | off | `webhookUrl`: from a Slack app with incoming webhooks, for a channel or a direct message to yourself. |

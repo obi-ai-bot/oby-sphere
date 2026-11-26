@@ -498,6 +498,10 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .route-head .set-field { flex: 1; min-width: 0; font-weight: 500; }
 .route-head .icon-button { flex: none; }
 .route-head .icon-button:disabled { opacity: 0.3; }
+/* a button that can't be used now looks it (Test with no address yet, the only folder's remove) */
+.set-root .set-button:disabled { opacity: 0.4; cursor: default; }
+.set-root .set-button:disabled:hover { background: var(--chip-hover); border-color: var(--line); }
+.set-root .icon-button:disabled { opacity: 0.3; cursor: default; }
 .route-idle { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 159, 10, 0.08); color: var(--needs); font-size: var(--text-sm); line-height: 16px; }
 .route-label { margin: 14px 0 6px; color: var(--label); font-size: var(--text-sm); }
 .route-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 12px; align-items: start; }
@@ -618,7 +622,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .ctl-info { position: relative; flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line-strong); color: var(--muted); font: 600 10px/1 var(--font); vertical-align: 1px; transition: color var(--fade), border-color var(--fade); }
 .ctl-info:hover, .ctl-info:focus-visible { color: var(--ink); border-color: var(--field-edge-on); }
 .ctl-info::after { content: attr(data-tip); display: none; position: absolute; z-index: 60; top: calc(100% + 6px); left: 50%; width: max-content; max-width: min(260px, calc(100vw - 32px)); padding: 6px 10px; border: 1px solid var(--surface-edge); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); color: var(--text); font: 400 var(--text-sm)/16px var(--font); text-align: left; white-space: normal; pointer-events: none; transform: translateX(calc(-50% + var(--tip-dx, 0px))); }
-.ctl-info:hover::after, .ctl-info:focus-visible::after { display: block; }
+/* hover, or focus (a click or a tap focuses it: a phone has no hover) */
+.ctl-info:hover::after, .ctl-info:focus::after { display: block; }
 :is(.ctl-dd-btn, .ctl-dd-add, .ctl-chip-x, .ctl-seg [role="radio"], .ctl-step-b, .ctl-toggle, .ctl-info, .switch[data-ctl]):focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
 :is(.ctl-dd.set-invalid .ctl-dd-btn, .ctl-step.set-invalid, .ctl-time.set-invalid, .ctl-chips.set-invalid) { border-color: var(--danger) !important; }
 :is(.ctl-seg, .ctl-dd.is-multi, .switch[data-ctl]).set-invalid { outline: 1px solid var(--danger); outline-offset: 3px; }
@@ -2227,6 +2232,12 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     });
     const d = CTL.data.get(root.id);
     const v = h.value !== '' && m.value !== '' ? `${ctlPad(Math.min(23, Number(h.value)))}:${ctlPad(Math.min(59, Number(m.value)))}` : h.value === '' && m.value === '' ? null : undefined;
+    // left with one half empty: it shows the time it still has, not half of a new one
+    if (v === undefined && pad) {
+      const [hh, mm] = d.value ? d.value.split(':') : ['', ''];
+      [[h, hh], [m, mm]].forEach(([el, x]) => { el.value = x; if (x) el.setAttribute('aria-valuenow', String(Number(x))); else el.removeAttribute('aria-valuenow'); });
+      return;
+    }
     if (v === undefined || v === d.value) return;
     d.value = v;
     ctlEmit(root, v);
@@ -2252,10 +2263,14 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
   }
   function ctlTimeInput(el, root) {
     const isH = el.classList.contains('ctl-time-h');
-    let v = el.value.replace(/\D/g, '').slice(0, 2);
+    const digits = el.value.replace(/\D/g, '');
+    let v = digits.slice(0, 2);
     if (v.length === 1 && Number(v) > (isH ? 2 : 5)) v = '0' + v; // "7" can only be 07
     el.value = v;
-    if (isH && v.length === 2) { const m = root.querySelector('.ctl-time-m'); m.focus(); m.select(); }
+    const m = isH && root.querySelector('.ctl-time-m');
+    // "2330" or "23:30" pasted (or typed fast) into the hour: the rest is the minutes
+    if (m && digits.length > 2) m.value = digits.slice(2, 4);
+    if (m && v.length === 2) { m.focus(); m.select(); }
     ctlTimeCommit(root);
   }
 
@@ -2557,7 +2572,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
     m = m.replace(/,? or null for the default/g, ', or leave it on Default')
       .replace(/,? or null for either/g, ', or leave it on Either')
       .replace(/,? or null for any/g, ', or leave it on Any channel')
-      .replace(/,? or null for (\d+)/g, ' ($1 min when not set)');
+      .replace(/,? or null for (\d+)/g, ' ($1 min when not set)')
+      .replace(/\bthe same time as from\b/, 'the same time as the start'); // quiet hours: the file's "from" is the first time
     return curly(m);
   }
   // a control of ours is marked as a whole; its button or field carries what's said about it
@@ -3030,7 +3046,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
         ${swRow('machine.web.fetch', !!m.web?.fetch, 'Open web pages')}
         ${swRow('machine.web.search', !!m.web?.search, 'Search the web')}
         <div class="set-row" data-part="browser">${browserHtml()}</div>
-        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title"><span id="set-mcp-l">Your MCP servers</span> ${TRUSTED_TAG}</div><div class="set-row-sub">From your Claude Code (user scope).</div></div><div data-part="mcp">${mcpHtml()}</div></div>
+        <div class="set-row is-stack"><div class="set-row-text"><div class="set-row-title"><span id="set-mcp-l">Your MCP servers</span> ${TRUSTED_TAG}</div><div class="set-row-sub">The ones in your own Claude Code.</div></div><div data-part="mcp">${mcpHtml()}</div></div>
       </div>`;
   }
 

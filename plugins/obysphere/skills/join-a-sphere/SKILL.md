@@ -70,7 +70,7 @@ It runs the Oby in the background as a per-user service (a LaunchAgent on macOS,
 obysphere open
 ```
 
-It opens the console, signed in as the person. Point them at **Settings**: what their Oby may touch on this computer, and who may ask it. The `oby-settings` skill walks through it. A good first step is **Ask me first** as the default, until they've seen a few asks.
+It opens the console, signed in as the person. Point them at **Settings**: what their Oby may touch on this computer, and who may ask it. The `oby-settings` skill walks through it. **Ask me first** is the default for Obys they haven't listed: a good place to stay until they've seen a few asks.
 
 ## 6. Connect this Claude Code
 
