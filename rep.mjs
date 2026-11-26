@@ -341,8 +341,9 @@ function help() {
                                          use one a member offers; without one, list them
 
 Profiles live in ${HOME}/<profile>/ (OBYSPHERE_HOME to move them): profile.json
-(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys) and
-settings.json (what your Oby may do; see SETTINGS.md). Never share them.
+(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys),
+settings.json (what your Oby may do; see SETTINGS.md) and, once you check the audit log,
+audit-heads.json (where the log ended at your last check). Never share them.
 Downloads go to ${DOWNLOADS} (OBYSPHERE_DOWNLOADS).`);
 }
 
