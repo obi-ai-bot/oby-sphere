@@ -286,6 +286,8 @@ const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><re
 
 const [cmd = 'help', ...rest] = process.argv.slice(2);
 const { pos, opt } = parseArgs(rest);
+// the exit code of an error: 1, but 2 for `admin audit verify`, where 1 says the log doesn't check (#141)
+const FAIL_CODE = cmd === 'admin' && pos[0] === 'audit' && pos[1] === 'verify' ? 2 : 1;
 
 const tty = process.stderr.isTTY;
 const c = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
@@ -313,6 +315,12 @@ function help() {
                                          this Sphere's admins and policy (--keep-days 0: no time limit). claim makes your Oby an admin:
                                          it reads the admin key from OBYSPHERE_ADMIN_KEY or asks for it,
                                          never from the command line, and doesn't store it
+  node rep.mjs admin   audit export [--out <file> | -] [--after <seq>] [--force]
+                                         this Sphere's audit log as JSON Lines, one event per line (0600)
+  node rep.mjs admin   audit verify [<file>] [--since <older export>] [--json]
+                                         check the log (the relay's, without a file) on this machine, with
+                                         the admin key: OBYSPHERE_ADMIN_KEY or asked for, never sent.
+                                         Exit 0 verified, 1 it doesn't check, 2 it couldn't be checked
   node rep.mjs mcp-config [--profile <name>]                       how to add it to Claude Code / Cursor
   node rep.mjs settings [--profile <name>] [--json]                where your Oby's settings are, and what they say
   node rep.mjs github status [--profile <name>] [--json]           your gh sign-in, and what your Oby may do on GitHub
@@ -335,8 +343,9 @@ function help() {
                                          use one a member offers; without one, list them
 
 Profiles live in ${HOME}/<profile>/ (OBYSPHERE_HOME to move them): profile.json
-(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys) and
-settings.json (what your Oby may do; see SETTINGS.md). Never share them.
+(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys),
+settings.json (what your Oby may do; see SETTINGS.md) and, once you check the audit log,
+audit-heads.json (where the log ended at your last check). Never share them.
 Downloads go to ${DOWNLOADS} (OBYSPHERE_DOWNLOADS).`);
 }
 
@@ -1161,7 +1170,9 @@ Leave it out if you run \`${meCmd()} serve\` in a terminal instead (both at once
 // the command line (shell history, the process list), and isn't stored.
 
 const ADMIN_USAGE = `usage: ${meCmd()} admin claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
-       ${meCmd()} admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause|--resume] [--yes]`;
+       ${meCmd()} admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause|--resume] [--yes]
+       ${meCmd()} admin audit export [--out <file> | -] [--after <seq>] [--force]
+       ${meCmd()} admin audit verify [<file>] [--since <older export>] [--json]`;
 
 async function adminCmd() {
   const [sub, ...args] = pos;
@@ -1172,10 +1183,12 @@ async function adminCmd() {
     revoke: (p) => adminRole(p, args[0], false),
     policy: adminPolicy,
     'rotate-key': adminRotate,
+    audit: null, // its own section: the profile only when it needs the relay
   };
   if (!sub || !Object.hasOwn(subs, sub)) die(ADMIN_USAGE);
   if (opt['admin-key'] !== undefined)
-    die('The admin key never goes on the command line: your shell history and the process list would show it. Set OBYSPHERE_ADMIN_KEY for one command, or run `admin claim` in a terminal to be asked for it.');
+    die(`The admin key never goes on the command line: your shell history and the process list would show it. Set OBYSPHERE_ADMIN_KEY for one command, or run \`admin ${sub === 'audit' ? 'audit verify' : 'claim'}\` in a terminal to be asked for it.`);
+  if (sub === 'audit') return auditCmd(args);
   await subs[sub](loadProfile());
 }
 
@@ -1393,6 +1406,523 @@ function readHidden(question) {
     stdin.on('data', onData);
   });
 }
+
+// ===== audit: export and verify (#141)
+//
+// `admin audit export` saves this Sphere's audit log as JSON Lines, one event per line, as the
+// relay sent it. Any member may: GET /api/audit answers every credential, and the relay doesn't
+// record reads. `admin audit verify` checks a log on this machine, with code that doesn't come from
+// the relay: seq from 1 with no gaps, each prev the hash before it, each hash under the key the
+// admin key makes; and online, the relay's head, the messages it still holds, the head this profile
+// kept from the last check that passed, and with --since, an older export's last event.
+// The admin key comes from OBYSPHERE_ADMIN_KEY or a prompt that doesn't echo. It makes the chain's
+// key at once and is dropped: never on the command line, in a request, in the output or in a file.
+// The relay holds that key too, so only a head kept from before (or another admin's export)
+// catches a relay that rewrote its own log.
+
+const AUDIT_USAGE = `usage: ${meCmd()} admin audit export [--out <file> | -] [--after <seq>] [--force]
+       ${meCmd()} admin audit verify [<file>] [--since <older export>] [--json]`;
+const AUDIT_ZERO = '0'.repeat(64);
+const AUDIT_HEX = /^[0-9a-f]{64}$/;
+const AUDIT_PAGE = 1000; // the most one GET /api/audit gives
+const AUDIT_MESSAGE_EVENTS = ['ask', 'reply', 'post'];
+
+async function auditCmd(args) {
+  const [what, ...more] = args;
+  if (what === 'export' && !more.length) return auditExport();
+  if (what === 'verify' && more.length <= 1) return auditVerify(more[0] ?? null);
+  die(AUDIT_USAGE);
+}
+
+// ---- the chain, as server.mjs makes it (test/audit-cli.test.mjs checks a real relay's log, so the two stay in step)
+
+function auditChainKey(adminKey) {
+  return crypto.createHmac('sha256', adminKey).update('obysphere/audit/v1').digest();
+}
+function auditHash(e, k) {
+  return crypto
+    .createHmac('sha256', k)
+    .update(e.prev + JSON.stringify([e.seq, e.ts, e.type, e.actor, e.target, e.ref, e.detail, e.content ?? null]))
+    .digest('hex');
+}
+// what a message event's `content` covers: the message as posted (not its later timing patches,
+// nor whether it waits for its owner); a sealed one as stored, its envelope, so nothing is opened
+function auditContentHash(m) {
+  const { claimedAt, startedAt, waiting, ...posted } = m;
+  return createHash('sha256').update(JSON.stringify(posted)).digest('hex');
+}
+
+// the admin key, from OBYSPHERE_ADMIN_KEY or the hidden prompt, made into the chain's key at once
+async function auditKey(where) {
+  let key = process.env.OBYSPHERE_ADMIN_KEY || '';
+  delete process.env.OBYSPHERE_ADMIN_KEY;
+  if (!key) {
+    if (!process.stdin.isTTY) die('Give the admin key in OBYSPHERE_ADMIN_KEY, or run this in a terminal to be asked for it. It never goes on the command line, and never leaves this machine.');
+    key = (await readHidden(`${where}'s admin key (not shown, not stored, never sent): `)) || '';
+  }
+  key = String(key).trim();
+  if (!key) die('No admin key given.');
+  if (key.length > 200 || /[^\x21-\x7e]/.test(key)) die("That doesn't look like an admin key.");
+  const k = auditChainKey(key);
+  key = null;
+  return k;
+}
+
+// an event as the relay or a file gives it: null when it's well formed, else what's wrong
+function auditShape(e) {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return "it isn't an event";
+  if (!Number.isSafeInteger(e.seq) || e.seq < 1) return "its seq isn't a whole number";
+  if (typeof e.ts !== 'string' || e.ts.length > 40 || !Number.isFinite(Date.parse(e.ts))) return "its time isn't one";
+  if (typeof e.type !== 'string' || !/^[a-z][a-z_-]{0,31}$/.test(e.type)) return "its type isn't one";
+  for (const k of ['actor', 'target', 'ref']) if (e[k] != null && (typeof e[k] !== 'string' || e[k].length > 64)) return `its ${k} isn't an id`;
+  if (typeof e.detail !== 'string' || e.detail.length > 300) return "its detail isn't a short line";
+  if (e.content != null && (typeof e.content !== 'string' || !AUDIT_HEX.test(e.content))) return "its content isn't a hash";
+  if (typeof e.prev !== 'string' || !AUDIT_HEX.test(e.prev)) return "its prev isn't a hash";
+  if (typeof e.hash !== 'string' || !AUDIT_HEX.test(e.hash)) return "its hash isn't one";
+  return null;
+}
+function auditHeadOf(h) {
+  return h && Number.isSafeInteger(h.seq) && h.seq >= 0 && typeof h.hash === 'string' && AUDIT_HEX.test(h.hash) ? { seq: h.seq, hash: h.hash } : null;
+}
+
+const auditN = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : '?');
+const auditShort = (h) => `${String(h).slice(0, 12)}…`;
+function auditWhen(ts) {
+  const d = new Date(ts);
+  if (!Number.isFinite(d.getTime())) return 'an earlier check';
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  const year = d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear()}` : '';
+  return `${d.getDate()} ${month}${year} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+const auditWhat = (e) => `#${auditN(e.seq)} (${e.type}, ${auditWhen(e.ts)})`;
+
+// Checks events in order: [{ e, line?, damaged? }] (damaged: a line that isn't JSON). A log that starts
+// at #1 starts the chain; a file that starts later (made with --after) is checked from its first
+// event, unless `full` (the relay's log, which starts at #1), or `after` (an event checked already,
+// which the first must follow: the log read on from there). Stops at the first failure.
+function auditCheck(items, k, { full = false, after = null } = {}) {
+  const r = { ok: true, count: 0, from: null, to: null, last: null, partial: false, fail: null };
+  const stop = (seq, kind, message) => {
+    r.ok = false;
+    r.fail = { seq, kind, message };
+    return r;
+  };
+  const lost = (seq) => (seq ? `Nothing from #${auditN(seq)} on is proven.` : 'Nothing in it is proven.');
+  let prev = after;
+  for (const { e, line, damaged } of items) {
+    const want = prev ? prev.seq + 1 : full ? 1 : null;
+    const at = line ? `Line ${auditN(line)}` : `What the relay sent ${prev ? `after #${auditN(prev.seq)}` : 'first'}`;
+    if (damaged) return stop(want, 'damaged', `${at} isn't JSON: it was damaged. ${lost(want)}`);
+    const shape = auditShape(e);
+    if (shape) return stop(want, 'shape', `${at} isn't a well-formed event: ${shape}. ${lost(want)}`);
+    if (want !== null && e.seq !== want)
+      return stop(want, 'order', `Event #${auditN(want)} isn't where it should be: ${prev ? `after #${auditN(prev.seq)} comes` : 'the log starts at'} #${auditN(e.seq)}. It was dropped or moved. ${lost(want)}`);
+    r.from ??= e.seq;
+    if (!prev) {
+      r.partial = e.seq !== 1;
+      if (!r.partial && e.prev !== AUDIT_ZERO) return stop(1, 'prev', `Event ${auditWhat(e)} doesn't start the chain: its prev isn't 64 zeros. ${lost(1)}`);
+    } else if (e.prev !== prev.hash) return stop(e.seq, 'prev', `Event ${auditWhat(e)} doesn't follow #${auditN(prev.seq)}: its prev isn't that event's hash. ${lost(e.seq)}`);
+    if (auditHash(e, k) !== e.hash) return stop(e.seq, 'hash', `Event ${auditWhat(e)} doesn't check with this key: it was changed, or the key is wrong. ${lost(e.seq)}`);
+    prev = e;
+    r.count++;
+    r.to = e.seq;
+    r.last = e;
+  }
+  return r;
+}
+
+// ---- reading a log: a file of JSON Lines, or the relay's pages
+
+// a file of JSON Lines (an export, or a server's own data/audit.jsonl): blank lines skipped, and a
+// last line cut short by a crash left out, as the relay leaves it out when it starts
+function auditReadFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    die(`Can't read ${printable(file)}: ${e.code === 'ENOENT' ? "there's no such file" : printable(e.code || e.message)}.`);
+  }
+  const lines = text.split('\n');
+  const tail = lines.pop();
+  let torn = false;
+  if (tail && tail.trim()) {
+    try {
+      JSON.parse(tail);
+      lines.push(tail);
+    } catch {
+      torn = true;
+    }
+  }
+  const items = [];
+  lines.forEach((l, i) => {
+    if (!l.trim()) return;
+    try {
+      items.push({ e: JSON.parse(l), line: i + 1 });
+    } catch {
+      items.push({ e: null, line: i + 1, damaged: true });
+    }
+  });
+  return { items, torn };
+}
+
+// The relay's log, 1,000 events at a time, from after `after`: each page as it came, with the head
+// it named. It ends at an empty page, or a page that reaches that head (newer events are for the
+// next time), or one that doesn't move on (`stuck`: an event out of order, or not one).
+async function* auditPages(api, after = 0) {
+  for (;;) {
+    const r = await api.get(`/api/audit?after=${after}&limit=${AUDIT_PAGE}`);
+    if (!Array.isArray(r.events)) throw new Error("The Sphere answered with something that isn't its audit log.");
+    const head = auditHeadOf(r.head);
+    const last = r.events.length ? r.events[r.events.length - 1]?.seq : null;
+    const stuck = r.events.length > 0 && !(Number.isSafeInteger(last) && last > after);
+    yield { events: r.events, head, verified: r.verified === true, stuck };
+    if (!r.events.length || stuck || (head && last >= head.seq)) return;
+    after = last;
+  }
+}
+
+// every message the relay holds that this Oby may see, the newest first, a page at a time
+async function auditMessages(api) {
+  const held = new Map();
+  let before = null;
+  for (;;) {
+    const r = await api.get(`/api/messages?limit=${AUDIT_PAGE}${before ? `&before=${before}` : ''}`);
+    const list = Array.isArray(r.messages) ? r.messages : [];
+    let fresh = 0;
+    for (const m of list) {
+      if (m && typeof m === 'object' && !Array.isArray(m) && typeof m.id === 'string' && ID.m.test(m.id) && !held.has(m.id)) {
+        held.set(m.id, m);
+        fresh++;
+      }
+    }
+    const oldest = list[0]?.id; // in time order: the oldest first
+    if (!fresh || list.length < AUDIT_PAGE || typeof oldest !== 'string' || !ID.m.test(oldest)) return held;
+    before = oldest;
+  }
+}
+
+// ---- export
+
+async function auditExport() {
+  let after = 0;
+  if (opt.after !== undefined) {
+    after = Number(opt.after);
+    if (opt.after === true || !Number.isSafeInteger(after) || after < 0) die('--after is a seq, a whole number: the export starts with the event after it.');
+  }
+  if (opt.out === true || Array.isArray(opt.out)) die('--out takes one file, or - for the terminal.');
+  const toStdout = opt.out === '-';
+  // to the terminal or a pipe: when what reads it stops (`| head`), so does the export, quietly
+  if (toStdout)
+    process.stdout.on('error', (e) => {
+      if (e.code !== 'EPIPE') log(red('error: ') + printable(e.message));
+      process.exit(e.code === 'EPIPE' ? 0 : 1);
+    });
+  const p = loadProfile();
+  const api = client(p);
+  const { sphere } = await api.get('/api/info');
+  const name = printable(cleanLine(sphere?.name, 80) || p.sphereName || 'Sphere');
+  let file = null;
+  let tmp = null;
+  let fd = null;
+  if (!toStdout) {
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    file = path.resolve(expandHome(opt.out || `${slug(name) || 'sphere'}-audit-${day}.jsonl`));
+    if (fs.existsSync(file) && !opt.force) die(`${rel(file)} is there already: add --force to replace it, or give another with --out <file>.`);
+    if (!fs.existsSync(path.dirname(file))) die(`There's no folder ${rel(path.dirname(file))}.`);
+    // written beside it, owner-only, and moved into place whole once the last page is in
+    tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+    fd = fs.openSync(tmp, 'wx', 0o600);
+  }
+  // as the relay sent it, one event per line; characters a terminal would act on are written as
+  // \u escapes, which read back as the same event (JSON.stringify escapes the others already)
+  const line = (e) => JSON.stringify(e).replace(/[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0')) + '\n';
+  let count = 0;
+  let first = null;
+  let last = null;
+  let head = null;
+  try {
+    for await (const page of auditPages(api, after)) {
+      head = page.head ?? head;
+      if (page.stuck) throw new Error(`The Sphere's audit log doesn't move on after #${auditN(last ?? after)}: it sent an event out of order, or something that isn't one.`);
+      if (!page.events.length) break;
+      const chunk = page.events.map(line).join('');
+      if (toStdout) {
+        if (!process.stdout.write(chunk)) await new Promise((r) => process.stdout.once('drain', r));
+      } else fs.writeSync(fd, chunk);
+      count += page.events.length;
+      first ??= page.events[0]?.seq ?? '?';
+      last = page.events[page.events.length - 1].seq;
+    }
+    if (fd !== null) {
+      fs.closeSync(fd);
+      fd = null;
+      if (count) {
+        fs.chmodSync(tmp, 0o600);
+        fs.renameSync(tmp, file);
+      } else fs.rmSync(tmp, { force: true });
+    }
+  } catch (e) {
+    if (fd !== null) fs.closeSync(fd);
+    if (tmp) fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+  const headLine = head ? `  The relay's head: #${auditN(head.seq)} · ${auditShort(head.hash)}` : "  The relay didn't say where its log ends.";
+  if (!count) return log(`No events${after ? ` after #${auditN(after)}` : ''} in ${name}'s audit log: nothing saved.\n${headLine}`);
+  log(`${green('✓')} ${auditN(count)} event${count === 1 ? '' : 's'}, #${auditN(first)} to #${auditN(last)}${after ? ` (after #${auditN(after)})` : ''}, from ${name}'s audit log${toStdout ? '' : `, saved to ${printable(rel(file))}`}.
+${headLine}${toStdout ? '' : `
+  Only you can read the file: it names every member and private channel, and who asked whom.`}
+  Check it on your machine, with the admin key: ${meCmd()} admin audit verify ${toStdout ? '<file>' : shq(rel(file))}`);
+}
+
+// ---- verify
+
+async function auditVerify(file) {
+  if (opt.since === true || Array.isArray(opt.since)) die('--since takes one older export: --since <file>');
+  // the older export first: a wrong path stops here, before the key is asked for
+  const older = opt.since ? auditOlder(String(opt.since)) : null;
+  const res = { verified: false, source: file ? 'file' : 'relay', file: file ? path.resolve(file) : null, events: 0, from: null, to: null, head: null, failure: null, notes: [] };
+  let check, items, k;
+  let p = null;
+  let relay = null;
+  if (file) {
+    const read = auditReadFile(file);
+    items = read.items;
+    if (read.torn) res.notes.push("The file's last line isn't whole: a write was cut off. The relay leaves such a line out when it starts, and so does this check.");
+    k = await auditKey('The Sphere');
+    check = auditCheck(items, k);
+  } else {
+    p = loadProfile();
+    const api = client(p);
+    const info = await api.get('/api/info');
+    const where = printable(cleanLine(info.sphere?.name, 80) || p.sphereName);
+    k = await auditKey(where);
+    if (!opt.json) log(dim(`Downloading ${where}'s audit log…`));
+    items = [];
+    let head = null;
+    let says = null;
+    for await (const page of auditPages(api, 0)) {
+      for (const e of page.events) items.push({ e });
+      head = page.head;
+      says = page.verified;
+    }
+    check = auditCheck(items, k, { full: true });
+    relay = { api, head, says, all: info.admin === true, who: p.agent.name, keepDays: Number(info.sphere?.policy?.keepDays) || 0 };
+    res.relay = { head, verified: says };
+  }
+  res.events = check.count;
+  res.from = check.from;
+  res.to = check.to;
+  res.head = check.last ? { seq: check.last.seq, hash: check.last.hash } : null;
+  if (check.partial && check.ok) res.notes.push(`It starts at #${auditN(check.from)} (made with --after): it's checked from there, and events before it aren't in it.`);
+  const fail = (kind, message, seq = null) => {
+    res.failure = { seq, kind, message };
+  };
+  if (!check.ok) fail(check.fail.kind, check.fail.message, check.fail.seq);
+  // an event in the log that checked, by its seq
+  const eventAt = (seq) => (check.ok && check.last && seq >= check.from && seq <= check.last.seq ? items[seq - check.from].e : null);
+
+  // online: the head the relay named is where the log it served ends
+  if (!res.failure && relay) {
+    const h = relay.head;
+    const end = check.last ? { seq: check.last.seq, hash: check.last.hash } : { seq: 0, hash: AUDIT_ZERO };
+    if (!h) fail('head', "The relay didn't say where its log ends (its head), so the end of the log can't be checked.");
+    else if (h.seq !== end.seq || h.hash !== end.hash)
+      fail('head', `The relay says its log ends at #${auditN(h.seq)} (${auditShort(h.hash)}), but the log it served ends at #${auditN(end.seq)}${end.seq ? ` (${auditShort(end.hash)})` : ''}: it isn't showing the log it keeps.`, h.seq);
+  }
+
+  // online: the head this profile kept from the last check that passed, still in the log, unchanged
+  const headsFile = p ? path.join(p.dir, 'audit-heads.json') : null;
+  const kept0 = headsFile ? readJsonFile(headsFile, {}) : {};
+  const heads = Array.isArray(kept0) ? {} : kept0;
+  const keptRec = p && Object.hasOwn(heads, p.sphere) ? heads[p.sphere] : null;
+  const kept = auditHeadOf(keptRec);
+  if (kept && kept.seq > 0) {
+    const at = auditWhen(keptRec.at);
+    res.keptHead = { seq: kept.seq, hash: kept.hash, at: typeof keptRec.at === 'string' ? keptRec.at : null, held: null, file: headsFile };
+    if (!res.failure) {
+      const e = eventAt(kept.seq);
+      if (!e) fail('kept-head', `On ${at} this log checked up to #${auditN(kept.seq)}, but now it ends at #${auditN(check.to ?? 0)}: events were cut off.`, kept.seq);
+      else if (e.hash !== kept.hash) fail('kept-head', `Event #${auditN(kept.seq)} isn't the one that checked on ${at}: the log was rewritten up to there, by someone with the admin key (the relay holds it).`, kept.seq);
+      else res.keptHead.held = true;
+    }
+  }
+
+  // --since: the older export's last event, still in the log, unchanged
+  if (older) {
+    const o = older.last;
+    const name = printable(rel(older.file));
+    res.since = { file: older.file, seq: o.seq, hash: o.hash, held: null };
+    if (!res.failure) {
+      if (check.from !== null && o.seq < check.from) {
+        // a file made with --after, starting right after the older one, must link on to it
+        if (o.seq !== check.from - 1) die(`This log starts at #${auditN(check.from)}, after ${name}'s last event (#${auditN(o.seq)}), so the two can't be compared.`);
+        if (items[0].e.prev !== o.hash) fail('since', `#${auditN(check.from)} doesn't follow ${name}'s last event, #${auditN(o.seq)}: one of the two was rewritten.`, check.from);
+        else Object.assign(res.since, { held: true, links: true });
+      } else {
+        const e = eventAt(o.seq);
+        if (!e) fail('since', `${name} holds events up to #${auditN(o.seq)}, but this log ends at #${auditN(check.to ?? 0)}: events were cut off.`, o.seq);
+        else if (e.hash !== o.hash) fail('since', `Event #${auditN(o.seq)} isn't the one in ${name}: the log was rewritten up to there, by someone with the admin key.`, o.seq);
+        else res.since.held = true;
+      }
+    }
+  }
+
+  // online: each message the relay still holds against what was recorded when it was posted
+  if (!res.failure && relay) {
+    const events = items.map((x) => x.e);
+    const held = await auditMessages(relay.api);
+    let c = auditContent(events, held, { all: relay.all, keepDays: relay.keepDays });
+    if (c.fail?.later) {
+      // a message shown as deleted, with no event for it in the log as it was read: it may have been
+      // deleted (or posted and deleted) since. The log from there on, read now that the messages are
+      // in, must link on to what checked, and say so.
+      const more = [];
+      for await (const page of auditPages(relay.api, check.to ?? 0)) for (const e of page.events) more.push({ e });
+      const on = auditCheck(more, k, check.last ? { after: check.last } : { full: true });
+      c = on.ok ? auditContent(events, held, { all: relay.all, keepDays: relay.keepDays, later: more.map((x) => x.e) }) : { ...c, fail: on.fail };
+    }
+    res.messages = { checked: c.checked, deleted: c.deleted, notHeld: c.notHeld, hidden: c.hidden, everyChannel: relay.all };
+    if (c.fail) fail(c.fail.kind ?? 'content', c.fail.message, c.fail.seq);
+  }
+
+  res.verified = !res.failure;
+  // online, and it passed: keep the head, so the next check knows the log still holds it
+  if (res.verified && relay && res.head) {
+    writeSecret(headsFile, { ...heads, [p.sphere]: { seq: res.head.seq, hash: res.head.hash, at: new Date().toISOString() } });
+    res.kept = { seq: res.head.seq, file: headsFile };
+  }
+  auditReport(res, relay);
+  process.exit(res.verified ? 0 : 1);
+}
+
+// an older export, for --since: its last whole event
+function auditOlder(file) {
+  const { items } = auditReadFile(file);
+  const last = items.length ? items[items.length - 1].e : null;
+  if (!last || auditShape(last)) die(`${printable(file)} doesn't end with an audit event, so it can't be compared.`);
+  return { file: path.resolve(file), last };
+}
+
+// Each message event (ask, reply, post) against the message the relay holds now. A message it
+// holds must hash to its event's content. One it shows as deleted needs a delete event that names
+// it with that same content, and a delete event's message may no longer be served with its words.
+// A message it doesn't serve is counted: not held any more, or, for an Oby that doesn't see every
+// channel, held in a channel it isn't in when it's newer than one it was served. Once cuts are
+// recorded (#139: an expire event names the newest message each cut removed), a message at or
+// before the last cut's is not held any more, for anyone; after it, an admin's Oby (which sees
+// every channel) fails a missing one, unless it's older than the Sphere keeps messages (hidden, cut
+// within the hour: by its event's time, give or take an hour for clocks that differ). Every
+// rule about a message's content is here, so later events about messages are checked here too.
+// `events` is the log as read before the messages; `later`, the log from there on, read after them.
+// A message deleted (or posted and deleted) in between is shown as deleted, and one cut in between
+// is missing, with their events only in `later`: without it, such a failure says `later: true`, to
+// be asked again with it.
+function auditContent(events, held, { all, later = null, keepDays = 0 }) {
+  const out = { checked: 0, deleted: 0, notHeld: 0, hidden: 0, fail: null };
+  const index = (list) => {
+    const posted = new Map(); // message id -> its ask, reply or post event
+    const deletes = new Map(); // message id -> its delete event
+    for (const e of list) {
+      if (AUDIT_MESSAGE_EVENTS.includes(e.type) && e.ref && e.content) posted.set(e.ref, e);
+      else if (e.type === 'delete' && e.ref) deletes.set(e.ref, e);
+    }
+    return { posted, deletes };
+  };
+  const { posted, deletes } = index(events);
+  const since = index(later ?? []);
+  const words = (m) => (m.text != null && m.text !== '') || m.sealed != null || (Array.isArray(m.files) && m.files.length > 0);
+  const failed = (seq, message, maybeLater = false) => {
+    out.fail = { seq, message, ...(maybeLater && !later ? { later: true } : {}) };
+    return out;
+  };
+  // cuts (#139): each expire event that names a message comes after that message's own event; the
+  // last one in the whole log says how far cuts reached
+  let cutRef = null;
+  for (const e of [...events, ...(later ?? [])]) {
+    if (e.type !== 'expire' || !e.ref) continue;
+    const own = posted.get(e.ref) ?? since.posted.get(e.ref);
+    if (!own || own.seq >= e.seq) return failed(e.seq, `The cut #${auditN(e.seq)} (${auditWhen(e.ts)}) names message ${printable(e.ref)}, but the log never recorded it being posted before.`);
+    cutRef = e.ref;
+  }
+  const cutSeq = cutRef ? (posted.get(cutRef) ?? since.posted.get(cutRef)).seq : 0;
+  const keepMs = Number.isInteger(keepDays) && keepDays > 0 ? keepDays * 864e5 : 0;
+  const expired = (e) => !!keepMs && Date.parse(e.ts) < Date.now() - keepMs + 3600e3; // hidden by the relay now, cut within the hour
+  // retention drops the oldest first: a message posted after one the relay served is still held
+  let oldest = Infinity;
+  for (const id of held.keys()) if (posted.has(id)) oldest = Math.min(oldest, posted.get(id).seq);
+  for (const [id, e] of posted) {
+    const m = held.get(id);
+    const del = deletes.get(id);
+    const name = `The ${e.type} ${printable(id)} (#${auditN(e.seq)}, ${auditWhen(e.ts)})`; // "The post m_… (#2, 20 Nov 14:01)"
+    if (!m) {
+      if (e.seq <= cutSeq || expired(e)) out.notHeld++;
+      else if (!cutRef) {
+        if (all || e.seq < oldest) out.notHeld++; // an older relay trimmed without a trace
+        else out.hidden++;
+      } else if (all) return failed(e.seq, `${name} isn't held, and no cut removed it: it was removed by hand.`, true);
+      else out.hidden++;
+    } else if (m.deleted) {
+      const d = del ?? since.deletes.get(id);
+      if (!d || d.content !== e.content) return failed(e.seq, `${name} is shown as deleted, but the log has no delete event for it with the content it was posted with.`, !del);
+      if (words(m)) return failed(d.seq, `${name} was deleted (#${auditN(d.seq)}), but the relay still serves its words.`);
+      out.deleted++;
+    } else if (del) return failed(del.seq, `${name} was deleted (#${auditN(del.seq)}), but the relay still serves its words.`);
+    else if (auditContentHash(m) !== e.content) return failed(e.seq, `${name} isn't what was recorded when it was posted: it was changed since.`);
+    else out.checked++;
+  }
+  for (const [id, m] of held) {
+    if (posted.has(id)) continue;
+    if (m.deleted) {
+      // posted after the log was read, and deleted: both events in what was read after the messages
+      const p = since.posted.get(id);
+      const d = since.deletes.get(id);
+      if (!p || !d || d.content !== p.content) return failed(null, `Message ${printable(id)} is shown as deleted, but the log never recorded it being posted and deleted.`, true);
+      if (words(m)) return failed(d.seq, `Message ${printable(id)} was deleted (#${auditN(d.seq)}), but the relay still serves its words.`);
+      continue;
+    }
+    const del = deletes.get(id);
+    if (del) return failed(del.seq, `Message ${printable(id)} was deleted (#${auditN(del.seq)}), but the relay still serves it.`);
+  }
+  return out;
+}
+
+function auditReport(res, relay) {
+  if (opt.json) return console.log(JSON.stringify(res, null, 2));
+  const what = res.source === 'file' ? 'The file' : 'The audit log';
+  const lines = [];
+  if (res.verified) {
+    lines.push(res.events ? `${green('✓')} ${what} checks with this key: ${auditN(res.events)} event${res.events === 1 ? '' : 's'}, #${auditN(res.from)} to #${auditN(res.to)}.` : `${green('✓')} ${what} has no events yet: there's nothing to check.`);
+    if (res.head) lines.push(`  Head #${auditN(res.head.seq)} · ${auditShort(res.head.hash)}${relay ? ", the relay's head too" : ''}`);
+  } else {
+    lines.push(`${red('✗')} ${res.failure.message}`);
+    if (['content', 'head', 'kept-head', 'since'].includes(res.failure.kind)) {
+      if (res.events) lines.push(`  The chain itself checks: #${auditN(res.from)} to #${auditN(res.to)}.`);
+    } else if (res.events) lines.push(`  #${auditN(res.from)} to #${auditN(res.to)} check.`);
+    if (relay?.says) lines.push("  The relay says its chain is verified: that's its own word, and this check, on your machine, says otherwise.");
+    if (res.failure.kind === 'kept-head') lines.push(dim(`  Only if this Sphere was started afresh on purpose: delete ${printable(res.keptHead.file)}, and the next check keeps a new head.`));
+  }
+  for (const n of res.notes) lines.push(`  ${n}`);
+  const m = res.messages;
+  if (m) {
+    const parts = [`${auditN(m.checked)} match what was recorded when they were posted`];
+    if (m.deleted) parts.push(`${auditN(m.deleted)} deleted, as the log records`);
+    if (m.everyChannel) parts.push(`${auditN(m.notHeld)} not held any more`);
+    else parts.push(`${auditN(m.hidden)} in channels ${relay.who} isn't in`, `${auditN(m.notHeld)} older ones not held any more, or in such channels (an admin's Oby sees every channel)`);
+    lines.push(`  Messages: ${parts.join('; ')}.`);
+  }
+  if (res.since?.held) lines.push(`  Since ${printable(rel(res.since.file))}: ${res.since.links ? `this log links on to its last event, #${auditN(res.since.seq)}` : `the log still holds its last event, #${auditN(res.since.seq)}, unchanged`}.`);
+  if (res.keptHead?.held) lines.push(`  Since the last check (${auditWhen(res.keptHead.at)}): the log still holds #${auditN(res.keptHead.seq)}, unchanged.`);
+  if (res.kept) lines.push(`  Kept #${auditN(res.kept.seq)} in ${printable(res.kept.file)}: the next check makes sure the log still holds it.`);
+  if (res.verified && res.events) {
+    lines.push(dim(`  What this proves: each event was written by someone holding the admin key, in this order, and nothing up to #${auditN(res.to)} was changed, dropped, put in or reordered since by anyone without it.`));
+    if (!relay && !res.since) lines.push(dim(`  A file alone can't show that newer events weren't cut off: check the relay's log (${meCmd()} admin audit verify), or give an older export with --since.`));
+  }
+  // every word from the relay or a file in these lines was checked (types, times, seqs) or cleaned (ids, paths)
+  console.log(lines.join('\n'));
+}
+
+// ===== end of audit
 
 // ================================================================ the representative (answers asks)
 
@@ -9220,7 +9750,7 @@ function shq(s) {
 }
 function die(m) {
   log(red('error: ') + m);
-  process.exit(1);
+  process.exit(FAIL_CODE);
 }
 // an error with an HTTP status, for the console proxy
 function die2(status, message) {
@@ -9300,5 +9830,5 @@ if (!commands[cmd] || opt.help) help();
 else
   Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous
     log(red('error: ') + printable(e?.message || e));
-    process.exit(1);
+    process.exit(FAIL_CODE);
   });

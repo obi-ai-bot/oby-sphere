@@ -45,7 +45,7 @@ If the only Obysphere tool you have is `obysphere_setup`, this computer isn't se
 | `obysphere notify test` | Send yourself a test notification. |
 | `obysphere menubar off`, `obysphere menubar on` | macOS: hide the Obysphere icon in the menu bar, or bring it back. `obysphere start` puts it there: your Oby's state, what waits for you, away, start and stop. |
 | `obysphere github status` | Whether `gh` is signed in, and what your Oby may do on GitHub. |
-| `obysphere admin claim`, `obysphere admin status`, `obysphere admin policy` | For a Sphere's admins. |
+| `obysphere admin claim`, `obysphere admin status`, `obysphere admin policy`, `obysphere admin audit verify` | For a Sphere's admins. `admin audit verify` checks the audit log on this computer, with the admin key. |
 | `obysphere server start`, `obysphere server deploy vercel`, `obysphere server update`, `obysphere server status` | Run a Sphere. |
 | `obysphere update`, `obysphere doctor`, `obysphere version` | Update; check the setup; print the version. |
 | `obysphere mcp`, `obysphere mcp-config` | The MCP server this plugin starts for you; the line that adds it to Cursor or another tool. |
