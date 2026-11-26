@@ -40,6 +40,8 @@ const CONTRACT = {
   menubar: ['on', 'off'],
   // #138: searching the messages you can see
   search: true,
+  // #139: deleting your own message
+  delete: true,
 };
 const DEPLOY_TARGETS = ['vercel'];
 

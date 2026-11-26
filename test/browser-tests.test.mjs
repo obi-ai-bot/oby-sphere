@@ -108,7 +108,7 @@ if (!chromium) {
             await page.getByRole('button', { name: /^Obys online 2\/ 3 1 offline$/ }).waitFor();
             const carolOnMap = page.getByRole('group', { name: 'Map' }).getByRole('listitem', { name: 'Carol Test’s Oby' });
             await carolOnMap.waitFor();
-            await until(async () => /\boffline\b/.test(await carolOnMap.ariaSnapshot()), 'the map to say Carol’s Oby is offline');
+            await until(async () => /\bOffline\b/.test(await carolOnMap.ariaSnapshot()), 'the map to say Carol’s Oby is offline');
             await page.getByRole('log', { name: 'Live log' }).waitFor();
             await noSidewaysScroll(page, vp, 'Overview');
             // someone holding only the join key watches: no member's pages, and no admin's
@@ -391,6 +391,106 @@ if (!chromium) {
             await page.keyboard.press('Escape'); // in the field: the search ends
             await results.waitFor({ state: 'hidden' });
             assert.equal(await page.getByRole('searchbox', { name: 'Search messages' }).inputValue(), '');
+          });
+        });
+
+        // ===== deleting messages (#139)
+        test('Conversation: you delete your own message after a confirmation, and everyone sees it go', EACH, async (t) => {
+          const words = `Oops, wrong channel: the launch plan (${vp.name})`;
+          await run(t, alice.url, vp, async (page, { open }) => {
+            await switchView(page, 'Conversation');
+            const thread = page.getByRole('log', { name: 'Messages' });
+            await page.getByRole('textbox', { name: 'Message', exact: true }).fill(words);
+            await page.getByRole('button', { name: 'Send', exact: true }).click();
+            await thread.getByText(words).waitFor();
+            const his = await open(bob.url);
+            await switchView(his, 'Conversation');
+            const histhread = his.getByRole('log', { name: 'Messages' });
+            await histhread.getByText(words).waitFor();
+            // a message (it has no role of its own), and its Delete… button
+            const del = thread.locator('.msg').filter({ hasText: words }).getByRole('button', { name: /^Delete… your message from / });
+            // it asks first, in two lines: what deleting does, and what it can't
+            let said = null;
+            page.once('dialog', (d) => { said = d.message(); d.dismiss(); });
+            await del.click();
+            await until(() => said, 'the confirmation');
+            assert.match(said, /gone for everyone in the Sphere: its words, its files, and what Obys kept of it/);
+            assert.match(said, /can’t take back what people already read or copied, and the audit log still says you sent and deleted it/);
+            await thread.getByText(words).waitFor(); // not deleted: you said no
+            const gone = thread.getByText(/^You deleted this message · /);
+            const theirs = histhread.getByText(/^Alice Test deleted a message · /);
+            const [mine, his0] = [await gone.count(), await theirs.count()];
+            page.once('dialog', (d) => d.accept());
+            await del.click();
+            await thread.getByText(words).waitFor({ state: 'detached' }); // its words are gone from your page
+            await until(async () => (await gone.count()) === mine + 1, 'the line it leaves');
+            await noSidewaysScroll(page, vp, 'a deleted message');
+            // Bob's page hears of it, and the relay keeps only who, where and when
+            await histhread.getByText(words).waitFor({ state: 'detached' });
+            await until(async () => (await theirs.count()) === his0 + 1, "the line on Bob's page");
+            const read = await world.rep(['read', 'general', '--profile', 'bob']);
+            assert.ok(!read.out.includes(words) && /alice: \(deleted\)/.test(read.out), read.out);
+            // Bob can't delete Alice's messages: no Delete… on them
+            assert.equal(await histhread.locator('.msg').filter({ hasText: `The release notes are out. (${vp.name})` }).getByRole('button', { name: /^Delete…/ }).count(), 0);
+          });
+        });
+
+        test('Waiting for you: an ask its asker takes back says so, and isn’t answered', EACH, async (t) => {
+          const words = `Could you send me the budget? (${vp.name}, taken back)`;
+          await run(t, alice.url, vp, async (page) => {
+            await goTo(page, 'Your Oby');
+            await title(page, 'Your Oby').waitFor();
+            const runs = world.fake.calls().length;
+            world.repInBackground(['ask', 'alice', words, '--profile', 'bob', '--wait', '5']);
+            const card = page.locator('[data-pending]').filter({ hasText: words }); // an item that waits for you (no role of its own)
+            await card.waitFor();
+            // Bob takes it back, from his terminal, by the id read shows
+            const read = await world.rep(['read', 'general', '--profile', 'bob']);
+            const id = new RegExp(`(m_[\\w-]+) bob → alice: ${reEscape(words)}`).exec(read.out)?.[1];
+            assert.ok(id, read.out);
+            assert.match((await world.rep(['delete', id, '--profile', 'bob'])).out, /Deleted/);
+            await card.waitFor({ state: 'detached', timeout: 20000 });
+            await page.getByText(/^Bob Test took this ask back · /).first().waitFor();
+            await noSidewaysScroll(page, vp, 'an ask taken back');
+            assert.equal(world.fake.calls().length, runs, "Alice's Oby didn't answer it");
+            // Traffic shows it closed, not waiting for an answer that won't come (the newest exchange)
+            await goTo(page, 'Traffic');
+            const newest = page.getByRole('row').nth(1);
+            await newest.getByText('Deleted', { exact: true }).last().waitFor();
+            assert.equal(await newest.getByText(/^Waiting/).count(), 0, 'a deleted ask waits for nobody');
+          });
+        });
+
+        test("Policy: Keep messages asks before a shorter period, and the conversation says how long they're kept", EACH, async (t) => {
+          await run(t, bob.url, vp, async (page) => {
+            await goTo(page, 'Policy');
+            await title(page, 'Policy').waitFor();
+            const keep = page.getByRole('button', { name: /^Keep messages / });
+            await page.getByRole('button', { name: 'Keep messages The newest 5,000' }).waitFor();
+            let said = null;
+            page.once('dialog', (d) => { said = d.message(); d.dismiss(); });
+            await keep.click();
+            await page.getByRole('listbox', { name: 'Keep messages' }).getByRole('option', { name: '365 days', exact: true }).click();
+            await until(() => said, 'the question');
+            assert.match(said, /(No message is older than 365 days yet\. From now on, older ones are removed for good\.|\d+ messages? older than 365 days will be removed for good\.)\n\nKeep messages for 365 days\?/);
+            await page.getByRole('button', { name: 'Keep messages The newest 5,000' }).waitFor(); // you said no: unchanged
+            assert.equal((await world.policy()).keepDays, 0);
+            page.once('dialog', (d) => d.accept());
+            await keep.click();
+            await page.getByRole('listbox', { name: 'Keep messages' }).getByRole('option', { name: '365 days', exact: true }).click();
+            await page.getByRole('button', { name: 'Keep messages 365 days' }).waitFor();
+            await page.locator('.set-row').filter({ has: keep }).getByText('Saved', { exact: true }).waitFor();
+            await until(async () => (await world.policy()).keepDays === 365, "the relay's policy");
+            await noSidewaysScroll(page, vp, 'Policy, Keep messages');
+            // everyone sees it where they talk
+            await switchView(page, 'Conversation');
+            await page.getByText(/Messages are kept for 365 days\./).waitFor();
+            // and back to no time limit (a longer period asks nothing)
+            await switchView(page, 'Console');
+            await goTo(page, 'Policy');
+            await keep.click();
+            await page.getByRole('listbox', { name: 'Keep messages' }).getByRole('option', { name: 'The newest 5,000', exact: true }).click();
+            await until(async () => (await world.policy()).keepDays === 0, 'no time limit again');
           });
         });
 

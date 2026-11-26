@@ -309,8 +309,8 @@ function help() {
   node rep.mjs ui      [--profile <name>] [--port 4849] [--serve] [--open]
                                          your console: the Sphere in a browser, signed in as you
   node rep.mjs admin   claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
-  node rep.mjs admin   policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]
-                                         this Sphere's admins and policy. claim makes your Oby an admin:
+  node rep.mjs admin   policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause|--resume]
+                                         this Sphere's admins and policy (--keep-days 0: no time limit). claim makes your Oby an admin:
                                          it reads the admin key from OBYSPHERE_ADMIN_KEY or asks for it,
                                          never from the command line, and doesn't store it
   node rep.mjs mcp-config [--profile <name>]                       how to add it to Claude Code / Cursor
@@ -330,6 +330,8 @@ function help() {
                                          "Mon 9:00" (the next Monday), 2h or 3d; at most 30 days ahead
   node rep.mjs away --off | away         back now | what askers see now
   node rep.mjs post "<message>" [--channel general] [--file <path>]
+  node rep.mjs delete <message id>       delete one of your own messages (a post or an ask you wrote, a reply
+                                         your Oby gave): gone for everyone; read shows the ids
   node rep.mjs instruments new <name> [--kind prompt|command] | list | check | remove <name>
                                          the instruments your Oby offers (INSTRUMENTS.md)
   node rep.mjs use [<agent> [<instrument>]] [field=value …] [--input '<json>']
@@ -671,6 +673,11 @@ async function ui() {
   adminKey = null;
   if (opt['admin-key'] !== undefined) log(dim(`  --admin-key shows in your shell history and the process list: next time run ${meCmd()} admin claim once instead.`));
   const fileKeys = new Map(); // file id -> its key, iv, tag, name and mime, from a message you opened
+  const keysOf = new Map(); // message id -> the ids of its files in fileKeys (deleted messages: they go with it)
+  const forgetKeys = (id) => {
+    for (const f of keysOf.get(id) || []) fileKeys.delete(f);
+    keysOf.delete(id);
+  };
   const pending = new Map(); // file id -> encrypted by this console, waiting for its message
   let agentsAt = 0;
   let agentsById = new Map();
@@ -687,6 +694,7 @@ async function ui() {
     const o = sec.open(m, amap);
     if (!o.readable) return m;
     for (const f of o.files) fileKeys.set(f.id, f);
+    if (o.files.length) keysOf.set(m.id, o.files.map((f) => f.id));
     return {
       ...m,
       text: o.text,
@@ -863,6 +871,15 @@ async function ui() {
       }
       // a join key rotated through this console: the invite link it keeps follows (console-polish)
       if (req.method === 'POST' && r.ok && url.pathname === '/api/admin/rotate-key') return sendJson(res, 200, rotatedInvite(p, await r.json()));
+      // deleted messages: one of yours, deleted from the page; what this machine kept of it goes
+      if (req.method === 'DELETE' && r.ok && /^\/api\/messages\/m_[A-Za-z0-9_-]{1,32}$/.test(url.pathname)) {
+        const j = await r.json();
+        if (validTombstone(j.message)) {
+          forgetKeys(j.message.id);
+          forgetMessage(p, j.message);
+        }
+        return sendJson(res, 200, j);
+      }
       if (req.method === 'GET' && r.ok && url.pathname === '/api/stream' && r.body) {
         res.writeHead(r.status, { ...out, 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
         const dec = new TextDecoder();
@@ -910,6 +927,11 @@ async function ui() {
       search.live(ev, data); // search: a new message, a deletion (#139), a channel you joined or left
       if (ev === 'policy') notePolicy(data.policy);
       if (ev === 'message') noticeMessage(p, data); // a direct message, a mention, an answer: notifications
+      if (ev === 'message-delete') {
+        // deleted messages: its file keys here, and what this machine kept of it
+        const d = forgetMessage(p, data);
+        if (d) forgetKeys(d.id);
+      }
       if (ev === 'message' && data.sealed) {
         const [o] = await openAll([data]);
         return `event: message\ndata: ${JSON.stringify(o)}`;
@@ -969,7 +991,8 @@ async function localApi(req, res, url, p) {
       // instruments: a use of a command instrument is run or not; "everything you allow" doesn't apply to it
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
       const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && inst(instrument)?.kind !== 'command', always: !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}) });
-      return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)) });
+      // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
+      return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
     if (route === '/local/github' && m === 'GET') return sendJson(res, 200, await githubStatus(p));
     if (route === '/local/github/repos' && m === 'GET') return sendJson(res, 200, await githubRepos(p));
@@ -1154,7 +1177,7 @@ Leave it out if you run \`${meCmd()} serve\` in a terminal instead (both at once
 // the command line (shell history, the process list), and isn't stored.
 
 const ADMIN_USAGE = `usage: ${meCmd()} admin claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
-       ${meCmd()} admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--pause|--resume]`;
+       ${meCmd()} admin policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause|--resume] [--yes]`;
 
 async function adminCmd() {
   const [sub, ...args] = pos;
@@ -1211,7 +1234,7 @@ async function adminStatus(p) {
           sphere: cleanLine(sphere?.name, 80),
           you: { handle: p.agent.name, admin: admin === true, role: me?.admin === true },
           admins: admins.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60), suspended: !!a.suspended })),
-          policy: { sealed: !!pol.sealed, paused: !!sphere?.paused, maxDepth: Number(pol.maxDepth) || 0, maxFileBytes: Number(pol.maxFileBytes) || 0 },
+          policy: { sealed: !!pol.sealed, paused: !!sphere?.paused, maxDepth: Number(pol.maxDepth) || 0, maxFileBytes: Number(pol.maxFileBytes) || 0, keepDays: Number(pol.keepDays) || 0 },
         },
         null,
         2,
@@ -1259,6 +1282,12 @@ async function adminPolicy(p) {
     if (!v) die('--max-file-bytes is a size: 5242880, 512KB or 5MB');
     set.maxFileBytes = v;
   }
+  // keeping messages: 0 is no time limit (the newest retainMessages stay)
+  if (opt['keep-days'] !== undefined) {
+    const v = Number(opt['keep-days']);
+    if (opt['keep-days'] === true || !Number.isInteger(v) || v < 0 || v > 3650) die('--keep-days is a whole number of days, up to 3650: how long this Sphere keeps messages (0: no time limit)');
+    set.keepDays = v;
+  }
   const pause = opt.pause !== undefined;
   const resume = opt.resume !== undefined;
   if (pause && resume) die('--pause or --resume, not both');
@@ -1271,9 +1300,23 @@ async function adminPolicy(p) {
     if (admin !== true) log(dim(`  Only admins change it (${meCmd()} admin status).`));
     return;
   }
+  if (set.keepDays > 0 && !(await shorterAsked(p, set.keepDays))) return log('Not changed.');
   const r = await adminFetch(p, 'POST', '/api/admin/policy', set);
   out(`${green('✓')} Saved, and in the audit log. This Sphere, for everyone in it:
   ${policyLine({ policy: r.policy, paused: r.policy?.paused })}`);
+}
+
+// keeping messages: a shorter period removes the older messages for good, so it asks first (or --yes)
+async function shorterAsked(p, days) {
+  const { sphere } = await client(p).get('/api/info');
+  const was = Number(sphere?.policy?.keepDays) || 0;
+  if (was && days >= was) return true;
+  const { messages: n } = await adminFetch(p, 'GET', `/api/admin/expiring?keepDays=${days}`);
+  if (!(Number(n) > 0) || opt.yes) return true;
+  const words = `${Number(n).toLocaleString('en-US')} message${n === 1 ? '' : 's'} older than ${days} day${days === 1 ? '' : 's'} will be removed for good.`;
+  if (!process.stdin.isTTY) die(`${words} Add --yes to do it.`);
+  const a = await askOwner(`${words} Keep messages for ${days} day${days === 1 ? '' : 's'}? [y/N] `);
+  return a === 'y' || a === 'yes';
 }
 
 async function adminRotate(p) {
@@ -1316,7 +1359,15 @@ function policyLine(sphere) {
     sphere?.paused ? 'paused: no new messages' : 'accepting messages',
     Number.isFinite(depth) ? `hop limit ${depth}` : 'hop limit ?',
     Number.isFinite(bytes) && bytes > 0 ? `largest file ${fmtSize(bytes)}` : 'largest file ?',
+    keptLine(pol),
   ].join(' · ');
+}
+// keeping messages: how long a Sphere keeps its messages, in the words Policy uses
+function keptLine(pol) {
+  const days = Number(pol?.keepDays);
+  const most = Number(pol?.retainMessages);
+  if (Number.isInteger(days) && days > 0) return `messages kept ${days.toLocaleString('en-US')} day${days === 1 ? '' : 's'}`;
+  return Number.isInteger(most) && most > 0 ? `the newest ${most.toLocaleString('en-US')} messages kept` : 'messages kept ?';
 }
 
 // 5242880, 512KB, 5MB
@@ -1419,13 +1470,14 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   setInterval(() => sweepAsks(p), 3600e3).unref();
 
   const seen = new Set();
+  const deletedHere = new Set(); // deleted messages: asks their askers deleted, never answered from here
   const isForMe = (m) => validMessage(m) && m.kind === 'ask' && m.to.includes(p.agent.id) && m.from !== p.agent.id;
   // each ask is handled as it comes (an ask waiting for you holds up no other);
   // the model runs go one at a time, and so do questions in the terminal
   const enqueue = (m, opts = {}) => {
     if (seen.has(m.id)) return;
     seen.add(m.id);
-    handle(m, opts).catch((e) => log(red('  ✗ ') + printable(e.message)));
+    handle(m, opts).catch((e) => log(/\[gone\]/.test(e.message) ? dim(`  ${m.id}: its asker deleted it, so your Oby's answer wasn't sent`) : red('  ✗ ') + printable(e.message)));
   };
   let runs = Promise.resolve();
   const oneAtATime = (fn) => {
@@ -1497,6 +1549,14 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         enqueue(data);
       }
       if (ev === 'message') noticeMessage(p, data); // a direct message, a mention, an answer: notifications
+      // deleted messages: what this machine kept of it goes, and an ask of it isn't answered
+      if (ev === 'message-delete') {
+        const d = forgetMessage(p, data);
+        if (d) {
+          deletedHere.add(d.id);
+          if (seen.has(d.id)) log(dim(`  ${d.id}: its asker deleted it: not answered`));
+        }
+      }
     },
     onDown: (e) => {
       online = false;
@@ -1623,6 +1683,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       if (/\[not_found\]/.test(e.message)) return heldGone(h, "it's no longer in the Sphere");
       return writeHeld(p, { ...h, until: new Date(Date.now() + RETRY_MS).toISOString() }); // the Sphere can't be reached: soon
     }
+    if (validTombstone(msg) && msg.id === h.id) return heldGone(h, 'its asker deleted it'); // deleted messages
     if (!isForMe(msg) || msg.id !== h.id) return heldGone(h, "it isn't an ask to this Oby");
     const now = readHeld(p, h.id);
     if (now) await handle(msg, { held: now, expire });
@@ -1762,6 +1823,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (deferMs && !held && !offline && !refound) await new Promise((r) => setTimeout(r, deferMs));
     let settled = false; // a held ask that ended (answered, declined, expired) leaves held/; one that didn't is tried again soon
     try {
+      if (deletedHere.has(msg.id)) return void (settled = true); // deleted messages: its asker took it back
       if (!agentsById.get(msg.from)?.keys && msg.sealed) await refreshAgents().catch(() => {});
       const from = agentsById.get(msg.from) || { id: msg.from, name: 'unknown', owner: 'unknown' };
       const asker = slug(from.name);
@@ -1865,6 +1927,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         }
         if ((c.g.approve || approveAll) && !ownerSaid) {
           const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use);
+          if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
           if (d.decision === 'timeout') return decline('timeout');
           if (d.decision === 'write') {
@@ -1969,6 +2032,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   // returns the check's result when the ask now waits for you (your settings changed while it
   // waited in line), { held: true } when it waits for its runtime in held/, else nothing
   async function runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held = null, claimedAs = instance) {
+    if (deletedHere.has(msg.id)) return void log(dim(`  ${msg.id}: its asker deleted it while it waited its turn: not answered`)); // deleted messages
     const c = check();
     if (c.decline) return void (await decline(c.decline));
     if ((c.g.approve || approveAll) && !ownerSaid) return c;
@@ -2155,6 +2219,7 @@ function sweepAsks(p) {
   try {
     for (const n of fs.readdirSync(pendingDir(p))) if (/^left-m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(pendingDir(p), n)).mtimeMs < Date.now() - 8 * 864e5) fs.rmSync(path.join(pendingDir(p), n), { force: true });
   } catch {}
+  listWithdrawn(p); // deleted messages: asks taken back go from Waiting for you after a few minutes
   sweepNotify(p);
 }
 
@@ -3173,7 +3238,7 @@ async function mcp() {
   if (!sessionMode) {
     ensurePublished(api, p).catch((e) => log('could not publish keys: ' + printable(e.message)));
     // presence: "the owner is here, in Claude Code / Cursor"; and the Sphere's policy as it changes
-    stream(p, 'client', { onEvent: (ev, data) => (ev === 'policy' ? notePolicy(data.policy) : ev === 'message' && noticeMessage(p, data)), onDown: () => {} });
+    stream(p, 'client', { onEvent: (ev, data) => (ev === 'policy' ? notePolicy(data.policy) : ev === 'message' ? noticeMessage(p, data) : ev === 'message-delete' && forgetMessage(p, data)), onDown: () => {} }); // message-delete: deleted messages
     if (opt.serve) serveWhenReachable(p); // tries again with backoff while the Sphere can't be reached
   }
   // while answering, your settings may take away asking others or sending files back
@@ -3675,12 +3740,13 @@ async function toolRead(api, p, a, { hidden = null, shut = null } = {}) {
   const [{ messages }, { agents }] = await Promise.all([api.get(`/api/messages?channel=${encodeURIComponent(channel)}&limit=${Math.min(100, Number(a.limit) || 20)}`), api.get('/api/agents')]);
   const here = (agents || []).filter(validAgent);
   const name = (id) => slug(here.find((x) => x.id === id)?.name) || 'sphere';
-  const list = (messages || []).filter(validMessage);
+  const list = (messages || []).filter((m) => validMessage(m) || validTombstone(m)); // deleted messages: where it was, no words
   if (!list.length) return `#${channel} is empty.`;
   return quoted(
     `#${channel}, last ${list.length} messages`,
     list
       .map((m) => {
+        if (!validMessage(m)) return `[${String(m.ts).slice(11, 16)}] ${m.id} ${name(m.from)}: (deleted)`;
         const o = openFor(p, m, here);
         const marker = hidden?.(m, o) ?? null;
         const words = marker ?? (!o.readable ? `[sealed for ${o.readers.map(name).join(', ')}: not for you]` : o.text + (o.sealed && !o.verified ? ` [⚠ signature not verified: ${o.why || 'bad signature'}]` : ''));
@@ -5397,7 +5463,7 @@ process.stdin.on('end', () => {
 
 // ================================================================ sending and opening
 
-const policyCache = { at: 0, sealed: false };
+const policyCache = { at: 0, sealed: false, keepDays: 0 };
 async function sphereSealed(api) {
   if (Date.now() - policyCache.at < 3000) return policyCache.sealed;
   const { sphere } = await api.get('/api/info');
@@ -5407,6 +5473,7 @@ async function sphereSealed(api) {
 function notePolicy(policy) {
   if (!policy || typeof policy !== 'object') return;
   policyCache.sealed = !!policy.sealed;
+  policyCache.keepDays = Number.isInteger(policy.keepDays) && policy.keepDays > 0 ? policy.keepDays : 0; // keeping messages: notifications don't outlive them
   policyCache.at = Date.now();
 }
 
@@ -6523,7 +6590,7 @@ async function waitPending(p, id, ms) {
   // the entry's own lapse time when it's sooner (an ask taken over from a stopped process: what was left of its wait)
   const lapses = Date.parse(readJsonFile(path.join(dir, `${id}.json`), null)?.expiresAt);
   const deadline = Math.min(Date.now() + ms, Number.isFinite(lapses) ? lapses : Infinity);
-  const ok = (d) => d && ['answer', 'always', 'trust', 'decline', 'write', 'timeout', 'act', 'comment'].includes(d.decision); // act, comment: a GitHub item
+  const ok = (d) => d && ['answer', 'always', 'trust', 'decline', 'write', 'timeout', 'act', 'comment', 'withdrawn'].includes(d.decision); // act, comment: a GitHub item; withdrawn: its asker deleted it
   try {
     for (;;) {
       const d = readJsonFile(file, null);
@@ -7059,6 +7126,159 @@ function redactPaths(text, s) {
   return t.split(HOME).join('(profile)').split(os.homedir()).join('~');
 }
 
+// ===== deleted messages: your Oby forgets them too (#139)
+//
+// A member deletes its own message on the relay (DELETE /api/messages/:id: `delete <message id>`
+// here, or Delete… in the console), and the relay tells the streams that got it: message-delete
+// { id, channel, deleted: { at, by } }. Each of this profile's processes (serve, ui, mcp) then
+// drops what this machine kept of that message: its notifications (notify/recent.jsonl, and
+// any not sent yet), an ask that waits for you (Waiting for you says who took it back), one held
+// for its runtime (held/), and the console's file keys. A deleted ask still in the queue isn't
+// answered. The relay isn't trusted: a deletion it announces only makes this machine forget its
+// own copies (a false one could drop an ask that waits for you, which it could withhold anyway).
+// It can't reach what's gone already: a desktop, phone or Slack notification sent, an answering
+// session's own history, an ask's files the answering Oby saved (asks/, a day).
+
+const WITHDRAWN_KEEP_MS = 10 * 60e3; // how long Waiting for you says an ask was taken back
+
+// a deleted message, as the relay sends it: the fields that place it, and none of its words
+function validTombstone(m) {
+  return (
+    !!m &&
+    typeof m === 'object' &&
+    ID.m.test(m.id) &&
+    (m.from === null || ID.a.test(m.from)) &&
+    typeof m.channel === 'string' &&
+    /^[a-z0-9-]{1,32}$/.test(m.channel) &&
+    !!m.deleted &&
+    typeof m.deleted === 'object' &&
+    !('text' in m) &&
+    !('sealed' in m)
+  );
+}
+
+// message-delete's data, checked: { id, by, at }, or null
+function deletedEvent(d) {
+  if (!d || typeof d !== 'object' || !ID.m.test(String(d.id)) || !d.deleted || typeof d.deleted !== 'object') return null;
+  const at = typeof d.deleted.at === 'string' && Number.isFinite(Date.parse(d.deleted.at)) ? d.deleted.at : new Date().toISOString();
+  return { id: d.id, by: ID.a.test(String(d.deleted.by)) ? d.deleted.by : null, at };
+}
+
+// Every copy this machine keeps of a deleted message: files this profile's processes share, so
+// any one of them does it for all. Returns the deletion, or null when the event isn't one.
+function forgetMessage(p, d) {
+  const e = deletedEvent(d);
+  if (!e) return null;
+  for (const step of [() => forgetNotifications(p, e.id), () => withdrawPending(p, e), () => removeHeld(p, e.id)]) {
+    try {
+      step();
+    } catch {}
+  }
+  fs.rmSync(path.join(pendingDir(p), `left-${e.id}.json`), { force: true });
+  PENDING_LEFT.delete(`${p.dir}\0${e.id}`);
+  return e;
+}
+
+// the message a notification is about: an ask that waits for you is its `about`; anything else its ref
+function noteMessageId(e) {
+  const id = e.type === 'waiting' ? e.about : e.ref;
+  return ID.m.test(String(id)) ? id : null;
+}
+
+// notifications of a deleted message: not sent yet (the few seconds they wait for others of their
+// kind), and kept in notify/recent.jsonl. One of several in a notification leaves it, which then counts one fewer
+function forgetNotifications(p, id) {
+  const b = notifyState.batches.get(p.profile);
+  if (b) b.events = b.events.filter((e) => noteMessageId(e) !== id);
+  const file = path.join(notifyDir(p), 'recent.jsonl');
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return;
+  }
+  if (!text.includes(id)) return;
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(e?.messages) || !e.messages.includes(id)) {
+      out.push(line);
+      continue;
+    }
+    const messages = e.messages.filter((x) => x !== id);
+    if (!messages.length) continue;
+    const count = Math.max(1, (Number(e.count) || 1) - 1);
+    out.push(JSON.stringify({ ...e, messages, count, ...(count > 1 && NOTIFY_MANY[e.type] ? { title: NOTIFY_MANY[e.type](count) } : {}) }));
+  }
+  const tmp = `${file}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, out.map((l) => l + '\n').join(''), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+// an ask that waits for you, deleted by its asker: its wait ends ("withdrawn", unless you decided a
+// moment before: the first decision wins), and Waiting for you says so for a few minutes. What's
+// kept to say it holds who asked and when, never the words.
+function withdrawPending(p, e) {
+  const dir = pendingDir(p);
+  for (const w of pendingEntries(p)) {
+    if (w.kind === 'github' || w.askId !== e.id) continue;
+    try {
+      fs.writeFileSync(path.join(dir, `${w.id}.decision.json`), JSON.stringify({ decision: 'withdrawn', at: e.at }), { flag: 'wx', mode: 0o600 });
+    } catch {
+      continue; // decided already
+    }
+    writeSecret(path.join(dir, `withdrawn-${w.id}.json`), { id: w.id, askId: w.askId, from: { name: slug(w.from?.name || '') || 'unknown', owner: cleanLine(w.from?.owner || '', 60) }, channel: slug(w.channel || '') || null, at: e.at });
+  }
+}
+
+// asks taken back in the last few minutes, for Waiting for you: [{ id, from, at }]; older ones go
+function listWithdrawn(p) {
+  const dir = pendingDir(p);
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const n of names) {
+    const m = /^withdrawn-(w_[0-9a-f]{12})\.json$/.exec(n);
+    if (!m) continue;
+    const w = readJsonFile(path.join(dir, n), null);
+    if (!w || w.id !== m[1] || !(Date.now() - Date.parse(w.at) < WITHDRAWN_KEEP_MS)) {
+      fs.rmSync(path.join(dir, n), { force: true });
+      continue;
+    }
+    out.push({ id: w.id, from: { name: slug(w.from?.name || '') || 'unknown', owner: cleanLine(w.from?.owner || '', 60) }, at: w.at });
+  }
+  return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+
+// `delete <message id>`: one of your own messages (a post or an ask you wrote, a reply your Oby gave)
+async function deleteCmd() {
+  const p = loadProfile();
+  const id = String(pos[0] || '');
+  if (!ID.m.test(id) || pos.length > 1) die(`usage: ${meCmd()} delete <message id>   (an id looks like m_ab12cd34: ${meCmd()} read shows them)`);
+  let r;
+  try {
+    r = await client(p).del(`/api/messages/${id}`);
+  } catch (e) {
+    if (/\[forbidden\]/.test(e.message)) die("That message isn't yours: you can only delete your own (a post or an ask you wrote, or a reply your Oby gave).");
+    if (/\[not_found\]/.test(e.message)) die(`There's no message ${id} that you can see in this Sphere.`);
+    throw e;
+  }
+  if (!validTombstone(r.message) || r.message.id !== id) die('The Sphere answered the deletion with something unexpected.');
+  forgetMessage(p, r.message);
+  console.log(`${green('✓')} Deleted ${id}. It's gone for everyone in the Sphere: its words and files, and what Obys kept of it.
+  It can't take back what people already read, copied or downloaded. The audit log still says you sent and deleted it.`);
+}
+
 // ================================================================ notifications
 //
 // Every notification starts here, on your machine: only this machine can read a sealed
@@ -7321,12 +7541,13 @@ function notifyFlush(profile) {
 // one notification for a group of the same kind
 function notifyNote(group) {
   const [e] = group;
-  if (group.length === 1) return { type: e.type, count: 1, title: e.title, body: e.body, from: e.from, channel: e.channel, ask: e.ask || null };
+  const messages = [...new Set(group.map(noteMessageId).filter(Boolean))]; // deleted messages: which messages it tells of
+  if (group.length === 1) return { type: e.type, count: 1, title: e.title, body: e.body, from: e.from, channel: e.channel, ask: e.ask || null, messages };
   const handles = [...new Set(group.map((x) => x.from).filter(Boolean))];
   const names = handles.slice(0, 5).map((h) => `@${h}`);
   if (handles.length > 5) names.push(`${handles.length - 5} more`);
   const list = names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  return { type: e.type, count: group.length, title: NOTIFY_MANY[e.type](group.length), body: names.length ? `From ${list}.` : '', from: handles.join(' '), channel: null };
+  return { type: e.type, count: group.length, title: NOTIFY_MANY[e.type](group.length), body: names.length ? `From ${list}.` : '', from: handles.join(' '), channel: null, messages };
 }
 
 // where a notification leads (a click on the desktop, the link in Slack): the console's page for
@@ -8024,6 +8245,8 @@ function notifyRecord(p, note, { console: toConsole = false, claude = false, qui
     console: toConsole,
     claude,
     ...(quiet ? { quiet: true } : {}),
+    // the messages it tells of (their ids): a deletion takes it out (deleted messages)
+    ...(Array.isArray(note.messages) && note.messages.length ? { messages: note.messages.filter((x) => ID.m.test(String(x))).slice(0, 50) } : {}),
   };
   const file = path.join(dir, 'recent.jsonl');
   fs.appendFileSync(file, JSON.stringify(entry) + '\n', { mode: 0o600 });
@@ -8040,11 +8263,13 @@ function notifyRecent(p) {
     return [];
   }
   const out = [];
+  // keeping messages: none kept longer than the Sphere keeps its messages
+  const keep = policyCache.keepDays > 0 ? Date.now() - policyCache.keepDays * 864e5 : -Infinity;
   for (const line of text.split('\n')) {
     if (!line) continue;
     try {
       const e = JSON.parse(line);
-      if (e && /^n_[0-9a-z]{15}$/.test(e.id) && (NOTIFY_EVENTS.includes(e.type) || e.type === 'test') && typeof e.title === 'string') out.push(e);
+      if (e && /^n_[0-9a-z]{15}$/.test(e.id) && (NOTIFY_EVENTS.includes(e.type) || e.type === 'test') && typeof e.title === 'string' && !(Date.parse(e.ts) < keep)) out.push(e);
     } catch {}
   }
   return out;
@@ -8072,7 +8297,8 @@ function sweepNotify(p) {
     }
   } catch {}
   try {
-    if (fs.statSync(path.join(notifyDir(p), 'recent.jsonl')).size > 64 * 1024) notifyTrim(p);
+    // past 64 KB, or when the Sphere keeps messages for a set time (none outlive them here)
+    if (fs.statSync(path.join(notifyDir(p), 'recent.jsonl')).size > 64 * 1024 || policyCache.keepDays > 0) notifyTrim(p);
   } catch {}
 }
 
@@ -9319,6 +9545,7 @@ function client(p, tool = null) {
   return {
     get: (u) => call('GET', u),
     post: (u, b) => call('POST', u, b || {}),
+    del: (u) => call('DELETE', u),
     raw: (u) => fetch(p.sphere + u, { headers: { authorization: `Bearer ${p.token}`, ...tag }, redirect: 'error' }),
     upload: async (bytes, name, mime) => {
       const r = await parse(
@@ -9678,7 +9905,7 @@ async function checkLatestVersion(appHome, file) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, search: searchCmd, post, inbox: inboxCmd, away: awayCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
+const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, search: searchCmd, post, delete: deleteCmd, inbox: inboxCmd, away: awayCmd, whoami, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
   Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous

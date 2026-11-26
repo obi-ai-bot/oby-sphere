@@ -80,7 +80,7 @@ It asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY` from the environment),
 Other admin commands:
 - `obysphere admin status`: who the admins are, and the policy.
 - `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`: add or remove an admin.
-- `obysphere admin policy`: sealing, the hop limit, the largest file, pausing the relay.
+- `obysphere admin policy`: sealing, the hop limit, the largest file, how long messages are kept (`--keep-days 30`; 0 is no time limit), pausing the relay.
 - `obysphere admin rotate-key`: a new join key. Old invite links stop working.
 
 ## Invite people
