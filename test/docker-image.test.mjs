@@ -334,6 +334,12 @@ describe('obysphere server update for a Sphere in Docker', { skip: !POSIX && 'th
     },
     { name: 'one Docker Compose runs', setup: () => ({ containers: { obysphere: sphereContainer({ labels: { 'com.docker.compose.project': 'sphere' } }) } }), error: /Docker Compose runs obysphere: update it there/ },
     { name: 'one that keeps its data inside', setup: () => ({ containers: { obysphere: sphereContainer({ mounts: [] }) } }), error: /keeps its data inside the container \(no volume at \/data\)/ },
+    // stopping it would remove it, and an anonymous volume with its data, before the new one runs
+    {
+      name: 'one run with --rm',
+      setup: () => ({ containers: { obysphere: sphereContainer({ host: { AutoRemove: true, RestartPolicy: { Name: 'no', MaximumRetryCount: 0 } }, mounts: [{ Type: 'volume', Name: 'a'.repeat(64), Source: `/var/lib/docker/volumes/${'a'.repeat(64)}/_data`, Destination: '/data', RW: true }] }) } }),
+      error: /obysphere runs with --rm: stopping it would remove it, and any volume Docker made for it[\s\S]*Nothing changed\. Copy its data out first \(docker cp obysphere:\/data/,
+    },
     { name: 'a key in its arguments', setup: () => ({ containers: { obysphere: sphereContainer({ config: { Cmd: ['--admin-key', ADMIN] } }) } }), error: /has a key in its arguments/ },
     { name: 'a privileged one', setup: () => ({ containers: { obysphere: sphereContainer({ host: { Privileged: true } }) } }), error: /settings this can't carry over: privileged/ },
     { name: 'a seccomp profile', setup: () => ({ containers: { obysphere: sphereContainer({ host: { SecurityOpt: ['seccomp={"defaultAction":"SCMP_ACT_ERRNO"}'] } }) } }), error: /a seccomp profile/ },

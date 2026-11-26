@@ -132,7 +132,7 @@ Deployed Spheres seal message contents: the Docker image and Vercel set `SPHERE_
 
 The container's variables hold its keys. They reach `docker run` in a file only you can read, removed at once, never in an argument. It never prints them, and hides them in what it shows of docker's errors and the new container's log.
 
-Before changing anything, it refuses a container that isn't a Sphere, one that Docker Compose runs (change its image there, then `docker compose up -d`), one that keeps its data inside the container rather than in a volume, one with a key in its arguments, and one with settings it can't carry over (privileged, devices, other namespaces, DNS settings, tmpfs, more than one network, a seccomp profile, or a log driver other than json-file, local, journald or syslog). Update those by hand: `docker pull` the new image, `docker rm -f` the container, and `docker run` it again the same way with the new image.
+Before changing anything, it refuses a container that isn't a Sphere, one that Docker Compose runs (change its image there, then `docker compose up -d`), one that keeps its data inside the container rather than in a volume, one started with `--rm` (stopping it would remove it, so it couldn't come back), one with a key in its arguments, and one with settings it can't carry over (privileged, devices, other namespaces, DNS settings, tmpfs, more than one network, a seccomp profile, or a log driver other than json-file, local, journald, syslog or none). Update those by hand: `docker pull` the new image, `docker rm -f` the container, and `docker run` it again the same way with the new image.
 
 ## Joining without the installer
 

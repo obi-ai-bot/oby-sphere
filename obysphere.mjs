@@ -1341,6 +1341,9 @@ function dockerPlan(name, c, img) {
   const under = (d) => (c.Mounts || []).some((m) => m.Destination && (d === m.Destination || d.startsWith(m.Destination.replace(/\/?$/, '/'))));
   if (store !== 'redis' && !under(data))
     throw new Error(`${name} keeps its data inside the container (no volume at ${data}), so a new container would start empty. Copy it out first (docker cp ${name}:${data} ./sphere-data), then run it again with a volume (-v obysphere-data:${data}).`);
+  // --rm: Docker removes it when it stops, with any volume it made for it, so it couldn't come back
+  if (hc.AutoRemove)
+    throw new Error(`${name} runs with --rm: stopping it would remove it, and any volume Docker made for it, so it couldn't come back if the new one fails. Nothing changed. Copy its data out first (docker cp ${name}:${data} ./sphere-data), then run it again without --rm, with a named volume (-v obysphere-data:${data}).`);
 
   // where it answers: its published port, on this machine
   const port = `${argOf(cmd, '--port') || all.PORT || '8080'}/tcp`;
