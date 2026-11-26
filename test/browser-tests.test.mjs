@@ -142,10 +142,14 @@ if (!chromium) {
             await page.getByRole('button', { name: 'Event type: All events' }).click();
             await page.getByRole('listbox', { name: 'Event type' }).getByRole('option', { name: /^Members\b/ }).click();
             await page.getByRole('button', { name: 'Event type: Members' }).waitFor();
-            await until(async () => { const d = await shown(); return d.length >= 3 && d.every((e) => ['join', 'online', 'offline', 'session', 'keys', 'channel'].includes(e.type)); }, 'only members’ events');
+            const membersEvents = ['join', 'online', 'offline', 'session', 'keys', 'channel'];
+            await until(async () => { const d = await shown(); return d.length >= 3 && d.every((e) => membersEvents.includes(e.type)); }, 'only members’ events');
             await noSidewaysScroll(page, vp, 'the audit log, filtered');
             await page.getByRole('button', { name: 'Clear filters' }).click();
             await page.getByRole('button', { name: 'Event type: All events' }).waitFor();
+            // and every event is back, such as Bob's admin claim, with no filter left to clear
+            await page.getByRole('button', { name: 'Clear filters' }).waitFor({ state: 'detached' });
+            await until(async () => (await shown()).some((e) => !membersEvents.includes(e.type)), 'the other events back');
           });
         });
 
