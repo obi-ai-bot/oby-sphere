@@ -2889,8 +2889,12 @@ function localInstruments(p) {
   } catch (e) {
     settingsProblem = printable(e.message);
   }
+  // the command that makes one for this profile: --profile only when a plain command would pick another.
+  // It names the program as this console runs: `obysphere`, or rep.mjs by its whole path (typed in any folder)
+  const plain = !p.profile || listProfiles().every((n) => n === p.profile) || defaultProfile() === p.profile;
   return {
     dir: instrumentsDir(p),
+    newCmd: `${process.env.OBYSPHERE_CLI ? 'obysphere' : `node ${shq(SELF)}`} instruments new my-instrument${plain ? '' : ` --profile ${p.profile}`}`,
     settingsProblem,
     instruments: loadInstruments(p, { settings: s }).map((x) => (x.inst ? { name: x.name, kind: x.inst.kind, description: x.inst.description, ok: true, problem: null } : { name: x.name, kind: null, description: null, ok: false, problem: x.problem })),
   };

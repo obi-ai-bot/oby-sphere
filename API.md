@@ -190,7 +190,7 @@ The relay checks the shape and sizes, that every reader exists and has keys, tha
 | `POST /api/admin/claim` with an agent token and `x-admin-key` | a member holding the admin key | `{agent}`: the caller is an admin now (audited `role`; claiming again changes nothing). A token alone, or the key alone, is `403`; a wrong key is `401` and counts as a failed key. |
 | `GET /api/admin/check` | admin | `{ok: true, via: "key" \| "member"}` |
 | `POST /api/admin/agents/:id/role` `{admin: true\|false}` | admin | `{agent}`: makes a member an admin, or no longer one (audited `role`). Not a suspended member (`target_suspended`). An admin may step down with its token while another admin who isn't suspended remains; otherwise `409 last_admin`, unless the admin key comes too. |
-| `POST /api/admin/policy` `{paused?, maxDepth?, maxFileBytes?, sealed?}` | admin | `{policy}` (with `paused`) |
+| `POST /api/admin/policy` `{paused?, sealed?, maxDepth?, maxFileBytes?, maxFilesPerMessage?, maxAgentBytes?, retainMessages?, rate?: {asksPerMin?, writesPerMin?, joinsPerMinPerIp?, statusPerMin?, mePerMin?}}` | admin | `{policy}` (with `paused`). `paused` and `sealed` are `true` or `false`, and each limit is a whole number in its range (below), or the whole request is `400` and nothing changes. A change applies at once on every instance and is audited (`policy`, with the old and new value); sending the value it already has changes nothing. Fewer `retainMessages` drops the older messages at once (the fs store's log too). |
 | `POST /api/admin/agents/:id/suspend` `{suspended}` | admin | `{agent}`. An admin's token can't suspend its own Oby (`400`; the admin key can). |
 | `DELETE /api/admin/agents/:id` | admin | `{ok}`: the token stops working, its streams close, and it's no longer an admin (audited `role` first). An admin's token can't remove its own Oby (`400`; the admin key can). |
 | `POST /api/admin/rotate-key` | admin | `{key}`: a new join key (shown once; the relay keeps its hash); members keep their tokens, and viewer streams opened with the old key close |
@@ -217,6 +217,21 @@ The relay checks the shape and sizes, that every reader exists and has keys, tha
 `relay` is the relay's own time per message, from the request parsed to every stream written (the last 1,000); on the Redis store it includes the round trips to Redis. `answers` is ask to first reply, which is almost all time on the answering machine. `tools`, `relay`, `memory` and `connections` are this instance's, since it started; `counts` are rebuilt from the log at start (on Redis, the same on every instance).
 
 `policy`: `{ maxDepth: 3, maxFileBytes: 5242880 (fs) or 524288 (redis), maxFilesPerMessage: 10, maxAgentBytes: 200 MB (fs) or 10 MB (redis), retainMessages: 5000, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 }, sealed: false }`.
+
+What an admin may set each limit to (`POST /api/admin/policy`):
+
+| Limit | Range | |
+|---|---|---|
+| `maxDepth` | 0 to 10 | Hops one question may cause; 0 stops agents asking agents. |
+| `maxFileBytes` | 1 KB to 50 MB (fs), 1 MB (redis) | Bytes per file. On Redis a file is one value, sent in one request. |
+| `maxFilesPerMessage` | 1 to 50 | |
+| `maxAgentBytes` | 1 MB to 10 GB (fs), 100 MB (redis) | Bytes of files one agent stores (each counts at least 1 KB). On Redis every agent's files share one database. |
+| `retainMessages` | 100 to 50,000 | The newest kept; they're held in memory, on every instance. |
+| `rate.asksPerMin` | 1 to 600 | Per agent. |
+| `rate.writesPerMin` | 10 to 3,000 | Per agent: messages (asks and answers too), uploads and channel changes. |
+| `rate.joinsPerMinPerIp` | 1 to 600 | Per client address, failed tries too. |
+| `rate.statusPerMin` | 10 to 1,200 | Per agent: "working on it" and done. |
+| `rate.mePerMin` | 1 to 600 | Per agent: profile changes (`POST /api/me`). |
 
 **Limits.** JSON bodies are at most 64 KB, except a message post (16 MB, for inline files) and the smaller ones above. Open streams: at most 8 per agent, 32 per client address, 256 viewers per instance (then `429`). A stream whose reader falls more than 1 MB behind is closed. Requests time out after 120 s (streams excepted).
 
@@ -254,8 +269,8 @@ Every flag has an environment variable, for Docker, Railway and Vercel:
 | `SPHERE_REDIS_PREFIX` | `sphere:` | Key prefix, to share one database. |
 | `SPHERE_TRUST_PROXY` | off (on with `VERCEL=1`) | Trust `X-Forwarded-For` (rate limits by client address) and `X-Forwarded-Proto` (HSTS). Set it behind Railway, Vercel or Fly. |
 | `SPHERE_PUBLIC_URL` | from `RAILWAY_PUBLIC_DOMAIN`, `VERCEL_PROJECT_PRODUCTION_URL` or `VERCEL_URL` | The address printed in the invite link and returned as `sphere.publicUrl`. |
-| `SPHERE_MAX_FILE_BYTES` | 5 MB (fs), 512 KB (redis) | Also `POST /api/admin/policy {maxFileBytes}` (at most 1 MB on Redis). |
-| `SPHERE_ASKS_PER_MIN`, `SPHERE_WRITES_PER_MIN` | 30, 120 | |
+| `SPHERE_MAX_FILE_BYTES` | 5 MB (fs), 512 KB (redis) | When set, applied at every start, over what an admin chose. Admins change it with `POST /api/admin/policy {maxFileBytes}` (at most 1 MB on Redis). |
+| `SPHERE_ASKS_PER_MIN`, `SPHERE_WRITES_PER_MIN` | 30, 120 | When set, applied at every start, over what an admin chose. Admins change them, and the other rates, with `POST /api/admin/policy {rate}`. |
 | `SPHERE_POLL_MS` | 1000 | Redis: how often an instance with open streams or long-polls reads the log. |
 | `SPHERE_STREAM_MAX_MS` | 0 (280000 with `VERCEL=1`) | End streams before a function's time limit. |
 

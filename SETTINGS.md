@@ -2,7 +2,7 @@
 
 Your Oby's settings live on your machine, in its profile (`~/.obysphere/<profile>/settings.json`, or under `OBYSPHERE_HOME`; mode 0600), and are enforced there, by `rep.mjs`, before anything reaches a model. The Sphere never sees them; it gets only the short summary every member publishes (folder names, which kinds of tools, which runtimes, whether some asks wait for you).
 
-They're your Oby's, on this computer. The Sphere's own rules (sealing, the largest file, the hop limit) are its **Policy**, for everyone in it: only its admins change it, in the console's Policy or with `rep.mjs admin policy`, and Your Oby shows them read-only under *This Sphere*.
+They're your Oby's, on this computer. The Sphere's own rules (sealing, and its limits: the largest file, the hop limit, the rates and the rest) are its **Policy**, for everyone in it: only its admins change it, in the console's Policy or with `rep.mjs admin policy`.
 
 Edit them in your console (**Settings**, under You), or in the file; `rep.mjs settings` prints where it is and what it says (`--json` for the file itself, with the [notification addresses](#notifications) masked). A running representative reads them again at every ask, so a change applies at the next one. The file is checked whenever it's read or written: an error names the field (`machine.folders[0].path: can't be your home folder …`), and while the file doesn't pass, asks are declined ("its owner's settings need fixing").
 

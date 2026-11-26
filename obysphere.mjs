@@ -322,7 +322,8 @@ function appForService() {
 // what the service runs: `rep.mjs ui --serve`, with the profiles folder fixed and your PATH
 // (so it finds claude, codex, cursor-agent and gh). No keys: the token stays in profile.json.
 function serviceSpec(name, port, app = appForService()) {
-  const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin' };
+  // OBYSPHERE_CLI: it runs for `obysphere`, so what the console says to type names it (as run() does)
+  const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', OBYSPHERE_CLI: '1' };
   for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK', 'OBYSPHERE_RELEASES_API']) if (process.env[k]) env[k] = process.env[k];
   return {
     profile: name,
