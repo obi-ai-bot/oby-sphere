@@ -1046,15 +1046,15 @@ function awayOf(a) {
   return { until: w.until ?? null, note: w.note || '', since: w.since ?? null };
 }
 
-// a time in the next `days` days, as ISO, or a 400 naming the field. `slackMs` forgives a sender's
-// clock that runs a little off the relay's: that much in the past counts as now, that much past the
+// a time in the next `days` days, as ISO, or a 400 naming the field. The slack forgives a sender's
+// clock that runs a little off the relay's: `pastMs` in the past counts as now, `overMs` past the
 // limit as the limit.
-function futureTime(v, days, field, slackMs = 0) {
+function futureTime(v, days, field, { pastMs = 0, overMs = 0 } = {}) {
   let t = Date.parse(String(v));
   const now = Date.now();
   const max = now + days * 864e5;
-  if (!Number.isFinite(t) || t <= now - slackMs || (!slackMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
-  if (t > max + slackMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+  if (!Number.isFinite(t) || t <= now - pastMs || (!pastMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
+  if (t > max + overMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
   t = Math.min(Math.max(t, now + 1000), max);
   return new Date(t).toISOString();
 }
@@ -1468,7 +1468,7 @@ function buildMessage(b, me, body, pre) {
     if (mins != null) {
       if (!Number.isInteger(mins) || mins < 1 || mins > 10080) throw err(400, 'bad_request', 'neededWithinMinutes is a whole number of minutes, 1 to 10080 (7 days).');
       m.neededBy = new Date(Date.now() + mins * 60e3).toISOString(); // on the relay's clock, which every Oby reads it by
-    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', 120e3);
+    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', { pastMs: 120e3, overMs: 120e3 });
   }
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
@@ -2260,7 +2260,7 @@ async function route(req, res, url) {
     let away = null;
     if (body.off !== true) {
       if (body.note != null && typeof body.note !== 'string') throw err(400, 'bad_request', 'note is text.');
-      const until = body.until == null ? null : futureTime(body.until, 30, 'until');
+      const until = body.until == null ? null : futureTime(body.until, 30, 'until', { overMs: 120e3 }); // "30 days" from a clock a little ahead is forgiven
       away = { until, note: cleanLine(body.note || '', 120), since: awayOf(S.agents[me.id])?.since ?? now() };
     }
     await store.commit((b) => {
