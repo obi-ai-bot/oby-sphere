@@ -1756,8 +1756,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     // the asker sees that it waits for you, and until when (an older relay has no place for it: 404)
     const until = new Date(Math.min(Date.parse(w.expiresAt), Date.now() + 7 * 864e5 - 60e3)).toISOString();
     const told = api.post(`/api/messages/${msg.id}/waiting`, { for: 'owner', until }).catch(() => {});
-    // a long wait: told once more, 15 minutes before it lapses
-    const soon = waitMs > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id }), waitMs - 15 * MINUTE_MS) : null;
+    // a long wait: told once more, 15 minutes before it lapses (timed from what's left of it: an ask
+    // taken up again after a restart has less than the full wait)
+    const left = Math.max(0, Date.parse(w.expiresAt) - Date.now()) || waitMs;
+    const soon = left > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id }), left - 15 * MINUTE_MS) : null;
     soon?.unref?.();
     // "always answer": offered for an Oby you haven't listed in Who can ask
     let always = false;
