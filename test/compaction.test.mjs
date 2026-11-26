@@ -132,6 +132,9 @@ const snapshotOf = (prefix) => {
   return { ptr, entries: fake.kv.get(prefix + 'snap:' + ptr.id).v.map((s) => JSON.parse(s)) };
 };
 const baseOf = (prefix) => Number(fake.kv.get(prefix + 'base')?.v || 0);
+// the log after its first compaction. A later compaction can fold all of it into the snapshot,
+// and Redis drops an empty list, so no key is an empty tail
+const tailOf = (prefix) => fake.kv.get(prefix + 'tail')?.v ?? [];
 
 // a Sphere seeded with its init operation, keeping `retain` messages
 const seed = (prefix, retain = RETAIN) =>
@@ -238,7 +241,7 @@ test("0.3's state, then compaction while two relays write to one Redis", async (
   assert.ok(entries.every(([p]) => Number.isInteger(p) && p >= 0 && p < ptr.pos));
   // three relays started at once wrote one mark that a relay which compacts is here, and the snapshot keeps it
   assert.equal(ops.filter((o) => o.t === 'compaction').length, 1);
-  assert.equal(fake.kv.get(C + 'tail').v.map((s) => JSON.parse(s)).filter((o) => o.t === 'compaction').length, 0);
+  assert.equal(tailOf(C).map((s) => JSON.parse(s)).filter((o) => o.t === 'compaction').length, 0);
 
   const [ca, cb] = await Promise.all([chainOk(A.base), chainOk(B.base)]);
   assert.deepEqual(ca.head, cb.head);
@@ -250,16 +253,16 @@ test('the first compaction moves the log, so a relay that knows nothing of base 
   // 0.3 and before read and append at <prefix>log, counting positions from the list's head
   assert.equal(fake.kv.get(C + 'log').type, 'string', 'the old key holds a note now');
   assert.match(fake.kv.get(C + 'log').v, /compacted/);
-  assert.equal(fake.kv.get(C + 'tail').type, 'list', 'the tail is its own list');
+  assert.ok([undefined, 'list'].includes(fake.kv.get(C + 'tail')?.type), 'the tail is its own list (none when a compaction folded all of it)');
   const old = await redis(['LRANGE', C + 'log', '0', '199']);
   assert.match(old.error, /WRONGTYPE/, "an old relay's read fails");
   const oldAppend = `-- obysphere:append\nlocal n = redis.call('LLEN', KEYS[1])\nif n ~= tonumber(ARGV[1]) then return -1 end\nfor i = 2, #ARGV do redis.call('RPUSH', KEYS[1], ARGV[i]) end\nreturn n + #ARGV - 1`;
-  const len = fake.kv.get(C + 'tail').v.length;
+  const len = tailOf(C).length;
   for (const at of [0, len, baseOf(C) + len]) {
     const r = await redis(['EVAL', oldAppend, '1', C + 'log', String(at), JSON.stringify({ t: 'msg', m: { id: 'm_old' } })]);
     assert.match(r.error, /WRONGTYPE/, "an old relay's append fails, at any position");
   }
-  assert.equal(fake.kv.get(C + 'tail').v.length, len, 'nothing was appended');
+  assert.equal(tailOf(C).length, len, 'nothing was appended');
 });
 
 test('a behind instance catches up across a compaction, applying nothing twice', async () => {
