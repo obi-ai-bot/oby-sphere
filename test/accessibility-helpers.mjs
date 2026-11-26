@@ -232,3 +232,98 @@ export const tokenColor = (name, tokens) => {
   if (!c) throw new Error(`${name} isn't a colour: ${tokens[name]}`);
   return c;
 };
+
+// ---------------------------------------------------------------- a made-up DOM
+
+// Just enough of a DOM to run the page's focus code: elements with attributes and classes, and
+// selectors as that code writes them (tag, #id, .class, [attr], [attr="value"], a descendant, a
+// list). CSS.escape here puts a backslash before anything but a letter, a digit, _ or -.
+export const cssEscape = (s) => String(s).replace(/[^\w-]/g, (c) => `\\${c}`);
+const unescape = (s) => s.replace(/\\(.)/g, '$1');
+// split at top-level `sep` (a space or a comma), outside [...] and escapes
+function splitSelector(s, sep) {
+  const out = [];
+  let depth = 0, cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { cur += c + s[++i]; continue; }
+    if (c === '[') depth++;
+    if (c === ']') depth--;
+    if (depth === 0 && (sep === ' ' ? /\s/.test(c) : c === sep)) { if (cur.trim()) out.push(cur.trim()); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+function compound(s) {
+  const c = { tag: null, id: null, classes: [], attrs: [] };
+  let i = 0;
+  const ident = () => { let j = i; while (j < s.length && (/[\w-]/.test(s[j]) || s[j] === '\\')) j += s[j] === '\\' ? 2 : 1; const v = unescape(s.slice(i, j)); i = j; return v; };
+  if (/[a-z]/i.test(s[0])) c.tag = ident().toLowerCase();
+  while (i < s.length) {
+    const ch = s[i++];
+    if (ch === '#') c.id = ident();
+    else if (ch === '.') c.classes.push(ident());
+    else if (ch === '[') {
+      const name = ident();
+      let value = null;
+      if (s[i] === '=') {
+        i += 2;
+        let j = i;
+        while (s[j] !== '"') j += s[j] === '\\' ? 2 : 1;
+        value = unescape(s.slice(i, j));
+        i = j + 1;
+      }
+      i++;
+      c.attrs.push([name, value]);
+    } else throw new Error(`the made-up DOM can't read "${s}"`);
+  }
+  return c;
+}
+const matchesCompound = (el, c) => (!c.tag || el.tagName.toLowerCase() === c.tag) && (c.id == null || el.id === c.id)
+  && c.classes.every((x) => el.classList.includes(x)) && c.attrs.every(([n, v]) => el.hasAttribute(n) && (v == null || el.getAttribute(n) === v));
+function matches(el, selector) {
+  return splitSelector(selector, ',').some((one) => {
+    const parts = splitSelector(one, ' ').map(compound);
+    if (!matchesCompound(el, parts[parts.length - 1])) return false;
+    let k = parts.length - 2;
+    for (let p = el.parentElement; p && k >= 0; p = p.parentElement) if (matchesCompound(p, parts[k])) k--;
+    return k < 0;
+  });
+}
+// h('button', { class: 'set-button sm', 'data-suspend': 'a_bob' }, ...children)
+export function h(tag, attrs = {}, ...kids) {
+  const el = {
+    tagName: tag.toUpperCase(), parentElement: null, children: [],
+    attributes: Object.entries(attrs).map(([name, value]) => ({ name, value: String(value) })),
+    get id() { return this.getAttribute('id') || ''; },
+    get classList() { return (this.getAttribute('class') || '').split(/\s+/).filter(Boolean); },
+    hasAttribute(n) { return this.attributes.some((a) => a.name === n); },
+    getAttribute(n) { return this.attributes.find((a) => a.name === n)?.value ?? null; },
+    matches(sel) { return matches(this, sel); },
+    closest(sel) { for (let n = this; n; n = n.parentElement) if (matches(n, sel)) return n; return null; },
+    contains(other) { for (let n = other; n; n = n.parentElement) if (n === this) return true; return false; },
+    querySelectorAll(sel) { const out = []; const walk = (n) => { for (const c of n.children) { if (matches(c, sel)) out.push(c); walk(c); } }; walk(this); return out; },
+    querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+    append(...nodes) { for (const n of nodes) { n.remove(); n.parentElement = this; this.children.push(n); } },
+    remove() { const p = this.parentElement; if (p) p.children.splice(p.children.indexOf(this), 1); this.parentElement = null; },
+    // in the document while some ancestor is its body; focus() makes it the document's activeElement
+    get isConnected() { for (let n = this; n; n = n.parentElement) if (n.doc) return true; return false; },
+    focused: 0,
+    focus() { this.focused++; for (let n = this; n; n = n.parentElement) if (n.doc) n.doc.activeElement = this; },
+  };
+  el.append(...kids);
+  return el;
+}
+// a document whose body holds `root` (the page's #root)
+export function fakeDocument(root) {
+  const body = h('body', {}, root);
+  const doc = {
+    body, activeElement: body,
+    getElementById: (id) => body.querySelector(`#${cssEscape(id)}`),
+    querySelectorAll: (sel) => body.querySelectorAll(sel),
+    querySelector: (sel) => body.querySelector(sel),
+  };
+  body.doc = doc;
+  return doc;
+}

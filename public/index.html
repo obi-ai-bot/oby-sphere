@@ -5545,7 +5545,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // focus and give it back; focus that survives the page's re-renders (it redraws a part whenever
   // the Sphere moves); and a polite voice for what changes while you listen. The voice waits a
   // moment for more of the same, then says one sentence, so a busy Sphere never floods a screen reader.
-  const A11Y = { voice: null, from: null, key: null, keyboard: false, opened: new Map() };
+  const A11Y = { voice: null, from: null, fromKey: null, key: null, keyboard: false, opened: new Map() };
   const FOCUSABLE = ['a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])', 'select:not([disabled])', 'textarea:not([disabled])', 'summary', '[tabindex]'].map((s) => `${s}:not([tabindex="-1"])`).join(', ');
   const narrow = () => matchMedia('(max-width: 760px)').matches;
   // on screen and reachable: not hidden (a closed <details> keeps boxes for its contents), not behind
@@ -5688,14 +5688,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const holder = el.parentElement?.closest('[data-page], [data-pending], [data-rule], [data-ch], [data-member]');
     const within = holder && (!zone || zone.contains(holder)) ? `${holder.tagName.toLowerCase()}${attrs(holder)} ` : '';
     const sel = el.id ? `#${CSS.escape(el.id)}` : within + own(el) + attrs(el);
-    return { zone: zone?.id || null, sel, loose: own(el) + attrs(el, false), i: Math.max(0, [...(zone || document).querySelectorAll(sel)].indexOf(el)), view: viewKey() };
+    // found loosely (a Suspend that became Resume) only as the same thing: in the same row or card,
+    // with the same first data-* value (data-suspend="a_bob"), never another member's or ask's button
+    const first = [...el.attributes].find((x) => x.name.startsWith('data-'));
+    const loose = within + own(el) + attrs(el, false) + (first ? `[${first.name}="${CSS.escape(first.value)}"]` : '');
+    return { zone: zone?.id || null, sel, loose, i: Math.max(0, [...(zone || document).querySelectorAll(sel)].indexOf(el)), view: viewKey() };
+  }
+  // the control a key names, in the markup as it is now
+  function a11yFind(k) {
+    const scope = k.zone ? document.getElementById(k.zone) : document;
+    const pick = (sel) => { const all = scope ? [...scope.querySelectorAll(sel)].filter(reachable) : []; return all[Math.min(k.i, all.length - 1)] || null; };
+    return pick(k.sel) || (k.view === viewKey() ? pick(k.loose) : null);
   }
   function a11yRestore() {
     const k = A11Y.key;
     const scope = k.zone ? document.getElementById(k.zone) : document;
-    const pick = (sel) => { const all = scope ? [...scope.querySelectorAll(sel)].filter(reachable) : []; return all[Math.min(k.i, all.length - 1)] || null; };
-    const same = k.view === viewKey();
-    const n = pick(k.sel) || (same ? pick(k.loose) : null) || (!same || k.zone === 'page' || scope?.closest?.('#page') ? a11yLanding() : null);
+    const n = a11yFind(k) || (k.view !== viewKey() || k.zone === 'page' || scope?.closest?.('#page') ? a11yLanding() : null);
     if (n && reachable(n)) n.focus({ preventScroll: true });
   }
 
@@ -5703,7 +5711,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function a11yModal(m) {
     if (!m.hidden) {
       if (A11Y.opened.has(m)) return;
-      A11Y.opened.set(m, { from: A11Y.from, view: viewKey() });
+      A11Y.opened.set(m, { from: A11Y.from, key: A11Y.fromKey, view: viewKey() });
       $('.window').inert = true;
       setTimeout(() => {
         if (m.hidden || m.contains(document.activeElement)) return;
@@ -5717,8 +5725,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (!openModal()) $('.window').inert = false;
     const a = document.activeElement;
     if (a && a !== document.body && !m.contains(a)) return; // the dialog sent focus somewhere on purpose
-    // back to what opened it; if the dialog took you somewhere new, to that place's title
-    (was.view === viewKey() && reachable(was.from) ? was.from : a11yLanding())?.focus();
+    // back to what opened it, found again if its page was redrawn meanwhile; if the dialog took
+    // you somewhere new, to that place's title
+    const back = was.view === viewKey() ? (reachable(was.from) ? was.from : was.key && a11yFind(was.key)) : null;
+    (back || a11yLanding())?.focus();
   }
 
   function a11ySetup() {
@@ -5768,8 +5778,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
     // remember what has focus, and what opened a dialog
     document.addEventListener('focusin', (e) => {
-      if (!e.target.closest?.('.modal-backdrop')) A11Y.from = e.target;
       A11Y.key = a11yKeyOf(e.target);
+      if (!e.target.closest?.('.modal-backdrop')) { A11Y.from = e.target; A11Y.fromKey = A11Y.key; }
     });
     document.addEventListener('focusout', (e) => {
       const t = e.target;

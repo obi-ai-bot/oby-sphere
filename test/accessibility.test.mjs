@@ -12,6 +12,7 @@ import {
   PAGE, STYLE, TEMPLATE, SCRIPT,
   tags, attr, hasAttr, buttonName, fieldLabel, fnSource,
   cssRules, themes, resolve, parseColor, tokenColor, over, ratio,
+  h, fakeDocument, cssEscape,
 } from './accessibility-helpers.mjs';
 
 const both = [['the template', TEMPLATE], ['the script', SCRIPT]];
@@ -571,5 +572,90 @@ describe('the markup, rendered', () => {
     assert.match(html, /<div class="filters" role="group" aria-label="Show events">/);
     assert.match(html, /data-filter="traffic" class="is-on" aria-pressed="true">Traffic/);
     assert.match(html, /data-filter="all" class="" aria-pressed="false">All/);
+  });
+});
+
+// ---------------------------------------------------------------- focus, found again (on a made-up DOM)
+
+// the page's focus code, run with a made-up document: `view` stands for the page you're on
+function focusCode(doc, view = 'console|members') {
+  const ctx = vm.createContext({
+    document: doc, CSS: { escape: cssEscape }, view,
+    A11Y: { key: null, from: null, fromKey: null, opened: new Map() },
+    reachable: (el) => !!el && el.isConnected,
+    a11yLanding: () => doc.querySelector('h1'),
+    $: (sel) => doc.querySelector(sel),
+    openModal: () => null, FOCUSABLE: 'button', setTimeout: () => {},
+  });
+  vm.runInContext(`const viewKey = () => view;\n${['a11yKeyOf', 'a11yFind', 'a11yRestore', 'a11yModal'].map(fn).join('\n')}
+    this.api = { a11yKeyOf, a11yFind, a11yRestore, a11yModal };`, ctx);
+  return ctx;
+}
+// what has the focus, as the page's focusin handler records it
+const focusOn = (ctx, el) => { el.focus(); ctx.A11Y.key = ctx.api.a11yKeyOf(el); ctx.A11Y.from = el; ctx.A11Y.fromKey = ctx.A11Y.key; };
+// a redraw: the part is replaced by new markup, and the focus it held is lost
+const redraw = (doc, old, fresh) => { const p = old.parentElement; old.remove(); p.append(fresh); doc.activeElement = doc.body; };
+
+describe('focus, found again after a redraw', () => {
+  const member = (id, suspended) => h('tr', {}, h('td', {}, h('button', { class: 'set-button sm', 'data-suspend': id, 'data-to': suspended ? 0 : 1 })));
+  const membersPage = (bobSuspended) => h('div', { class: 'page', id: 'page' },
+    h('h1', { class: 'page-title', tabindex: '-1' }),
+    h('button', { class: 'set-button', 'data-invite': '' }),
+    h('table', {}, h('tbody', {}, member('a_alice', false), member('a_bob', bobSuspended), member('a_sam', false))));
+
+  test("a Suspend that became Resume: the focus is on the same member's button, never another's", () => {
+    const doc = fakeDocument(h('div', { id: 'root' }, h('div', { id: 'console-scroll' }, membersPage(false))));
+    const ctx = focusCode(doc);
+    focusOn(ctx, doc.querySelector('[data-suspend="a_bob"]'));
+    redraw(doc, doc.getElementById('page'), membersPage(true)); // bob is suspended: his button is Resume now
+    ctx.api.a11yRestore();
+    assert.equal(doc.activeElement.getAttribute('data-suspend'), 'a_bob', 'not the first member in the table');
+    assert.equal(doc.activeElement.getAttribute('data-to'), '0');
+  });
+
+  test("an ask you decided leaves Waiting for you: the focus goes to the page's title, not to the next ask's buttons", () => {
+    const card = (id) => h('div', { class: 'ask-card', 'data-pending': id }, h('div', { class: 'ask-actions' },
+      h('button', { class: 'modal-primary', 'data-decide': 'answer' }), h('button', { class: 'set-button', 'data-decide': 'decline' })));
+    const doc = fakeDocument(h('div', { id: 'root' }, h('div', { id: 'page' }, h('h1', { class: 'page-title', tabindex: '-1' }), h('div', { id: 'pending-box' }, card('p_1'), card('p_2')))));
+    const ctx = focusCode(doc, 'console|you');
+    focusOn(ctx, doc.querySelector('[data-pending="p_1"] [data-decide="answer"]'));
+    doc.querySelector('[data-pending="p_1"]').remove(); // Let my Oby answer: the card goes
+    doc.activeElement = doc.body;
+    ctx.api.a11yRestore();
+    assert.equal(doc.activeElement.tagName, 'H1', 'one more Enter must not answer the next ask');
+    assert.equal(doc.querySelector('[data-pending="p_2"] [data-decide="answer"]').focused, 0);
+  });
+
+  test('a dialog gives the focus back to what opened it, even when that was redrawn meanwhile', () => {
+    const modal = h('div', { class: 'modal-backdrop', id: 'invite-modal' }, h('div', { role: 'dialog' }, h('button', { 'data-close': '' })));
+    const doc = fakeDocument(h('div', { id: 'root' }, h('div', { class: 'window' }, h('div', { id: 'console-scroll' }, membersPage(false))), modal));
+    const ctx = focusCode(doc);
+    focusOn(ctx, doc.querySelector('[data-invite]'));
+    modal.hidden = false;
+    ctx.api.a11yModal(modal);
+    assert.equal(doc.querySelector('.window').inert, true);
+    doc.querySelector('[data-close]').focus();
+    redraw(doc, doc.getElementById('page'), membersPage(false)); // Members redraws every 3 seconds
+    doc.querySelector('[data-close]').focus();
+    modal.hidden = true;
+    ctx.api.a11yModal(modal);
+    assert.equal(doc.querySelector('.window').inert, false);
+    assert.equal(doc.activeElement, doc.querySelector('[data-invite]'), 'Invite member, as drawn now');
+    // the page's focusin handler keeps the key of what opened a dialog, beside the element
+    assert.match(fn('a11ySetup'), /A11Y\.key = a11yKeyOf\(e\.target\);\s*if \(!e\.target\.closest\?\.\('\.modal-backdrop'\)\) \{ A11Y\.from = e\.target; A11Y\.fromKey = A11Y\.key; \}/);
+  });
+
+  test('a dialog that took you to another page puts the focus on its title', () => {
+    const modal = h('div', { class: 'modal-backdrop', id: 'channel-modal' }, h('div', { role: 'dialog' }, h('button', { 'data-close': '' })));
+    const doc = fakeDocument(h('div', { id: 'root' }, h('div', { class: 'window' }, h('div', { id: 'console-scroll' }, membersPage(false))), modal));
+    const ctx = focusCode(doc);
+    focusOn(ctx, doc.querySelector('[data-invite]'));
+    modal.hidden = false;
+    ctx.api.a11yModal(modal);
+    doc.querySelector('[data-close]').focus();
+    ctx.view = 'conversation|new-one';
+    modal.hidden = true;
+    ctx.api.a11yModal(modal);
+    assert.equal(doc.activeElement.tagName, 'H1');
   });
 });
