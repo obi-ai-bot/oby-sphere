@@ -2873,7 +2873,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function ctlStepper({ id, value = 0, min = 0, max = 100000, step = 1, label = '', labelledby = '', zero = '', attrs = '' }) {
     CTL.data.set(id, { value, min, max, step, zero });
     const shown = value === 0 && zero ? '' : String(value);
-    return `<div class="ctl-step" id="${esc(id)}" data-ctl="step"${ctlAttrs(attrs)}><button type="button" class="ctl-step-b" data-step="-1" tabindex="-1" aria-label="Fewer"${value <= min ? ' disabled' : ''}>−</button><input class="ctl-step-in" id="${esc(id)}-in" role="spinbutton" inputmode="numeric" autocomplete="off"${ctlName(label, labelledby)} aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}"${shown ? '' : ` aria-valuetext="${esc(zero)}"`} placeholder="${esc(zero)}" value="${esc(shown)}"><button type="button" class="ctl-step-b" data-step="1" tabindex="-1" aria-label="More"${value >= max ? ' disabled' : ''}>+</button></div>`;
+    // its − and + say what they change ("Answers per day Fewer"): out of Tab, they're found by reading the page
+    const stepName = (b, words) => (labelledby ? ` id="${esc(id)}-${b}" aria-labelledby="${esc(labelledby)} ${esc(id)}-${b}" aria-label="${words}"` : ` aria-label="${label ? `${esc(label)}: ${words.toLowerCase()}` : words}"`);
+    return `<div class="ctl-step" id="${esc(id)}" data-ctl="step"${ctlAttrs(attrs)}><button type="button" class="ctl-step-b" data-step="-1" tabindex="-1"${stepName('less', 'Fewer')}${value <= min ? ' disabled' : ''}>−</button><input class="ctl-step-in" id="${esc(id)}-in" role="spinbutton" inputmode="numeric" autocomplete="off"${ctlName(label, labelledby)} aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${value}"${shown ? '' : ` aria-valuetext="${esc(zero)}"`} placeholder="${esc(zero)}" value="${esc(shown)}"><button type="button" class="ctl-step-b" data-step="1" tabindex="-1"${stepName('more', 'More')}${value >= max ? ' disabled' : ''}>+</button></div>`;
   }
   function ctlStepSet(root, v, typing = false) {
     const d = CTL.data.get(root.id);

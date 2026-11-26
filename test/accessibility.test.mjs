@@ -805,7 +805,11 @@ describe("the console's own controls, as Settings uses them", () => {
     // "No limit" for 0 is what's said, not "0"
     const step = control(`ctlStepper({ id: 'max', value: 0, zero: 'No limit', labelledby: 'max-l' })`);
     assert.match(step, /<input class="ctl-step-in" id="max-in" role="spinbutton" inputmode="numeric" autocomplete="off" aria-labelledby="max-l" aria-valuemin="0" aria-valuemax="100000" aria-valuenow="0" aria-valuetext="No limit"/);
-    assert.match(step, /data-step="-1" tabindex="-1" aria-label="Fewer"/);
+    // its − and +, out of Tab, say what they change: the row's title and their own word ("Answers per day Fewer")
+    assert.match(step, /data-step="-1" tabindex="-1" id="max-less" aria-labelledby="max-l max-less" aria-label="Fewer" disabled>−<\/button>/);
+    assert.match(step, /data-step="1" tabindex="-1" id="max-more" aria-labelledby="max-l max-more" aria-label="More">\+<\/button>/);
+    assert.deepEqual(idsFound(`<div id="max-l"></div>${step}`), []);
+    assert.match(control(`ctlStepper({ id: 'n', value: 3, label: 'Answers per day' })`), /aria-label="Answers per day: fewer"[\s\S]*aria-label="Answers per day: more"/);
     const time = control(`ctlTime({ id: 'q', value: '22:00', label: 'Quiet from' })`);
     assert.match(time, /role="group" aria-label="Quiet from"/);
     assert.match(time, /id="q-h" role="spinbutton"[^>]*aria-label="Quiet from, hour" aria-valuemin="0" aria-valuemax="23" aria-valuenow="22"/);
