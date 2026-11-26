@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A default profile.** With several Spheres joined, `obysphere profiles use <name>` chooses the one every command uses when you don't pass `--profile`, and so does the Claude Code plugin: no `OBYSPHERE_PROFILE` needed. It's kept in `.default-profile` beside your profiles; `--profile` and `OBYSPHERE_PROFILE` still come first, and `--clear` forgets it. The plugin's setup tool now says to choose one this way.
 - **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
 
 ## 0.3.0 (2026-11-25)
