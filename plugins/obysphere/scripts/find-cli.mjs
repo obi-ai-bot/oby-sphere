@@ -10,10 +10,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const NODE_MIN = 22;
-// where the installer's one-line command is: the plugin points there rather than carrying a
-// download-and-run command itself (the plugin directory flags those)
-export const INSTALL_DOCS = 'https://github.com/obi-ai-bot/oby-sphere#2-with-the-cli';
-
 const isFile = (p) => {
   try {
     return fs.statSync(p).isFile();
