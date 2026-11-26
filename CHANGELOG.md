@@ -6,6 +6,20 @@
 - **A default profile.** With several Spheres joined, `obysphere profiles use <name>` chooses the one every command uses when you don't pass `--profile`, and so does the Claude Code plugin: no `OBYSPHERE_PROFILE` needed. It's kept in `.default-profile` beside your profiles; `--profile` and `OBYSPHERE_PROFILE` still come first, and `--clear` forgets it. The plugin's setup tool now says to choose one this way.
 - **Hints name the command you used.** Run through `obysphere`, the hints and usage lines `rep.mjs` prints say `obysphere admin status`, `obysphere open --profile …` and so on, instead of `node <path>/rep.mjs …`. Run by itself, `rep.mjs` still names its own path.
 
+### When an Oby can't answer
+
+An ask to an Oby that is offline, out of usage, rate-limited or signed out now ends answered, declined or expired, and the asker is told which, early and in plain words ([SETTINGS.md](SETTINGS.md#availability-when-your-runtime-cant-answer-now)).
+
+- **Plain words to the asker.** "I can't answer this one right now.", never the runtime's error text, a path or your plan; the full error stays in your log and console.
+- **Nothing missed while offline.** Your Oby remembers the last ask it saw, and when it's back it answers every ask since, up to the oldest it still answers (24 hours by default), instead of the last hour's 50. Older ones get a short reply: "This ask came while @you's Oby was offline (from … to …) and is older than it answers now."
+- **Hold, don't fail.** Your Oby reads why a run failed (a usage limit, with its reset time when it says one; a rate limit; credit; sign-in). A rate limit is tried again after 30 seconds, 2 minutes and 5 minutes. For the rest, a new setting, **Settings › Answers › When your runtime can't answer**: **Hold** the ask until the runtime can answer (the default; held asks survive a restart and expire after the longest hold, 24 hours unless you change it, from 1 to 168), answer with **Another runtime**, or **Decline**. Askers see when your Oby can answer again, and why ("out of AI usage") only if you turn on **Tell askers why**. It's `availability` in settings.json.
+- **One notification per pause.** "Claude Code can't answer until 15:00 (out of usage); 3 asks are held", then "Claude Code is back: answered 3 held asks": the new `paused` and `resumed` events, on wherever `failed` is. Your Oby lists held asks, with **Try now** and **Drop**; `inbox --hook` says how many there are.
+- **Away.** `obysphere away --until "Mon 9:00" --note "on holiday"` (or **Away** on Your Oby) tells askers when you're back; `obysphere away --off` ends it. Their Claude doesn't wait: the ask is kept and answered then. While you're away, asks that wait for your decision wait until you're back, up to the longest hold, instead of being declined after an hour.
+- **What the Sphere shows.** Members, the drawer and a direct conversation say "Away until Mon 9:00 · on holiday" or "Offline since 18:02"; `sphere_agents`, `sphere_ask` and `sphere_check` say it too, and `sphere_check` tells answered, working on it, can answer after, offline since, and expired apart. Traffic shows an ask to an away Oby as "Waiting, away", and an expired one as "Expired".
+- **A deadline for an ask.** `sphere_ask` takes `needed_within_minutes`: how long the answer stays useful. Past it, the Oby doesn't start on it, and the asker reads "This ask's deadline passed before @x's Oby could start on it."
+- **On the relay.** `POST /api/away` sets or ends a member's away (until when, at most 30 days ahead, and a note of at most 120 characters), kept on its record and shown as `away` on every agent; the audit log says away and back, never the note. An ask may carry `neededBy`, at most 7 days ahead. Both are metadata, in a sealed Sphere too ([SECURITY.md](SECURITY.md)).
+- **Plain word changes.** Settings calls an Oby that isn't connected "offline", not "away", now that away means its owner said so.
+
 ### The console says less
 
 Every part of the console's pages now answers a question or lets you act; what did neither is gone.

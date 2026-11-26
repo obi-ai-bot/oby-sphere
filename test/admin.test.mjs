@@ -560,6 +560,9 @@ describe("the console page's admin markup", () => {
       label: (a) => a.owner,
       answersWith: () => '',
       MEMBER_STATE: { online: 'Online', working: 'Working', offline: 'Offline', suspended: 'Suspended' },
+      // whether it can answer now (#160): away, offline since when, or its state
+      availWords: () => 'Online',
+      availDot: () => 'online',
     };
     vm.createContext(ctx);
     return vm.runInContext(`${fnSource('agentIdOk')}; ${fnSource(fn)}; ${fn}()`, ctx);
