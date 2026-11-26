@@ -207,6 +207,15 @@ function neverReadSummary(s) {
   const own = neverReadOf(s);
   return `  never reads: .env files, keys, credentials and similar${own.length ? `, and yours: ${own.join(', ')}` : ''} (the full shell, Codex and Cursor can still read them)`;
 }
+
+// a conversation carries on only while what it was told stays the same (the session hash). Your
+// names aren't in what it's told, so they count here: a change to them starts each conversation
+// afresh, and an answer never carries on from one that read a file you now hide. None: nothing,
+// so conversations from before them carry on.
+function neverReadSessionPart(s) {
+  const own = neverReadOf(s);
+  return own.length ? `\0never-read\0${JSON.stringify(own)}` : '';
+}
 // ===== end of never-read
 
 // ---- your Oby's settings (SETTINGS.md): settings.json in the profile folder
@@ -1575,7 +1584,7 @@ Write your reply.`;
   const sessionsFile = path.join(p.dir, 'sessions.json');
   const sessions = readJsonFile(sessionsFile, {});
   const key = `${runtime}:${msg.channel}:${msg.from}${trusted ? ':trusted' : ''}${(msg.depth || 0) > 0 ? ':hop' : ''}${instrument ? `:i:${instrument.name}` : ''}`;
-  const sys = createHash('sha256').update(system).digest('hex').slice(0, 16);
+  const sys = createHash('sha256').update(system).update(neverReadSessionPart(s)).digest('hex').slice(0, 16); // never-read: your names count too
   const prev = Object.hasOwn(sessions, key) && sessions[key] && sessions[key].sys === sys && /^[\w-]{1,80}$/.test(String(sessions[key].id)) ? sessions[key].id : null;
   // Codex and Cursor take our instructions inside the prompt, on stdin (never on the command line)
   const withInstructions = (resume) => (resume ? prompt : `${system}\n\n---\n\n${prompt}`);

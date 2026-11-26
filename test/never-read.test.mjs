@@ -211,6 +211,20 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
   const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  // alice asks bob's Oby to send files ("ATTACH <path>" a line, for the attaching fake); bob's reply
+  const askBob = async (files) => {
+    const tok = profile('alice').token;
+    const text = `Please send me these files from your folder:\n${files.map((f) => `ATTACH ${f}`).join('\n')}`;
+    const asked = await call('POST', '/api/messages', { tok, body: { channel: 'general', text, to: [ids.bob] } });
+    assert.ok(asked.message, JSON.stringify(asked));
+    let reply;
+    for (let i = 0; i < 40 && !reply; i++) reply = ((await call('GET', `/api/messages/${asked.message.id}/replies?wait=3`, { tok })).replies || []).find((r) => r.from === ids.bob);
+    assert.ok(reply, `bob replied\n${serveOut.slice(-3000)}`);
+    assert.ok(!reply.meta?.error && !reply.meta?.declined, reply.text);
+    return reply;
+  };
+  // what sphere_attach said for each file, from the attaching fake's reply
+  const saidOf = (reply) => Object.fromEntries(reply.text.split('\n').map((l) => [l.slice(0, l.indexOf(': ')), l.slice(l.indexOf(': ') + 2)]));
   const settingsPath = () => path.join(home, 'bob', 'settings.json');
   const onDisk = () => JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
   const writeSettings = (s) => fs.writeFileSync(settingsPath(), JSON.stringify(s), { mode: 0o600 });
@@ -345,6 +359,24 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     // and the sandbox of the read-only shell: the built-in globs, then bob's
     const denyRead = a.settings.sandbox.filesystem.denyRead;
     assert.deepEqual(denyRead.slice(0, R.SECRET_GLOBS.length + own.globs.length), [...R.SECRET_GLOBS, ...own.globs]);
+  });
+
+  test("a change to bob's names starts alice's conversation afresh: an answer never carries on from one that read a file he now hides", async () => {
+    const resumed = () => attacher.answers().at(-1).argv.includes('--resume');
+    // with the names as they were, a follow-up carries on the conversation
+    assert.match(saidOf(await askBob(['notes/public.md']))['notes/public.md'] || '', /^Attached /);
+    assert.ok(resumed(), 'a follow-up carries on');
+    // bob now hides that file: the next answer starts afresh (the last one read it), and the file stays home
+    writeSettings(bobSettings({ neverRead: [...OWN, 'notes/public.md'] }));
+    try {
+      assert.equal(saidOf(await askBob(['notes/public.md']))['notes/public.md'], 'Error: your owner keeps that file private; not attaching it');
+      assert.ok(!resumed(), 'no --resume after a change to the names');
+      // and with the names as they are now, a follow-up carries on again
+      assert.match(saidOf(await askBob(['README.md']))['README.md'] || '', /^Attached /);
+      assert.ok(resumed(), 'a follow-up carries on again');
+    } finally {
+      writeSettings(bobSettings());
+    }
   });
 
   test("bob's console: the local API saves and reads his names, and gives the built-in list", async () => {
