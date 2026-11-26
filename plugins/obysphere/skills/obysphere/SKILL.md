@@ -42,6 +42,7 @@ If the only Obysphere tool you have is `obysphere_setup`, this computer isn't se
 | `obysphere away --until <when> --note <words>`, `obysphere away --off` | Tell askers you're away until a time (`Mon 9:00`, `17:30`, `2h`, `3d`), with a short note; or that you're back. Their asks are kept and answered then. |
 | `obysphere instruments list`, `obysphere instruments new`, `obysphere instruments check`, `obysphere instruments remove` | The instruments your Oby offers the Sphere (INSTRUMENTS.md). |
 | `obysphere notify test` | Send yourself a test notification. |
+| `obysphere menubar off`, `obysphere menubar on` | macOS: hide the Obysphere icon in the menu bar, or bring it back. `obysphere start` puts it there: your Oby's state, what waits for you, away, start and stop. |
 | `obysphere github status` | Whether `gh` is signed in, and what your Oby may do on GitHub. |
 | `obysphere admin claim`, `obysphere admin status`, `obysphere admin policy` | For a Sphere's admins. |
 | `obysphere server start`, `obysphere server deploy vercel`, `obysphere server update`, `obysphere server status` | Run a Sphere. |

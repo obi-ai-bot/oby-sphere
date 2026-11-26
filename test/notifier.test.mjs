@@ -28,7 +28,7 @@ test('notify app builds Obysphere.app: one id, its name and icon, no Dock icon, 
     const app = path.join(tmp, 'Applications', 'Obysphere.app');
     const r = await rep(['notify', 'app'], { OBYSPHERE_HOME: path.join(tmp, 'home'), OBYSPHERE_NOTIFIER_APP: app });
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /Obysphere's app for notifications is ready: .*Obysphere\.app/);
+    assert.match(r.out, /Obysphere's app for notifications and the menu bar is ready: .*Obysphere\.app/);
     const plist = JSON.parse(spawnSync('plutil', ['-convert', 'json', '-o', '-', path.join(app, 'Contents', 'Info.plist')], { encoding: 'utf8' }).stdout);
     assert.equal(plist.CFBundleIdentifier, 'dev.oby.obysphere.test', 'built elsewhere: the test id, never the real one');
     assert.equal(plist.CFBundleName, 'Obysphere');
@@ -42,6 +42,17 @@ test('notify app builds Obysphere.app: one id, its name and icon, no Dock icon, 
     const again = await rep(['notify', 'app'], { OBYSPHERE_HOME: path.join(tmp, 'home'), OBYSPHERE_NOTIFIER_APP: app });
     assert.equal(again.code, 0, again.out);
     assert.deepEqual(fs.readdirSync(path.dirname(app)), ['Obysphere.app']);
+    // what obysphere start asks (for the menu bar): only when it's missing or older
+    const stamp = fs.statSync(path.join(app, 'Contents', 'MacOS', 'Obysphere')).mtimeMs;
+    const ifNeeded = await rep(['notify', 'app', '--if-needed', '--json'], { OBYSPHERE_HOME: path.join(tmp, 'home'), OBYSPHERE_NOTIFIER_APP: app });
+    assert.equal(ifNeeded.code, 0, ifNeeded.out);
+    assert.deepEqual(JSON.parse(ifNeeded.out), { app, built: false });
+    assert.equal(fs.statSync(path.join(app, 'Contents', 'MacOS', 'Obysphere')).mtimeMs, stamp, 'left as it was');
+    fs.rmSync(app, { recursive: true });
+    const missing = await rep(['notify', 'app', '--if-needed', '--json'], { OBYSPHERE_HOME: path.join(tmp, 'home'), OBYSPHERE_NOTIFIER_APP: app });
+    assert.equal(missing.code, 0, missing.out);
+    assert.deepEqual(JSON.parse(missing.out.split('\n').filter((l) => l.startsWith('{')).at(-1)), { app, built: true });
+    assert.match(missing.out, /building Obysphere's app for notifications and the menu bar \(once\)/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -51,4 +62,22 @@ test('notify app elsewhere than macOS says so', { skip: mac }, async () => {
   const r = await rep(['notify', 'app'], { OBYSPHERE_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'obysphere-home-')) });
   assert.equal(r.code, 1);
   assert.match(r.out, /notify app is for macOS/);
+  const j = await rep(['notify', 'app', '--if-needed', '--json'], { OBYSPHERE_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'obysphere-home-')) });
+  assert.equal(j.code, 1);
+  assert.deepEqual(JSON.parse(j.out), { app: null, error: 'notify app is for macOS' });
+});
+
+// the Swift holds both ways it runs: a notification, and the menu bar (whose menu obysphere fills)
+test('the app has a menu bar mode: an icon of the Oby face, the menu from obysphere menubar model', async () => {
+  const src = fs.readFileSync(path.join(ROOT, 'rep.mjs'), 'utf8');
+  const swift = src.slice(src.indexOf('const NOTIFIER_SWIFT'), src.indexOf('const notifierPath'));
+  assert.match(src, /const NOTIFIER_VERSION = '2';/, 'a new version: every Mac builds it again');
+  assert.match(swift, /argv\.contains\("--menu"\)/);
+  assert.match(swift, /NSStatusBar\.system\.statusItem/);
+  assert.match(swift, /run\(\["menubar", "model"\]/);
+  assert.match(swift, /img\.isTemplate = true/, 'macOS colours the icon for the menu bar');
+  // it opens only this machine's console, and runs only obysphere
+  assert.match(swift, /u\.scheme == "http"/);
+  assert.match(swift, /p\.arguments = \["--preserve-symlinks-main", cli\] \+ args/);
+  assert.doesNotMatch(swift, /\/bin\/(ba|z)?sh/, 'no shell');
 });

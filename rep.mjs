@@ -40,7 +40,7 @@ const consoleCmd = (profile) => (process.env.OBYSPHERE_CLI ? `obysphere open --p
 // profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
 const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
-const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off']);
+const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off', 'if-needed']);
 // What an answering session may do. Reading, searching and listing files works
 // inside the owner's chosen folder only, with no rule needed (in dontAsk mode
 // anything outside it is denied). A bare "Read" rule would open every file on
@@ -6720,30 +6720,52 @@ function desktopNotifyPlain(p, title, body, link, type) {
     }
   });
 }
-// ---- macOS: Obysphere's own small app for notifications, ~/Applications/Obysphere.app.
+// ---- macOS: Obysphere's own small app, ~/Applications/Obysphere.app: notifications and the menu bar.
 // macOS shows a notification from osascript (or from a script app) with Script Editor's icon, and a
 // click opens Script Editor; and it lets an app ask to notify only from an Applications folder. So
 // Obysphere builds its own app there, once, from the Swift below, with the Xcode command line tools
 // (the ones git and Homebrew need: xcode-select --install), signed for this Mac only (ad hoc). It
 // has Obysphere's name and icon, one bundle id (so one entry in System Settings › Notifications),
-// and opens a notification's page in your console when you click it. It's rebuilt when
-// NOTIFIER_VERSION changes; `notify app` rebuilds it by hand. Without the tools, osascript as before.
+// and opens a notification's page in your console when you click it. The same app is the menu bar
+// icon (obysphere.mjs starts it with its own LaunchAgent: obysphere menubar). It's rebuilt when
+// NOTIFIER_VERSION changes; `notify app` rebuilds it by hand. Without the tools, osascript as before,
+// and no menu bar icon.
 // OBYSPHERE_NOTIFIER_APP=<path>.app builds it elsewhere (tests): as dev.oby.obysphere.test, and not
 // registered with LaunchServices, so it never stands in for the real one.
-const NOTIFIER_VERSION = '1';
+const NOTIFIER_VERSION = '2';
 const NOTIFIER_ELSEWHERE = !!process.env.OBYSPHERE_NOTIFIER_APP;
 const NOTIFIER_ID = NOTIFIER_ELSEWHERE ? 'dev.oby.obysphere.test' : 'dev.oby.obysphere';
 const NOTIFIER_SWIFT = String.raw`import AppKit
 import UserNotifications
 
-// Obysphere's notifier. "Obysphere --note <file>" reads {title, body, url, group, id} from the file,
-// removes it, shows the notification and writes <file>.done: ok, not-allowed or error. Opened with
-// no note (a click on one of its notifications), it opens that notification's url, then quits.
+// Obysphere's app. It's opened three ways:
+//   --note <file>: reads {title, body, url, group, id} from the file, removes it, shows the
+//     notification, writes <file>.done (ok, not-allowed or error) and quits;
+//   --menu --node <node> --cli <obysphere.mjs>: the menu bar icon, from its LaunchAgent (obysphere
+//     start writes it). What it shows comes from "obysphere menubar model", every 30 seconds and when
+//     you open it; what you choose runs "obysphere <words>" or opens a page of your console;
+//   with nothing (a click on one of its notifications): opens that notification's page, then quits.
+
+let argv = CommandLine.arguments
+func arg(_ k: String) -> String? {
+  guard let i = argv.firstIndex(of: k), i + 1 < argv.count else { return nil }
+  return argv[i + 1]
+}
+// a page of your console: only ever http:// on this machine
+func localPage(_ s: String) -> URL? {
+  guard let u = URL(string: s), u.scheme == "http", let h = u.host?.lowercased() else { return nil }
+  return h == "localhost" || h == "127.0.0.1" || h.hasSuffix(".localhost") ? u : nil
+}
+func bringForward() {
+  if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+}
+
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+  var menu: Menu?
   func applicationDidFinishLaunching(_ n: Notification) {
     UNUserNotificationCenter.current().delegate = self
-    let args = CommandLine.arguments
-    if let i = args.firstIndex(of: "--note"), i + 1 < args.count { post(args[i + 1]) }
+    if let f = arg("--note") { post(f) }
+    else if argv.contains("--menu"), let node = arg("--node"), let cli = arg("--cli") { menu = Menu(node: node, cli: cli) }
     else { DispatchQueue.main.asyncAfter(deadline: .now() + 5) { exit(0) } }
   }
   func done(_ path: String, _ word: String, _ code: Int32) -> Never {
@@ -6768,16 +6790,271 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     // the first time, macOS asks you whether Obysphere may notify: wait for your answer, not forever
     DispatchQueue.main.asyncAfter(deadline: .now() + 120) { exit(5) }
   }
-  // a click: open its page in your console (only ever an http:// address on this machine)
+  // a click: open its page in your console; the menu bar's app stays, any other quits
   func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse, withCompletionHandler finish: @escaping () -> Void) {
-    if let s = r.notification.request.content.userInfo["url"] as? String, s.hasPrefix("http://"), let u = URL(string: s) { NSWorkspace.shared.open(u) }
+    if let s = r.notification.request.content.userInfo["url"] as? String, let u = localPage(s) { NSWorkspace.shared.open(u) }
     finish()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) }
+    if menu == nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) } }
   }
   func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification, withCompletionHandler finish: @escaping (UNNotificationPresentationOptions) -> Void) {
     finish([.banner, .list])
   }
 }
+
+final class Menu: NSObject, NSMenuDelegate {
+  let node: String
+  let cli: String
+  let item: NSStatusItem
+  let menu = NSMenu()
+  let dot = NSView(frame: NSRect(x: 0, y: 0, width: 7, height: 7))
+  var model: [String: Any]?
+  var problem: String?
+  var busy: String?
+  var loading = false
+
+  init(node: String, cli: String) {
+    self.node = node
+    self.cli = cli
+    // macOS puts a new icon left of all the others: on a Mac with a notch and many icons, that's
+    // behind the notch, where nobody sees it. The first time, it asks for a place near the right;
+    // where you drag it (Command-drag) is kept from then on.
+    let place = "NSStatusItem Preferred Position Item-0"
+    if UserDefaults.standard.object(forKey: place) == nil { UserDefaults.standard.set(520.0, forKey: place) }
+    item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    super.init()
+    menu.delegate = self
+    menu.autoenablesItems = false
+    item.menu = menu
+    if let b = item.button {
+      b.image = Menu.face()
+      b.imagePosition = .imageLeading
+      dot.wantsLayer = true
+      dot.layer?.backgroundColor = NSColor.systemOrange.cgColor
+      dot.layer?.cornerRadius = 3.5
+      dot.isHidden = true
+      b.addSubview(dot)
+    }
+    draw()
+    refresh()
+    let t = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.refresh() }
+    t.tolerance = 5
+  }
+
+  func menuWillOpen(_ m: NSMenu) { refresh() }
+
+  // obysphere with these words, its own stdin closed; done(status, stdout, stderr) on the main thread
+  func run(_ args: [String], timeout: Double, _ done: @escaping (Int32, String, String) -> Void) {
+    let node = self.node, cli = self.cli
+    DispatchQueue.global().async {
+      let p = Process()
+      p.executableURL = URL(fileURLWithPath: node)
+      p.arguments = ["--preserve-symlinks-main", cli] + args
+      p.standardInput = FileHandle.nullDevice
+      let out = Pipe(), err = Pipe()
+      p.standardOutput = out
+      p.standardError = err
+      do { try p.run() } catch {
+        let why = error.localizedDescription
+        DispatchQueue.main.async { done(-1, "", why) }
+        return
+      }
+      var o = Data(), e = Data()
+      let g = DispatchGroup()
+      g.enter()
+      DispatchQueue.global().async { o = out.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+      g.enter()
+      DispatchQueue.global().async { e = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+      let stop = DispatchWorkItem { if p.isRunning { p.terminate() } }
+      DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
+      p.waitUntilExit()
+      stop.cancel()
+      g.wait()
+      let code = p.terminationStatus
+      let so = String(decoding: o, as: UTF8.self), se = String(decoding: e, as: UTF8.self)
+      DispatchQueue.main.async { done(code, so, se) }
+    }
+  }
+
+  func refresh() {
+    if loading || busy != nil { return }
+    loading = true
+    run(["menubar", "model"], timeout: 25) { code, out, err in
+      self.loading = false
+      if code == 0, let m = (try? JSONSerialization.jsonObject(with: Data(out.utf8))) as? [String: Any] {
+        self.model = m
+        self.problem = nil
+      } else {
+        self.problem = Menu.words(err.isEmpty ? out : err, 200) ?? "obysphere didn't answer"
+      }
+      self.draw()
+    }
+  }
+
+  func draw() {
+    let icon = model?["icon"] as? [String: Any]
+    let state = problem != nil ? "off" : (icon?["state"] as? String ?? "off")
+    let count = (icon?["count"] as? NSNumber)?.intValue ?? 0
+    if let b = item.button {
+      b.title = count > 0 ? "\(count)" : ""
+      b.appearsDisabled = state == "off"
+      b.toolTip = busy ?? problem.map { "Obysphere: \($0)" } ?? (icon?["tip"] as? String ?? "Obysphere")
+      b.setAccessibilityLabel(b.toolTip)
+      dot.isHidden = state != "away"
+      b.layoutSubtreeIfNeeded()
+      let r = (b.cell as? NSButtonCell)?.imageRect(forBounds: b.bounds) ?? b.bounds
+      dot.frame = NSRect(x: r.maxX - 6, y: b.isFlipped ? r.maxY - 7 : r.minY, width: 7, height: 7)
+    }
+    menu.removeAllItems()
+    if let w = busy {
+      menu.addItem(line(w, nil))
+      menu.addItem(.separator())
+    }
+    if let p = problem {
+      menu.addItem(line("Obysphere didn't answer: \(p)", "off"))
+      let again = NSMenuItem(title: "Try again", action: #selector(tryAgain), keyEquivalent: "")
+      again.target = self
+      menu.addItem(again)
+      return
+    }
+    for i in model?["items"] as? [[String: Any]] ?? [] { if let x = make(i) { menu.addItem(x) } }
+  }
+
+  func line(_ title: String, _ dot: String?) -> NSMenuItem {
+    let x = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+    x.isEnabled = false
+    if let d = dot { x.image = Menu.dotImage(d) }
+    return x
+  }
+
+  func make(_ i: [String: Any]) -> NSMenuItem? {
+    let title = i["title"] as? String ?? ""
+    switch i["kind"] as? String ?? "" {
+    case "separator":
+      return .separator()
+    case "header":
+      if #available(macOS 14.0, *) { return NSMenuItem.sectionHeader(title: title) }
+      let x = line(title, nil)
+      x.attributedTitle = NSAttributedString(string: title, attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize)])
+      return x
+    case "line":
+      return line(title, i["dot"] as? String)
+    case "open":
+      guard let s = i["url"] as? String, let u = localPage(s) else { return nil }
+      let x = NSMenuItem(title: title, action: #selector(open(_:)), keyEquivalent: "")
+      x.target = self
+      x.representedObject = u
+      return x
+    case "run":
+      guard i["args"] is [String] else { return nil }
+      let x = NSMenuItem(title: title, action: #selector(act(_:)), keyEquivalent: "")
+      x.target = self
+      x.representedObject = i
+      x.isEnabled = busy == nil
+      return x
+    case "menu":
+      let x = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+      let sub = NSMenu()
+      sub.autoenablesItems = false
+      for j in i["items"] as? [[String: Any]] ?? [] { if let y = make(j) { sub.addItem(y) } }
+      x.submenu = sub
+      x.isEnabled = busy == nil
+      return x
+    default:
+      return nil
+    }
+  }
+
+  @objc func tryAgain() { refresh() }
+  @objc func open(_ sender: NSMenuItem) {
+    if let u = sender.representedObject as? URL { NSWorkspace.shared.open(u) }
+  }
+  @objc func act(_ sender: NSMenuItem) {
+    guard busy == nil, let i = sender.representedObject as? [String: Any], let args = i["args"] as? [String] else { return }
+    if let c = i["confirm"] as? [String: Any] {
+      bringForward()
+      let a = NSAlert()
+      a.messageText = c["title"] as? String ?? "Are you sure?"
+      a.informativeText = c["text"] as? String ?? ""
+      a.addButton(withTitle: c["button"] as? String ?? "OK")
+      a.addButton(withTitle: "Cancel")
+      if a.runModal() != .alertFirstButtonReturn { return }
+    }
+    busy = i["busy"] as? String ?? "Working…"
+    draw()
+    run(args, timeout: 600) { code, out, err in
+      self.busy = nil
+      if code != 0 {
+        bringForward()
+        let a = NSAlert()
+        a.alertStyle = .warning
+        a.messageText = "\(sender.title): that didn't work"
+        a.informativeText = Menu.words(err.isEmpty ? out : err, 600) ?? "obysphere stopped without saying why."
+        a.runModal()
+      }
+      self.draw()
+      self.refresh()
+    }
+  }
+
+  // what a command said, as one paragraph: no colours, no "error: "
+  static func words(_ s: String, _ most: Int) -> String? {
+    var t = s.replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression)
+    t = t.trimmingCharacters(in: .whitespacesAndNewlines)
+    if t.hasPrefix("error: ") { t = String(t.dropFirst(7)) }
+    if t.isEmpty { return nil }
+    return t.count > most ? String(t.prefix(most)) + "…" : t
+  }
+
+  static func dotImage(_ state: String) -> NSImage {
+    let img = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { _ in
+      (state == "on" ? NSColor.systemGreen : state == "away" ? NSColor.systemOrange : NSColor.tertiaryLabelColor).setFill()
+      NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 8, height: 8)).fill()
+      return true
+    }
+    return img
+  }
+
+  // the Oby face, as the console's icon draws it (a template image: macOS colours it for the menu bar)
+  static func face() -> NSImage {
+    let img = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+      let s: CGFloat = 17.0 / 105.0
+      let ox: CGFloat = 0.5, oy: CGFloat = (18 - 94.7316 * s) / 2
+      func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: ox + x * s, y: oy + y * s) }
+      let b = NSBezierPath()
+      b.move(to: p(70.6738, 1.4132))
+      b.curve(to: p(73.7666, 0.386834), controlPoint1: p(71.0781, 0.099296), controlPoint2: p(72.6571, -0.424821))
+      b.curve(to: p(82.921, 7.12762), controlPoint1: p(76.0714, 2.07339), controlPoint2: p(80.0073, 4.97625))
+      b.curve(to: p(90.91, 11.615), controlPoint1: p(85.3816, 8.94448), controlPoint2: p(88.192, 10.212))
+      b.curve(to: p(105, 34.7316), controlPoint1: p(99.2785, 15.935), controlPoint2: p(105, 24.6647))
+      b.line(to: p(105, 68.7316))
+      b.curve(to: p(79, 94.7316), controlPoint1: p(105, 83.091), controlPoint2: p(93.3594, 94.7316))
+      b.line(to: p(26, 94.7316))
+      b.curve(to: p(0, 68.7316), controlPoint1: p(11.6406, 94.7316), controlPoint2: p(0, 83.091))
+      b.line(to: p(0, 34.7316))
+      b.curve(to: p(14.7715, 11.2754), controlPoint1: p(0, 24.3936), controlPoint2: p(6.03367, 15.4655))
+      b.curve(to: p(24.144, 6.30517), controlPoint1: p(17.9651, 9.74397), controlPoint2: p(21.2856, 8.39647))
+      b.line(to: p(32.2334, 0.386834))
+      b.curve(to: p(35.3262, 1.4132), controlPoint1: p(33.3429, -0.424821), controlPoint2: p(34.9219, 0.099296))
+      b.line(to: p(36.9257, 6.61352))
+      b.curve(to: p(39.7931, 8.73156), controlPoint1: p(37.3129, 7.87244), controlPoint2: p(38.476, 8.73156))
+      b.line(to: p(66.2069, 8.73156))
+      b.curve(to: p(69.0743, 6.61352), controlPoint1: p(67.524, 8.73156), controlPoint2: p(68.6871, 7.87245))
+      b.close()
+      // the eyes, cut out
+      for x: CGFloat in [28.571, 61.905] {
+        b.append(NSBezierPath(roundedRect: NSRect(x: ox + x * s, y: oy + 42.857 * s, width: 14.286 * s, height: 26.19 * s), xRadius: 7.143 * s, yRadius: 7.143 * s))
+      }
+      b.windingRule = .evenOdd
+      NSColor.black.setFill()
+      b.fill()
+      return true
+    }
+    img.isTemplate = true
+    img.accessibilityDescription = "Obysphere"
+    return img
+  }
+}
+
 let app = NSApplication.shared
 let notifier = Notifier()
 app.delegate = notifier
@@ -6869,7 +7146,7 @@ async function buildNotifier(app) {
       '<key>CFBundlePackageType</key><string>APPL</string>',
       `<key>CFBundleShortVersionString</key><string>${NOTIFIER_VERSION}</string>`,
       `<key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string>`,
-      '<key>LSUIElement</key><true/>', // no Dock icon, no menu: it shows a notification and quits
+      '<key>LSUIElement</key><true/>', // no Dock icon and no app menu: a notification, or the menu bar icon
       '<key>LSMinimumSystemVersion</key><string>11.0</string>',
       '</dict></plist>',
       '',
@@ -7182,18 +7459,27 @@ async function notifyTest(p, via = 'all') {
 
 async function notifyCmd() {
   // macOS: build (again) Obysphere's app for notifications, ~/Applications/Obysphere.app
+  // --if-needed: only when it's missing or older (obysphere start, for the menu bar); --json: { app, built }
   if (pos[0] === 'app') {
-    if (process.platform !== 'darwin') die('notify app is for macOS: elsewhere, notifications need no app of their own.');
+    const json = !!opt.json;
+    if (process.platform !== 'darwin') {
+      if (json) return console.log(JSON.stringify({ app: null, error: 'notify app is for macOS' })), (process.exitCode = 1);
+      die('notify app is for macOS: elsewhere, notifications need no app of their own.');
+    }
+    const needed = !opt['if-needed'] || !notifierCurrent(notifierPath());
     try {
-      const app = await ensureNotifier({ rebuild: true });
-      console.log(`${green('✓')} Obysphere's app for notifications is ready: ${app}\n  ${dim(`It shows your notifications with Obysphere's icon, and a click opens them in your console. Try it: ${meCmd()} notify test --via desktop`)}`);
+      if (needed && opt['if-needed']) process.stderr.write(dim("· building Obysphere's app for notifications and the menu bar (once)…\n"));
+      const app = needed ? await ensureNotifier({ rebuild: true }) : notifierPath();
+      if (json) return console.log(JSON.stringify({ app, built: needed }));
+      console.log(`${green('✓')} Obysphere's app for notifications and the menu bar is ready: ${app}\n  ${dim(`It shows your notifications with Obysphere's icon, and a click opens them in your console. Try it: ${meCmd()} notify test --via desktop`)}`);
     } catch (e) {
-      die(`Obysphere's app for notifications wasn't built: ${e.message}`);
+      if (json) return console.log(JSON.stringify({ app: null, error: e.message })), (process.exitCode = 1);
+      die(`Obysphere's app for notifications and the menu bar wasn't built: ${e.message}`);
     }
     return;
   }
   const via = typeof opt.via === 'string' ? opt.via : 'all';
-  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: ${meCmd()} notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]\n       ${meCmd()} notify app   (macOS: build Obysphere's app for notifications again)`);
+  if (pos[0] !== 'test' || (via !== 'all' && !NOTIFY_WAYS.includes(via))) die(`usage: ${meCmd()} notify test [--via ${NOTIFY_WAYS.join('|')}|all] [--profile <name>]\n       ${meCmd()} notify app   (macOS: build Obysphere's app for notifications and the menu bar again)`);
   const p = loadProfile();
   const { results, settingsError } = await notifyTest(p, via);
   if (settingsError) log(yellow('  your settings need fixing, so the test used the defaults: ') + settingsError);
