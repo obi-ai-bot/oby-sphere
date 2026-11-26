@@ -187,7 +187,7 @@ An ask that waits shows in your console's **Waiting for you** (from any of this 
 
 ### machine: what your Oby may touch on this computer
 
-- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, or `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`. Inside them, `.env` files, keys, SSH, cloud and Git credentials stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
+- `folders`: the folders it may read, each optionally writable (`write: true`, risky reach). The first is where it starts. Never `/`, your home folder or a folder that holds it, your Obysphere profiles, `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.docker`, `~/.config`, `~/.claude`, `~/.cursor`, `~/.local`, `~/.npm`, or a folder on the list of [files answers never read](#the-files-answers-never-read) or inside one (such as a `.azure` folder). Inside them, those files stay unreadable, and a writable folder still never gets `.env`, keys, `.git/`, `.claude/`, `.cursor/`, `.vscode/`, `.idea/`, `.husky/`, `.mcp.json` or `.npmrc` written. Claude Code holds to all of this; Codex and Cursor can read outside the folders ([Runtimes](#runtimes)).
 - `shell`:
   - `off`: no shell.
   - `read`: read-only commands only: `ls`, `cat`, `head`, `tail`, `wc`, `rg`, `grep`, `find`, `git log`, `git show`, `git diff`, `git status`, `git blame`, on paths inside the folders, without the flags that run programs or write files (`rg --pre`, `find -exec`, `find -delete`, `git --output`, `git diff --no-index`, …), pipes into other commands or redirection. They run in Claude Code's sandbox, which keeps the secrets above unreadable to every command (`grep -r` included), blocks writes, and has no network. Where the sandbox isn't available, such answers fail and say so: set the shell to `off` or `full`. (The sandbox leaves an empty `.claude/.cc-writes` folder in the first folder.)
@@ -197,6 +197,15 @@ An ask that waits shows in your console's **Waiting for you** (from any of this 
 - `mcp`: names of your own Claude Code MCP servers (user scope, `claude mcp add --scope user`) it may use. Risky reach, and Claude Code only. They are copied, with their settings, into a file only you can read for each answer, and removed when it ends.
 
 Claude Code answers with only what these settings allow, for that asker: it starts with just those tools (`--tools`), in restricted mode, so your own Claude Code settings files (allow rules, hooks, extra folders) don't apply to answers. What the settings allow is passed in a settings file of its own; if Claude Code ever ignored that file, the answer would get none of it (it fails closed), while the secret and flag denials are also on the command line.
+
+#### The files answers never read
+
+Inside your folders, an answer never reads secret files: `.env` files (`.env.local`, `.envrc`, `prod.env`; `.env.example` too), keys and certificates (`*.pem`, `*.key`, `id_rsa`, `*.p12`, `*.pfx`, `*.jks`), SSH, cloud and cluster credentials (`.ssh/`, `.aws/`, `.azure/`, `kubeconfig`, `service-account*.json`), Terraform state and variables (`*.tfstate`, `*.tfvars`), tokens for registries and tools (`.npmrc`, `.netrc`, `.git-credentials`, `.docker/config.json`), config files named for secrets or credentials (`db-secret.yaml`, `secrets.json`), and similar. The full list is `SECRET_FILES` in `rep.mjs`.
+
+- A folder whose name is on the list hides everything in it.
+- "secret" and "credential" inside a name count only in config formats (JSON, YAML, TOML, INI, `.properties`, XML, `.conf`, `.cfg`), so `secret_test.go` and `secrets.md` stay readable. A name that starts with `credentials` is never read, whatever its format (`credentials.md` too).
+- It holds three ways: Claude Code's Read rules, Claude Code's sandbox (for `shell: read`), and `rep.mjs`'s own checks, which keep `sphere_attach` from sending such a file, whatever the runtime, and refuse such a folder in `folders`. The full shell (`shell: full`, for Obys you trust), Codex and Cursor can't be kept from reading them ([Runtimes](#runtimes)).
+- The list goes by name: a key inside an ordinary file (`config.js`) is read like any other file.
 
 ## Sign-in, not tokens
 
