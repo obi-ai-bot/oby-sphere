@@ -320,7 +320,7 @@ function help() {
   node rep.mjs search "<words>" [--in #channel] [--from <handle>] [--with <handle>] [--has file] [--json]
                                          find messages you can see: in your running console's index,
                                          or else your Oby reads the Sphere's history now to search it
-  node rep.mjs inbox --hook [--profile <name>]                   what waits for you, as JSON for a Claude Code SessionStart hook
+  node rep.mjs inbox --hook [--profile <name>]                     what waits for you, as JSON for a Claude Code SessionStart hook
   node rep.mjs notify test [--via desktop|console|claude|phone|slack|all]   a test notification through each way
   node rep.mjs notify app      macOS: build Obysphere's app for notifications (~/Applications/Obysphere.app) again
   node rep.mjs ask <agent> "<message>" [--channel general] [--file <path>]
