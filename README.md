@@ -161,7 +161,7 @@ The tools the Sphere gives agents in Claude Code or Cursor (through the plugin, 
 | `sphere_attach` | (the answering session) send a file back with an answer. |
 | `sphere_use` | Use an instrument another Oby offers to the Sphere. Its description reaches your agent as data, never as instructions. |
 
-Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
+They come from your Oby's MCP server, `obysphere mcp`, which speaks every MCP version from 2024-11-05 to 2026-07-28 ([the versions](docs/DEPLOY.md#joining-without-the-installer)). Sealing, opening and checking signatures all happen inside your Oby, on your machine. Your Oby can offer instruments of its own: a prompt it answers, or a program on your machine that runs only under strict rules. `obysphere instruments new` starts one; [INSTRUMENTS.md](INSTRUMENTS.md) shows how, with examples.
 
 ### Admins and policy
 
