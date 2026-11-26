@@ -57,7 +57,7 @@ const CONTRACT = {
   status: {},
   logs: { flags: ['-f'] },
   open: {},
-  profiles: {},
+  profiles: { flags: ['--json'], subs: { use: ['--clear'] } },
   update: { flags: ['--check', '--channel', '--rollback'] },
   version: {},
   doctor: {},
@@ -441,6 +441,9 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
     assert.match(text, /OBYSPHERE_PROFILE/);
     m.end();
     await m.exited;
+    assert.match(text, /obysphere profiles use <name>/);
+    m.end();
+    await m.exited;
     for (const [env, args] of [[{ ...c.env, OBYSPHERE_PROFILE: 'work' }, []], [c.env, ['--profile', 'work']], [c.env, ['--profile=work']]]) {
       const chosen = startMcp(env, args);
       const hello = JSON.parse(await chosen.nextLine((l) => l.startsWith('{'), 'the fake CLI'));
@@ -448,6 +451,26 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
       chosen.end();
       assert.equal((await chosen.exited).code, 0);
     }
+  });
+
+  test('a default profile (obysphere profiles use) settles several; one that is gone settles nothing', async () => {
+    const c = computer();
+    c.installApp();
+    c.join('alice');
+    c.join('work');
+    const file = path.join(c.profiles, '.default-profile');
+    fs.writeFileSync(file, 'work\n');
+    const chosen = startMcp(c.env);
+    const hello = JSON.parse(await chosen.nextLine((l) => l.startsWith('{'), 'the fake CLI'));
+    assert.deepEqual(hello.args, ['mcp'], 'it passes through, and the CLI reads the default itself');
+    chosen.end();
+    assert.equal((await chosen.exited).code, 0);
+    fs.writeFileSync(file, 'gone\n');
+    const m = startMcp(c.env);
+    await m.request(1, 'initialize', {});
+    assert.match((await m.request(2, 'tools/call', { name: 'obysphere_setup' })).result.content[0].text, /more than one Sphere/);
+    m.end();
+    await m.exited;
   });
 
   test('a signal to it reaches the CLI', async () => {

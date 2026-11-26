@@ -154,9 +154,45 @@ describe('the obysphere command', () => {
     assert.ok(!fs.existsSync(path.join(h, 'profiles')), 'nothing made the profiles folder');
   });
 
+  test('profiles use: a default profile for every command, rep.mjs and the plugin; --profile and OBYSPHERE_PROFILE come first', async () => {
+    const h = tmp('default-profile');
+    const profiles = path.join(h, 'profiles');
+    fakeProfile(profiles, 'alice');
+    fakeProfile(profiles, 'work');
+    const env = envFor(h, { OBYSPHERE_HOME: profiles });
+    // several, none chosen: both say how to choose
+    const before = await cli(['mcp-config'], env);
+    assert.equal(before.code, 1);
+    assert.match(before.stderr, /several profiles here \(alice, work\).*obysphere profiles use <name>/);
+    assert.match((await cli(['profiles'], env)).stdout, /Choose the one commands and Claude Code use when you don't say: obysphere profiles use <name>/);
+    // a name that isn't a profile is refused, and nothing is written
+    const bad = await cli(['profiles', 'use', 'nobody'], env);
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /no profile "nobody"/);
+    assert.ok(!fs.existsSync(path.join(profiles, '.default-profile')));
+    // chosen: kept beside the profiles, shown, and used by the CLI and by rep.mjs run alone
+    const use = await cli(['profiles', 'use', 'work'], env);
+    assert.equal(use.code, 0, use.out);
+    assert.equal(fs.readFileSync(path.join(profiles, '.default-profile'), 'utf8'), 'work\n');
+    assert.match((await cli(['profiles'], env)).stdout, /work {2}\(default\)/);
+    assert.equal(JSON.parse((await cli(['profiles', '--json'], env)).stdout).default, 'work');
+    assert.match((await cli(['mcp-config'], env)).stdout, /mcp --profile work --serve/);
+    assert.match((await run(REP, ['mcp-config'], env)).stdout, /mcp --profile work --serve/);
+    // --profile and OBYSPHERE_PROFILE still win
+    assert.match((await cli(['mcp-config', '--profile', 'alice'], env)).stdout, /mcp --profile alice --serve/);
+    assert.match((await cli(['mcp-config'], { ...env, OBYSPHERE_PROFILE: 'alice' })).stdout, /mcp --profile alice --serve/);
+    // a default whose profile is gone counts as none
+    fs.writeFileSync(path.join(profiles, '.default-profile'), 'gone\n');
+    assert.match((await cli(['mcp-config'], env)).stderr, /several profiles here/);
+    // --clear forgets it
+    await cli(['profiles', 'use', 'work'], env);
+    assert.equal((await cli(['profiles', 'use', '--clear'], env)).code, 0);
+    assert.ok(!fs.existsSync(path.join(profiles, '.default-profile')));
+  });
+
   test('profiles live in the folder that holds them, and nothing makes ~/.obysphere', async () => {
     const repHome = async (h, extra = {}) => /Profiles live in (.+)\/<profile>\//.exec((await run(REP, ['help'], envFor(h, extra))).stdout)?.[1];
-    const cliHome = async (h, extra = {}) => JSON.parse((await cli(['profiles', '--json'], envFor(h, extra))).stdout);
+    const cliHome = async (h, extra = {}) => { const { home, profiles } = JSON.parse((await cli(['profiles', '--json'], envFor(h, extra))).stdout); return { home, profiles }; };
 
     // nothing yet: ~/.obysphere, and it isn't made by looking
     const empty = tmp('home-empty');
@@ -239,7 +275,7 @@ describe('the obysphere command', () => {
     // logs and open take one profile: --all isn't offered to them
     const logsMany = await cli(['logs'], env);
     assert.equal(logsMany.code, 1);
-    assert.match(logsMany.stderr, /several profiles here \(alice, bob, carol\): pass --profile <name>\n/);
+    assert.match(logsMany.stderr, /several profiles here \(alice, bob, carol\): pass --profile <name>, or choose one for every command: obysphere profiles use <name>\n/);
     assert.doesNotMatch(logsMany.stderr, /--all/);
     assert.equal((await cli(['start', '--all'], env)).code, 0);
     assert.match(fs.readFileSync(path.join(h, 'services', 'com.obysphere.bob.plist'), 'utf8'), new RegExp(`<string>--port</string>\\s*<string>${bobPort}</string>`));
