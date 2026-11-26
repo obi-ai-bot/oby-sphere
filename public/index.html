@@ -123,8 +123,8 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .owner-avatar-oby { position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; }
 .owner-avatar-oby svg { display: block; }
 /* an Oby that's away (offline, suspended): its picture goes grey, its letters still 4.5:1 (faded, they weren't) */
-:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .inst-row.is-dim) .owner-avatar { background: var(--chip-hover) !important; color: var(--muted); }
-:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .inst-row.is-dim) .owner-avatar-oby { opacity: 0.45; }
+:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .node.is-quiet, .inst-row.is-dim) .owner-avatar { background: var(--chip-hover) !important; color: var(--muted); }
+:is(.oby-row.is-offline, .node.is-offline, .node.is-suspended, .node.is-quiet, .inst-row.is-dim) .owner-avatar-oby { opacity: 0.45; }
 .oby-badge-cut { fill: var(--bg); stroke: var(--bg); stroke-width: 5px; vector-effect: non-scaling-stroke; }
 .avatar-stack { display: flex; align-items: center; }
 .avatar-stack > * + * { margin-left: -6px; }
@@ -295,27 +295,42 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .panel-head { height: 40px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--divider); color: var(--label); font-size: var(--text-sm); }
 .panel-head .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 
-/* the map: the relay in the middle, each Oby where it runs, traffic between them */
-.topo { position: relative; height: 320px; }
+/* the map: each Oby, and an arrow for who asked whom (thicker: more asks; amber: one waits on
+   someone, or went wrong); the numbers and names are buttons that open those asks in Traffic */
+.topo { position: relative; height: 360px; }
 .topo svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
-.topo .edge { stroke: rgba(255, 255, 255, 0.10); stroke-width: 1; fill: none; transition: stroke var(--fade); }
-.topo .edge.is-busy { stroke: rgba(255, 255, 255, 0.55); stroke-dasharray: 3 5; animation: flow 0.9s linear infinite; }
+.topo .link { fill: none; stroke: rgba(255, 255, 255, 0.3); transition: stroke var(--fade); }
+.topo .link.is-busy { stroke: rgba(255, 255, 255, 0.6); stroke-dasharray: 3 5; animation: flow 0.9s linear infinite; }
+.topo .link.is-needs { stroke: var(--needs); }
+.topo-head path { fill: rgba(255, 255, 255, 0.3); }
+.topo-head.is-busy path { fill: rgba(255, 255, 255, 0.6); }
+.topo-head.is-needs path { fill: var(--needs); }
 @keyframes flow { to { stroke-dashoffset: -16; } }
-.relay { position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px 0 0 -46px; border-radius: 50%; display: grid; place-items: center; text-align: center; background: #000; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 0 10px rgba(255, 255, 255, 0.02); }
-.relay b { display: block; color: var(--ink); font-size: var(--text-md); font-weight: 500; }
-.relay span { display: block; color: var(--muted); font-size: 11px; line-height: 14px; }
-.node { position: absolute; width: 150px; margin-left: -75px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; cursor: default; }
+.topo-links { position: absolute; inset: 0; pointer-events: none; }
+.topo-count-wrap { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; }
+.topo-count { display: block; min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--bg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24); color: var(--ink); font: 500 11px/20px var(--font); text-align: center; cursor: pointer; transition: background-color var(--fade); }
+.topo-count:hover { background: var(--hover); }
+.topo-count.is-needs { box-shadow: inset 0 0 0 1px var(--needs); color: var(--needs); }
+.topo-empty { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); margin: 0; max-width: 260px; color: var(--muted); font-size: var(--text-sm); text-align: center; }
+.topo-key { position: absolute; left: 14px; right: 14px; bottom: 8px; margin: 0; color: var(--muted); font-size: 11px; line-height: 14px; }
+.topo-key .key-needs { color: var(--needs); }
+.panel-head .ctl-seg.is-sm [role="radio"] { min-height: 24px; padding: 0 9px; font-size: 12px; }
+.node { position: absolute; width: 150px; margin-left: -75px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; cursor: default; }
 .node .pic { position: relative; border-radius: 50%; }
 .node.is-working .pic::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.6); animation: ring 1.6s ease-in-out infinite; }
 @keyframes ring { 0%, 100% { opacity: 0.15; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
-.node:is(.is-offline, .is-suspended) .pic > svg { opacity: 0.4; }
+.node:is(.is-offline, .is-suspended, .is-quiet) .pic > svg { opacity: 0.4; }
 .node.is-offline .node-name { color: var(--muted); }
-.node-name { color: var(--ink); font-size: var(--text-md); font-weight: 500; line-height: 16px; }
-.node-where { color: var(--muted); font-size: 11px; line-height: 14px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node.is-quiet .node-name { color: var(--muted); }
+.node-name { margin-top: 2px; padding: 0; border: 0; background: none; color: var(--ink); font: 500 var(--text-md)/16px var(--font); cursor: pointer; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.node.is-up .pic { order: 1; }
+.node-where, .node-did { color: var(--muted); font-size: 11px; line-height: 14px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node.is-needs .node-where { color: var(--needs); }
 .packet { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12); pointer-events: none; }
 .packet.is-reply { background: var(--online); box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.18); }
 
-.log { height: 320px; overflow-y: auto; padding: 8px 0; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
+.log { height: 360px; overflow-y: auto; padding: 8px 0; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.1) transparent; }
 .log-row { display: grid; grid-template-columns: 92px 58px minmax(0, 1fr); gap: 8px; padding: 2px 14px; font: 12px/20px var(--mono); color: var(--text); white-space: nowrap; }
 .log-row:hover { background: var(--hover); }
 .log-row .t { color: var(--muted); }
@@ -811,11 +826,13 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
   .page { padding: 8px 16px 40px; }
   .trace-axis, .span { grid-template-columns: 120px minmax(0, 1fr) 56px; gap: 8px; padding-left: 12px; padding-right: 12px; }
   .node { width: 96px; margin-left: -48px; }
-  /* an Oby's state isn't shown on the map on a phone, but a screen reader still hears it (as .sr-only) */
-  .node-where { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .node-name { max-width: 96px; }
+  /* on a phone the map shows names and arrows; a screen reader still hears each Oby's state (as .sr-only) */
+  .node-where, .node-did { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .topo-key { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .status-dot.is-working, .node.is-working .pic::after, .topo .edge.is-busy { animation: none; }
+  .status-dot.is-working, .node.is-working .pic::after, .topo .link.is-busy { animation: none; }
   .sheen, .bar.w.is-running { animation: none; }
   .msg.is-new, .live-line, .log-row.is-new { animation: none; }
 }
@@ -832,7 +849,6 @@ button.kpi .kpi-value, button.kpi .kpi-sub { display: block; }
 .kpi-label svg { flex: none; color: var(--muted); transition: transform var(--fade), color var(--fade); }
 button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px); }
 .kpi.is-needs .kpi-value { color: var(--needs); }
-.relay b { max-width: 76px; max-height: 32px; overflow: hidden; overflow-wrap: anywhere; line-height: 16px; }
 .panel-head .link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
 .panel-head .link:hover { color: var(--ink); }
 .mem-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -1562,7 +1578,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       audit: S.auditHead?.seq || '',
       admins: members().filter((a) => a.admin).length || '',
     };
-    const page = S.page.startsWith('exchange:') ? 'traffic' : S.page;
+    const page = S.page.startsWith('exchange:') || S.page.startsWith('traffic:') ? 'traffic' : S.page;
     const waiting = S.pending?.length || 0;
     const shown = NAV.filter(([k, , , g]) => (k !== 'you' || S.me) && (k !== 'settings' || (S.me && CONSOLE)) && (g !== 'admin' || S.admin));
     const item = ([k, label, icon]) => `<button class="connector${page === k ? ' is-active' : ''}" data-page="${k}"${page === k ? ' aria-current="page"' : ''}>${icon ? navIcon(icon) : obyFace(18)}<span class="connector-name">${label}</span>${k === 'you' && waiting ? `<span class="needs" title="${waiting} waiting for you">${waiting}<span class="sr-only"> waiting for you</span></span>` : counts[k] !== undefined && counts[k] !== '' ? `<span class="connector-count">${counts[k]}</span>` : ''}</button>`;
@@ -1593,6 +1609,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
       parts.push(`<span class="trail-now">Exchange</span>`);
+    } else if (trafficFilter(S.page.slice(8))) {
+      parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
+      parts.push(`<span class="trail-now">${esc(trafficWords(trafficFilter(S.page.slice(8))))}</span>`);
     } else parts.push(`<span class="trail-now">${esc((NAV.find(([k]) => k === S.page) || [, 'Overview'])[1])}</span>`);
     $('#trail').innerHTML = parts.join(chev);
     $('#trail').querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
@@ -1616,7 +1635,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let drawn = true;
     const draw = (html) => (drawn = a11yDraw(el, html)); // the same markup is left as it is, with the focus in it
     if (p.startsWith('exchange:')) draw(pageExchange(p.slice(9)));
-    else if (p === 'traffic') draw(pageTraffic());
+    else if (p === 'traffic' || p.startsWith('traffic:')) draw(pageTraffic(p.slice(8)));
     else if (p === 'members') draw(pageMembers());
     else if (p === 'instruments') renderInstruments(el, fresh); // it leaves an unchanged page as it is itself
     else if (p === 'files') { draw(pageFiles()); if (!S.files) loadFiles(); }
@@ -1653,13 +1672,19 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div id="ov-head"></div>
         <div class="kpis" id="kpis"></div>
         <div class="split">
-          <div class="panel"><div class="panel-head"><span id="map-title">Map</span></div><div class="topo" id="topo" role="group" aria-labelledby="map-title"></div></div>
+          <div class="panel" id="map-panel"><div class="panel-head" id="map-head">${mapHead()}</div><div class="topo" id="topo" role="group" aria-labelledby="map-title"></div></div>
           <div class="panel"><div class="panel-head"><span id="log-title">Live log</span><button class="link" data-page="audit">Audit log</button></div><div class="log" id="log" role="log" aria-labelledby="log-title" aria-live="off" tabindex="0"></div></div>
         </div>
         <div class="section-head"><h2>Recent exchanges</h2><button class="link" data-page="traffic">All traffic</button></div>
         <div id="ov-recent"></div>`;
       buildTopo();
       fillLog();
+      $('#map-panel').addEventListener('ctl-change', (e) => {
+        if (e.target.id !== 'map-window') return;
+        mapWindow = mapWin(e.detail.value);
+        try { localStorage.setItem('obysphere.map', mapWindow); } catch {}
+        updateTopo();
+      });
     }
     a11yDraw($('#ov-head'), head(esc(S.sphere.name), `<span class="state"><span class="status"><span class="status-dot is-${S.sphere.paused ? 'paused' : 'healthy'}"></span></span>${S.sphere.paused ? 'Paused by an admin' : 'Healthy'}</span> · ${S.sphere.policy?.sealed ? `<span class="state">${lock()}Sealed</span>` : 'Not sealed'}`));
     updateKpis();
@@ -1715,51 +1740,168 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     ? `<button type="button" class="kpi ${cls}" data-page="${page}"><span class="kpi-label"><span>${label}</span>${KPI_GO}</span><span class="kpi-value">${value}</span>${sub ? `<span class="kpi-sub">${sub}</span>` : ''}</button>`
     : `<div class="kpi ${cls}"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 
-  // the map
+  // the map: who asked whom in a window (Live: the asks open now; Today; 7 days), each Oby with
+  // what it's doing or why it can't answer, and amber where an ask waits on someone or went wrong.
+  // An arrow's number opens those asks in Traffic; an Oby's name opens its own.
+  const MAP_WINDOWS = [{ value: 'live', label: 'Live' }, { value: 'today', label: 'Today' }, { value: 'week', label: '7 days' }];
+  const MAP_WHEN = { live: 'open now', today: 'today', week: 'in the last 7 days' };
+  const OPEN_STATES = new Set(['working', 'waiting', 'owner', 'away', 'offline']);
+  const NEEDS_STATES = new Set(['owner', 'lapsed', 'expired', 'error']);
+  const mapWin = (v) => (MAP_WINDOWS.some((w) => w.value === v) ? v : 'today');
+  let mapWindow = (() => { try { return mapWin(localStorage.getItem('obysphere.map')); } catch { return 'today'; } })();
+  // the asks (each with its target, reply and state) that started in a window; Live: those still open
+  function spansIn(win, now = Date.now()) {
+    const since = win === 'today' ? new Date(new Date(now).toDateString()).getTime() : win === 'week' ? now - 7 * 864e5 : -Infinity;
+    return S.messages
+      .filter((m) => m.kind === 'ask' && m.to?.length && Date.parse(m.ts) >= since)
+      .map(spanOf)
+      .filter((s) => s.target && s.from.id !== s.target.id && (win !== 'live' || OPEN_STATES.has(s.status)));
+  }
+  // one per pair, in its direction: how many asks, and how they went
+  function mapLinks(spans) {
+    const links = new Map();
+    for (const s of spans) {
+      const k = `${s.from.id}>${s.target.id}`;
+      const l = links.get(k) || { from: s.from.id, to: s.target.id, n: 0, answered: 0, open: 0, working: 0, owner: 0, late: 0, failed: 0, declined: 0 };
+      l.n++;
+      if (s.status === 'answered') l.answered++;
+      else if (s.status === 'declined') l.declined++;
+      else if (s.status === 'error') l.failed++;
+      else if (s.status === 'lapsed' || s.status === 'expired') l.late++;
+      if (OPEN_STATES.has(s.status)) l.open++;
+      if (s.status === 'working') l.working++;
+      if (s.status === 'owner') l.owner++;
+      links.set(k, l);
+    }
+    return [...links.values()];
+  }
+  const linkNeeds = (l) => l.owner + l.late + l.failed > 0;
+  // "Alice's Oby asked your Oby 5 times today: 4 answered, 1 waiting for you"
+  function linkWords(l, win) {
+    const a = agent(l.from), b = agent(l.to);
+    const who = isMe(b) ? 'you' : ownerName(b);
+    const waiting = l.open - l.working - l.owner;
+    const how = [
+      l.answered && `${l.answered} answered`,
+      l.working && `${l.working} being worked on`,
+      l.owner && `${l.owner} waiting for ${who}`,
+      waiting && `${waiting} not started yet`,
+      l.late && `${l.late} not answered in time`,
+      l.failed && `${l.failed} failed`,
+      l.declined && `${l.declined} declined`,
+    ].filter(Boolean);
+    const times = l.n === 1 ? 'once' : l.n === 2 ? 'twice' : `${l.n} times`;
+    const head = win === 'live' ? `${obyOf(a)} has ${l.n === 1 ? 'an ask' : `${l.n} asks`} open with ${obyLower(b)}` : `${obyOf(a)} asked ${obyLower(b)} ${times} ${MAP_WHEN[win]}`;
+    return how.length ? `${head}: ${how.join(', ')}` : head;
+  }
+  // what an Oby is doing, or why it can't answer: { st, words, since? }
+  function mapState(a, open) {
+    if (a.suspended) return { st: 'suspended', words: 'Suspended' };
+    if (a.status?.state === 'working') {
+      const m = S.byId.get(a.status.about);
+      const by = m ? agent(m.from) : null;
+      return { st: 'working', words: `Working${by && by.id !== a.id ? ` for ${isMe(by) ? 'you' : ownerName(by)}` : ''}`, since: a.status.since };
+    }
+    const mine = open.filter((s) => s.status === 'owner' && s.target.id === a.id).sort((x, y) => x.posted - y.posted)[0];
+    if (mine) return { st: 'needs', words: `Waiting for ${isMe(a) ? 'you' : ownerName(a)}`, since: mine.ask.ts };
+    const w = awayOf(a);
+    if (w) return { st: 'away', words: `Away${w.until !== null ? ` until ${whenWords(w.until)}` : ''}` };
+    if (!a.online) return { st: 'offline', words: a.lastSeen ? `Offline since ${whenWords(a.lastSeen)}` : 'Offline' };
+    return { st: 'online', words: 'Online' };
+  }
+  // what it did in the window: "Answered 4 of 5 · 1m 40s"; '' when it wasn't asked or didn't ask
+  function mapDid(a, spans, win) {
+    const to = spans.filter((s) => s.target.id === a.id);
+    const asked = spans.filter((s) => s.from.id === a.id).length;
+    if (win === 'live') return to.length ? `${to.length} open` : '';
+    if (!to.length) return asked ? `Asked ${asked}` : '';
+    const done = to.filter((s) => s.status === 'answered');
+    const ms = median(done.map((s) => s.endMs - s.posted));
+    return `Answered ${done.length} of ${to.length}${ms ? ` · ${fmtMs(ms)}` : ''}`;
+  }
+
   let topoPos = new Map();
   function buildTopo() {
     const t = $('#topo');
-    t.innerHTML = `<svg class="edges" id="edges" aria-hidden="true"></svg><div class="relay" title="${esc(S.sphere.name)}"><div><b>${esc(S.sphere.name)}</b></div></div><div id="nodes" role="list" aria-label="Obys"></div>`;
+    t.innerHTML = `<svg class="edges" id="edges" aria-hidden="true"></svg><div id="topo-links" class="topo-links" role="list"></div><div id="nodes" role="list" aria-label="Obys"></div><p class="topo-empty" id="topo-empty" hidden></p><p class="topo-key" id="topo-key"></p>`;
+    t.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-map-page]');
+      if (b) setPage(b.dataset.mapPage);
+    });
     updateTopo();
+  }
+  // where the window's choice lives: the panel's head
+  function mapHead() {
+    return `<span id="map-title">Map</span>${ctlSegmented({ id: 'map-window', value: mapWindow, options: MAP_WINDOWS, label: 'What the map shows', cls: 'is-sm' })}`;
   }
   function updateTopo() {
     const t = document.getElementById('topo');
     if (!t) return;
-    const w = t.clientWidth || 600, h = t.clientHeight || 320;
+    const w = t.clientWidth || 600, h = t.clientHeight || 360;
     const list = members().sort((a, b) => (isMe(b) - isMe(a)) || ownerName(a).localeCompare(ownerName(b)));
     const n = list.length;
+    // an ellipse, each Oby's lines on its outer side (above it in the top half, so the arrows into
+    // it don't cross them), and room for the key at the bottom
+    const cx = w / 2, cy = (h - 24) / 2, rx = Math.max(40, w / 2 - 84), ry = Math.max(30, cy - 76);
     topoPos = new Map();
     list.forEach((a, i) => {
       const ang = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(n, 1) + (n === 2 ? Math.PI / 2 : 0);
-      topoPos.set(a.id, { x: w / 2 + Math.cos(ang) * (w * 0.36), y: h / 2 + Math.sin(ang) * (h * 0.34) });
+      topoPos.set(a.id, n === 1 ? { x: cx, y: cy } : { x: cx + Math.cos(ang) * rx, y: cy + Math.sin(ang) * ry });
     });
-    const busy = new Set();
-    for (const a of list) {
-      if (a.status?.state === 'working') {
-        busy.add(a.id);
-        const m = S.byId.get(a.status.about);
-        if (m) busy.add(m.from);
-      }
-    }
-    $('#edges').setAttribute('viewBox', `0 0 ${w} ${h}`);
-    $('#edges').innerHTML = list.map((a) => { const p = topoPos.get(a.id); return `<line class="edge${busy.has(a.id) ? ' is-busy' : ''}" x1="${w / 2}" y1="${h / 2}" x2="${p.x}" y2="${p.y}"/>`; }).join('');
+    const win = mapWindow;
+    const spans = spansIn(win);
+    const open = win === 'live' ? spans : spansIn('live');
+    const links = mapLinks(spans).filter((l) => topoPos.has(l.from) && topoPos.has(l.to));
+    const most = Math.max(1, ...links.map((l) => l.n));
+    // a pair's arrow bends to the right of where it goes, so A→B and B→A don't lie on each other
+    const R = 22;
+    const arcs = links.map((l) => {
+      const A = topoPos.get(l.from), B = topoPos.get(l.to);
+      const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
+      const C = { x: (A.x + B.x) / 2 - (dy / len) * len * 0.16, y: (A.y + B.y) / 2 + (dx / len) * len * 0.16 };
+      const toward = (P, Q, r) => { const d = Math.hypot(Q.x - P.x, Q.y - P.y) || 1; return { x: P.x + ((Q.x - P.x) / d) * r, y: P.y + ((Q.y - P.y) / d) * r }; };
+      const s = toward(A, C, R), e = toward(B, C, R + 4);
+      const mid = { x: 0.25 * s.x + 0.5 * C.x + 0.25 * e.x, y: 0.25 * s.y + 0.5 * C.y + 0.25 * e.y };
+      const cls = linkNeeds(l) ? 'is-needs' : l.working ? 'is-busy' : '';
+      return { l, s, e, C, mid, cls, width: 1 + 2.5 * Math.sqrt(l.n / most) };
+    });
+    const edges = $('#edges');
+    edges.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    edges.innerHTML = `<defs>${['', 'is-needs', 'is-busy'].map((c) => `<marker id="topo-head${c ? '-' + c : ''}" class="topo-head ${c}" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1 9 5 1 9z"/></marker>`).join('')}</defs>${arcs
+      .map((a) => `<path class="link ${a.cls}" d="M${a.s.x.toFixed(1)} ${a.s.y.toFixed(1)} Q${a.C.x.toFixed(1)} ${a.C.y.toFixed(1)} ${a.e.x.toFixed(1)} ${a.e.y.toFixed(1)}" stroke-width="${a.width.toFixed(2)}" marker-end="url(#topo-head${a.cls ? '-' + a.cls : ''})"/>`)
+      .join('')}`;
+    // each arrow's number: a button, named in words, that opens those asks
+    const box = $('#topo-links');
+    box.setAttribute('aria-label', `Who asked whom, ${MAP_WHEN[win]}`);
+    box.innerHTML = arcs
+      .map((a) => { const words = linkWords(a.l, win); return `<span role="listitem" class="topo-count-wrap" style="left:${a.mid.x.toFixed(1)}px;top:${a.mid.y.toFixed(1)}px"><button type="button" class="topo-count ${a.cls}" data-map-page="traffic:${esc(a.l.from)}~${esc(a.l.to)}~${esc(win)}" title="${esc(words)}" aria-label="${esc(words)}. Show them">${a.l.n}</button></span>`; })
+      .join('');
     $('#nodes').innerHTML = list
       .map((a) => {
         const p = topoPos.get(a.id);
-        const st = a.suspended ? 'suspended' : stateOf(a);
-        const where = a.suspended ? 'suspended' : st === 'working' ? `working · <span class="num" data-since="${esc(a.status.since)}">${secs(a.status.since)}</span>` : st;
-        // named by its Oby's name, not by its title (what the Oby is about: a tooltip, so its description)
-        return `<div class="node is-${st}" role="listitem" aria-labelledby="node-n-${esc(a.id)}" style="left:${p.x}px;top:${p.y - 26}px" title="${esc(a.about || '')}">
+        const st = mapState(a, open);
+        const did = mapDid(a, spans, win);
+        const quiet = win !== 'live' && n > 1 && !did;
+        const since = st.since ? ` · <span class="num" data-since="${esc(st.since)}">${secs(st.since)}</span>` : '';
+        const up = n > 2 && p.y < cy - 1;
+        const at = up ? `bottom:${(h - p.y - 18).toFixed(1)}px` : `top:${(p.y - 18).toFixed(1)}px`;
+        // named by its Oby's name (a button that opens its asks), with what it's about as its description
+        return `<div class="node is-${st.st}${quiet ? ' is-quiet' : ''}${up ? ' is-up' : ''}" role="listitem" aria-labelledby="node-n-${esc(a.id)}" style="left:${p.x.toFixed(1)}px;${at}">
           <span class="pic">${picture(a, 36)}</span>
-          <span class="node-name" id="node-n-${esc(a.id)}">${esc(obyOf(a))}</span>
-          <span class="node-where${st === 'working' ? ' sheen' : ''}">${where}</span>
+          <button type="button" class="node-name" id="node-n-${esc(a.id)}" data-map-page="traffic:${esc(a.id)}~~${esc(win)}" title="${esc(a.about || '')}">${esc(obyOf(a))}</button>
+          <span class="node-where${st.st === 'working' ? ' sheen' : ''}">${esc(st.words)}${since}</span>
+          ${did ? `<span class="node-did">${esc(did)}</span>` : ''}
         </div>`;
       })
       .join('');
+    const empty = $('#topo-empty');
+    empty.hidden = n < 2 ? false : !!links.length;
+    empty.textContent = n < 2 ? 'When another Oby joins, the map shows who asks whom.' : win === 'live' ? 'No asks open right now.' : `No asks ${MAP_WHEN[win]}.`;
+    $('#topo-key').innerHTML = links.length ? `Arrows: who asked whom · <span class="key-needs">Amber</span>: waiting on someone, late or failed` : '';
   }
   window.addEventListener('resize', () => { if (S.mode === 'console' && S.page === 'overview') updateTopo(); });
 
-  // a dot travels from the sender, through the relay, to whoever it's for
+  // a dot travels along the arrow from the sender to whoever it's for (a reply, back)
   function packet(m) {
     const t = document.getElementById('topo');
     if (!t || !m.from) return;
@@ -1767,14 +1909,14 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     let toId = m.to?.[0];
     if (!toId && m.replyTo) toId = S.byId.get(m.replyTo)?.from;
     const to = toId ? topoPos.get(toId) : null;
-    if (!from || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const w = t.clientWidth, h = t.clientHeight;
+    if (!from || !to || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const mid = { x: (from.x + to.x) / 2 - dy * 0.16, y: (from.y + to.y) / 2 + dx * 0.16 };
+    const at = (k) => ({ left: `${(1 - k) ** 2 * from.x + 2 * (1 - k) * k * mid.x + k * k * to.x}px`, top: `${(1 - k) ** 2 * from.y + 2 * (1 - k) * k * mid.y + k * k * to.y}px` });
     const dot = document.createElement('div');
     dot.className = 'packet' + (m.kind === 'reply' ? ' is-reply' : '');
     t.append(dot);
-    const frames = [{ left: from.x + 'px', top: from.y + 'px' }, { left: w / 2 + 'px', top: h / 2 + 'px' }];
-    if (to) frames.push({ left: to.x + 'px', top: to.y + 'px' });
-    const anim = dot.animate(frames, { duration: to ? 900 : 500, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' });
+    const anim = dot.animate([0, 0.25, 0.5, 0.75, 1].map(at), { duration: 900, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' });
     anim.onfinish = () => dot.remove();
   }
 
@@ -1802,10 +1944,26 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       .join('')}</tbody></table></div>`;
   }
 
-  function pageTraffic() {
-    const ex = exchanges();
+  // traffic:<from>~<to>~<window>, from the map: the asks from one Oby to another (or, with no <to>,
+  // one Oby's, asking and asked) in a window; null for anything else
+  function trafficFilter(arg) {
+    const [a, b = '', w] = String(arg || '').split('~');
+    if (!RID.a.test(a || '') || (b && !RID.a.test(b))) return null;
+    return { a, b: b || null, win: mapWin(w) };
+  }
+  const trafficWords = (f) => `${f.b ? `${obyOf(agent(f.a))} → ${obyLower(agent(f.b))}` : obyOf(agent(f.a))}, ${MAP_WHEN[f.win]}`;
+  function pageTraffic(arg) {
+    const f = trafficFilter(arg);
+    let ex = exchanges();
+    if (f) {
+      const mine = (s) => (f.b ? s.from.id === f.a && s.target.id === f.b : s.from.id === f.a || s.target.id === f.a);
+      const keep = new Set(spansIn(f.win).filter(mine).map((s) => s.ask.id));
+      ex = ex.filter((e) => e.spans.some((s) => keep.has(s.ask.id)));
+    }
     const live = ex.filter((e) => e.status === 'working' || e.status === 'waiting').length;
-    return head('Traffic', `${ex.length} exchange${ex.length === 1 ? '' : 's'}${live ? ` · ${live} in progress` : ''}`) + exchangeTable(ex);
+    const count = `${ex.length} exchange${ex.length === 1 ? '' : 's'}${live ? ` · ${live} in progress` : ''}`;
+    if (!f) return head('Traffic', count) + exchangeTable(ex);
+    return head('Traffic', `${esc(trafficWords(f))} · ${count}`, '<button type="button" class="set-button" data-page="traffic">All traffic</button>') + exchangeTable(ex, f.win === 'live' ? 'None of these asks is open now.' : `No asks ${MAP_WHEN[f.win]}.`);
   }
 
   // an exchange: who asked whom and how it went, its timeline, then the messages themselves

@@ -306,10 +306,15 @@ describe('live updates', () => {
 
   test('the map, the live log and the messages have names and roles, and stay quiet themselves', () => {
     const ov = fn('renderOverview');
-    assert.match(ov, /<span id="map-title">Map<\/span>[\s\S]*id="topo" role="group" aria-labelledby="map-title"/);
+    // the map's name, and its window (Live, Today, 7 days) as a named radio group, in its head
+    assert.match(fn('mapHead'), /<span id="map-title">Map<\/span>\$\{ctlSegmented\(\{ id: 'map-window', value: mapWindow, options: MAP_WINDOWS, label: 'What the map shows'/);
+    assert.match(ov, /<div class="panel-head" id="map-head">\$\{mapHead\(\)\}<\/div><div class="topo" id="topo" role="group" aria-labelledby="map-title">/);
     assert.match(fn('buildTopo'), /<svg class="edges" id="edges" aria-hidden="true">/);
     assert.match(fn('buildTopo'), /id="nodes" role="list"/);
-    assert.match(fn('updateTopo'), /<div class="node is-\$\{st\}" role="listitem" aria-labelledby="node-n-\$\{esc\(a\.id\)\}"/);
+    // the arrows are drawn, and said by their numbers: buttons, in a named list (test/map.test.mjs)
+    assert.match(fn('buildTopo'), /<div id="topo-links" class="topo-links" role="list"><\/div>/);
+    assert.match(fn('updateTopo'), /<button type="button" class="topo-count \$\{a\.cls\}"[^`]*aria-label="\$\{esc\(words\)\}\. Show them">/);
+    assert.match(fn('updateTopo'), /<div class="node is-\$\{st\.st\}[^"]*" role="listitem" aria-labelledby="node-n-\$\{esc\(a\.id\)\}"/);
     // the log: a named log that keyboard users can scroll; its rows aren't read one by one
     assert.match(ov, /id="log" role="log" aria-labelledby="log-title" aria-live="off" tabindex="0"/);
     // the thread: a log too (browser tests find it by that role), quiet for the same reason
@@ -663,14 +668,16 @@ describe('the markup, rendered', () => {
     const els = {};
     const el = (k) => (els[k] ||= { innerHTML: '', setAttribute() {} });
     const html = render(['updateTopo'], '(updateTopo(), EL("#nodes").innerHTML)', {
-      EL: el, $: el, document: { getElementById: () => ({ clientWidth: 600, clientHeight: 320 }) }, S: { byId: new Map() },
+      EL: el, $: el, document: { getElementById: () => ({ clientWidth: 600, clientHeight: 360 }) }, S: { byId: new Map() },
       members: () => [{ id: 'a_bob', name: 'bob', owner: 'Bob Test', about: 'the mobile app', online: true }],
-      isMe: () => false, ownerName: (a) => a.owner, stateOf: () => 'online', obyOf: (a) => `${a.owner}’s Oby`,
+      isMe: () => false, ownerName: (a) => a.owner, obyOf: (a) => `${a.owner}’s Oby`, mapWindow: 'today',
+      spansIn: () => [], mapLinks: () => [], mapState: () => ({ st: 'online', words: 'Online' }),
       picture: () => '<span class="owner-avatar" aria-hidden="true">BT</span>',
     });
-    // (a title alone would be its name: "the mobile app", then "Bob Test’s Oby online")
-    assert.match(html, /<div class="node is-online" role="listitem" aria-labelledby="node-n-a_bob" style="[^"]*" title="the mobile app">/);
-    assert.match(html, /<span class="node-name" id="node-n-a_bob">Bob Test’s Oby<\/span>/);
+    // its name is its button's (which opens its asks); what it's about is that button's title, so it
+    // isn't its name ("the mobile app"); its state is read inside it ("Bob Test’s Oby Online")
+    assert.match(html, /<div class="node is-online" role="listitem" aria-labelledby="node-n-a_bob" style="[^"]*">/);
+    assert.match(html, /<button type="button" class="node-name" id="node-n-a_bob" data-map-page="traffic:a_bob~~today" title="the mobile app">Bob Test’s Oby<\/button>\s*<span class="node-where">Online<\/span>/);
     assert.deepEqual(idsFound(html), []);
   });
 
