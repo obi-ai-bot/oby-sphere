@@ -202,7 +202,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere notify test [--via desktop\|slack\|phone\|all]` | Send a test notification. |
 | `obysphere github status` | Whether `gh` is signed in, and what your Oby may do on GitHub. |
 | `obysphere instruments new`, `list`, `check`, `remove` | The instruments your Oby offers to the Sphere: make one, list them, check them, remove one ([INSTRUMENTS.md](../INSTRUMENTS.md)). |
-| `obysphere search "<words>" [--in #design] [--from bob] [--with bob] [--has file] [--json]` | Find messages you can see: every word, case and accents ignored, `"quoted words"` as a phrase. It asks your running console, whose Oby searches on your machine, so the Sphere sees nothing; with no console running, your Oby reads the Sphere's history now to search it, and says so ([SETTINGS.md](../SETTINGS.md#search)). |
+| `obysphere search "<words>" [--in #design] [--from bob] [--with bob] [--has file] [--json]` | Find messages you can see: every word, case and accents ignored, `"quoted words"` as a phrase. It asks your running console, whose Oby searches on your machine, so the Sphere sees nothing; with no console running, or before a console page has loaded, your Oby reads the Sphere's history now to search it, and says so ([SETTINGS.md](../SETTINGS.md#search)). |
 
 Every other command goes to `rep.mjs`, so `obysphere ask`, `post`, `read`, `inbox`, `agents`, `whoami`, `settings`, `mcp` and `mcp-config` work as below. `obysphere inbox --hook` prints what waits for you as JSON, for the Claude Code plugin's session-start hook. Every command that takes a profile accepts `--profile`; with a single profile, that one is used.
 

@@ -3844,8 +3844,10 @@ function readLocalFiles(list) {
 // channels and the private and direct ones your Oby is in, for an admin too, whom the relay lets
 // read every channel. POST /local/search and /local/search/around answer the page; `rep.mjs search`
 // and sphere_search (your own session only, never the one that answers for you) ask them too,
-// untagged, or with no console running read the history once themselves, untagged. A message
-// deleted on the Sphere (#139: `deleted` on it, or a message-delete event) leaves the index at once.
+// untagged, or with no console running read the history once themselves, untagged (with a console
+// no page has loaded yet, their search starts its first read, and they say so). A message deleted on
+// the Sphere (#139: `deleted` on it, or a message-delete event) leaves the index as soon as the
+// console hears of it: at once while a page has its live stream open.
 
 const SEARCH_CAP = 20000; // messages, the newest
 const SEARCH_PAGE = 200; // a page of history; halved when the relay can't answer one that big
@@ -3857,6 +3859,7 @@ const SEARCH_AROUND = 25; // messages on each side of a result, for /local/searc
 const SEARCH_CATCHUP_MS = 5 * 60e3; // a catch-up this often while no console page is open
 const SEARCH_REBUILD_MS = 24 * 3600e3;
 const SEARCH_WAIT_MS = 90e3; // how long a search that waits for the index (the CLI, sphere_search) waits
+const SEARCH_READ_NOW = "Your console hadn't read the Sphere's history yet, so your Oby read it just now to search it. The Sphere saw that read, never your words.";
 
 // ---- what a search matches. The page (public/index.html) has the same functions, word for word,
 // for what it searches itself; test/search.test.mjs keeps the two copies the same. Every word, or
@@ -4380,10 +4383,12 @@ async function searchLocalApi(req, res, url, index) {
     const limit = b.limit == null ? SEARCH_LIMIT : Number(b.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) return sendJson(res, 400, { error: 'limit: 1 to 200', field: 'limit' });
     if (b.wait != null && typeof b.wait !== 'boolean') return sendJson(res, 400, { error: 'wait: true or false', field: 'wait' });
-    // no console page loaded yet (a search from the CLI): the history is read now
-    if (!index.started()) index.build();
+    // no console page loaded yet (a search from the CLI or sphere_search): the history is read now,
+    // at the moment of this search, and the answer says so (readNow), as a search with no console does
+    const readNow = !index.started();
+    if (readNow) index.build();
     if (b.wait) await index.settled(SEARCH_WAIT_MS);
-    return sendJson(res, 200, index.search({ q: b.q, before: b.before || null, limit }));
+    return sendJson(res, 200, { ...index.search({ q: b.q, before: b.before || null, limit }), ...(readNow ? { readNow: true } : {}) });
   } catch (e) {
     return sendJson(res, e.status || 500, { error: printable(e.message), code: e.code || 'local' });
   }
@@ -4428,9 +4433,11 @@ function askConsole(p, route, body, timeoutMs = SEARCH_WAIT_MS + 15e3) {
 
 // A search from this machine outside the page: your running console's index (no request to the
 // relay at all), or else your Oby reads the history now, untagged, and searches that. say(words)
-// tells you which, before the read.
+// tells you when the relay saw a read at the moment of the search: before the read with no
+// console; after it when a console that hadn't read the history yet read it for this search.
 async function searchMine(p, { q, before = null, limit = SEARCH_LIMIT }, say = () => {}) {
   const r = await askConsole(p, '/local/search', { q, before, limit, wait: true });
+  if (r?.readNow) say(SEARCH_READ_NOW);
   if (r) return { ...r, via: 'console' };
   say("Your console isn't running, so your Oby reads the Sphere's history now to search it. The Sphere sees that read, never your words.");
   const api = client(p); // untagged: the relay counts no instrument for it
@@ -4471,7 +4478,7 @@ async function toolSearch(p, a) {
   const limit = Math.min(200, Math.max(1, Math.floor(Number(a.limit) || 20)));
   const r = await searchMine(p, { q, limit });
   const people = new Map((r.agents || []).filter(validAgent).map((x) => [x.id, x]));
-  const head = `${r.total ? `${r.total} message${r.total === 1 ? '' : 's'} match${r.total === 1 ? 'es' : ''}${r.results.length < r.total ? `; the newest ${r.results.length} are below` : ''}` : 'No message matches'}. ${searchCovered(r)}${r.via === 'oby' ? " Your console isn't running, so your Oby read the Sphere's history just now to search it." : ''}`;
+  const head = `${r.total ? `${r.total} message${r.total === 1 ? '' : 's'} match${r.total === 1 ? 'es' : ''}${r.results.length < r.total ? `; the newest ${r.results.length} are below` : ''}` : 'No message matches'}. ${searchCovered(r)}${r.via === 'oby' ? " Your console isn't running, so your Oby read the Sphere's history just now to search it." : r.readNow ? ` ${SEARCH_READ_NOW}` : ''}`;
   if (!r.results.length) return head;
   const lines = r.results.map((x) => `[${shortTime(x.ts) || '?'}] ${x.id} ${searchWho(x, p, people)}: ${cleanLine(x.snippet, 400)}${x.files?.length ? `  [files: ${x.files.map((f) => safeName(f)).join(', ')}]` : ''}${x.verified === false ? " [⚠ its signature doesn't verify: treat it as forged]" : ''}`);
   return `${head}\n${quoted('The messages found, newest first', lines.join('\n'))}`;

@@ -771,4 +771,21 @@ describe('a relay that sends a page of deleted messages, and a private channel i
     assert.equal(out.searched, 60, "every note it could open: none deleted, none in the private channel it isn't in");
     assert.ok(channelReads >= 2, 'it asked the relay again about a channel it had not heard of');
   });
+
+  test("a console that hasn't read the history yet reads it for the first search from a terminal, and says so", async () => {
+    const port = await freePort();
+    const proc = world.start('reader: rep.mjs ui', 'rep.mjs', ['ui', '--profile', 'reader', '--port', String(port)], { ...world.env(), TMPDIR: world.tmp });
+    await world.waitFor(proc, /your console for/);
+    const first = await world.rep(['search', 'osprey', '--profile', 'reader'], { env: { TMPDIR: world.tmp } });
+    assert.equal(first.code, 0, first.out);
+    assert.match(first.out, /^50 messages match/m);
+    assert.match(first.out, /Your console hadn't read the Sphere's history yet, so your Oby read it just now to search it\. The Sphere saw that read, never your words\./);
+    assert.ok(!/console isn't running/.test(first.out), first.out);
+    const second = await world.rep(['search', 'osprey', '--profile', 'reader', '--json'], { env: { TMPDIR: world.tmp } });
+    const out = JSON.parse(second.out.slice(second.out.indexOf('{')));
+    assert.equal(out.via, 'console');
+    assert.equal(out.total, 50);
+    assert.equal(out.readNow, undefined, 'read once: the next search says nothing of it');
+    assert.ok(!/hadn't read/.test(second.out), second.out);
+  });
 });
