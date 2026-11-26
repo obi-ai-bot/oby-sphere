@@ -1182,10 +1182,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   function onAudit(ev) {
-    if (S.audit.some((x) => x.seq === ev.seq)) return;
+    if (!okAuditEvent(ev) || S.audit.some((x) => x.seq === ev.seq)) return;
     S.audit.push(ev);
     if (S.audit.length > 2000) S.audit.shift();
-    S.auditHead = { seq: ev.seq, hash: ev.hash };
+    S.auditHead = { seq: ev.seq, hash: String(ev.hash ?? '') };
     if (S.mode !== 'console') return;
     const log = document.getElementById('log');
     if (log) {
@@ -1206,12 +1206,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   async function loadConsoleData() {
     refreshStats();
     try { S.instruments = await api('/api/instruments'); } catch { S.instruments = { instruments: [], rules: null, missing: true }; }
-    try {
-      const a = await api('/api/audit?limit=300');
-      S.audit = a.events || [];
-      S.auditHead = a.head || null;
-      S.auditVerified = a.verified;
-    } catch { S.audit = []; S.auditVerified = null; }
+    try { mergeAudit(await api('/api/audit?limit=300')); } // merged: the Audit log page may have loaded more already
+    catch { if (!S.audit.length) S.auditVerified = null; }
     fillLog();
     dirty();
   }
@@ -1333,7 +1329,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function renderHealth() {
     const st = S.stats;
     const paused = S.sphere.paused;
-    $('#health-line').innerHTML = `<span class="status"><span class="status-dot is-${paused ? 'paused' : 'healthy'}"></span></span>${paused ? 'Paused by an admin' : 'Healthy'}${S.sphere.policy?.sealed ? ' · sealed' : ''}`;
+    $('#health-line').innerHTML = `<span class="status"><span class="status-dot is-${paused ? 'paused' : 'healthy'}"></span></span>${paused ? 'Paused by an admin' : 'Healthy'}${S.sphere.policy?.sealed ? ' · Sealed' : ''}`;
     // the Sphere's version and how long it has been up: nothing else
     $('#console-foot').textContent = [versionWords(S.sphere.version), st ? `up ${upFor(st.uptimeMs)}` : ''].filter(Boolean).join(' · ');
   }
@@ -1432,16 +1428,19 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const failed = today.filter((e) => e.status === 'error').length;
     const ans = st?.answers?.p50Ms ?? median(ex.flatMap((e) => e.spans).filter((s) => s.endMs && s.ask.kind === 'ask').map((s) => s.endMs - s.posted));
     const now = workingNow(ex);
+    // the relay's count is a number or nothing: it goes into markup. A line under a number only
+    // when it adds something ("3 / 3" needs no "all online", "0" no "all idle")
+    const relayToday = Number(st?.counts?.exchangesToday);
     const cards = [
-      kpi('Obys online', `${online}<small>/ ${all.length}</small>`, online === all.length ? 'all online' : `${all.length - online} offline`, 'members'),
-      kpi('Exchanges today', `${st?.counts?.exchangesToday ?? today.length}`, failed ? `${failed} failed` : '', 'traffic'),
+      kpi('Obys online', `${online}<small>/ ${all.length}</small>`, online === all.length ? '' : `${all.length - online} offline`, 'members'),
+      kpi('Exchanges today', `${Number.isSafeInteger(relayToday) && relayToday >= 0 ? relayToday : today.length}`, failed ? `${failed} failed` : '', 'traffic'),
       kpi('Median answer', ans ? fmtMs(ans) : '—', st?.answers?.p95Ms ? `95% within ${fmtMs(st.answers.p95Ms)}` : ''),
-      kpi('Working now', `${now.working}`, now.waiting ? `${now.waiting} waiting to start` : now.working ? '' : 'all idle', 'traffic'),
+      kpi('Working now', `${now.working}`, now.waiting ? `${now.waiting} waiting to start` : '', 'traffic'),
     ];
     // your decisions to make: in your own console only
     if (CONSOLE && S.me) {
       const n = S.pending?.length || 0;
-      cards.push(kpi('Waiting for you', `${n}`, n ? 'your decision' : 'nothing to decide', 'you', n ? 'is-needs' : ''));
+      cards.push(kpi('Waiting for you', `${n}`, '', 'you', n ? 'is-needs' : ''));
     }
     k.innerHTML = cards.join('');
     k.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
@@ -1557,12 +1556,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const msgs = [ex.root, ...spans.filter((s) => s.ask.id !== ex.root.id).map((s) => s.ask), ...spans.map((s) => s.reply).filter(Boolean)]
       .filter((m, i, a) => a.indexOf(m) === i)
       .sort((a, b) => a.ts.localeCompare(b.ts));
-    const sub = `${esc(routeWords(ex))} · ${esc(where(ex.channel))} · ${esc(clock(ex.start))} · ${stateHtml(ex.status)}`;
+    // the words and the state are two items of the line, so on a phone the state wraps whole, with no "·" left hanging.
+    // A post already says where it went ("… to #general"), and has no time taken and no timeline: nobody worked on it
+    const post = ex.root.kind === 'post';
+    const sub = `<span>${[routeWords(ex), post ? '' : where(ex.channel), clock(ex.start)].filter(Boolean).map(esc).join(' · ')}</span>${stateHtml(ex.status)}`;
     return (
-      head('Exchange', sub, `<span class="kpi-value" title="How long it took" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
-      `<div id="trace-box">${traceHtml(ex)}</div>
-       <div class="legend"><span><i style="background:rgba(255,255,255,.14)"></i>Waiting to be taken</span><span><i style="background:rgba(255,255,255,.75)"></i>Working</span></div>
-       <div class="section-head"><h3>What was said</h3>${ex.files.length ? `<span class="link">${ex.files.length} file${ex.files.length === 1 ? '' : 's'}</span>` : ''}</div>
+      head('Exchange', sub, post ? '' : `<span class="kpi-value" title="How long it took" data-run-total="${ex.status === 'working' || ex.status === 'waiting' ? ex.start : ''}">${fmtMs(ex.durationMs)}</span>`) +
+      (post ? '' : `<div id="trace-box">${traceHtml(ex)}</div>
+       <div class="legend"><span><i style="background:rgba(255,255,255,.14)"></i>Waiting to be taken</span><span><i style="background:rgba(255,255,255,.75)"></i>Working</span></div>`) +
+      `<div class="section-head"><h3>What was said</h3>${ex.files.length ? `<span class="link">${ex.files.length} file${ex.files.length === 1 ? '' : 's'}</span>` : ''}</div>
        <div class="said"><div class="chat-thread">${msgs.map((m, i) => messageHtml(m, msgs[i - 1])).join('')}</div></div>`
     );
   }
@@ -1585,7 +1587,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         if (r.answeredBy === 'owner') meta.push(`written by ${esc(ownerName(s.target))}`);
         else if (s.target && (s.started || s.endMs)) meta.push(`on ${esc(machineOf(s.target))}`);
         if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
-        if (r.model) meta.push(esc(r.model));
+        if (r.model) meta.push(esc(plainModel(r.model)));
         if (s.endMs && s.started && r.answeredBy !== 'owner') meta.push(`worked ${fmtMs(s.endMs - s.started)}`);
         if (s.status === 'waiting') meta.push('not taken yet');
         if (s.status === 'offline') meta.push(`${esc(obyOf(s.target))} is offline`);
@@ -1627,7 +1629,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
           </div></div></td>
           <td class="mem-state" title="${MEMBER_STATE[st]}"><span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${nokeys || seen ? `<div class="mem-sub${nokeys ? ' warn' : ''}">${esc(nokeys || seen)}</div>` : ''}</td>
           <td class="hide-phone">${esc(answersWith(a)) || '<span class="muted">—</span>'}</td>
-          <td class="num r hide-narrow">${s.answered ?? s.asksIn ?? '—'}</td>
+          <td class="num r hide-narrow">${esc(s.answered ?? s.asksIn ?? '—')}</td>
           <td class="num mono r hide-phone">${s.medianAnswerMs ? fmtMs(s.medianAnswerMs) : '—'}</td>
           ${S.admin ? `<td class="r"><div class="mem-actions">${actions}</div></td>` : ''}
         </tr>`;
@@ -1641,14 +1643,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
   // what an Oby answers with, in plain words: "Claude Code · Haiku", or nothing when it doesn't say
   const RUNTIME_NAMES = { claude: 'Claude Code', 'claude code': 'Claude Code', codex: 'Codex', cursor: 'Cursor' };
+  // a model in plain words, the same in Members, an exchange's timeline and the conversation:
+  // "claude-haiku-5-5" → "Haiku 5.5", "claude-sonnet-4-20250514" → "Sonnet 4" (a date isn't a version),
+  // "claude-3-5-haiku-20241022" → "Haiku 3.5"; any other model as it is, cut at 24 characters.
+  // (Not "modelWords": Settings has one, and in one script the later declaration wins.)
+  function plainModel(m) {
+    const t = String(m ?? '').trim();
+    const name = (f) => f[0].toUpperCase() + f.slice(1).toLowerCase();
+    const fam = /^(?:claude-)?(opus|sonnet|haiku)(?:-(\d{1,2})(?!\d)(?:-(\d{1,2})(?!\d))?)?/i.exec(t);
+    if (fam) return name(fam[1]) + (fam[2] ? ` ${fam[2]}${fam[3] ? `.${fam[3]}` : ''}` : '');
+    const old = /^claude-(\d)(?:-(\d))?-(opus|sonnet|haiku)\b/i.exec(t);
+    if (old) return `${name(old[3])} ${old[1]}${old[2] ? `.${old[2]}` : ''}`;
+    return t.length > 24 ? t.slice(0, 23) + '…' : t;
+  }
   function answersWith(a) {
     const rt = (x) => RUNTIME_NAMES[String(x ?? '').trim().toLowerCase()] || '';
-    const model = (m) => {
-      const t = String(m ?? '').trim();
-      const fam = /^(?:claude-)?(opus|sonnet|haiku)(?:-(\d+)-(\d+))?/i.exec(t);
-      if (fam) return fam[1][0].toUpperCase() + fam[1].slice(1).toLowerCase() + (fam[2] ? ` ${fam[2]}.${fam[3]}` : '');
-      return t.length > 24 ? t.slice(0, 23) + '…' : t;
-    };
+    const model = plainModel;
     const d = a?.declared;
     let main = '', m = '';
     if (d && rt(d.runtime)) { main = rt(d.runtime); m = d.model; }
@@ -1788,7 +1798,19 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'keys', 'channel'], admin: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
-  const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false };
+  const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
+  // relay data: an event without a whole-number seq is dropped, since its seq reaches the nav, the header and the export
+  function okAuditEvent(e) { return !!e && typeof e === 'object' && Number.isSafeInteger(e.seq) && e.seq > 0; }
+  function auditHeadOf(h) { return h && Number.isSafeInteger(h.seq) && h.seq >= 0 ? { seq: h.seq, hash: String(h.hash ?? '') } : null; }
+  // what a GET /api/audit gave, merged into what's here by seq (never replacing it), so two loads
+  // finishing in either order keep the most events; the newest 2,000 stay
+  function mergeAudit(a) {
+    const have = new Set(S.audit.map((e) => e.seq));
+    S.audit = S.audit.concat((a?.events || []).filter((e) => okAuditEvent(e) && !have.has(e.seq))).sort((x, y) => x.seq - y.seq).slice(-2000);
+    const h = auditHeadOf(a?.head);
+    if (h && !(S.auditHead && S.auditHead.seq > h.seq)) S.auditHead = h;
+    if (a && 'verified' in a) S.auditVerified = a.verified;
+  }
   // events that match a filter { q, type, member, time }, newest first. `type` is 'all', a group,
   // or 't:<type>'; `member` an agent id or 'operator' (the admin key); every word of `q` must
   // appear in the event's type, #seq, who did it, whom it was about, or its detail
@@ -1845,9 +1867,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
   function auditHead() {
     const chain = S.auditVerified === null ? '<span class="chain">This Sphere doesn’t publish its event log yet</span>'
-      : S.auditVerified ? `<span class="chain" title="Each event’s hash covers the one before it, so changing or removing one breaks every hash after it"><span class="status"><span class="status-dot is-healthy"></span></span>Chain verified · ${(S.auditHead?.seq ?? S.audit.length).toLocaleString()} events</span>`
+      : S.auditVerified ? `<span class="chain" title="Each event’s hash covers the one before it, so changing or removing one breaks every hash after it"><span class="status"><span class="status-dot is-healthy"></span></span>Chain verified · ${esc(Number(S.auditHead?.seq ?? S.audit.length).toLocaleString())} events</span>`
       : `<span class="chain is-bad"><span class="status"><span class="status-dot is-error"></span></span>Chain broken: an event was changed or removed</span>`;
-    return head('Audit log', chain, `<button class="set-button" data-export title="Download as JSON">${auditExportLabel()}</button>`);
+    return head('Audit log', chain, `<button class="set-button" data-export title="Download as JSON"${AU.exporting ? ' disabled' : ''}>${AU.exporting ? 'Exporting…' : auditExportLabel()}</button>`);
   }
   function auditResults() {
     const list = auditShown();
@@ -1869,16 +1891,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       ? `<div class="table-wrap"><table class="table au-table"><thead><tr><th class="hide-phone">Seq</th><th>Time</th><th>Event</th><th>Detail</th><th class="hide-narrow">Hash</th></tr></thead><tbody>${rows}</tbody></table></div>${more}`
       : `<p class="empty-line">${filtering ? 'No events match.' : 'Nothing has happened yet.'}</p>`);
   }
-  // the newest 1,000 (the most one request gives), once per visit to the page
+  // the newest 1,000 (the most one request gives), the first time the page opens; new ones arrive live
   async function loadAudit() {
     AU.loaded = true;
     try {
       const a = await api('/api/audit?limit=1000');
-      const have = new Set(S.audit.map((e) => e.seq));
-      S.audit = S.audit.concat((a.events || []).filter((e) => !have.has(e.seq))).sort((x, y) => x.seq - y.seq).slice(-2000);
-      AU.total = a.total ?? null;
-      if (a.head) S.auditHead = a.head;
-      if ('verified' in a) S.auditVerified = a.verified;
+      mergeAudit(a);
+      AU.total = Number.isSafeInteger(a?.total) ? a.total : null;
     } catch { return; }
     if (S.mode === 'console' && S.page === 'audit') updateAudit();
   }
@@ -1886,12 +1905,17 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function updateAudit() {
     const box = document.getElementById('au-results');
     if (!box) return;
-    box.innerHTML = auditResults();
     const top = document.getElementById('au-head');
+    // a button with the focus (Export, Show more) is drawn again: the new one gets the focus, so a
+    // live event doesn't throw a keyboard user back to the top of the page
+    const was = document.activeElement;
+    const focused = was && (box.contains(was) || top?.contains(was)) ? ['data-export', 'data-au-more'].find((k) => was.hasAttribute(k)) : null;
+    box.innerHTML = auditResults();
     if (top) top.innerHTML = auditHead(); // the chain's state, and what Export exports
     const clear = document.querySelector('#page [data-au-clear]');
     if (clear) clear.hidden = !AU.q;
     wireAuditResults();
+    if (focused) document.querySelector(`#au-head [${focused}], #au-results [${focused}]`)?.focus();
   }
   function wireAuditResults() {
     const box = document.getElementById('au-results');
@@ -1903,6 +1927,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       if (q) q.value = '';
       renderAuditPicks();
       updateAudit();
+      q?.focus(); // the button is gone with the filters: the search is where to go on
     });
   }
   function renderAuditPicks(focusKey) {
@@ -1959,7 +1984,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       menu.onkeydown = (e) => {
         const list = visible();
         const i = list.indexOf(document.activeElement);
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus(); }
+        // from the search field (not in the list), down is the first option and up the last
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const down = e.key === 'ArrowDown'; list[i < 0 ? (down ? 0 : list.length - 1) : (i + (down ? 1 : -1) + list.length) % list.length]?.focus(); }
         else if (e.key === 'Home' || e.key === 'End') { if (document.activeElement !== search) { e.preventDefault(); list[e.key === 'Home' ? 0 : list.length - 1]?.focus(); } }
         else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAuditMenu(true); }
         else if (e.key === 'Tab') closeAuditMenu();
@@ -2032,7 +2058,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const me = S.agents.get(S.me.id) || S.me;
     const st = me.suspended ? 'suspended' : stateOf(me);
     const answers = answersWith(me);
-    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `<span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${answers ? ` · answers with ${esc(answers)}` : ''}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
+    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `<span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${answers ? `<span aria-hidden="true">·</span><span>answers with ${esc(answers)}</span>` : ''}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
       `<div id="pending-box">${pendingHtml()}</div><div id="you-rest">${youRest()}</div>`;
   }
 
@@ -3627,11 +3653,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     n.classList.toggle('is-problem', !!bad);
   }
   // Export shown: the events the search and filters show. Export all: every event, page by page
-  // (a request gives at most 1,000), in the shape GET /api/audit has.
-  async function exportAudit(e) {
-    const btn = e?.currentTarget;
+  // (a request gives at most 1,000), in the shape GET /api/audit has. The button says "Exporting…" meanwhile.
+  async function exportAudit() {
+    if (AU.exporting) return;
     const shown = auditFiltering();
-    let out;
+    let out = null;
+    AU.exporting = true;
+    updateAudit();
     try {
       if (shown) out = { events: auditShown().reverse(), head: S.auditHead, verified: S.auditVerified, total: AU.total, filter: { search: AU.q.trim(), type: AU.type, member: AU.member, time: AU.time } };
       else {
@@ -3639,16 +3667,24 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         let r = null, after = 0;
         for (let i = 0; i < 10000; i++) {
           r = await api(`/api/audit?after=${after}&limit=1000`);
-          events.push(...(r.events || []));
-          if (!r.events?.length || r.events.length < 1000) break;
-          const last = Number(r.events[r.events.length - 1].seq);
+          const got = r?.events || [];
+          events.push(...got);
+          if (!got.length) break;
+          const last = Number(got[got.length - 1].seq);
           if (!Number.isFinite(last) || last <= after) break; // a relay that doesn't move on
           after = last;
+          // the head says where the log ends: a page short of 1,000 (a damaged line leaves a gap) isn't always the last
+          const end = Number(r?.head?.seq);
+          if (Number.isFinite(end) ? last >= end : got.length < 1000) break;
         }
         out = { events, head: r?.head ?? null, verified: r?.verified ?? null, total: r?.total ?? events.length };
       }
-    } catch {
-      if (btn) { btn.textContent = 'Couldn’t export'; setTimeout(() => (btn.textContent = auditExportLabel()), 2000); }
+    } catch { out = null; }
+    AU.exporting = false;
+    updateAudit();
+    if (!out) {
+      const b = document.querySelector('#au-head [data-export]');
+      if (b) { b.textContent = 'Couldn’t export'; setTimeout(() => { if (!AU.exporting && b.isConnected) b.textContent = auditExportLabel(); }, 2000); }
       return;
     }
     const a = document.createElement('a');
@@ -4055,20 +4091,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     else if (mt.answeredBy === 'owner') state = `<p class="room-state">Written by ${esc(ownerName(a))}</p>`;
     else if (mt.local) {
       const bits = [`On ${esc(machineOf(a))}`];
-      if (mt.model) bits.push(esc(mt.model));
+      if (mt.model) bits.push(esc(plainModel(mt.model)));
       if (mt.durationMs) bits.push((mt.durationMs / 1000).toFixed(1) + 's');
       state = `<p class="room-state">${laptop()}${bits.join(' · ')}</p>`;
     }
     const closed = isSealed(m);
     const files = m.files?.length && !closed ? `<div class="msg-attached">${m.files.map(fileHtml).join('')}</div>` : '';
+    // in a sealed Sphere every message is sealed (the side panel and the hint say so): a message
+    // says it only when that's news, or when its signature failed
     if (m.sealed && m.open) state += m.verified === false
       ? `<p class="room-state is-refused">${lock()}Its signature didn’t verify: treat it as forged</p>`
-      : `<p class="room-state">${lock()}Sealed end to end</p>`;
+      : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
     const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>`;
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
-        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
+        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${t}</div>
       </div>`;
     }
     const by = cont ? '' : `<div class="room-who">

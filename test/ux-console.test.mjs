@@ -121,7 +121,7 @@ describe('the audit log: search and filters', () => {
 
 describe('Members: what each Oby answers with, in plain words', () => {
   const ctx = {};
-  const { answersWith } = sandbox(['RUNTIME_NAMES', 'answersWith'], ctx);
+  const { answersWith } = sandbox(['RUNTIME_NAMES', 'plainModel', 'answersWith'], ctx);
   test('the runtime and model it declares', () => {
     assert.equal(answersWith({ declared: { runtime: 'claude', model: 'opus', runtimes: ['claude'] } }), 'Claude Code · Opus');
     assert.equal(answersWith({ declared: { runtime: 'claude', model: 'claude-sonnet-5-5' } }), 'Claude Code · Sonnet 5.5');
