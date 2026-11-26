@@ -3,36 +3,41 @@
 // flows drive; bob, an admin; and carol, who is in none of their conversations and whose Oby is
 // offline. Their Obys answer with fake runtimes (test/fake-runtimes.mjs), gh is a fake
 // (test/fake-gh.mjs), and so are the phone's ntfy server and Slack: no model and no network. Each
-// flow also checks that no page logged an error and that nothing scrolls sideways.
+// flow also checks that no page logged an error and that nothing scrolls sideways. At each width,
+// axe-core then checks every page and the main dialogs against WCAG 2.2 AA.
 //
-// Playwright is installed only for these tests, never as a dependency (CONTRIBUTING.md):
-//   npm install --no-save playwright@<version in test/browser-helpers.mjs>
+// Playwright and axe-core are installed only for these tests, never as dependencies (CONTRIBUTING.md):
+//   npm install --no-save playwright@<version> axe-core@<version>   (the versions in test/browser-helpers.mjs)
 //   npx playwright install chromium
 //   OBYSPHERE_BROWSER_TESTS=1 node --test test/browser-tests.test.mjs
-// Without Playwright the file skips, saying why; with OBYSPHERE_BROWSER_TESTS=1 it fails instead,
-// so CI can't skip it by accident.
+// Without Playwright the file skips, and without axe-core its accessibility checks skip, saying
+// why; with OBYSPHERE_BROWSER_TESTS=1 they fail instead, so CI can't skip them by accident.
 //
 // A new flow is a few lines on the helpers: World (the machine, and an answering session's own
 // tools with world.session), withPage (a page, and more pages with open), goTo (the side panel),
-// switchView, noSidewaysScroll and until. Find things by role, label or text.
+// switchView, noSidewaysScroll, until and axeViolations. Find things by role, label or text.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PLAYWRIGHT_VERSION, VIEWPORTS, World, loadChromium, withPage, title, goTo, hasPage, switchView, noSidewaysScroll, startFakeHooks, until, consolePost } from './browser-helpers.mjs';
+import { PLAYWRIGHT_VERSION, AXE_VERSION, VIEWPORTS, World, loadChromium, loadAxe, withPage, title, sidePanel, goTo, hasPage, switchView, noSidewaysScroll, startFakeHooks, until, axeViolations, consolePost } from './browser-helpers.mjs';
 
 const REQUIRED = process.env.OBYSPHERE_BROWSER_TESTS === '1';
 const ANSWER = 'Here is my answer, from a fake runtime on this machine.';
 const EACH = { timeout: 90000 }; // each flow; every wait inside it gives up sooner
-const VERSION_TEST = 'CI and CONTRIBUTING.md install the Playwright version these tests name';
+const VERSION_TEST = 'CI and CONTRIBUTING.md install the Playwright and axe-core versions these tests name';
 const { chromium, reason } = await loadChromium();
+const axe = loadAxe();
 const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test(VERSION_TEST, () => {
   const read = (f) => fs.readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
   assert.equal(/PLAYWRIGHT_VERSION: '([^']+)'/.exec(read('.github/workflows/ci.yml'))?.[1], PLAYWRIGHT_VERSION);
+  assert.equal(/AXE_VERSION: '([^']+)'/.exec(read('.github/workflows/ci.yml'))?.[1], AXE_VERSION);
   assert.deepEqual([...read('CONTRIBUTING.md').matchAll(/playwright@(\S+)/g)].map((m) => m[1]), [PLAYWRIGHT_VERSION]);
+  assert.deepEqual([...read('CONTRIBUTING.md').matchAll(/axe-core@(\S+)/g)].map((m) => m[1]), [AXE_VERSION]);
 });
 
 if (!chromium) {
@@ -520,6 +525,162 @@ if (!chromium) {
             await noSidewaysScroll(page, vp, 'Settings › GitHub');
           });
         });
+
+        // Every page and the main dialogs, with Carol's Oby offline (an offline member is what
+        // caught the last contrast problem) and something in each list, as people see them.
+        const axeTest = 'axe-core: every page and the main dialogs meet WCAG 2.2 AA, with a member offline';
+        if (!axe.source) {
+          if (REQUIRED) test(axeTest, () => assert.fail(axe.reason));
+          else test(axeTest, { skip: axe.reason }, () => {});
+        } else
+          test(axeTest, { timeout: 240000 }, async (t) => {
+            const found = [];
+            const check = async (page, where) => {
+              for (const v of await axeViolations(page, axe.source)) found.push(`${where}: ${v}`);
+            };
+            // something in Traffic, Your Oby and Files, whatever ran before
+            const question = `Anything new on payments? (${vp.name}, for axe)`;
+            const asked = await world.rep(['ask', 'bob', question, '--profile', 'alice', '--wait', '60']);
+            assert.ok(asked.out.includes(ANSWER), asked.out);
+            const file = path.join(world.tmp, `notes-${vp.name}.txt`);
+            fs.writeFileSync(file, 'Release notes, in a file.\n');
+            assert.match((await world.rep(['post', `The notes, as a file (${vp.name})`, '--file', file, '--profile', 'alice'])).out, /Posted in #general/);
+            const offline = (page) => page.getByRole('button', { name: /^Obys online \d+\/ \d+ 1 offline$/ });
+
+            // the first page, with no key
+            await run(t, `${sphere.url}/`, vp, async (page) => {
+              await page.getByRole('textbox', { name: 'Obysphere key' }).waitFor();
+              await check(page, 'the key page');
+            });
+
+            // the Sphere's own page, opened with the join key
+            await run(t, `${sphere.url}/#key=${encodeURIComponent(sphere.key)}`, vp, async (page) => {
+              await title(page, sphere.name).waitFor();
+              await offline(page).waitFor();
+              await check(page, "the Sphere's Overview");
+              for (const [nav, heading, ready] of [
+                ['Traffic', 'Traffic', () => page.getByRole('row').nth(1)],
+                ['Members', 'Members', () => page.getByRole('row').filter({ hasText: '@carol' }).getByText('Offline')],
+                ['Instruments', 'Instruments', () => page.getByRole('button', { name: /^sphere_ask\b/ })],
+                ['Files', 'Files', () => page.getByRole('region', { name: 'Files' })],
+                ['Audit log', 'Audit log', () => page.getByRole('region', { name: 'Events' })],
+              ]) {
+                await goTo(page, nav);
+                await title(page, heading).waitFor();
+                await ready().first().waitFor();
+                await check(page, `the Sphere's ${nav}`);
+              }
+              await goTo(page, 'Admin sign-in');
+              const signIn = page.getByRole('dialog', { name: 'Admin sign-in' });
+              await signIn.getByRole('textbox', { name: 'Admin key' }).waitFor();
+              await check(page, 'Admin sign-in');
+              await page.keyboard.press('Escape');
+              await signIn.waitFor({ state: 'hidden' });
+              await switchView(page, 'Conversation');
+              await page.getByRole('log', { name: 'Messages' }).waitFor();
+              await check(page, "the Sphere's Conversation view");
+            });
+
+            // Alice's console: her pages, an exchange, what waits for her, and her dialogs
+            await run(t, alice.url, vp, async (page) => {
+              await title(page, sphere.name).waitFor();
+              await offline(page).waitFor();
+              await check(page, "Alice's Overview");
+              if (vp.isMobile) {
+                await sidePanel(page); // slid in
+                await check(page, 'the side panel');
+                await page.keyboard.press('Escape');
+              }
+              await goTo(page, 'Instruments');
+              await page.getByText('You don’t offer any yet.').waitFor();
+              await page.getByRole('button', { name: 'Make your own' }).click();
+              await page.getByRole('button', { name: 'Copy the command' }).waitFor();
+              await check(page, "Alice's Instruments, with Make your own open");
+              const waiting = world.repInBackground(['ask', 'alice', `May I see the roadmap? (${vp.name}, for axe)`, '--profile', 'bob', '--wait', '60']);
+              await goTo(page, 'Your Oby');
+              const card = page.locator('[data-pending]').filter({ hasText: 'for axe' });
+              await card.getByRole('button', { name: 'Answer myself' }).click();
+              await card.getByRole('textbox', { name: 'Your answer, sent as yours' }).waitFor();
+              await check(page, 'Your Oby, with an ask waiting');
+              await card.getByRole('button', { name: 'Decline' }).click();
+              await card.waitFor({ state: 'detached' });
+              await waiting.exited;
+              await goTo(page, 'Settings');
+              await page.getByRole('region', { name: 'Who can ask' }).getByText('@carol · away').waitFor();
+              await check(page, 'Settings');
+              await goTo(page, 'Traffic');
+              await page.getByRole('row').filter({ hasText: question }).click();
+              await title(page, 'Exchange').waitFor();
+              await page.getByText(ANSWER).first().waitFor();
+              await check(page, 'an exchange');
+
+              await page.getByRole('button', { name: 'New exchange' }).click();
+              const ask = page.getByRole('dialog', { name: 'New exchange' });
+              await ask.getByRole('textbox', { name: 'Message', exact: true }).waitFor();
+              await check(page, 'New exchange');
+              await page.keyboard.press('Escape');
+              await ask.waitFor({ state: 'hidden' });
+
+              await page.getByRole('button', { name: 'You: Alice Test', exact: true }).click();
+              await page.getByRole('menu').waitFor();
+              await check(page, 'the account menu');
+              await page.getByRole('menuitem', { name: 'Admin access…' }).click();
+              const claim = page.getByRole('dialog', { name: 'Admin access' });
+              await claim.getByRole('textbox', { name: 'Admin key' }).waitFor();
+              await check(page, 'Admin access');
+              await page.keyboard.press('Escape');
+              await claim.waitFor({ state: 'hidden' });
+
+              await switchView(page, 'Conversation');
+              await page.getByRole('log', { name: 'Messages' }).getByText(`The notes, as a file (${vp.name})`).waitFor();
+              await check(page, 'the Conversation view');
+              await goTo(page, 'Carol Test');
+              await page.getByText('Your conversation with Carol Test and their Oby.').waitFor();
+              await check(page, 'a direct conversation with an offline member');
+              await goTo(page, 'New channel');
+              const channel = page.getByRole('dialog', { name: 'New channel' });
+              await channel.getByRole('textbox', { name: 'Name' }).waitFor();
+              await check(page, 'New channel');
+              await channel.getByRole('textbox', { name: 'Name' }).fill(`axe-${vp.name}`);
+              await channel.getByRole('switch', { name: 'Private' }).click();
+              await channel.getByRole('button', { name: 'Bob Test', exact: true }).click();
+              await check(page, 'New channel, filled in');
+              await channel.getByRole('button', { name: 'Create channel' }).click();
+              await channel.waitFor({ state: 'hidden' });
+              await page.getByRole('button', { name: /^In it: / }).click();
+              const people = page.getByRole('dialog', { name: `People and Obys in #axe-${vp.name}` });
+              await people.getByText('@bob · Bob Test').waitFor();
+              await check(page, 'the people in a channel');
+              await page.keyboard.press('Escape');
+              await people.waitFor({ state: 'hidden' });
+            });
+
+            // Bob's console: the admin's pages, and the invite
+            await run(t, bob.url, vp, async (page) => {
+              await goTo(page, 'Policy');
+              await title(page, 'Policy').waitFor();
+              await check(page, 'Policy');
+              await page.getByRole('button', { name: /^Largest file / }).click();
+              await page.getByRole('listbox', { name: 'Largest file' }).waitFor();
+              await check(page, 'Policy, with a dropdown open');
+              await page.keyboard.press('Escape');
+              await goTo(page, 'Admins');
+              await page.getByRole('row').filter({ hasText: '@carol' }).waitFor();
+              await check(page, 'Admins');
+              await goTo(page, 'Members');
+              await page.getByRole('row').filter({ hasText: '@carol' }).getByRole('button', { name: 'Suspend' }).waitFor();
+              await check(page, "an admin's Members");
+              await switchView(page, 'Conversation');
+              await goTo(page, 'Invite member');
+              const invite = page.getByRole('dialog', { name: 'Invite member' });
+              await invite.getByRole('button', { name: 'Copy for your AI agent' }).waitFor();
+              await check(page, 'Invite member');
+              await page.keyboard.press('Escape');
+              await invite.waitFor({ state: 'hidden' });
+            });
+
+            assert.deepEqual(found, [], `axe-core ${axe.version} (${vp.viewport.width}px wide) found:\n  ${found.join('\n  ')}\n`);
+          });
       });
     }
   });

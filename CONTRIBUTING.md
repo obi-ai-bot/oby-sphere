@@ -37,17 +37,17 @@ Say what changed and why, and how you checked it. For anything touching security
 
 ### The console in a browser
 
-`test/browser-tests.test.mjs` opens the console in Chromium, at desktop and phone width: the Sphere's own page and each of its pages, with the audit log's search and filters; your console's Your Oby, New exchange and its answer in Traffic; Settings, with its Notifications and GitHub sections; Waiting for you, with asks and a GitHub approval; the Conversation view, a direct message and a new channel; Policy and Admins, for an admin and for a member who isn't one; and a Policy change that holds after a reload. It checks that no page logs an error and that nothing scrolls sideways. A Sphere and three members run on your machine, with fake runtimes, a fake `gh` and a fake phone and Slack, so it needs no Claude, no GitHub and no network. CI runs it in a job of its own, next to the other tests.
+`test/browser-tests.test.mjs` opens the console in Chromium, at desktop and phone width: the Sphere's own page and each of its pages, with the audit log's search and filters; your console's Your Oby, New exchange and its answer in Traffic; Settings, with its Notifications and GitHub sections; Waiting for you, with asks and a GitHub approval; the Conversation view, a direct message and a new channel; Policy and Admins, for an admin and for a member who isn't one; and a Policy change that holds after a reload. It checks that no page logs an error and that nothing scrolls sideways. Then [axe-core](https://github.com/dequelabs/axe-core) checks every page and the main dialogs against WCAG 2.2 AA, with one member offline, and fails on anything it finds. A Sphere and three members run on your machine, with fake runtimes, a fake `gh` and a fake phone and Slack, so it needs no Claude, no GitHub and no network. CI runs it in a job of its own, next to the other tests.
 
-It uses [Playwright](https://playwright.dev), which isn't a dependency: install it for yourself, without saving it (`node_modules/` is ignored), at the version CI uses:
+It uses [Playwright](https://playwright.dev) and axe-core, which aren't dependencies: install them for yourself, without saving them (`node_modules/` is ignored, and no lockfile is written), at the versions CI uses:
 
 ```bash
-npm install --no-save playwright@1.64.1   # the version in .github/workflows/ci.yml
-npx playwright install chromium           # Chromium, in Playwright's own cache folder
+npm install --no-save playwright@1.64.1 axe-core@4.10.2   # the versions in .github/workflows/ci.yml
+npx playwright install chromium                            # Chromium, in Playwright's own cache folder
 OBYSPHERE_BROWSER_TESTS=1 node --test test/browser-tests.test.mjs
 ```
 
-Without Playwright, `npm test` skips the file and says why; with `OBYSPHERE_BROWSER_TESTS=1` it fails instead. With Playwright and Chromium installed, `npm test` runs it too. When a flow fails, it keeps a screenshot of each page it opened and a trace (`npx playwright show-trace <file>`) in `OBYSPHERE_BROWSER_ARTIFACTS`, by default `obysphere-browser-artifacts` in your temp folder; CI attaches them to the run. Write new flows with the helpers in `test/browser-helpers.mjs`, and find things on the page by role, label or text.
+Without Playwright, `npm test` skips the file and says why; without axe-core, it skips the axe checks. With `OBYSPHERE_BROWSER_TESTS=1` either one missing fails instead. With both installed, `npm test` runs it all too. axe-core prints each problem with its rule, its impact and the element: fix it in `public/index.html`. When a flow fails, it keeps a screenshot of each page it opened and a trace (`npx playwright show-trace <file>`) in `OBYSPHERE_BROWSER_ARTIFACTS`, by default `obysphere-browser-artifacts` in your temp folder; CI attaches them to the run. Write new flows with the helpers in `test/browser-helpers.mjs`, and find things on the page by role, label or text.
 
 ## Reporting a vulnerability
 

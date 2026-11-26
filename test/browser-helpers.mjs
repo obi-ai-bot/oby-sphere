@@ -1,9 +1,11 @@
 // Helpers for the browser tests (test/browser-tests.test.mjs): a Sphere and its members on this
 // machine, each Oby answering with the fake runtimes (test/fake-runtimes.mjs) and working on GitHub
-// through the fake gh (test/fake-gh.mjs), both first on PATH; a fake ntfy and Slack; and small
-// steps for driving the console in Chromium through Playwright. Nothing here imports Playwright:
-// the test file loads it when it's installed, so `npm test` runs without it.
+// through the fake gh (test/fake-gh.mjs), both first on PATH; a fake ntfy and Slack; small steps
+// for driving the console in Chromium through Playwright; and axe-core's accessibility checks.
+// Nothing here imports Playwright or axe-core: the test file loads them when they're installed, so
+// `npm test` runs without them.
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,8 +18,9 @@ import { makeFakeGh } from './fake-gh.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// the version CI installs (.github/workflows/ci.yml); keep the two the same
+// the versions CI installs (.github/workflows/ci.yml); keep them the same
 export const PLAYWRIGHT_VERSION = '1.64.1';
+export const AXE_VERSION = '4.10.2';
 
 export const VIEWPORTS = [
   { name: 'desktop', viewport: { width: 1280, height: 800 } },
@@ -38,7 +41,7 @@ export async function loadChromium() {
   try {
     pw = await import('playwright');
   } catch (e) {
-    return { reason: `Playwright isn't installed (${e.code || firstLine(e.message)}). To run these tests: npm install --no-save playwright@${PLAYWRIGHT_VERSION} && npx playwright install chromium` };
+    return { reason: `Playwright isn't installed (${e.code || firstLine(e.message)}). To run these tests: npm install --no-save playwright@${PLAYWRIGHT_VERSION} axe-core@${AXE_VERSION} && npx playwright install chromium` };
   }
   const chromium = pw.chromium || pw.default?.chromium;
   try {
@@ -46,6 +49,18 @@ export async function loadChromium() {
     return { chromium };
   } catch (e) {
     return { reason: `Chromium didn't start (${firstLine(e.message)}). Install it with: npx playwright install chromium` };
+  }
+}
+
+// axe-core's script, to run in a page, or a reason it can't (the accessibility checks skip then)
+export function loadAxe() {
+  try {
+    const require = createRequire(import.meta.url);
+    const file = require.resolve('axe-core/axe.min.js');
+    const { version } = JSON.parse(fs.readFileSync(path.join(path.dirname(file), 'package.json'), 'utf8'));
+    return { source: fs.readFileSync(file, 'utf8'), version };
+  } catch (e) {
+    return { reason: `axe-core isn't installed (${e.code || firstLine(e.message)}). To run the accessibility checks: npm install --no-save axe-core@${AXE_VERSION}` };
   }
 }
 
@@ -391,6 +406,23 @@ export async function sidewaysScroll(page) {
 }
 export async function noSidewaysScroll(page, vp, where) {
   assert.deepEqual(await sidewaysScroll(page), [], `${where}, ${vp.viewport.width}px wide: nothing scrolls sideways`);
+}
+
+// What axe-core finds against WCAG 2.2 AA on the page as it is now: one line per element it
+// flags, with the rule's id, its impact and the element (its CSS path), and what the rule asks.
+export const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+export async function axeViolations(page, source) {
+  // evaluated, not added as a script tag, so the page's Content-Security-Policy doesn't stop it
+  if (!(await page.evaluate(() => typeof window.axe === 'object'))) await page.evaluate(source);
+  // what is still fading in (a dialog, a menu, a new message) is checked once it has: halfway
+  // through, its colours are a mix and their contrast says nothing. Endless ones (a pulsing dot) go
+  // on, and no wait is longer than 3 seconds.
+  await page.evaluate(() => {
+    const ending = document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+    return Promise.race([Promise.all(ending.map((a) => a.finished.catch(() => {}))), new Promise((resolve) => setTimeout(resolve, 3000))]);
+  });
+  const violations = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] }).then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, targets: v.nodes.map((n) => n.target.join(' ')) }))), AXE_TAGS);
+  return violations.flatMap((v) => v.targets.map((target) => `${v.id} (${v.impact}): ${target} — ${v.help}`));
 }
 
 // A POST to a member's console (rep.mjs ui) from outside the page, as a script on that machine
