@@ -108,7 +108,7 @@ if (!chromium) {
             await page.getByRole('button', { name: /^Obys online 2\/ 3 1 offline$/ }).waitFor();
             const carolOnMap = page.getByRole('group', { name: 'Map' }).getByRole('listitem', { name: 'Carol Test’s Oby' });
             await carolOnMap.waitFor();
-            await until(async () => /\boffline\b/.test(await carolOnMap.ariaSnapshot()), 'the map to say Carol’s Oby is offline');
+            await until(async () => /\bOffline\b/.test(await carolOnMap.ariaSnapshot()), 'the map to say Carol’s Oby is offline');
             await page.getByRole('log', { name: 'Live log' }).waitFor();
             await noSidewaysScroll(page, vp, 'Overview');
             // someone holding only the join key watches: no member's pages, and no admin's
