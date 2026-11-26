@@ -284,8 +284,10 @@ function apply(op, liveEvents = true) {
     }
     case 'patch': {
       const m = byId.get(op.id);
-      if (m) Object.assign(m, op.fields);
+      if (m) for (const [k, v] of Object.entries(op.fields)) if (v === null) delete m[k]; else m[k] = v; // null: the field goes (waiting, once its owner decided)
       ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
+      // an ask that now waits for its owner, or no longer does: whoever long-polls its replies looks again
+      if ('waiting' in op.fields && waiters.has(op.id)) for (const wake of waiters.get(op.id)) wake();
       break;
     }
     case 'audit':
@@ -412,16 +414,19 @@ function account(m) {
     const parent = byId.get(m.replyTo);
     if (parent && parent.kind === 'ask' && parent.to.includes(m.from)) {
       const s = statsOf(m.from);
+      const answer = !m.meta?.error && !m.meta?.declined && !m.meta?.expired;
       if (m.meta?.error) s.errors++;
-      else if (m.meta?.declined) s.declined++;
+      else if (!answer) s.declined++; // declined, lapsed waiting for its owner, or too old to answer: no answer
       else s.answered++;
       const earlier = repliesOf.get(parent.id) || [];
       const ms = Date.parse(m.ts) - Date.parse(parent.ts);
-      if (!earlier.some((r) => r.from === m.from)) {
+      // how fast an Oby answers: its answers only (an hour's wait that lapsed, or an "expired" reply
+      // after a weekend offline, isn't one)
+      if (answer && !earlier.some((r) => r.from === m.from)) {
         s.samples.push(ms);
         if (s.samples.length > 200) s.samples.shift();
       }
-      if (!earlier.length) answerRing.push(ms);
+      if (answer && !earlier.length) answerRing.push(ms);
     }
   }
 }
@@ -458,9 +463,10 @@ function hashEvent(e, key = chainKey) {
     .update(e.prev + JSON.stringify([e.seq, e.ts, e.type, e.actor, e.target, e.ref, e.detail, e.content ?? null]))
     .digest('hex');
 }
-// what a message event's `content` covers: the message as posted (not its later timing patches)
+// what a message event's `content` covers: the message as posted (not its later timing patches,
+// nor whether it waits for its owner)
 function contentHash(m) {
-  const { claimedAt, startedAt, ...posted } = m;
+  const { claimedAt, startedAt, waiting, ...posted } = m;
   return sha(JSON.stringify(posted));
 }
 
@@ -677,7 +683,7 @@ function fsStore() {
         }
         if (o.p) {
           const m = byId.get(o.p);
-          if (m) for (const k of ['claimedAt', 'startedAt']) if (o[k]) m[k] = o[k];
+          if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
         } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
@@ -1367,6 +1373,28 @@ function foldOps(entries, retain = Infinity) {
 
 // ================================================================ presence
 
+// an owner's away, or a representative's pause (out of usage, say): { until, note, since }, shown
+// until its time has passed; null when there's none
+function awayOf(a) {
+  const w = a.away;
+  if (!w || typeof w !== 'object') return null;
+  if (w.until && !(Date.parse(w.until) > Date.now())) return null;
+  return { until: w.until ?? null, note: w.note || '', since: w.since ?? null };
+}
+
+// a time in the next `days` days, as ISO, or a 400 naming the field. The slack forgives a sender's
+// clock that runs a little off the relay's: `pastMs` in the past counts as now, `overMs` past the
+// limit as the limit.
+function futureTime(v, days, field, { pastMs = 0, overMs = 0 } = {}) {
+  let t = Date.parse(String(v));
+  const now = Date.now();
+  const max = now + days * 864e5;
+  if (!Number.isFinite(t) || t <= now - pastMs || (!pastMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
+  if (t > max + overMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+  t = Math.min(Math.max(t, now + 1000), max);
+  return new Date(t).toISOString();
+}
+
 function publicAgent(a) {
   const c = store.counts(a.id);
   const s = agentStats.get(a.id);
@@ -1388,6 +1416,7 @@ function publicAgent(a) {
     ...(a.removed ? { removed: true } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
+    away: a.removed || a.suspended ? null : awayOf(a), // shown with the representative offline too: its owner may be away with the laptop closed
     declared: a.declared ?? null,
     keys: a.keys ?? null,
     stats: {
@@ -1477,7 +1506,7 @@ const INSTRUMENTS = [
     name: 'sphere_agents',
     group: 'presence',
     holders: ['session', 'answering'],
-    description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it is online to answer right now.',
+    description: 'List the agents in this Obysphere: whose representative each one is, what it knows, and whether it can answer right now (online, offline since when, or away until when).',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -1494,6 +1523,7 @@ const INSTRUMENTS = [
         channel: str('Channel to post in (default: general, or the current one).'),
         files: { type: 'array', items: { type: 'string' }, description: "Local file paths to attach (max 5 MB each). Only in the owner's own session." },
         wait_seconds: { type: 'number', description: 'How long to wait for the reply (default 300, max 900).' },
+        needed_within_minutes: { type: 'integer', minimum: 1, maximum: 10080, description: "Optional: how long the answer stays useful, in minutes. After that the Oby won't start it, and sphere_check says it expired." },
       },
       required: ['agent', 'message'],
     },
@@ -1509,7 +1539,7 @@ const INSTRUMENTS = [
     name: 'sphere_check',
     group: 'talk',
     holders: ['session'],
-    description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id).',
+    description: 'Check for replies to a message you sent earlier with sphere_ask (by its message id), or why there is none yet: working on it, away until when, offline since when, or expired.',
     inputSchema: { type: 'object', properties: { message_id: str('The id sphere_ask gave you, like m_ab12cd34.') }, required: ['message_id'] },
   },
   {
@@ -1767,6 +1797,15 @@ function buildMessage(b, me, body, pre) {
   }
 
   const m = { id: 'm_' + token(6), ts: now(), channel, from: me.id, kind: to.length ? 'ask' : replyTo ? 'reply' : 'post', to, text, replyTo, cause, files, depth, meta: cleanMeta(body.meta) };
+  // how long the asker says the answer stays useful: plain metadata, like meta, and not covered
+  // by a sealed message's signature. Only an ask has one.
+  if (m.kind === 'ask') {
+    const mins = body.neededWithinMinutes;
+    if (mins != null) {
+      if (!Number.isInteger(mins) || mins < 1 || mins > 10080) throw err(400, 'bad_request', 'neededWithinMinutes is a whole number of minutes, 1 to 10080 (7 days).');
+      m.neededBy = new Date(Date.now() + mins * 60e3).toISOString(); // on the relay's clock, which every Oby reads it by
+    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', { pastMs: 120e3, overMs: 120e3 });
+  }
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
@@ -1801,7 +1840,7 @@ function buildMessage(b, me, body, pre) {
     const parent = byId.get(replyTo);
     const asker = parent?.from ? S.agents[parent.from] : null;
     const took = parent ? ` · ${((Date.parse(m.ts) - Date.parse(parent.ts)) / 1000).toFixed(1)}s` : '';
-    const how = m.meta.error ? ' · error' : m.meta.declined ? ' · declined' : m.meta.answeredBy === 'owner' ? ' · by its owner' : m.meta.model ? ` · ${m.meta.model}` : '';
+    const how = m.meta.expired ? ' · expired' : m.meta.error ? ' · error' : m.meta.declined ? ' · declined' : m.meta.answeredBy === 'owner' ? ' · by its owner' : m.meta.model ? ` · ${m.meta.model}` : '';
     b.audit('reply', { actor: me.id, target: asker?.id ?? null, ref: m.id, content, detail: `${me.name} → ${asker?.name ?? 'channel'} · ${bytes}${took}${how}${fileNote}` });
   } else {
     b.audit('post', { actor: me.id, ref: m.id, content, detail: `${me.name} · #${channel} · ${bytes}${fileNote}` });
@@ -1833,7 +1872,7 @@ function cleanMeta(meta) {
   if (num(meta.durationMs, 864e5, false)) out.durationMs = Math.round(meta.durationMs);
   if (num(meta.costUsd, 1e4, false)) out.costUsd = meta.costUsd;
   if (num(meta.turns, 1e5, true)) out.turns = meta.turns;
-  for (const k of ['local', 'error', 'declined']) if (typeof meta[k] === 'boolean') out[k] = meta[k];
+  for (const k of ['local', 'error', 'declined', 'expired', 'unable', 'lapsed']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer; lapsed: its owner didn't OK it in time
   if (meta.answeredBy === 'agent' || meta.answeredBy === 'owner') out.answeredBy = meta.answeredBy;
   if (typeof meta.instrument === 'string' && INSTRUMENT_NAME.test(meta.instrument)) out.instrument = meta.instrument; // instruments
   if (meta.tools && typeof meta.tools === 'object' && !Array.isArray(meta.tools)) {
@@ -2527,6 +2566,30 @@ async function route(req, res, url) {
     return send(res, 200, b.result);
   }
 
+  // an ask that waits for its Oby's owner to OK it (their settings say "Ask me first"): from an Oby
+  // it's addressed to, { for: 'owner', until } while it waits, { for: null } once its owner decided.
+  // Metadata only, like claimedAt: the asker's tools and the console say it waits, and until when.
+  if (m === 'POST' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/waiting$/))) {
+    if (!(await store.rate('status', me.id, S.policy.rate.statusPerMin))) throw err(429, 'rate_limited', 'Too many status changes. Try again in a moment.');
+    const body = await readJson(req, 4096);
+    if (body.for !== null && body.for !== 'owner') throw err(400, 'bad_request', 'for is "owner" (the ask waits for its owner\'s OK) or null (it no longer does).');
+    const until = body.for === 'owner' ? futureTime(body.until, 7, 'until') : null;
+    const b = await store.commit((b) => {
+      b.result = { ok: true };
+      const msg = byId.get(mm[1]);
+      if (!msg || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      if (!until) {
+        // cleared by the Oby that set it (an ask to several Obys keeps another's)
+        if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        return;
+      }
+      if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' }); // as a claim says it
+      const since = msg.waiting?.by === me.id ? msg.waiting.since : now();
+      b.push({ t: 'patch', id: msg.id, fields: { waiting: { for: 'owner', until, since, by: me.id } } });
+    });
+    return send(res, 200, b.result);
+  }
+
   if (m === 'POST' && p === '/api/status') {
     if (!(await store.rate('status', me.id, S.policy.rate.statusPerMin))) throw err(429, 'rate_limited', 'Too many status changes. Try again in a moment.');
     const body = await readJson(req, 4096);
@@ -2546,6 +2609,32 @@ async function route(req, res, url) {
       }
     });
     return send(res, 200, { ok: true });
+  }
+
+  // away: set by its owner (obysphere away) or by its representative while its runtime can't answer.
+  // Kept on the agent record, so it holds with the representative offline and across restarts. The
+  // audit log says when an agent is away and back, never the note.
+  if (m === 'POST' && p === '/api/away') {
+    if (!(await store.rate('me', me.id, S.policy.rate.mePerMin))) throw err(429, 'rate_limited', 'Too many profile changes. Try again in a moment.');
+    const body = await readJson(req, 4096);
+    let away = null;
+    if (body.off !== true) {
+      if (body.note != null && typeof body.note !== 'string') throw err(400, 'bad_request', 'note is text.');
+      const until = body.until == null ? null : futureTime(body.until, 30, 'until', { overMs: 120e3 }); // "30 days" from a clock a little ahead is forgiven
+      away = { until, note: cleanLine(body.note || '', 120), since: awayOf(S.agents[me.id])?.since ?? now() };
+    }
+    await store.commit((b) => {
+      const a = { ...S.agents[me.id] };
+      const was = awayOf(a);
+      if (away) a.away = away;
+      else delete a.away;
+      // saved at once when it starts or ends; a new time on an away that goes on (a representative's
+      // pause moves its time as it retries) rides the next save, and the audit log says away and back only
+      b.push({ t: 'agent', a, urgent: !was !== !away });
+      if (away && !was) b.audit('away', { actor: me.id, detail: `${a.name} is away until ${away.until ?? 'further notice'}` });
+      else if (!away && was) b.audit('away', { actor: me.id, detail: `${a.name} is back` });
+    });
+    return send(res, 200, { agent: publicAgent(S.agents[me.id]) });
   }
 
   if (m === 'POST' && p === '/api/me') {

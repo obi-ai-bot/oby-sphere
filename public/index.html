@@ -113,7 +113,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 .status-dot.is-online, .status-dot.is-answered, .status-dot.is-healthy { background: var(--online); }
 .status-dot.is-working { background: rgba(255, 255, 255, 0.75); animation: pulse-slow 1.6s ease-in-out infinite; }
 .status-dot.is-waiting, .status-dot.is-offline { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
-.status-dot.is-declined, .status-dot.is-posted { background: var(--muted); }
+.status-dot.is-declined, .status-dot.is-posted, .status-dot.is-expired { background: var(--muted); }
 .status-dot.is-error, .status-dot.is-suspended { background: var(--danger); }
 .status-dot.is-paused { background: var(--needs); }
 @keyframes pulse-slow { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
@@ -834,12 +834,41 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 .panel-head .link { color: var(--muted); font-size: var(--text-sm); transition: color var(--fade); }
 .panel-head .link:hover { color: var(--ink); }
 .mem-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mem-name .ink { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
-.mem-name .mem-handle, .mem-name .chip-tag { flex: none; }
+.mem-name .ink { min-width: 6ch; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+/* when the column is narrow the handle gives way first, so a name never shrinks to one letter */
+.mem-name .mem-handle { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-name .chip-tag { flex: none; }
 .mem-handle { font-size: var(--text-sm); }
 .mem-sub { color: var(--muted); font-size: var(--text-sm); line-height: 16px; }
 .mem-sub.warn { color: var(--needs); }
 .mem-actions { display: flex; justify-content: flex-end; gap: 6px; }
+/* when an Oby can't answer (#160): away (its owner's, or its runtime's pause), or offline since when.
+   One line; a long away note is cut, and whole on hover */
+.status-dot.is-away { background: var(--needs); }
+/* an ask that waits for its Oby's owner to OK it, and one that lapsed without their OK */
+.status-dot.is-owner { background: var(--needs); }
+.status-dot.is-lapsed { background: var(--muted); }
+.mem-state .state { max-width: 220px; }
+@media (max-width: 980px) { .mem-state .state { max-width: 170px; } }
+.mem-avail { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.page-sub .state { max-width: 100%; min-width: 0; }
+.conv-avail { color: var(--needs); }
+.you-away { margin-bottom: 28px; }
+.you-away .set-row { flex-wrap: wrap; row-gap: 8px; }
+.you-away .set-row > .set-row-text { flex: 1 1 220px; }
+.you-away .saved-note:empty { display: none; }
+.away-form { padding: 12px 0 14px; display: flex; flex-direction: column; gap: 10px; }
+.away-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.away-when .ctl-dd-btn { min-width: 168px; }
+.away-form .set-field { max-width: 420px; }
+.away-form .route-label-sm { margin-bottom: -6px; }
+.away-form :is(.set-field, .set-button):focus-visible, .you-away .set-button:focus-visible, #held-box .set-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#held-box:not(:empty) { margin-bottom: 28px; }
+.ask-card .why.is-held { color: var(--muted); }
+.route-unable { padding: 14px 0 12px; border-top: 1px solid var(--line); }
+.route-unable .ctl-seg { margin-top: 10px; }
+.route-unable [data-sub-for="availability.whenUnable"] { margin-top: 6px; }
+.route-unable-rows { margin-top: 6px; }
 .table .cell > svg, .table .cell > .owner-avatar { flex: none; }
 .table td.fill { max-width: 0; width: 100%; }
 .au-table td.au-detail .clip { white-space: nowrap; }
@@ -893,6 +922,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   .mem-table.is-admin .mem-state .state { font-size: 0; gap: 0; }
   .mem-table.is-admin .mem-state .mem-sub { display: none; }
   .mem-actions { flex-direction: column; align-items: flex-end; gap: 4px; }
+  .mem-state .state { max-width: 160px; }
 }
 
 /* ===== accessibility (#137): focus you can see, a skip link, words only a screen reader hears,
@@ -1202,6 +1232,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     setInterval(tick, 1000);
     setInterval(() => { if (S.mode === 'console') refreshStats(); }, 3000);
     if (CONSOLE && S.me) { pollPending(); setInterval(pollPending, 3000); }
+    // your away and held asks: looked at while Your Oby is open (a held ask's words are opened on this machine)
+    if (CONSOLE && S.me) setInterval(() => { if (S.mode === 'console' && S.page === 'you' && !document.hidden) loadYou(); }, 10000);
     if (CONSOLE) checkVersion();
     if (CONSOLE && S.me) startNotifications(); // browser notifications, and the count in the tab title
   }
@@ -1462,17 +1494,27 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const posted = Date.parse(ask.ts);
     const claimed = ask.claimedAt ? Date.parse(ask.claimedAt) : null;
     const started = ask.startedAt ? Date.parse(ask.startedAt) : claimed;
-    const endMs = reply ? Date.parse(reply.ts) : ask.kind === 'post' ? posted : null;
+    // the asker's deadline (neededBy), when it passed with no reply: the Oby won't start it any more
+    const deadline = !reply && ask.kind === 'ask' && ask.neededBy ? Date.parse(ask.neededBy) : NaN;
+    const late = deadline < Date.now();
+    const endMs = reply ? Date.parse(reply.ts) : ask.kind === 'post' ? posted : late ? deadline : null;
+    // its owner's settings say "Ask me first": the Oby waits for their OK, until a time (an older Oby says nothing)
+    const w = ask.waiting;
+    const ownerWait = !reply && w?.for === 'owner' && (!w.by || w.by === target?.id) && Date.parse(w.until) > Date.now();
     let status = 'answered';
     if (ask.kind === 'post') status = 'posted';
-    else if (reply) status = reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
+    else if (reply) status = reply.meta?.lapsed ? 'lapsed' : reply.meta?.expired ? 'expired' : reply.meta?.error ? 'error' : reply.meta?.declined ? 'declined' : 'answered';
     else if (target?.status?.state === 'working' && target.status.about === ask.id) status = 'working';
+    else if (late) status = 'expired';
+    else if (target?.online && ownerWait) status = 'owner';
+    else if (target && awayOf(target)) status = 'away';
     else if (target && !target.online) status = 'offline';
     else status = 'waiting';
-    return { ask, target, reply, posted, claimed, started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
+    // taken but waiting for its owner's OK: nothing is working on it yet, so the bar shows it waiting
+    return { ask, target, reply, posted, claimed, started: status === 'owner' && !ask.startedAt ? null : started, endMs, status, from: agent(ask.from), depth: ask.depth || 0 };
   }
 
-  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', offline: 'Waiting, offline', declined: 'Declined', error: 'Failed', posted: 'Posted' };
+  const STATUS_WORDS = { answered: 'Answered', working: 'Working', waiting: 'Waiting', owner: 'Waiting for its owner', offline: 'Waiting, offline', away: 'Waiting, away', declined: 'Declined', lapsed: 'No answer in time', expired: 'Expired', error: 'Failed', posted: 'Posted' };
   const stateHtml = (st) => `<span class="state"><span class="status"><span class="status-dot is-${st === 'offline' ? 'offline' : st}"></span></span>${STATUS_WORDS[st] || st}</span>`;
   const arrow = '<svg class="arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 6h7M7 3.5 9.5 6 7 8.5"/></svg>';
   function route(ex) {
@@ -1580,8 +1622,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     else if (p === 'policy' && S.admin) draw(pagePolicy());
     else if (p === 'admins' && S.admin) draw(pageAdmins());
     else if (p === 'you' && S.me) {
-      if (!fresh && document.getElementById('you-rest')) { if (a11yDraw($('#you-rest'), youRest())) wirePage(); return; }
+      if (!fresh && document.getElementById('you-rest')) {
+        const sub = $('#page .page-sub');
+        if (sub) a11yDraw(sub, youSub()); // away or paused changes the line under the title
+        if (a11yDraw($('#you-rest'), youRest())) wirePage();
+        return;
+      }
+      if (fresh) YOU.editing = false;
       draw(pageYou());
+      loadYou(); // away and held asks, from this machine
     }
     else if (p === 'settings' && S.me && CONSOLE) { if (fresh || !document.getElementById('settings-root')) loadSettings(); return; }
     else { S.page = 'overview'; return renderOverview(true); }
@@ -1727,7 +1776,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -1794,18 +1843,21 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         const meta = [];
         const r = s.reply?.meta || {};
         if (r.answeredBy === 'owner') meta.push(`written by ${esc(ownerName(s.target))}`);
-        else if (s.target && (s.started || s.endMs)) meta.push(`on ${esc(machineOf(s.target))}`);
+        else if (s.target && (s.started || s.reply)) meta.push(`on ${esc(machineOf(s.target))}`);
         if (s.ask.meta?.instrument) meta.push(`instrument ${esc(s.ask.meta.instrument)}`);
         if (r.model) meta.push(esc(plainModel(r.model)));
         if (s.endMs && s.started && r.answeredBy !== 'owner') meta.push(`worked ${fmtMs(s.endMs - s.started)}`);
-        if (s.status === 'waiting') meta.push('not taken yet');
-        if (s.status === 'offline') meta.push(`${esc(obyOf(s.target))} is offline`);
+        if (s.status === 'waiting') meta.push(s.ask.claimedAt ? 'taken, not started yet' : 'not taken yet');
+        if (s.status === 'owner') meta.push(`waiting for ${esc(ownerName(s.target))}’s OK`, `lapses at ${esc(whenWords(s.ask.waiting.until))}`);
+        if (s.status === 'expired' && !s.reply) meta.push('its deadline passed');
+        if (s.status === 'away') { const w = awayOf(s.target); meta.push(`${esc(obyOf(s.target))} ${w?.until != null ? `can answer after ${esc(whenWords(w.until))}` : 'is away'}`); }
+        if (s.status === 'offline') meta.push(`${esc(obyOf(s.target))} is offline${s.target.lastSeen && whenWords(s.target.lastSeen) ? ` since ${esc(whenWords(s.target.lastSeen))}` : ''}`);
         const label = s.ask.kind === 'post' ? `${esc(obyOf(s.from))} → ${esc(postTo(s.ask))}` : `${esc(obyOf(s.from))} → ${esc(s.target ? obyOf(s.target) : '?')}`;
         return `<div class="span">
           <div class="span-who" style="padding-left:${indent}px">${s.depth ? '<span class="muted">↳</span>' : ''}${picture(s.from, 18)}<span class="clip">${label}</span></div>
           <div class="bar-track">
             <div class="bar q" style="left:${pct(s.posted)}%;width:${Math.max(0.4, pct(qEnd) - pct(s.posted))}%"></div>
-            ${s.started || s.endMs ? `<div class="bar w${running ? ' is-running' : ''}${s.status === 'error' ? ' is-error' : ''}" style="left:${pct(s.started ?? s.posted)}%;width:${Math.max(0.6, pct(endT) - pct(s.started ?? s.posted))}%"></div>` : ''}
+            ${s.started || s.reply ? `<div class="bar w${running ? ' is-running' : ''}${s.status === 'error' ? ' is-error' : ''}" style="left:${pct(s.started ?? s.posted)}%;width:${Math.max(0.6, pct(endT) - pct(s.started ?? s.posted))}%"></div>` : ''}
           </div>
           <div class="span-dur" ${running ? `data-run="${s.posted}"` : ''}>${s.ask.kind === 'post' ? '—' : fmtMs(endT - s.posted)}</div>
           <div class="span-meta" style="padding-left:${indent}px">${[stateHtml(s.status), ...meta].join(' · ')}</div>
@@ -1818,14 +1870,43 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const stateOf = (a) => (a.status?.state === 'working' ? 'working' : a.online ? 'online' : 'offline');
   // Members: the person and their Oby, whether it's there, and what it answers with
   const MEMBER_STATE = { online: 'Online', working: 'Working', offline: 'Offline', suspended: 'Suspended' };
+  // a time from the Sphere in a short local form: "18:02" today, "Mon 9:00" within six days either
+  // way, else "Nov 26, 18:02"; '' for one that isn't a time
+  function whenWords(ts, now = Date.now()) {
+    const d = new Date(typeof ts === 'number' ? ts : Date.parse(ts));
+    if (Number.isNaN(d.getTime())) return '';
+    const t = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    if (d.toDateString() === new Date(now).toDateString()) return t;
+    if (Math.abs(d.getTime() - now) < 6 * 864e5) return `${d.toLocaleDateString([], { weekday: 'short' })} ${t}`;
+    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${t}`;
+  }
+  // an Oby's away as the relay sends it ({ until, note, since }; its owner's, or its runtime's pause),
+  // while it lasts: null once its time has passed, or when the relay is older and sends none
+  function awayOf(a, now = Date.now()) {
+    const w = a?.away;
+    if (!w || typeof w !== 'object') return null;
+    const until = w.until == null ? null : Date.parse(w.until);
+    if (until !== null && !(until > now)) return null;
+    return { until, note: String(w.note ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) };
+  }
+  // one short line on whether an Oby can answer: "Away until Mon 9:00 · on holiday", "Offline since 18:02", "Online"
+  function availWords(a, now = Date.now()) {
+    if (a.suspended) return MEMBER_STATE.suspended;
+    const w = awayOf(a, now);
+    if (w) return [`Away${w.until !== null ? ` until ${whenWords(w.until, now)}` : ''}`, w.note].filter(Boolean).join(' · ');
+    const st = stateOf(a);
+    const since = st === 'offline' && a.lastSeen ? whenWords(a.lastSeen, now) : '';
+    return since ? `Offline since ${since}` : MEMBER_STATE[st];
+  }
+  const availDot = (a) => (a.suspended ? 'suspended' : awayOf(a) ? 'away' : stateOf(a));
   function pageMembers() {
     const list = members().sort((a, b) => (isMe(b) - isMe(a)) || (b.online - a.online) || ownerName(a).localeCompare(ownerName(b)));
     const online = list.filter((a) => a.online).length;
     const rows = list
       .map((a) => {
-        const st = a.suspended ? 'suspended' : stateOf(a);
+        const st = availDot(a);
         const s = a.stats || {};
-        const seen = st === 'offline' && a.lastSeen ? `seen ${ago(a.lastSeen)}` : '';
+        const words = availWords(a);
         // an older Oby in a sealed Sphere can't open what's sent to it
         const nokeys = S.sphere.policy?.sealed && a.keys === null ? 'can’t read sealed messages: needs an update' : '';
         const actions = S.admin && !isMe(a) && agentIdOk(a.id)
@@ -1836,7 +1917,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
             <div class="mem-name"><span class="clip ink">${esc(label(a))}${isMe(a) ? ' <span class="muted">(you)</span>' : ''}</span><span class="muted mem-handle">@${esc(a.name)}</span>${a.admin ? '<span class="chip-tag">admin</span>' : ''}${a.bot ? '<span class="chip-tag">bot</span>' : ''}</div>
             <div class="clip mem-sub" title="${esc(a.about || '')}">${esc(a.about || (a.bot ? 'A bot: no person behind it' : obyOf(a)))}</div>
           </div></div></td>
-          <td class="mem-state" title="${MEMBER_STATE[st]}"><span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${nokeys || seen ? `<div class="mem-sub${nokeys ? ' warn' : ''}">${esc(nokeys || seen)}</div>` : ''}</td>
+          <td class="mem-state" title="${esc(words)}"><span class="state"><span class="status"><span class="status-dot is-${st}"></span></span><span class="mem-avail">${esc(words)}</span></span>${nokeys ? `<div class="mem-sub warn">${esc(nokeys)}</div>` : ''}</td>
           <td class="hide-phone">${esc(answersWith(a)) || '<span class="muted">—</span>'}</td>
           <td class="num r hide-narrow">${esc(s.answered ?? s.asksIn ?? '—')}</td>
           <td class="num mono r hide-phone">${s.medianAnswerMs ? fmtMs(s.medianAnswerMs) : '—'}</td>
@@ -2076,7 +2157,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // ---------------------------------------------------------------- Audit log: search, filters (event type, member, time), export
   // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
   // and "Export all" pages through the whole log. The dropdowns are this page's own (au-*), small.
-  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'session', 'keys', 'channel'], admin: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
+  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
   const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
@@ -2552,11 +2633,195 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   function pageYou() {
+    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, youSub(), CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
+      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div id="you-rest">${youRest()}</div>`;
+  }
+  // the line under its name: whether it can answer (away, offline since when) and what it answers with
+  function youSub() {
     const me = S.agents.get(S.me.id) || S.me;
-    const st = me.suspended ? 'suspended' : stateOf(me);
     const answers = answersWith(me);
-    return head(`<span style="display:inline-flex;align-items:center;gap:10px">${obyFace(28)}Your Oby</span>`, `<span class="state"><span class="status"><span class="status-dot is-${st}"></span></span>${MEMBER_STATE[st]}</span>${answers ? `<span aria-hidden="true">·</span><span>answers with ${esc(answers)}</span>` : ''}`, CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
-      `<div id="pending-box">${pendingHtml()}</div><div id="you-rest">${youRest()}</div>`;
+    return `<span class="state"><span class="status"><span class="status-dot is-${availDot(me)}"></span></span><span class="mem-avail">${esc(availWords(me))}</span></span>${answers ? `<span aria-hidden="true">·</span><span>answers with ${esc(answers)}</span>` : ''}`;
+  }
+
+  // ---------------------------------------------------------------- your Oby: away, and the asks it holds (#160)
+  // rep.mjs keeps both on this machine (away.json and held/ in the profile) and tells the Sphere only
+  // an away's time and note. A rep.mjs without them answers 404, and the page shows neither.
+  const YOU = { away: undefined, awayOff: false, held: null, heldOff: false, editing: false, busy: false, loading: false };
+  const HELD_WHY = { limit: 'Out of usage', rate: 'Rate-limited', credit: 'Out of credit', auth: 'Signed out', other: 'Couldn’t answer' };
+  // what rep.mjs says, kept only in the shape the page shows: an away whose time has passed is none
+  function okAway(w, now = Date.now()) {
+    if (!w || typeof w !== 'object') return null;
+    const until = w.until == null ? null : Date.parse(w.until);
+    if (until !== null && !(until > now)) return null;
+    return { by: w.by === 'pause' ? 'pause' : 'owner', until: until === null ? null : new Date(until).toISOString(), note: String(w.note ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) };
+  }
+  async function loadYou() {
+    if (!CONSOLE || !S.me || YOU.loading) return;
+    YOU.loading = true;
+    const get = async (path, off) => {
+      if (YOU[off]) return null;
+      try { return await local('GET', path); } catch (e) { if (e.status === 404) YOU[off] = true; return null; }
+    };
+    try {
+      const [w, h] = await Promise.all([get('/local/away', 'awayOff'), get('/local/held', 'heldOff')]);
+      if (w) YOU.away = okAway(w.away);
+      if (h) YOU.held = (Array.isArray(h.held) ? h.held : []).filter((x) => x && RID.m.test(String(x.id)));
+    } finally { YOU.loading = false; }
+    paintYou();
+  }
+  function paintYou(force = false) {
+    if (S.mode !== 'console' || S.page !== 'you') return;
+    const box = document.getElementById('you-away');
+    if (box && (force || !YOU.editing)) {
+      const html = awayHtml();
+      if (force || box.dataset.sig !== html) { box.innerHTML = html; box.dataset.sig = html; }
+      box.hidden = !html;
+    }
+    const hb = document.getElementById('held-box');
+    if (hb) {
+      const html = heldHtml();
+      if (force || hb.dataset.sig !== html) { hb.innerHTML = html; hb.dataset.sig = html; }
+    }
+  }
+
+  // ---- away: until a day and a time (or no set time), and a short note askers see
+  function awayHtml() {
+    if (!CONSOLE || YOU.awayOff || YOU.away === undefined) return '';
+    if (YOU.editing) return awayFormHtml();
+    const w = YOU.away;
+    const until = w?.until ? ` until ${whenWords(w.until)}` : '';
+    const row = (title, sub, buttons) => `<div class="set-group"><div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div>${sub ? `<div class="set-row-sub">${sub}</div>` : ''}</div><div class="set-row-ctl">${buttons}<span class="saved-note" data-away-note></span></div></div></div>`;
+    if (w?.by === 'owner') return row(esc(`Away${until}`), esc(w.note), '<button type="button" class="set-button" data-away="edit">Change</button><button type="button" class="set-button" data-away="back">I’m back</button>');
+    const set = '<button type="button" class="set-button" data-away="edit">Set away</button>';
+    if (w?.by === 'pause') return row(esc(`Paused${until}`), 'Your runtime can’t answer right now. Askers see when it can.', set);
+    return row(`Away ${ctlInfo('Askers see when you’ll be back. Asks that wait for your decision wait until then, up to your longest hold.')}`, 'Tell askers when you’ll be back.', set);
+  }
+  const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  // the next working day: Monday after a Friday
+  function nextWorkday(now = new Date()) {
+    let i = 1;
+    while ([0, 6].includes(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i).getDay())) i++;
+    return i;
+  }
+  // today and the next 29 days (the Sphere takes an away up to 30 days ahead), or no set time
+  function awayDays(now = new Date()) {
+    const out = [{ value: 'none', label: 'No set time' }];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const date = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      out.push({ value: i, label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date, hint: i < 2 ? date : '' });
+    }
+    return out;
+  }
+  // the day (days from today, or 'none') and the time ("09:00") as a moment, or null for no set time
+  function awayUntil(day, time, now = new Date()) {
+    if (day === 'none' || day == null) return null;
+    const [h, m] = /^\d{2}:\d{2}$/.test(time || '') ? time.split(':').map(Number) : [9, 0];
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + Number(day), h, m);
+  }
+  function awayFormHtml() {
+    const w = YOU.away?.by === 'owner' ? YOU.away : null;
+    const now = new Date();
+    const at = w?.until ? new Date(w.until) : null;
+    const off = at ? Math.round((midnight(at) - midnight(now)) / 864e5) : null;
+    const day = w && !at ? 'none' : off !== null && off >= 0 && off < 30 ? off : nextWorkday(now);
+    const tm = at ? `${ctlPad(at.getHours())}:${ctlPad(at.getMinutes())}` : '09:00';
+    return `<div class="set-group"><div class="away-form" role="group" aria-labelledby="you-away-l">
+      <div class="route-sub-title" id="you-away-l">Away until</div>
+      <div class="away-when">${ctlDropdown({ id: 'you-away-day', value: day, options: awayDays(now), label: 'Away until, the day', searchWords: 'Search, like Mon or Dec 3' })}<span data-away-time${day === 'none' ? ' hidden' : ''}>${ctlTime({ id: 'you-away-time', value: tm, label: 'Away until, the time' })}</span></div>
+      <label class="route-label-sm" for="you-away-note">A note for askers</label>
+      <input class="set-field" id="you-away-note" maxlength="120" autocomplete="off" placeholder="On holiday" value="${esc(w?.note || '')}">
+      <div class="ask-actions"><button type="button" class="modal-primary" data-away="save">Set away</button><button type="button" class="set-button" data-away="cancel">Cancel</button><span class="saved-note" data-away-note></span></div>
+    </div></div>`;
+  }
+  async function awayDo(what) {
+    const box = document.getElementById('you-away');
+    if (!box || YOU.busy) return;
+    const say = (words, bad = false) => { const n = box.querySelector('[data-away-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } a11ySay(bad ? 'problem' : 'note', words); };
+    const done = (sel) => { YOU.editing = false; paintYou(true); box.querySelector(sel)?.focus(); };
+    if (what === 'edit') { YOU.editing = true; paintYou(true); return box.querySelector('#you-away-day-btn')?.focus(); }
+    if (what === 'cancel') return done('[data-away="edit"]');
+    let body;
+    if (what === 'back') body = { off: true };
+    else {
+      const day = CTL.data.get('you-away-day')?.value;
+      const tm = CTL.data.get('you-away-time')?.value;
+      if (day !== 'none' && !tm) return say('Set the time too.', true);
+      const until = awayUntil(day, tm);
+      if (until && until.getTime() <= Date.now()) return say('That time has passed: pick a later one.', true);
+      body = { until: until ? until.toISOString() : null, note: (box.querySelector('#you-away-note')?.value || '').replace(/\s+/g, ' ').trim().slice(0, 120) };
+      say('Saving…');
+    }
+    YOU.busy = true;
+    try {
+      const r = await local('POST', '/local/away', body);
+      YOU.away = r && 'away' in r ? okAway(r.away) : body.off ? null : okAway({ by: 'owner', ...body });
+      done(body.off ? '[data-away="edit"]' : '[data-away="back"]');
+    } catch (e) {
+      say(e.message, true);
+    } finally { YOU.busy = false; }
+  }
+
+  // ---- held: asks your runtime couldn't answer yet, tried again on their own; Try now, or Drop
+  function heldFrom(f) {
+    if (f && typeof f === 'object') return { name: String(f.name || '?'), owner: String(f.owner || f.name || 'Someone') };
+    const s = String(f ?? '');
+    if (RID.a.test(s) && S.agents.has(s)) return agent(s);
+    return members().find((a) => a.name === s) || { name: s || '?', owner: s || 'Someone' };
+  }
+  function heldHtml() {
+    const list = YOU.heldOff ? [] : YOU.held || [];
+    if (!list.length) return '';
+    return `<div class="section-head"><h2>Held · ${list.length}</h2><span class="link">Your runtime couldn’t answer these yet: your Oby tries again on its own</span></div>` +
+      list.map((h) => {
+        const who = heldFrom(h.from);
+        const at = h.until ? whenWords(h.until) : '';
+        const ch = CHAN.test(String(h.channel)) ? h.channel : 'general';
+        return `<div class="ask-card" data-held="${esc(h.id)}">
+          <div class="who">${avatar(who, 22)}<span>${esc(obyOf(who))} asks</span><span class="room-from">@${esc(who.name)} · ${esc(where(ch))}${h.ts ? ` · ${esc(time(h.ts))}` : ''}</span><span class="why is-held">${esc(`${HELD_WHY[h.kind] || HELD_WHY.other} · ${at ? `next try ${at}` : 'next try when it can'}`)}</span></div>
+          ${h.words ? `<div class="q">${esc(h.words)}</div>` : ''}
+          <div class="ask-actions"><button type="button" class="set-button" data-held-do="retry">Try now</button><button type="button" class="set-button" data-held-do="drop" title="The asker is told your Oby can’t answer it right now">Drop</button><span class="saved-note" data-note></span></div>
+        </div>`;
+      }).join('');
+  }
+  async function heldDo(b) {
+    const card = b.closest('[data-held]');
+    if (!card) return;
+    const id = card.dataset.held, action = b.dataset.heldDo;
+    const note = card.querySelector('[data-note]');
+    const gone = () => { YOU.held = (YOU.held || []).filter((h) => h.id !== id); paintYou(true); };
+    card.querySelectorAll('button').forEach((x) => (x.disabled = true));
+    note.classList.remove('is-problem');
+    note.textContent = action === 'drop' ? 'Dropping…' : 'Trying…';
+    try {
+      await local('POST', '/local/held', { id, action });
+      if (action === 'drop') return gone();
+      note.textContent = 'Trying it now.';
+      a11ySay('note', note.textContent);
+      setTimeout(loadYou, 3000);
+    } catch (e) {
+      if (e.status === 404) return gone(); // answered or dropped meanwhile
+      note.textContent = e.message;
+      a11ySay('problem', e.message);
+      note.classList.add('is-problem');
+    } finally { card.querySelectorAll('button').forEach((x) => (x.disabled = false)); }
+  }
+  function wireYou() {
+    const box = document.getElementById('you-away');
+    if (box && !box.dataset.wired) {
+      box.dataset.wired = '1';
+      box.addEventListener('click', (e) => { const b = e.target.closest('[data-away]'); if (b && !b.disabled) awayDo(b.dataset.away); });
+      box.addEventListener('ctl-change', (e) => { if (e.target.id === 'you-away-day') { const t = box.querySelector('[data-away-time]'); if (t) t.hidden = e.detail.value === 'none'; } });
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.id === 'you-away-note' && !e.isComposing) { e.preventDefault(); awayDo('save'); }
+        else if (e.key === 'Escape' && YOU.editing && !CTL.open) awayDo('cancel');
+      });
+    }
+    const hb = document.getElementById('held-box');
+    if (hb && !hb.dataset.wired) {
+      hb.dataset.wired = '1';
+      hb.addEventListener('click', (e) => { const b = e.target.closest('[data-held-do]'); if (b && !b.disabled) heldDo(b); });
+    }
   }
 
   function youRest() {
@@ -2624,6 +2889,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : 'Let my Oby answer'}</button>
+          ${p.always === true && p.from?.name ? `<button class="set-button" data-decide="always" title="Answers this one, and adds @${esc(p.from.name)} to Who can ask: its asks are answered from now on">Always answer @${esc(p.from.name)}</button>` : ''}
           ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
           <button class="set-button" data-decide="decline">Decline</button>
@@ -3208,6 +3474,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     s.machine.mcp = Array.isArray(s.machine.mcp) ? s.machine.mcp : [];
     if ('notify' in s) normalizeNotify(s); // an older rep.mjs has none, and refuses one
     if (s.github !== undefined) s.github = githubNormal(s.github); // an older rep.mjs has none, and would refuse one
+    if (s.availability && typeof s.availability === 'object') s.availability = { ...AVAIL_DEFAULTS, ...s.availability }; // likewise
   }
 
   function getAt(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -3263,7 +3530,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   // ---- errors on the field: rep.mjs answers { error: "routing.rules[0].use.model: is …", field }
-  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers', neverRead: 'never read' };
+  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers', neverRead: 'never read', whenUnable: 'when your runtime can’t answer', otherRuntime: 'the runtime that answers instead', holdHours: 'when it gives up on an ask', showReason: 'telling askers why' };
   const dotted = (f) => String(f || '').replace(/\[(\d+)\]/g, '.$1');
   function fieldWords(field) {
     if (!field) return '';
@@ -3563,7 +3830,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function askerOptions(extra = []) {
     return askerNames(extra).map((n) => {
       const a = members().find((x) => x.name === n);
-      return { value: n, label: a ? obyOf(a) : `@${n}`, hint: `@${n}${!a ? ' · not here' : a.online ? '' : ' · away'}` };
+      return { value: n, label: a ? obyOf(a) : `@${n}`, hint: `@${n}${!a ? ' · not here' : a.online ? '' : ' · offline'}` };
     });
   }
   // what the head buttons call an exception: its name once it has one
@@ -3671,6 +3938,32 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     out.innerHTML = `<div class="muted">${esc(words)}</div>`;
   }
 
+  // ---- Answers: when your runtime can't answer (out of usage, rate-limited, signed out). Only with
+  // a rep.mjs that has the section: an older one refuses a key it doesn't know
+  const AVAIL_DEFAULTS = { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false };
+  const UNABLE_WORDS = { hold: 'Hold', other: 'Another runtime', decline: 'Decline' };
+  const UNABLE_SUB = { hold: 'The ask waits, and your Oby answers it once it can.', other: 'Another runtime answers it.', decline: 'The asker is told your Oby can’t answer it right now.' };
+  // the runtime another one stands in for is the default's; offer one that's ready here, else the next
+  function otherRuntimePick() {
+    const main = SET.settings?.routing?.default?.runtime || 'claude';
+    const rest = RUNTIME_IDS.filter((r) => r !== main);
+    return rest.find((r) => envRuntime(r)?.installed && envRuntime(r)?.signedIn !== false) || rest[0];
+  }
+  function availabilityHtml() {
+    const a = SET.settings.availability;
+    const v = a.whenUnable in UNABLE_WORDS ? a.whenUnable : 'hold';
+    const other = v === 'other' ? a.otherRuntime || null : null;
+    const otherRow = v !== 'other' ? '' : `<div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-availability-other-l">Answer with</div>${other && trustedOnly(other) ? `<div class="set-row-sub">${esc(rtLabel(other))} answers trusted Obys only: anyone else’s ask is declined.</div>` : ''}</div><div class="set-row-ctl">${ctlDropdown({ id: 'set-availability-otherRuntime', value: other, options: runtimeOptions().filter((o) => RUNTIME_IDS.includes(o.value)), label: 'Answer with', labelledby: 'set-availability-other-l', attrs: 'data-k="availability.otherRuntime"' })}</div></div>`;
+    return `<div class="route-sub-title" id="set-availability-l">When your runtime can’t answer</div>
+      <p class="route-sub-line">It’s out of usage, rate-limited or signed out.</p>
+      ${ctlSegmented({ id: 'set-availability-whenUnable', value: v, options: Object.entries(UNABLE_WORDS).map(([value, label]) => ({ value, label })), label: 'When your runtime can’t answer', labelledby: 'set-availability-l', attrs: 'data-k="availability.whenUnable"' })}
+      <p class="route-sub-line" data-sub-for="availability.whenUnable">${esc(UNABLE_SUB[v])}</p>
+      <div class="route-unable-rows">${otherRow}
+        <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid('availability.holdHours')}-l">Gives up on an ask after, in hours</div><div class="set-row-sub">Counted from when it was asked: a held ask, or one that came while your Oby was offline, gets a short reply instead after that.</div></div><div class="set-row-ctl">${ctlStepper({ id: fid('availability.holdHours'), value: Number(a.holdHours) || AVAIL_DEFAULTS.holdHours, min: 1, max: 168, step: 1, labelledby: `${fid('availability.holdHours')}-l`, attrs: 'data-k="availability.holdHours"' })}</div></div>
+        ${swRow('availability.showReason', !!a.showReason, 'Tell askers why', 'Such as “out of usage”. Off, they see only when your Oby can answer.')}
+      </div>`;
+  }
+
   // ---- Who can ask
   function accessDefaultHtml() {
     const v = SET.settings.access.default || ACCESS_DEFAULT;
@@ -3686,7 +3979,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     return rows.map(({ name, ag }) => {
       const cur = listed[name] || '';
       const sid = fid('agent-' + name);
-      const where = !ag ? ' · not here now' : !ag.online ? ' · away' : '';
+      const where = !ag ? ' · not here now' : !ag.online ? ' · offline' : '';
       const asks = u?.asksByAgent?.[name] ? ` · ${u.asksByAgent[name]} ask${u.asksByAgent[name] === 1 ? '' : 's'} today` : '';
       const title = ag ? obyOf(ag) : `@${name}`;
       const options = [{ value: '', label: `Default (${dflt})` }, ...ACCESS_LEVELS.map((v) => ({ value: v, label: ACCESS_WORDS[v] }))];
@@ -3794,7 +4087,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     normalizeSettings(s);
     clearTimeout(SET.undo?.timer);
     SET.undo = null; SET.tryKey = null;
-    const body = { runtimes: () => `<div data-part="runtimes">${runtimesHtml()}</div>`, answers: () => `<div class="route-default" data-part="default">${defaultHtml()}</div><div class="route-rules" data-part="rules">${rulesHtml()}</div>${tryHtml()}`, access: () => `<div data-part="access">${accessHtml()}</div>`, github: () => `<div data-part="github">${githubHtml()}</div>`, machine: () => `<div data-part="machine">${machineHtml()}</div>`, notify: () => `<div data-part="notify">${notifyHtml()}</div>` };
+    const body = { runtimes: () => `<div data-part="runtimes">${runtimesHtml()}</div>`, answers: () => `<div class="route-default" data-part="default">${defaultHtml()}</div><div class="route-rules" data-part="rules">${rulesHtml()}</div>${s.availability ? `<div class="route-unable" data-part="availability" role="group" aria-labelledby="set-availability-l">${availabilityHtml()}</div>` : ''}${tryHtml()}`, access: () => `<div data-part="access">${accessHtml()}</div>`, github: () => `<div data-part="github">${githubHtml()}</div>`, machine: () => `<div data-part="machine">${machineHtml()}</div>`, notify: () => `<div data-part="notify">${notifyHtml()}</div>` };
     $('#page').innerHTML = `<div id="settings-root" class="set-root">` +
       head('Settings', 'Kept on this computer, and used from the next ask.') +
       `<nav class="set-nav" aria-label="Settings sections"><div class="set-nav-in">${SET_SECTIONS.map(([k, t], i) => `<button type="button" data-set-jump="${k}"${i ? '' : ' class="is-on" aria-current="true"'}>${esc(t)}</button>`).join('')}</div><span class="saved-note" id="settings-state" role="status" aria-live="polite"></span></nav>` +
@@ -3835,8 +4128,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const part = (name) => document.querySelector(`#settings-root [data-part="${name}"]`);
   function paintPart(name) {
     if (!SET.settings || !document.getElementById('settings-root')) return;
-    const html = { runtimes: runtimesHtml, default: defaultHtml, rules: rulesHtml, agents: agentsHtml, folders: foldersHtml, browser: browserHtml, mcp: mcpHtml }[name];
-    if (html) swap(part(name), html());
+    const html = { runtimes: runtimesHtml, default: defaultHtml, rules: rulesHtml, availability: availabilityHtml, agents: agentsHtml, folders: foldersHtml, browser: browserHtml, mcp: mcpHtml }[name];
+    if (html && part(name)) swap(part(name), html());
   }
   function paintUse(base) {
     const use = getAt(SET.settings, base);
@@ -3868,7 +4161,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function paintEnv() {
     const root = document.getElementById('settings-root');
     if (!root || !SET.settings) return;
-    for (const p of ['runtimes', 'default', 'rules', 'folders', 'browser', 'mcp']) paintPart(p);
+    for (const p of ['runtimes', 'default', 'rules', 'availability', 'folders', 'browser', 'mcp']) paintPart(p);
     if (SET.error) markError(SET.error.field, SET.error.message);
   }
   // the section in view, marked in the list at the top
@@ -3916,6 +4209,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const sub = (key, html) => { const n = document.querySelector(`#settings-root [data-sub-for="${key}"]`); if (n) n.innerHTML = html; };
     if (k === 'access.default') { sub(k, esc(ACCESS_SUB[SET.settings.access.default] || '')); return paintPart('agents'); }
     if (k === 'machine.shell') return sub(k, shellSub(SET.settings.machine.shell));
+    // another runtime is required with "other": one is picked for you, and the row to change it shows
+    if (k === 'availability.whenUnable') {
+      const a = SET.settings.availability;
+      if (a.whenUnable === 'other' && !a.otherRuntime) a.otherRuntime = otherRuntimePick();
+      return paintPart('availability');
+    }
+    if (k === 'availability.otherRuntime') return paintPart('availability');
     if (k === 'machine.browser') return paintPart('browser');
     const fm = /^machine\.folders\.(\d+)\.write$/.exec(k);
     if (fm) { const n = document.querySelector(`#settings-root [data-tag-for="${k}"]`); if (n) n.innerHTML = getAt(SET.settings, k) ? TRUSTED_TAG : ''; return; }
@@ -4158,6 +4458,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     ['answered', 'Your own ask is answered'],
     ['failed', 'Your Oby couldn’t answer'],
   ];
+  // events a newer rep.mjs has (#160): shown only when the settings it sends name them, since an
+  // older one refuses an event it doesn't know
+  const NOTIFY_EVENT_ROWS_NEWER = [
+    ['paused', 'Your Oby pauses: out of usage or signed out'],
+    ['resumed', 'Your Oby is back after a pause'],
+  ];
   const CONTENT_SUB = { summary: 'Who, and what kind. Never the words.', full: 'Also the words, up to 600 characters.' };
   const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'what to notify you about', quiet: 'quiet hours' };
   const NOTE = { last: null, mine: new Set(), base: '', off: false };
@@ -4217,7 +4523,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       </div>
       <div class="set-block">
         <div class="set-row-head" id="set-notify-events-l">What to notify you about</div>
-        ${NOTIFY_EVENT_ROWS.map(([k, title]) => swRow(`notify.events.${k}`, ev[k] !== false, title)).join('')}
+        ${NOTIFY_EVENT_ROWS.concat(NOTIFY_EVENT_ROWS_NEWER.filter(([k]) => k in ev)).map(([k, title]) => swRow(`notify.events.${k}`, ev[k] !== false, title)).join('')}
       </div>
       <div class="set-block">
         <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="set-notify-quiet-l">Quiet hours</div><div class="set-row-sub">Only asks that wait for you come through.</div></div><div class="set-row-ctl">
@@ -4450,6 +4756,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function wirePage() {
     const el = $('#page');
     wirePending();
+    wireYou();
     el.querySelectorAll('[data-page]').forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
     el.querySelectorAll('[data-invite]').forEach((b) => (b.onclick = openInvite));
     el.querySelectorAll('[data-inst-copy]').forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.instCopy); b.textContent = 'Copied'; } catch { b.textContent = 'Select it'; } a11ySay('note', b.textContent); setTimeout(() => (b.textContent = 'Copy'), 1400); }));
@@ -4805,21 +5112,24 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
   function memberRow(a) {
     const st = a.suspended ? 'suspended' : stateOf(a);
+    const away = !a.suspended && !!awayOf(a);
     const c = S.me ? dmWith(a) : null;
     const n = c ? S.unread[c.name] || 0 : 0;
     const active = !!c && c.name === S.current;
-    const title = S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '';
+    // when it can't answer now, the row says so on hover, as the drawer and the conversation's head do
+    const avail = away || st === 'offline' ? availWords(a) : '';
+    const title = [S.me ? `${a.bot ? `Talk to ${a.name}` : `Your conversation with ${ownerName(a)}`}${a.about ? ` · ${a.about}` : ''}` : a.about || '', avail].filter(Boolean).join('\n');
     return `<button class="connector oby-row${st === 'offline' || st === 'suspended' ? ' is-offline' : ''}${active ? ' is-active' : ''}${n ? ' is-unread' : ''}" data-member="${esc(a.id)}"${active ? ' aria-current="page"' : ''}${S.me ? '' : ` aria-expanded="${S.open.has(a.id)}"`} aria-describedby="about-${esc(a.id)}" title="${esc(title)}">
         ${picture(a, 22)}
         <span class="connector-name">${esc(label(a))}${isMe(a) ? ' <span class="you">(you)</span>' : ''}</span>
         ${unreadHtml(n)}
-        <span class="status">${st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
-        <span id="about-${esc(a.id)}" hidden>${esc(st)}${a.about ? ` · ${esc(a.about)}` : ''}</span>
+        <span class="status">${away ? '<span class="status-dot is-away"></span>' : st === 'offline' ? '' : `<span class="status-dot is-${st}"></span>`}</span>
+        <span id="about-${esc(a.id)}" hidden>${esc(avail || st)}${a.about ? ` · ${esc(a.about)}` : ''}</span>
       </button>` +
       (S.me ? '' : `<div class="oby-more${S.open.has(a.id) ? ' is-open' : ''}">
         ${a.about ? `<div>${esc(a.about)}</div>` : ''}
         <div>@${esc(a.name)} · ${esc(a.owner)}${answersWith(a) ? ` · ${esc(answersWith(a))}` : ''}${a.bot ? ' · a bot' : ''}</div>
-        <div>${esc(MEMBER_STATE[st] || st)}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
+        <div>${esc(availWords(a))}${a.inSession ? ` · ${esc(ownerName(a))} is here now` : ''}</div>
       </div>`);
   }
   function theirDmRow(c) {
@@ -4865,6 +5175,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         ? o.bot ? `Your conversation with <b>${esc(o.name)}</b>, a bot: no person behind it.` : `Your conversation with <b>${esc(ownerName(o))}</b> and their Oby.`
         : `A direct conversation between ${esc(channelTitle(c.name))}.`;
       if (sealed) topic += o ? ' Sealed for the two of you.' : ' Sealed for the two of them.';
+      // before you ask: whether their Oby can answer now
+      if (o && !o.suspended && (awayOf(o) || stateOf(o) === 'offline')) topic += ` <span class="conv-avail">${esc(availWords(o))}</span>`;
       tools = stack(c.members || [], false);
     } else {
       const mine = inCh(c);
@@ -5335,7 +5647,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         ? 'The Sphere is paused by an admin: nothing new is sent until it resumes.'
         : C.just
           ? `${obyOf(peer)} doesn’t answer this; ${ownerName(peer)} reads it in their console.`
-          : peer.suspended ? `${obyOf(peer)} is suspended by an admin.` : peer.online ? '' : `${obyOf(peer)} is offline; it answers when it’s back.`) +
+          : peer.suspended ? `${obyOf(peer)} is suspended by an admin.` : laterWords(peer)) +
         (sealed ? ' Sealed for the two of you.' : '')).trim();
       $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
       return;
@@ -5352,9 +5664,16 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     hint.textContent = ((S.sphere.paused
       ? 'The Sphere is paused by an admin: nothing new is sent until it resumes.'
       : t
-        ? t.suspended ? `${obyOf(t)} is suspended by an admin.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : t.online ? '' : `${obyOf(t)} is offline; it answers when it’s back.`
+        ? t.suspended ? `${obyOf(t)} is suspended by an admin.` : c.kind === 'private' && !inCh(c, t) ? `${obyOf(t)} isn’t in #${c.name}: add it first, then ask.` : laterWords(t)
         : `Everyone in #${c.name} sees it. Type @ to ask an Oby.`) + sealedNote).trim();
     $('#send').classList.toggle('is-ready', !!($('#text').value.trim() || C.files.length));
+  }
+
+  // the hint under the message box when the Oby you'd ask can't answer now: it answers later
+  function laterWords(a) {
+    const w = awayOf(a);
+    if (w) return w.until !== null ? `${obyOf(a)} is away until ${whenWords(w.until)}; it answers then.` : `${obyOf(a)} is away; it answers when it’s back.`;
+    return a.online ? '' : `${obyOf(a)} is offline; it answers when it’s back.`;
   }
 
   async function send() {

@@ -80,6 +80,9 @@ Ask and read
   obysphere ask <agent> "<message>" [--file <path>] [--channel <name>]
   obysphere post "<message>" [--channel <name>] [--file <path>]
   obysphere agents | whoami | inbox | read [channel]
+  obysphere away [--until <when>] [--note "<words>"] | --off
+                                   tell askers you're away until <when> (18:00, "Mon 9:00", 2h, 3d or a date);
+                                   plain away says what they see now
   obysphere serve [--approve]      answer asks in this terminal (start does it in the background)
   obysphere ui [--port 4849] [--open]   your console, from this terminal
 
