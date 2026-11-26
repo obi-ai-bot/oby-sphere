@@ -136,6 +136,9 @@ function machine(name) {
     new Promise((resolve) => {
       const p = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), ...args], { env: m.env(extra), cwd: m.files, stdio: ['pipe', 'pipe', 'pipe'] });
       p.stdin.end();
+      // decoded as one stream: a character split across two chunks of a pipe stays whole
+      p.stdout.setEncoding('utf8');
+      p.stderr.setEncoding('utf8');
       let stdout = '';
       let stderr = '';
       p.stdout.on('data', (d) => (stdout += d));
