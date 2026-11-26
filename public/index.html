@@ -4923,11 +4923,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     n.hidden = false;
     n.classList.toggle('is-problem', !!bad);
   }
-  // Export shown: the events the search and filters show. Export all: every event, page by page
-  // (a request gives at most 1,000), in the shape GET /api/audit has. The button says "Exporting…" meanwhile.
-  // Export all: every event, a page of 1,000 at a time, saved as JSON Lines (one event per line, as
-  // the relay sent it: the format `obysphere admin audit verify` checks, and the fs store's own
-  // audit.jsonl). Export shown: the events the filters show, as JSON with the filter, to read.
+  // Export all: every event, a page of 1,000 at a time (a request gives at most that), saved as JSON
+  // Lines (one event per line, as the relay sent it: the format `obysphere admin audit verify` checks,
+  // and the fs store's own audit.jsonl). Export shown: the events the search and filters show, as JSON
+  // with the filter, to read. The button says "Exporting…" meanwhile.
   async function exportAudit() {
     if (AU.exporting) return;
     const shown = auditFiltering();
