@@ -14,6 +14,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 
@@ -91,6 +93,15 @@ describe('failure classes', () => {
     ['cursor', "You've reached the limit of fast requests", 'limit', null],
     ['cursor', 'Rate limit exceeded. Please try again in a few moments.', 'rate', null],
     ['cursor', 'Error: the model returned an empty response', 'other', null],
+    // what a model or its tools say is not the runtime failing: a bare number, another service's sign-in or limit
+    ['claude', '{"type":"user","message":{"content":[{"type":"tool_result","content":"   428\\tfoo\\n   429\\tbar"}]}}', 'other', null],
+    ['claude', '{"type":"assistant","message":{"usage":{"input_tokens":529,"output_tokens":12}}}', 'other', null],
+    ['claude', 'Error: please sign in to the GitHub MCP server', 'other', null],
+    ['claude', 'session limit reached for the MCP server', 'other', null],
+    ['claude', 'Request failed: 401 Unauthorized when fetching https://example.com', 'other', null],
+    ['claude', 'Not logged in · Please run /login', 'auth', null],
+    ['claude', 'Your monthly limit reached; resets in 3 days', 'limit', new Date(NOW + 3 * 864e5).toISOString()],
+    ['codex', 'unexpected status 429 Too Many Requests: slow down', 'rate', null],
   ];
   for (const [runtime, text, kind, until] of cases)
     test(`${runtime}: ${text.slice(0, 70)}`, () => {
@@ -135,11 +146,12 @@ describe("when your Oby's runtime can't answer", () => {
     new Promise((resolve) => {
       const p = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), ...args], { env: env() });
       let out = '';
-      p.stdout.on('data', (d) => (out += d));
+      let stdout = '';
+      p.stdout.on('data', (d) => ((out += d), (stdout += d)));
       p.stderr.on('data', (d) => (out += d));
-      p.on('close', (code) => resolve({ out, code }));
+      p.on('close', (code) => resolve({ out, stdout, code }));
     });
-  const token = (n) => JSON.parse(fs.readFileSync(path.join(home, n, 'profile.json'), 'utf8')).token;
+  const token =(n) => JSON.parse(fs.readFileSync(path.join(home, n, 'profile.json'), 'utf8')).token;
   const bobDir = () => path.join(home, 'bob');
   const call = async (method, url, { tok, body, at = base, headers = {} } = {}) => {
     const h = { ...headers };
@@ -358,7 +370,9 @@ describe("when your Oby's runtime can't answer", () => {
     assert.equal(cooldown().claude.until, null);
     const b = await ask('alice', 'credit two');
     await waitFor(() => held().length === 2, 10000, 'both held');
-    assert.equal(claudeCalls(), before + 1, 'the second never ran: the runtime cools down until its check');
+    assert.ok(claudeCalls() >= before + 1);
+    // the second was held by the cooldown, without a run (a check later may try either one: that's the check)
+    assert.match(bobOut, /credit two[\s\S]*route: [\s\S]*Claude Code is paused \(it couldn't answer a moment ago/);
     assert.equal(held().find((h) => h.id === b.id).kind, 'credit');
     fake.control({ cursorSignedIn: true }); // credit bought
     assert.match((await replyTo(a, 'alice', 15000)).text, /^fake answer from/);
@@ -526,5 +540,195 @@ describe("when your Oby's runtime can't answer", () => {
     const resumed = await waitFor(() => notes().slice(mark).find((l) => l.type === 'resumed'), 5000, 'resumed');
     assert.equal(resumed.title, 'Claude Code is back: answered 1 held ask');
     assert.equal((await repliesOf(b)).length, 1, 'the dropped one is never answered too');
+  });
+
+  // ---- after review
+  const pendingFor = async (askId) => ((await local('GET', '/local/pending')).pending || []).find((x) => x.askId === askId);
+  const lapsesAt = (w) => JSON.parse(fs.readFileSync(path.join(bobDir(), 'pending', `${w.id}.json`), 'utf8')).expiresAt;
+
+  test('an ask waiting for you when your Oby stops is back in Waiting for you after a restart, with what was left of its wait', async () => {
+    await fresh();
+    setBob({ access: { default: 'approve' } }); // while you're away it waits up to the longest hold: 60 s here
+    await local('POST', '/local/away', { until: new Date(Date.now() + 864e5).toISOString(), note: '' });
+    const m = await ask('alice', 'may I, while you are away?');
+    const first = await waitFor(() => pendingFor(m.id), 8000, 'waiting for you');
+    const lapses = lapsesAt(first);
+    await stopBob(); // the wait's process is gone; the cursor moved past the ask when it came
+    await sleep(1500);
+    await startBob();
+    const again = await waitFor(() => pendingFor(m.id), 8000, `waiting for you again\n${bobOut}`);
+    assert.notEqual(again.id, first.id);
+    assert.equal(lapsesAt(again), lapses, 'what was left of its wait, not a new one');
+    assert.equal((await local('POST', `/local/pending/${again.id}`, { decision: 'answer' })).status, 200);
+    assert.match((await replyTo(m)).text, /^fake answer from/);
+    await sleep(500);
+    assert.equal((await repliesOf(m)).length, 1);
+    await local('POST', '/local/away', { off: true });
+  });
+
+  test("…and declined, as if it lapsed, when its wait passed while your Oby was stopped (even past the longest hold's look-back)", async () => {
+    await fresh();
+    setBob({ access: { default: 'approve' }, availability: { holdHours: 1 } }); // the wait, and the look-back: 3 s here
+    await local('POST', '/local/away', { until: new Date(Date.now() + 864e5).toISOString(), note: '' });
+    const m = await ask('alice', 'may I, quickly?');
+    await waitFor(() => pendingFor(m.id), 8000, 'waiting for you');
+    await stopBob();
+    await sleep(HOUR_MS + 1500);
+    await startBob();
+    const r = await replyTo(m);
+    assert.equal(r.meta.declined, true);
+    assert.match(r.text, /no answer from its owner/);
+    await sleep(500);
+    assert.equal((await repliesOf(m)).length, 1);
+    assert.equal(await pendingFor(m.id), undefined);
+    await local('POST', '/local/away', { off: true });
+    setBob();
+  });
+
+  test("output that only looks like a limit, a rate limit or a sign-out (the model's, its tools') isn't read as one", async () => {
+    await fresh();
+    setBob();
+    fake.control({ cursorSignedIn: true, fail: { claude: 'crash' } }); // no result, nothing on stderr
+    const before = claudeCalls();
+    const r = await replyTo(await ask('alice', 'what do the logs say?'));
+    assert.equal(r.text, UNABLE);
+    assert.ok(claudeCalls() - before <= 2, 'never tried again as a rate limit (a saved conversation, then a fresh one, at most)');
+    assert.deepEqual(held(), [], 'not held');
+    assert.deepEqual(cooldown(), {}, 'nothing cools down');
+  });
+
+  test("Drop when the Sphere can't be reached: the ask stays held (502); inbox --hook says a passed retry waits for your Oby to run", async () => {
+    // dave: a profile whose Sphere is down, with one held ask whose retry time has passed
+    const dir = path.join(home, 'dave');
+    fs.mkdirSync(path.join(dir, 'held'), { recursive: true, mode: 0o700 });
+    const dead = await freePort();
+    fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(bobDir(), 'profile.json'), 'utf8')), sphere: `http://127.0.0.1:${dead}` }), { mode: 0o600 });
+    const id = 'm_daveheld01';
+    const ago = (s) => new Date(Date.now() - s * 1000).toISOString();
+    const file = path.join(dir, 'held', `${id}.json`);
+    fs.writeFileSync(file, JSON.stringify({ id, from: 'alice', channel: 'general', ts: ago(60), heldAt: ago(59), until: ago(30), tries: 1, kind: 'limit', runtime: 'claude' }), { mode: 0o600 });
+    const port = await freePort();
+    const daveUi = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'ui', '--profile', 'dave', '--port', String(port)], { env: env(), stdio: 'ignore' });
+    procs.push(daveUi);
+    const at = `http://127.0.0.1:${port}`;
+    await waitFor(async () => {
+      try {
+        return (await fetch(at + '/favicon.svg')).ok;
+      } catch {
+        return false;
+      }
+    }, 8000, "dave's console");
+    const g = await call('GET', '/local/held', { at, headers: { 'x-obysphere-console': '1' } });
+    assert.deepEqual(g.held.map((h) => [h.id, h.words]), [[id, '']], 'listed, with no words to show');
+    const d = await call('POST', '/local/held', { at, body: { id, action: 'drop' }, headers: { 'x-obysphere-console': '1' } });
+    assert.equal(d.status, 502, JSON.stringify(d));
+    assert.match(d.error, /stays held/);
+    assert.ok(fs.existsSync(file), 'never dropped in silence');
+    const h = JSON.parse((await rep(['inbox', '--hook', '--profile', 'dave'])).stdout);
+    assert.match(h.systemMessage, /your Oby holds 1 ask until it's running again$/);
+    await stop(daveUi);
+  });
+
+  test('still rate-limited after its tries: held, the pause shown with no time and told once; a later answer brings it forward, and you hear it is back', async () => {
+    await fresh();
+    setBob();
+    fake.control({ cursorSignedIn: true, fail: { claude: 'rate' } });
+    const mark = notes().length;
+    const logMark = bobOut.length;
+    const a = await ask('alice', 'busy, busy');
+    await waitFor(() => held().length === 1, 15000, 'held after its rate retries');
+    assert.equal(held()[0].kind, 'rate');
+    assert.deepEqual(cooldown(), {}, 'a rate limit cools nothing down');
+    const away = await waitFor(async () => (await bobAgent()).away, 3000, 'the pause');
+    assert.equal(away.until, null, 'no time: one that moved with each try would be told again each time');
+    // tried again (a check: 2 s here), still busy: held again, the pause not told again
+    const tries = held()[0].tries;
+    await waitFor(() => held()[0]?.tries > tries, 15000, 'tried again');
+    assert.equal((bobOut.slice(logMark).match(/askers see your Oby away/g) || []).length, 1, 'the relay told once');
+    // a run works again: the held ask goes next, before its own time
+    fake.control({ cursorSignedIn: true });
+    const due = Date.parse(held()[0].until);
+    assert.match((await replyTo(await ask('carol', 'and me?'), 'carol')).text, /^fake answer from/);
+    const r = await replyTo(a, 'alice', 15000);
+    assert.match(r.text, /^fake answer from/);
+    assert.ok(Date.parse(r.ts) < due, 'brought forward by the answer that worked');
+    const resumed = await waitFor(() => notes().slice(mark).find((l) => l.type === 'resumed'), 5000, 'resumed');
+    assert.equal(resumed.title, 'Claude Code is back: answered 1 held ask');
+    assert.equal(notes().slice(mark).filter((l) => l.type === 'paused').length, 1, 'told once');
+    await waitFor(async () => (await bobAgent()).away === null, 5000, 'the pause gone');
+  });
+
+  test('an ask the catch-up finds under another claim (a process of yours that stopped mid-answer) is looked at again, not dropped', async () => {
+    await fresh();
+    setBob();
+    await stopBob();
+    const m = await ask('alice', 'claimed by a process that is gone');
+    // the relay keeps that claim 15 minutes, as it would for bob's stopped process
+    assert.equal((await call('POST', `/api/messages/${m.id}/claim`, { tok: token('bob'), body: { instance: 'feedfacefeed' } })).ok, true);
+    await startBob();
+    const said = /m_\w+: another process of yours claimed it/g;
+    await waitFor(() => (bobOut.match(said) || []).length >= 1, 8000, 'set aside');
+    // looked at again after the claim could lapse (16 min; 3.2 s here): still claimed here, so set aside again
+    await waitFor(() => (bobOut.match(said) || []).length >= 2, 10000, `looked at again\n${bobOut}`);
+    assert.deepEqual(await repliesOf(m), [], 'never answered under another claim');
+  });
+
+  test("a reset read as already past waits a check, not a moment", async () => {
+    await fresh();
+    setBob();
+    fake.control({ cursorSignedIn: true, fail: { claude: 'limit' }, resetInSec: -60 });
+    const m = await ask('alice', 'a reset in the past?');
+    await waitFor(() => held().length === 1, 10000, 'held');
+    const h = held()[0];
+    assert.ok(Date.parse(h.until) - Date.parse(h.heldAt) >= 20 * RETRY_MS - 300, `at least a check (10 min; 2 s here): ${h.heldAt} → ${h.until}`);
+    fake.control({ cursorSignedIn: true });
+    assert.match((await replyTo(m, 'alice', 15000)).text, /^fake answer from/);
+  });
+
+  test('a catch-up that fails is tried again, a little later each time, for as long as the connection lasts', async () => {
+    await fresh();
+    setBob();
+    await stopBob();
+    const m = await ask('alice', 'asked while the Sphere was flaky');
+    // between bob and the relay: refuses the catch-up's first six looks, passes the rest (the live stream too)
+    let refuse = 6;
+    const proxy = http.createServer(async (req, res) => {
+      const u = new URL(req.url, base);
+      if (refuse > 0 && req.method === 'GET' && u.pathname === '/api/messages' && u.searchParams.has('to')) {
+        refuse--;
+        res.writeHead(503, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'busy', code: 'unavailable' }));
+      }
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const headers = {};
+      for (const k of ['authorization', 'content-type', 'accept', 'x-file-name']) if (req.headers[k]) headers[k] = req.headers[k];
+      try {
+        const r = await fetch(base + req.url, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+        res.writeHead(r.status, { 'content-type': r.headers.get('content-type') || 'application/json' });
+        if (!r.body) return res.end();
+        Readable.fromWeb(r.body).on('error', () => res.end()).pipe(res);
+      } catch {
+        res.writeHead(502);
+        res.end();
+      }
+    });
+    await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
+    const prof = path.join(bobDir(), 'profile.json');
+    const orig = fs.readFileSync(prof, 'utf8');
+    fs.writeFileSync(prof, JSON.stringify({ ...JSON.parse(orig), sphere: `http://127.0.0.1:${proxy.address().port}` }), { mode: 0o600 });
+    try {
+      await startBob();
+      const r = await replyTo(m, 'alice', 25000);
+      assert.match(r.text, /^fake answer from/);
+      assert.equal(refuse, 0);
+      assert.ok((bobOut.match(/catch-up failed/g) || []).length >= 6, 'more than five tries');
+    } finally {
+      await stopBob();
+      fs.writeFileSync(prof, orig, { mode: 0o600 });
+      proxy.closeAllConnections();
+      proxy.close();
+      await startBob();
+    }
   });
 });

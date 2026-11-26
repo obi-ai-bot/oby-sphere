@@ -107,6 +107,10 @@ const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(
 // folders an Oby may never be given (under your home folder), besides home itself and its Obysphere profiles
 const PRIVATE_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.claude', '.cursor', '.local', '.npm'];
 const APPROVE_WAIT_MS = Math.max(1, Number(process.env.OBYSPHERE_APPROVE_WAIT_SEC) || 3600) * 1000;
+// who claims an ask from this process (the relay lets one claimer answer it). Kept with an ask that
+// waits for you (pending/) or for its runtime (held/), so a process that takes it over after this one
+// stops can claim it as this one did, rather than wait out the relay's 15 minutes.
+const REP_INSTANCE = randomBytes(6).toString('hex');
 // why a declined ask was declined: the asker sees these words, nothing more
 const DECLINE = {
   access: "it doesn't take asks from you",
@@ -405,6 +409,7 @@ function askerSees(a) {
 
 const AWAY_DAYS = 30; // the Sphere's limit too
 const AWAY_NOTE_MAX = 120;
+const AWAY_SLACK_MS = 5 * 60e3; // under the Sphere's 30 days by this much (the clocks, and the trip there)
 const AWAY_WHEN = '--until takes a time: 2026-11-30T09:00 (or a date), 18:00 (the next one), "Mon 9:00" (the next Monday), or a span from now: 45m, 2h, 3d';
 
 function awayFile(p) {
@@ -436,7 +441,10 @@ async function setAway(p, away, api = client(p)) {
       throw new Error(`You're back on this machine, but the Sphere couldn't be told (${e.message}), so askers still see you away: try again when it can be reached.`);
     }
   }
-  const until = away.until ?? null;
+  // the Sphere takes at most 30 days, on its clock: a few minutes under, so one counted here a moment
+  // earlier ("away --until 30d") isn't refused when it gets there
+  const most = Date.now() + AWAY_DAYS * 864e5 - AWAY_SLACK_MS;
+  const until = away.until == null ? null : Date.parse(away.until) > most ? new Date(most).toISOString() : away.until;
   const note = cleanLine(away.note ?? '', AWAY_NOTE_MAX);
   const { agent } = await api.post('/api/away', { until, note });
   const since = [agent?.away?.since, readAway(p)?.since].find((v) => typeof v === 'string' && Number.isFinite(Date.parse(v))) || new Date().toISOString();
@@ -1186,7 +1194,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   if (notify) notifyState.forceDesktop = true; // serve --notify
   const api = client(p);
   const sec = getSec(p);
-  const instance = randomBytes(6).toString('hex');
+  const instance = REP_INSTANCE;
   let agentsById = new Map();
   const refreshAgents = async () => {
     const { agents } = await api.get('/api/agents');
@@ -1239,10 +1247,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   const isForMe = (m) => validMessage(m) && m.kind === 'ask' && m.to.includes(p.agent.id) && m.from !== p.agent.id;
   // each ask is handled as it comes (an ask waiting for you holds up no other);
   // the model runs go one at a time, and so do questions in the terminal
-  const enqueue = (m) => {
+  const enqueue = (m, opts = {}) => {
     if (seen.has(m.id)) return;
     seen.add(m.id);
-    handle(m).catch((e) => log(red('  ✗ ') + printable(e.message)));
+    handle(m, opts).catch((e) => log(red('  ✗ ') + printable(e.message)));
   };
   let runs = Promise.resolve();
   const oneAtATime = (fn) => {
@@ -1258,6 +1266,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   let newest = { id: readCursor(p)?.after || null, at: 0 };
   let online = false;
   let opens = 0;
+  let catching = Promise.resolve(); // the catch-up running, if one is
   const keepCursor = (m = null) => {
     if (m && Date.parse(m.ts) >= newest.at) newest = { id: m.id, at: Date.parse(m.ts) };
     if (!online) return;
@@ -1269,6 +1278,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   // held asks: tried again when their time comes, given up after the longest hold; and the pause the relay shows
   const holding = new Set(); // held asks this process is on now
   const resuming = new Map(); // a runtime back after a pause -> { since, answered }, while its held asks are answered
+  const rateSince = new Map(); // a runtime still rate-limited after its tries -> since when (its pause is told once)
   setInterval(() => holdTick().catch((e) => log(yellow('  held asks: ') + printable(e.message))), HOLD_TICK_MS).unref();
 
   let first = true;
@@ -1284,17 +1294,25 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         log(dim(`  settings: ${settingsFile(p)}`));
         first = false;
       } else log(green('●') + dim(' reconnected'));
-      // catch up on every ask that came while it was offline (from the cursor), tried again a few times
-      for (let i = 0; i < 5 && open === opens; i++) {
-        try {
-          await catchUp(cur);
-          online = open === opens;
-          return keepCursor();
-        } catch (e) {
-          log(yellow('  catch-up failed: ') + printable(e.message) + dim(i < 4 ? ' (trying again)' : ''));
-          await new Promise((r) => setTimeout(r, RETRY_MS));
+      // catch up on every ask that came while it was offline (from the cursor). One catch-up at a time
+      // (a reconnect doesn't start a second beside it), tried again, a little later each time, for as
+      // long as this connection lasts
+      catching = catching.then(async () => {
+        for (let i = 0; open === opens; i++) {
+          try {
+            await catchUp(cur);
+            if (open === opens) {
+              online = true;
+              keepCursor();
+            }
+            return;
+          } catch (e) {
+            log(yellow('  catch-up failed: ') + printable(e.message) + dim(' (trying again)'));
+            await new Promise((r) => setTimeout(r, Math.min(RETRY_MS * 2 ** i, 20 * RETRY_MS)));
+          }
         }
-      }
+      });
+      await catching;
     },
     onEvent: (ev, data) => {
       if ((ev === 'agent' || ev === 'presence') && validAgent(data)) agentsById.set(data.id, data);
@@ -1313,8 +1331,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
   });
 
   // Every ask that came while this Oby was offline, from the cursor on: answered when it's at most
-  // the longest hold old, else a short "expired" reply. Asks just before the cursor too, from the
-  // last hour (one a stopped process was on), answered only. Never one answered already, or held.
+  // the longest hold old, else a short "expired" reply. Asks before the cursor too, as far back as
+  // the longest hold, with no reply from this Oby (one a stopped process was on, or waiting on you
+  // for: pending/left-*.json), answered only. Never one answered already, or held.
   async function catchUp(cur) {
     let s = null;
     try {
@@ -1323,10 +1342,30 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const holdMs = availabilityOf(s).holdHours * HOUR_MS;
     const now = Date.now();
     const answerFrom = now - holdMs;
-    const recent = now - Math.min(LOOK_BACK_MS, holdMs);
     const lastOnline = cur ? Date.parse(cur.ts) : now;
-    // newest first, a page at a time, back to the cursor and the last hour (no cursor: the longest hold)
-    const floor = cur ? Math.min(recent, lastOnline) : answerFrom;
+    const mine = (replies) => (replies || []).some((r) => r.from === p.agent.id);
+    pendingEntries(p); // another of this profile's processes may have stopped: its waits are remembered now
+    // asks a stopped process of this profile was waiting on you for: back in Waiting for you with what
+    // was left of the wait (claimed as that process did), or the timeout decline once it has passed
+    for (const l of pendingLeft(p)) {
+      const drop = () => fs.rmSync(path.join(pendingDir(p), `left-${l.askId}.json`), { force: true });
+      if (seen.has(l.askId) || readHeld(p, l.askId)) continue;
+      let got;
+      try {
+        got = await api.get(`/api/messages/${l.askId}`);
+      } catch (e) {
+        if (/\[not_found\]/.test(e.message)) drop();
+        else throw e;
+        continue;
+      }
+      drop();
+      if (!isForMe(got.message) || got.message.id !== l.askId || mine(got.replies) || seen.has(l.askId)) continue; // answered, or taken up meanwhile
+      const lapsed = !(Date.parse(l.expiresAt) > Date.now());
+      if (!lapsed) PENDING_LEFT.set(`${p.dir}\0${l.askId}`, Date.parse(l.expiresAt));
+      enqueue(got.message, { refound: true, lapsed, claimAs: l.instance, caught: true });
+    }
+    // newest first, a page at a time, back to the cursor and the longest hold
+    const floor = cur ? Math.min(answerFrom, lastOnline) : answerFrom;
     const asks = [];
     let before = null;
     for (let page = 0; page < CATCH_UP_PAGES; page++) {
@@ -1344,19 +1383,19 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       if (!isForMe(m) || seen.has(m.id) || readHeld(p, m.id)) continue;
       const t = Date.parse(m.ts);
       const missed = !cur || (at >= 0 ? i > at : t > lastOnline);
-      if (!missed && t < recent) continue; // seen before it went offline
-      if (t < answerFrom && !(missed && cur)) continue; // too old, and no gap to tell the asker about
+      if (t < answerFrom && !(missed && cur)) continue; // too old to answer, and no gap to tell the asker about
       const { replies } = await api.get(`/api/messages/${m.id}/replies`);
-      if ((replies || []).some((r) => r.from === p.agent.id)) continue;
+      if (mine(replies)) continue;
+      if (seen.has(m.id) || readHeld(p, m.id)) continue; // taken meanwhile: live, or by the hold
       if (t >= answerFrom) {
-        enqueue(m);
+        enqueue(m, { refound: !missed, caught: true }); // one seen before (and counted then) is taken up again
         continue;
       }
       seen.add(m.id);
       // many at once after a long gap: the relay takes so many replies a minute, so a refused one waits a little
       for (let i = 0; i < 3; i++) {
         try {
-          await handle(m, { offline: { from: cur.ts, to: back } });
+          await handle(m, { offline: { from: cur.ts, to: back }, caught: true });
           break;
         } catch (e) {
           log(red('  ✗ ') + printable(e.message));
@@ -1369,8 +1408,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (last) keepCursor(last);
   }
 
-  // each look at held/: an ask older than the longest hold gets the "expired" reply; one whose time
-  // came is tried again (one process at a time: held/<id>.lock)
+  // each look at held/: an ask older than the longest hold gets the "expired" reply, one past its
+  // asker's deadline the deadline reply; one whose time came is tried again (one process at a time:
+  // held/<id>.lock)
   async function holdTick() {
     let s;
     try {
@@ -1383,7 +1423,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     for (const h of heldEntries(p)) {
       if (holding.has(h.id)) continue;
       const old = now - Date.parse(h.ts) > av.holdHours * HOUR_MS;
-      if (!old && Date.parse(h.until) > now) continue;
+      if (!old && Date.parse(h.until) > now && !(Date.parse(h.neededBy) <= now)) continue;
       const unlock = lockHeld(p, h.id);
       if (!unlock) continue;
       holding.add(h.id);
@@ -1413,6 +1453,32 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (now) await handle(msg, { held: now, expire });
   }
 
+  // an ask the catch-up found that another claim holds: looked at again after CLAIM_LAPSE_MS (16 min),
+  // and again after that, until it's answered, held or waiting for you, for up to the longest hold
+  // (then it's that claim's: a process of yours that runs)
+  function claimLater(msg, opts) {
+    if (!opts.claimUntil) {
+      let s = null;
+      try {
+        s = settingsNow();
+      } catch {}
+      opts = { ...opts, claimUntil: Date.now() + availabilityOf(s).holdHours * HOUR_MS };
+    }
+    log(dim(`  ${msg.id}: another process of yours claimed it (one that stopped, maybe): looked at again at ${localWhen(new Date(Date.now() + CLAIM_LAPSE_MS).toISOString(), { today: true })}`));
+    setTimeout(async () => {
+      try {
+        if (Date.now() > opts.claimUntil) return void log(dim(`  ${msg.id}: still claimed by another process after the longest hold: left to it`));
+        if (readHeld(p, msg.id) || pendingFor(p, msg.id)) return;
+        const { replies } = await api.get(`/api/messages/${msg.id}/replies`);
+        if ((replies || []).some((r) => r.from === p.agent.id)) return;
+        await handle(msg, opts);
+      } catch (e) {
+        log(yellow(`  ${msg.id}: `) + printable(e.message) + dim(' (looked at again later)'));
+        claimLater(msg, opts);
+      }
+    }, CLAIM_LAPSE_MS).unref?.();
+  }
+
   // a held ask that ended (answered, declined, expired, or gone): out of held/, and the pause looked at again
   function heldGone(h, why = null) {
     removeHeld(p, h.id);
@@ -1438,14 +1504,28 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (now?.by === 'owner') return; // yours: a pause never overrides it
     const want = pauseWanted(p, s);
     const mine = now?.by === 'pause' ? now : null;
+    // you may set or end your away while the relay is told about the pause (the console, `obysphere
+    // away`): away.json is read again just before it's written or removed, and yours is told again if
+    // the pause went over it
+    const yoursAgain = async () => {
+      const w = readAway(p);
+      if (w?.by !== 'owner') return false;
+      await api.post('/api/away', { until: w.until, note: w.note }).catch(() => {});
+      return true;
+    };
     try {
       if (!want) {
-        if (!mine) return;
-        await setAway(p, null, api);
+        if (!mine || readAway(p)?.by !== 'pause') return;
+        fs.rmSync(awayFile(p), { force: true });
+        await api.post('/api/away', { off: true });
+        if (await yoursAgain()) return;
         return void log(dim('  your Oby can answer again: its pause is over'));
       }
-      if (mine && mine.until === want.until && mine.note === want.note) return;
-      await setAway(p, { ...want, by: 'pause' }, api);
+      if (mine && mine.until === want.until && mine.note === want.note) return; // nothing askers would see changed
+      if (readAway(p)?.by === 'owner') return;
+      const { agent } = await api.post('/api/away', { until: want.until, note: want.note });
+      if (await yoursAgain()) return;
+      writeSecret(awayFile(p), { by: 'pause', until: want.until, note: want.note, since: agent?.away?.since || mine?.since || new Date().toISOString() });
       log(dim(`  askers see your Oby away ${want.until ? `until ${localWhen(want.until, { today: true })}` : 'for now'}${want.note ? ` (${want.note})` : ''}`));
     } catch (e) {
       if (/\[not_found\]/.test(e.message)) {
@@ -1474,14 +1554,19 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     log(yellow(`  ${RUNTIME_LABEL[f.runtime]} paused: `) + dim(`${KIND_WORDS[f.kind]}${entry.until ? ` until ${localWhen(entry.until, { today: true })}` : ''}; tried again ${next > Date.now() ? `at ${localWhen(new Date(next).toISOString(), { today: true })}` : 'at the next ask'}`));
     if (fresh) notePaused(f, `${f.runtime}-${Date.parse(entry.since)}`, entry.until);
   }
-  // a run on a runtime that cooled down worked: its pause is over, and its held asks go next
+  // a run on a runtime worked: a pause it had is over (a cooldown, or asks held while it was
+  // rate-limited), and the asks held for it go next
   function cameBack(runtime) {
+    rateSince.delete(runtime);
     const was = clearCooldown(p, runtime);
-    if (!was) return;
-    log(green('  ● ') + dim(`${RUNTIME_LABEL[runtime]} is back`));
+    const waiting = heldEntries(p).filter((h) => h.runtime === runtime);
+    if (!was && !waiting.length) return;
+    if (!resuming.has(runtime)) {
+      log(green('  ● ') + dim(`${RUNTIME_LABEL[runtime]} is back`));
+      resuming.set(runtime, { since: was?.since || waiting.map((h) => h.heldAt).sort()[0], answered: 0 });
+    }
     const now = new Date().toISOString();
-    for (const h of heldEntries(p)) if (h.runtime === runtime && h.until > now) writeHeld(p, { ...h, until: now });
-    resuming.set(runtime, { since: was.since, answered: 0 });
+    for (const h of waiting) if (h.until > now) writeHeld(p, { ...h, until: now });
   }
   // told once its held asks are all answered (or none were held)
   function checkResumed(runtime) {
@@ -1493,10 +1578,13 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     notifyOwner(p, { type: 'resumed', title: words, body: '', ref: `${runtime}-${Date.parse(r.since)}` });
   }
 
-  // h: a held ask tried again; offline: { from, to }, an ask older than it answers that came while it
-  // was offline; expire: the hours of the longest hold, which a held ask outlived
-  async function handle(msg, { held = null, offline = null, expire = null } = {}) {
-    if (deferMs && !held && !offline) await new Promise((r) => setTimeout(r, deferMs));
+  // held: a held ask tried again; offline: { from, to }, an ask older than it answers that came while it
+  // was offline; expire: the hours of the longest hold, which a held ask outlived; refound: an ask seen
+  // before (by a process that stopped), taken up again; lapsed: one that waited for you past its wait;
+  // claimAs: the claim the stopped process held on it; caught: found by the catch-up (another claim on it
+  // is looked at again later: claimLater, until claimUntil)
+  async function handle(msg, { held = null, offline = null, expire = null, refound = false, lapsed = false, claimAs = null, caught = false, claimUntil = null } = {}) {
+    if (deferMs && !held && !offline && !refound) await new Promise((r) => setTimeout(r, deferMs));
     let settled = false; // a held ask that ended (answered, declined, expired) leaves held/; one that didn't is tried again soon
     try {
       if (!agentsById.get(msg.from)?.keys && msg.sealed) await refreshAgents().catch(() => {});
@@ -1519,10 +1607,15 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       }
       if (pendingFor(p, msg.id)) return; // another of my processes is waiting for its owner on this one
       settled = false;
-      // a held ask is claimed as the process that held it was (the relay lets that one claim it again)
-      const claim = await api.post(`/api/messages/${msg.id}/claim`, { instance: held?.instance || instance });
+      // a held ask, or one a stopped process waited on you for, is claimed as the process that held it
+      // was (the relay lets that one claim it again)
+      const claimedAs = held?.instance || claimAs || instance;
+      const claim = await api.post(`/api/messages/${msg.id}/claim`, { instance: claimedAs });
       if (!claim.ok) {
         settled = claim.reason === 'answered';
+        // one the catch-up found, claimed by a process of yours that stopped (the relay keeps its claim
+        // 15 minutes), or one that runs: tried again once that claim can lapse, never dropped for it
+        if (claim.reason === 'claimed' && caught && !held) claimLater(msg, { refound, lapsed, claimAs, caught, offline, claimUntil });
         return; // another of my processes has it, or it's answered
       }
 
@@ -1546,6 +1639,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       }
 
       if (held) log(`\n${cyan('↻')} ${bold(asker)}'s held ask ${dim(`${msg.id} (${KIND_WORDS[held.kind]}; tried ${held.tries === 1 ? 'once' : `${held.tries} times`})`)}`);
+      else if (refound) log(`\n${cyan('↻')} ${bold(asker)}'s ask ${dim(`${msg.id}, taken up again (it had no answer when your Oby last stopped)`)}`);
       else {
         log(`\n${cyan('←')} ${bold(asker)} ${dim(`(for ${printable(cleanLine(from.owner, 60))})`)} asks in #${msg.channel}${msg.depth ? dim(` · hop ${msg.depth}`) : ''}${opened.sealed ? dim(' · sealed') : ''}`);
         log(indent(printable(opened.text), '  │ '));
@@ -1580,13 +1674,15 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       };
       let c = check();
       if (c.decline) return decline(c.decline);
-      if (!held) {
-        const over = takeAsk(p, c.s, asker); // a held ask was counted when it came
+      if (!held && !refound) {
+        const over = takeAsk(p, c.s, asker); // a held ask, or one taken up again, was counted when it came
         if (over) return decline(over);
       }
       // the risky reach: for an Oby you trust, or when you let this ask answer with everything you allow
       let ownerSaid = held?.approved || null; // 'answer' or 'trust', once you decided this ask (kept while it's held)
       for (;;) {
+        // it waited for you while your Oby was stopped, past the time it waits: declined, as if it had lapsed here
+        if ((c.g.approve || approveAll) && !ownerSaid && lapsed) return decline('timeout');
         if ((c.g.approve || approveAll) && !ownerSaid) {
           const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use);
           if (d.decision === 'decline') return decline('owner');
@@ -1600,7 +1696,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           ownerSaid = d.decision === 'trust' ? 'trust' : 'answer';
           log(dim(`  you let your Oby answer${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
         }
-        const again = await oneAtATime(() => runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held));
+        const again = await oneAtATime(() => runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held, claimedAs));
         if (again?.held) return; // it waits in held/ for its runtime
         if (!again) return void (settled = true);
         c = again; // it waits for you now: asked outside the queue, then back in line
@@ -1669,7 +1765,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
 
   // returns the check's result when the ask now waits for you (your settings changed while it
   // waited in line), { held: true } when it waits for its runtime in held/, else nothing
-  async function runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held = null) {
+  async function runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held = null, claimedAs = instance) {
     const c = check();
     if (c.decline) return void (await decline(c.decline));
     if ((c.g.approve || approveAll) && !ownerSaid) return c;
@@ -1689,7 +1785,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const route = await chooseRoute(p, s, { from: asker, text: c.use ? useRouteText(c.use) : opened.text, hasFiles: opened.files.length > 0, hop: (msg.depth || 0) > 0, channel: msg.channel }, { trusted });
     if (route.fellBack || route.decline || route.unusable) log(yellow('  route: ') + dim(route.note));
     if (route.decline) return decline(route.decline);
-    const ctx = { msg, opened, from, reply, s, trusted, askerTrusted: !!c.g.trusted, use: c.use, held, ownerSaid, timeLimitMin: route.use.timeLimitMin };
+    const ctx = { msg, opened, from, reply, s, trusted, askerTrusted: !!c.g.trusted, use: c.use, held, ownerSaid, claimedAs, timeLimitMin: route.use.timeLimitMin };
     if (route.unusable) {
       // not installed: it won't pass on its own; signed out: a pause, like a run that failed signed out
       const u = route.unusable;
@@ -1718,19 +1814,34 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const limitMs = (use.timeLimitMin || TIME_LIMIT_DEFAULT) * MINUTE_MS;
     try {
       let r;
-      for (let i = 0; ; i++) {
-        try {
-          r = await runLocal(p, s, route, msg, opened, from, agentsById, api, { trusted, askerTrusted: ctx.askerTrusted, instrument: ctx.use });
-          break;
-        } catch (e) {
-          const wait = RATE_WAITS[i];
-          if (failureOf(e).kind !== 'rate' || wait === undefined || Date.now() - started + wait >= limitMs) throw e;
-          log(yellow('  rate-limited: ') + dim(`${RUNTIME_LABEL[use.runtime]} is busy; trying again in ${wait >= 60e3 ? `${Math.round(wait / 60e3)} min` : `${Math.round(wait / 1000) || 1} s`}`));
-          await new Promise((res) => setTimeout(res, wait));
+      try {
+        for (let i = 0; ; i++) {
+          try {
+            // a try after a rate limit gets what's left of the time limit, so the ask never runs past it
+            r = await runLocal(p, s, route, msg, opened, from, agentsById, api, { trusted, askerTrusted: ctx.askerTrusted, instrument: ctx.use, timeLeftMs: limitMs - (Date.now() - started) });
+            break;
+          } catch (e) {
+            const wait = RATE_WAITS[i];
+            if (failureOf(e).kind !== 'rate' || wait === undefined || Date.now() - started + wait >= limitMs) throw e;
+            log(yellow('  rate-limited: ') + dim(`${RUNTIME_LABEL[use.runtime]} is busy; trying again in ${wait >= 60e3 ? `${Math.round(wait / 60e3)} min` : `${Math.round(wait / 1000) || 1} s`}`));
+            await new Promise((res) => setTimeout(res, wait));
+          }
         }
+      } catch (e) {
+        addAnswer(p, (Date.now() - started) / 1000, false);
+        const f = { runtime: use.runtime, ...failureOf(e), words: printable(e.message) };
+        log(red('  ✗ ') + printable(e.message) + (f.kind !== 'other' ? dim(` (${KIND_WORDS[f.kind]})`) : ''));
+        if (COOLS.includes(f.kind)) cooled(f);
+        else if (f.kind === 'rate' && !rateSince.has(f.runtime)) {
+          // still rate-limited after its tries: a pause like the others, told once until a run works again
+          rateSince.set(f.runtime, Date.now());
+          notePaused(f, `rate-${f.runtime}-${Date.now()}`, null);
+        }
+        return { ok: false, f };
       }
       const durationMs = Date.now() - started;
       addAnswer(p, durationMs / 1000);
+      // an answer that can't be sent throws: a held ask stays held, and is tried again
       const sent = await reply(r.text, r.files, { local: true, ...(open ? { runtime: use.runtime, model: r.model, turns: r.turns, tools: r.tools || {} } : {}), durationMs, answeredBy: 'agent' });
       const used = Object.entries(r.tools || {}).map(([k, v]) => `${k}×${v}`).join(' ');
       const signIn = r.apiKeySource ? (r.apiKeySource === 'none' ? ' · on your subscription' : ` · billed through ${r.apiKeySource}`) : '';
@@ -1741,13 +1852,6 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       const back = ctx.held && resuming.get(ctx.held.runtime);
       if (back) back.answered += 1;
       return { ok: true };
-    } catch (e) {
-      addAnswer(p, (Date.now() - started) / 1000, false);
-      const f = { runtime: use.runtime, ...failureOf(e), words: printable(e.message) };
-      log(red('  ✗ ') + printable(e.message) + (f.kind !== 'other' ? dim(` (${KIND_WORDS[f.kind]})`) : ''));
-      if (COOLS.includes(f.kind)) cooled(f);
-      else if (f.kind === 'rate') notePaused(f, `rate-${f.runtime}-${Math.floor(Date.now() / HOLD_RETRY_MS)}`, null);
-      return { ok: false, f };
     } finally {
       await api.post('/api/status', { state: 'idle' }).catch(() => {});
     }
@@ -1765,7 +1869,8 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     } else if (av.whenUnable === 'hold' && passes) return holdAsk(ctx, f);
     // a pause is told once, when it starts; any other failure, for each ask it ends
     if (!passes) notifyOwner(p, { type: 'failed', from: slug(from.name), channel: msg.channel, body: ownerWords(f.words, s), ref: msg.id });
-    await reply(UNABLE_WORDS, [], { error: true, unable: true, local: true }).catch((e) => log(red("  ✗ couldn't send the reply: ") + printable(e.message)));
+    // a reply that can't be sent throws: a held ask stays held (and is tried again), rather than end unanswered
+    await reply(UNABLE_WORDS, [], { error: true, unable: true, local: true });
     log(yellow('→ declined: ') + dim(`${RUNTIME_LABEL[f.runtime]} can't answer (${KIND_WORDS[f.kind]}); the asker reads "${UNABLE_WORDS}"`));
   }
 
@@ -1803,8 +1908,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       tries: (held?.tries || 0) + 1,
       kind: f.kind,
       runtime: f.runtime,
-      instance: held?.instance || instance,
+      instance: ctx.claimedAs || instance, // the claim it holds on the relay: whoever tries it again claims as that
       ...(ctx.ownerSaid ? { approved: ctx.ownerSaid } : {}),
+      ...(pastDeadline({ neededBy: msg.neededBy }) || !Number.isFinite(Date.parse(msg.neededBy)) ? {} : { neededBy: msg.neededBy }), // its deadline reply comes on time, not at the next try
     };
     writeHeld(p, h);
     log(yellow('  ⏸ held: ') + dim(`${RUNTIME_LABEL[f.runtime]} can't answer (${KIND_WORDS[f.kind]}); tried again at ${localWhen(h.until, { today: true })}, for up to ${availabilityOf(s).holdHours} h after it was asked`));
@@ -1842,6 +1948,10 @@ function sweepAsks(p) {
     for (const n of fs.readdirSync(path.join(p.dir, 'usage'))) if (/^\d{4}-\d{2}-\d{2}\.json$/.test(n) && n.slice(0, 10) < month) fs.rmSync(path.join(p.dir, 'usage', n), { force: true });
   } catch {}
   pendingEntries(p);
+  // what was left of a stopped process's waits (pending/left-*.json): taken by the next catch-up, else gone after the longest hold
+  try {
+    for (const n of fs.readdirSync(pendingDir(p))) if (/^left-m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(pendingDir(p), n)).mtimeMs < Date.now() - 8 * 864e5) fs.rmSync(path.join(pendingDir(p), n), { force: true });
+  } catch {}
   sweepNotify(p);
 }
 
@@ -1849,11 +1959,12 @@ function sweepAsks(p) {
 // then the runtime and model the routing chose, with exactly what the settings allow.
 // trusted: the asker is an Oby you trust, or you let this ask answer with everything you
 // allow; otherwise the risky reach is taken away first (effectiveSettings).
-async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trusted = false, askerTrusted = false, instrument = null } = {}) {
+// timeLeftMs: a try after a rate limit gets what's left of the ask's time limit, not a new one
+async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trusted = false, askerTrusted = false, instrument = null, timeLeftMs = null } = {}) {
   const s = effectiveSettings(s0, trusted);
   const use = route.use;
   const runtime = use.runtime;
-  const timeoutMs = (use.timeLimitMin || TIME_LIMIT_DEFAULT) * MINUTE_MS;
+  const timeoutMs = Math.max(1000, timeLeftMs ?? (use.timeLimitMin || TIME_LIMIT_DEFAULT) * MINUTE_MS);
   const sec = getSec(p);
   const work = askFolder(p);
   const inbox = path.join(work, 'inbox');
@@ -2179,7 +2290,7 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
     if (!j) {
       const words = (err || out || `claude exited with ${code}`).trim();
       if (/sandbox/i.test(words) && /unavailable|refusing|not available/i.test(words)) throw new Error("shell: read needs Claude Code's sandbox, which isn't available on this machine (set the shell to off or full)");
-      throw runFailed('claude', words.slice(-400), code, words.slice(-4000));
+      throw runFailed('claude', words.slice(-400), code, (err || '').slice(-4000)); // stderr only: stdout is the model's and its tools' own words
     }
     if (j.is_error || (code !== 0 && code !== null)) throw runFailed('claude', String(j.result || j.subtype || `claude exited with ${code}`).slice(0, 400), code, String(j.result || j.subtype || ''));
     return {
@@ -2245,7 +2356,7 @@ function runCodex(p, use, { cwd, sandbox, addDirs, web, mcpServer, input, resume
     if (timedOut) return { text: `${said ? said + '\n\n' : ''}${STOPPED}`, sessionId: thread, model: use.model || null, tools: used, timedOut: true };
     if (failed || code !== 0) {
       const tail = (err || out || `codex exited with ${code}`).trim();
-      throw runFailed('codex', failed || lastError || tail.slice(-400), code, [failed, lastError].filter(Boolean).join('\n') || tail.slice(-4000));
+      throw runFailed('codex', failed || lastError || tail.slice(-400), code, [failed, lastError].filter(Boolean).join('\n') || (err || '').slice(-4000)); // its error events, or stderr: never stdout's other lines
     }
     return { text: said || '(no answer)', sessionId: thread, model: use.model || null, tools: used };
   });
@@ -2273,7 +2384,7 @@ function runCursor(p, use, { cwd, input, resume, timeoutMs, auth }) {
     if (timedOut) return { text: `${j?.result ? String(j.result).trim() + '\n\n' : ''}${STOPPED}`, sessionId: j?.session_id || null, model: use.model || null, timedOut: true };
     if (code !== 0 || !j || j.is_error || typeof j.result !== 'string') {
       const words = String((j?.is_error && j.result) || err || out || `cursor-agent exited with ${code}`);
-      throw runFailed('cursor', cleanLine(words, 400), code, words.slice(-4000));
+      throw runFailed('cursor', cleanLine(words, 400), code, String((j?.is_error && j.result) || err || '').slice(-4000)); // its error result, or stderr
     }
     return { text: j.result.trim() || '(no answer)', sessionId: typeof j.session_id === 'string' ? j.session_id : null, model: use.model || null };
   });
@@ -2354,7 +2465,7 @@ const RECHECK_MS = 20 * RETRY_MS; // out of credit, signed out, still rate-limit
 const JITTER_MS = 2 * RETRY_MS; // up to a minute after a reset, so held asks don't all start at once
 const HOLD_TICK_MS = Math.min(5000, Math.max(200, RETRY_MS / 2));
 const PAUSE_NOTE_MS = Math.min(5000, RETRY_MS); // a pause is told a moment after it starts, with the asks held by then
-const LOOK_BACK_MS = 3600e3; // the catch-up also looks at the hour before the cursor: an ask a stopped process was on
+const CLAIM_LAPSE_MS = 32 * RETRY_MS; // the relay keeps a claim 15 min: an ask another claim held is tried again after 16
 const CURSOR_BEAT_MS = 60e3; // while online, cursor.json says so this often (the start of the next offline gap)
 const CATCH_UP_PAGES = 50; // of 100 asks each: more than a Sphere keeps
 const COOLS = ['limit', 'credit', 'auth']; // the failures a runtime cools down after
@@ -2370,7 +2481,7 @@ const PAUSE_NOTE = { limit: 'out of AI usage', credit: 'out of AI usage', rate: 
 const FAILURE_PATTERNS = [
   // ---- out of usage on a plan (Claude Code, Codex and Cursor subscriptions)
   { kind: 'limit', re: /usage limit reached/i }, // Claude Code: "Claude AI usage limit reached|1764183600" (the reset, in Unix seconds)
-  { kind: 'limit', re: /\b(?:\d+-hour|session|daily|weekly|monthly|opus|sonnet|fable)\b[\w -]{0,20}\blimit reached\b/i }, // Claude Code: "5-hour limit reached ∙ resets 3pm", "Weekly limit reached ∙ resets Mon 9am"
+  { kind: 'limit', re: /\b(?:\d+-hour|session|daily|weekly|monthly|opus|sonnet|fable)\b[\w -]{0,20}\blimit reached\b\s*[∙·|.,;:-]?\s*resets?\b/i }, // Claude Code: "5-hour limit reached ∙ resets 3pm", "Weekly limit reached ∙ resets Mon 9am" (with its reset: "session limit reached" alone is some server's)
   { kind: 'limit', re: /\byou(?:'|’)?ve (?:hit|reached) your (?:usage |plan )?limit\b|\byou have (?:hit|reached) your (?:usage |plan )?limit\b/i }, // Claude Code "You've hit your limit · resets 3pm (America/Chicago)"; Codex "You've hit your usage limit. … try again at 3:04 PM."; Cursor
   { kind: 'limit', re: /\busage_limit_(?:reached|exceeded)\b|\busage limit (?:exceeded|hit)\b/i }, // Codex's error code, and other words for the same
   { kind: 'limit', re: /\b(?:free|fast|premium) requests?\b[^.\n]{0,40}\blimit\b|\breached the limit of (?:fast|premium) requests\b/i }, // Cursor: "You've reached the limit of fast requests"
@@ -2381,11 +2492,11 @@ const FAILURE_PATTERNS = [
   // ---- signed out: a sign-in that expired or was revoked, a wrong key
   { kind: 'auth', re: /invalid (?:x-)?api[ _-]?key|incorrect api key|invalid_api_key/i }, // Claude Code "Invalid API key · Please run /login"; Codex "Incorrect API key provided"
   { kind: 'auth', re: /\btoken (?:has )?(?:expired|been revoked)\b|\btoken_expired\b|could not be refreshed/i }, // Claude Code "OAuth token has expired"; Codex "Your access token could not be refreshed because your refresh token has expired"
-  { kind: 'auth', re: /please run \/login|\bnot (?:logged|signed) in\b|authentication required|please (?:log|sign) in\b|\b(?:cursor-agent|codex|claude) (?:auth )?login\b/i }, // Cursor "Authentication required. Please run 'cursor-agent login' first"
-  { kind: 'auth', re: /authentication_error|\b401\b[^\n]{0,40}unauthori[sz]ed|unauthori[sz]ed[^\n]{0,40}\b401\b/i }, // the API's 401
+  { kind: 'auth', re: /please run \/login|\bnot (?:logged|signed) in\b|authentication required|\b(?:cursor-agent|codex|claude) (?:auth )?login\b/i }, // Claude Code "Not logged in · Please run /login"; Cursor "Authentication required. Please run 'cursor-agent login' first"
+  { kind: 'auth', re: /authentication_error|\b(?:api error|(?:last |unexpected )?status)\W{0,3}401\b/i }, // the API's own 401: "API Error: 401 {…authentication_error…}", Codex "unexpected status 401 Unauthorized" (not a 401 from a page a tool fetched)
   // ---- busy: rate-limited, or the API overloaded (seconds or minutes)
-  { kind: 'rate', re: /rate_limit_error|\brate[ -]limit(?:ed|s)?\b|too many requests|\b429\b/i }, // Claude Code "API Error: 429 {…rate_limit_error…}"; Codex "exceeded retry limit, last status: 429 Too Many Requests"
-  { kind: 'rate', re: /overloaded|\b529\b|server (?:is )?(?:busy|at capacity)/i }, // Claude Code "API Error: 529 {…overloaded_error…}"
+  { kind: 'rate', re: /rate_limit_error|\brate[ -]limit(?:ed|s)?\b|too many requests|\b(?:api error|(?:last |unexpected )?status|http)\W{0,3}429\b/i }, // Claude Code "API Error: 429 {…rate_limit_error…}"; Codex "exceeded retry limit, last status: 429 Too Many Requests" (a bare 429 is anyone's number)
+  { kind: 'rate', re: /overloaded_error|\boverloaded\b|\b(?:api error|(?:last |unexpected )?status|http)\W{0,3}529\b|server (?:is )?(?:busy|at capacity)/i }, // Claude Code "API Error: 529 {…overloaded_error…}", "Repeated 529 Overloaded errors"
 ];
 const FAILURE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const FAILURE_DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -2406,7 +2517,7 @@ function readReset(text, now = Date.now()) {
   const sane = (ms) => (Number.isFinite(ms) && ms > now - 3600e3 && ms < now + 31 * 864e5 ? new Date(Math.max(ms, now)).toISOString() : null);
   let m = /\|\s*(\d{10})\b/.exec(t);
   if (m) return sane(Number(m[1]) * 1000);
-  m = /\btry again in ((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b(?:\s|,|and)*)+)/i.exec(t);
+  m = /\b(?:try again|resets?) in ((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b(?:\s|,|and)*)+)/i.exec(t);
   if (m) {
     const unit = { d: 864e5, h: 3600e3, m: 60e3, s: 1e3 };
     let ms = 0;
@@ -2560,7 +2671,10 @@ function readCooldowns(p) {
 }
 // when the runtime may be tried again
 function cooldownDue(e) {
-  return e.kind === 'limit' && e.until ? Date.parse(e.until) : Date.parse(e.checkedAt) + (e.kind === 'limit' ? HOLD_RETRY_MS : RECHECK_MS);
+  const checked = Date.parse(e.checkedAt);
+  // a reset read as already past (a clock behind, or a message late) waits a check, not a moment
+  if (e.kind === 'limit' && e.until) return Date.parse(e.until) > checked ? Date.parse(e.until) : checked + RECHECK_MS;
+  return checked + (e.kind === 'limit' ? HOLD_RETRY_MS : RECHECK_MS);
 }
 function coolingNow(p, id) {
   const e = readCooldowns(p)[id];
@@ -2589,7 +2703,8 @@ function cooldownDueNow(p, id) {
   const all = readCooldowns(p);
   const e = all[id];
   if (!e) return;
-  all[id] = { ...e, until: e.kind === 'limit' && e.until ? new Date().toISOString() : e.until, checkedAt: new Date(Date.now() - (e.kind === 'limit' ? HOLD_RETRY_MS : RECHECK_MS) - 1000).toISOString() };
+  const past = new Date(Date.now() - (e.kind === 'limit' ? HOLD_RETRY_MS : RECHECK_MS) - 1000).toISOString();
+  all[id] = { ...e, until: e.kind === 'limit' && e.until ? new Date().toISOString() : e.until, checkedAt: past };
   writeSecret(cooldownFile(p), all);
 }
 
@@ -2617,7 +2732,26 @@ function readHeld(p, id) {
     runtime: h.runtime,
     instance: /^[0-9a-f]{12}$/.test(String(h.instance)) ? h.instance : null,
     approved: ['answer', 'trust'].includes(h.approved) ? h.approved : null,
+    neededBy: time(h.neededBy) ? h.neededBy : null,
   };
+}
+// asks a stopped process of this profile was waiting on you for (pending/left-<ask id>.json, from
+// pendingEntries): { askId, expiresAt (when its wait lapses), instance (its claim) }
+function pendingLeft(p) {
+  let names = [];
+  try {
+    names = fs.readdirSync(pendingDir(p));
+  } catch {
+    return [];
+  }
+  return names
+    .map((n) => /^left-(m_[A-Za-z0-9_-]{1,32})\.json$/.exec(n)?.[1])
+    .filter(Boolean)
+    .map((id) => {
+      const l = readJsonFile(path.join(pendingDir(p), `left-${id}.json`), null);
+      return l && l.askId === id && Number.isFinite(Date.parse(l.expiresAt)) ? { askId: id, expiresAt: l.expiresAt, instance: /^[0-9a-f]{12}$/.test(String(l.instance)) ? l.instance : null } : null;
+    })
+    .filter(Boolean);
 }
 function heldEntries(p) {
   let names = [];
@@ -2655,7 +2789,27 @@ function lockHeld(p, id) {
         pid = Number(fs.readFileSync(f, 'utf8'));
       } catch {}
       if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) return null;
-      fs.rmSync(f, { force: true }); // its process is gone
+      // its process is gone: moved aside under a name of its own first, so of two processes that both
+      // found it stale only one breaks it (the other's rename fails), and a fresh lock taken meanwhile
+      // by a third is put back, not broken
+      const aside = `${f}.${process.pid}.${randomBytes(3).toString('hex')}.stale`;
+      try {
+        fs.renameSync(f, aside);
+      } catch {
+        return null;
+      }
+      let moved = NaN;
+      try {
+        moved = Number(fs.readFileSync(aside, 'utf8'));
+      } catch {}
+      if (moved !== pid) {
+        try {
+          fs.linkSync(aside, f);
+        } catch {}
+        fs.rmSync(aside, { force: true });
+        return null;
+      }
+      fs.rmSync(aside, { force: true });
     }
   }
   return null;
@@ -2677,9 +2831,9 @@ function pauseWanted(p, s) {
   if (cools[dflt] && now < cooldownDue(cools[dflt])) ids.add(dflt);
   if (!held.length && !ids.size) return null;
   const cs = [...ids].map((id) => cools[id]);
-  let until = null;
-  if (cs.length) until = cs.every((c) => c.kind === 'limit' && c.until) ? Math.max(...cs.map((c) => Date.parse(c.until))) : null;
-  else until = Math.min(...held.map((h) => Date.parse(h.until)));
+  // until the cooling runtimes' resets; none known (out of credit, signed out, a rate limit): no time,
+  // which doesn't move with each try (a moving one would be told to the relay again at every try)
+  let until = cs.length && cs.every((c) => c.kind === 'limit' && c.until) ? Math.max(...cs.map((c) => Date.parse(c.until))) : null;
   if (until !== null && (until <= now + 1000 || until > now + 30 * 864e5)) until = null; // the relay takes a time in the next 30 days
   const kind = cs[0]?.kind || held[0]?.kind;
   return { until: until === null ? null : new Date(until).toISOString(), note: av.showReason ? PAUSE_NOTE[kind] || '' : '' };
@@ -2738,7 +2892,12 @@ async function heldLocalApi(m, res, p, json) {
   const unlock = lockHeld(p, h.id);
   if (!unlock) return sendJson(res, 409, { error: 'Your Oby is trying that ask right now.', code: 'conflict' });
   try {
-    const msg = (await api.get(`/api/messages/${h.id}`).catch(() => null))?.message;
+    let msg = null;
+    try {
+      ({ message: msg } = await api.get(`/api/messages/${h.id}`));
+    } catch (e) {
+      if (!/\[not_found\]/.test(e.message)) throw e; // gone from the Sphere: nothing to tell anyone
+    }
     if (validMessage(msg) && msg.id === h.id) {
       // claimed as the process that held it, so the reply is this one's alone
       const claim = await api.post(`/api/messages/${h.id}/claim`, { instance: h.instance || randomBytes(6).toString('hex') });
@@ -2749,6 +2908,9 @@ async function heldLocalApi(m, res, p, json) {
     }
     removeHeld(p, h.id);
     return sendJson(res, 200, { ok: true });
+  } catch (e) {
+    // the asker couldn't be told: the ask stays held, so it's never dropped in silence
+    return sendJson(res, 502, { error: `Couldn't tell the asker (${printable(e.message)}), so the ask stays held: try again when the Sphere can be reached.`, code: 'proxy' });
   } finally {
     unlock();
   }
@@ -5123,7 +5285,13 @@ function addPending(p, entry, waitMs = APPROVE_WAIT_MS) {
   const dir = pendingDir(p);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const id = 'w_' + randomBytes(6).toString('hex');
-  const w = { id, ...entry, pid: process.pid, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + waitMs).toISOString() };
+  // an ask a stopped process was waiting on you for waits what was left of that wait, not a new one
+  const key = `${p.dir}\0${entry.askId}`;
+  if (entry.askId && PENDING_LEFT.has(key)) {
+    waitMs = Math.max(0, Math.min(waitMs, PENDING_LEFT.get(key) - Date.now()));
+    PENDING_LEFT.delete(key);
+  }
+  const w = { id, ...entry, pid: process.pid, instance: REP_INSTANCE, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + waitMs).toISOString() };
   writeSecret(path.join(dir, `${id}.json`), w);
   notifyOwner(p, { type: 'waiting', from: entry.from?.name, channel: entry.channel, body: entry.text ?? entry.body, title: entry.title, ref: id, about: entry.askId }); // everything that waits for you notifies
   return w;
@@ -5136,7 +5304,12 @@ function processAlive(pid) {
     return e.code === 'EPERM';
   }
 }
-// every waiting entry whose process still runs; entries of processes that are gone are removed
+// what's left of the waits of asks a stopped process was waiting on you for: askId -> when it lapses
+// (set by the catch-up, from pending/left-<ask id>.json; taken by addPending)
+const PENDING_LEFT = new Map();
+// every waiting entry whose process still runs; entries of processes that are gone are removed, an
+// ask's remembered in pending/left-<ask id>.json (when its wait lapses, and the claim it held), so the
+// next catch-up puts it back in Waiting for you with what's left of its wait, or declines it if that's past
 function pendingEntries(p) {
   const dir = pendingDir(p);
   let names = [];
@@ -5152,6 +5325,10 @@ function pendingEntries(p) {
     const w = readJsonFile(path.join(dir, n), null);
     if (!w || w.id !== m[1]) continue;
     if (!Number.isInteger(w.pid) || !processAlive(w.pid)) {
+      if (w.kind !== 'github' && ID.m.test(String(w.askId)) && Number.isFinite(Date.parse(w.expiresAt)))
+        try {
+          writeSecret(path.join(dir, `left-${w.askId}.json`), { askId: w.askId, expiresAt: w.expiresAt, instance: /^[0-9a-f]{12}$/.test(String(w.instance)) ? w.instance : null });
+        } catch {}
       for (const f of [n, `${w.id}.decision.json`]) fs.rmSync(path.join(dir, f), { force: true });
       continue;
     }
@@ -5182,7 +5359,9 @@ function decidePending(p, id, decision) {
 async function waitPending(p, id, ms) {
   const dir = pendingDir(p);
   const file = path.join(dir, `${id}.decision.json`);
-  const deadline = Date.now() + ms;
+  // the entry's own lapse time when it's sooner (an ask taken over from a stopped process: what was left of its wait)
+  const lapses = Date.parse(readJsonFile(path.join(dir, `${id}.json`), null)?.expiresAt);
+  const deadline = Math.min(Date.now() + ms, Number.isFinite(lapses) ? lapses : Infinity);
   const ok = (d) => d && ['answer', 'trust', 'decline', 'write', 'timeout', 'act', 'comment'].includes(d.decision); // act, comment: a GitHub item
   try {
     for (;;) {
@@ -6676,12 +6855,15 @@ async function inboxHook() {
   if (!waiting && !failed && !held && !direct) return finish('');
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // the next try: the earliest time a held ask is tried again (none: when its runtime can answer)
-  const nextTry = found.flatMap((f) => f.heldAsks.map((h) => h.until)).filter(Boolean).sort((x, y) => Date.parse(x) - Date.parse(y))[0];
+  // (a time that has passed: your Oby isn't running, so it's tried when it runs again)
+  const tries = found.flatMap((f) => f.heldAsks.map((h) => h.until)).filter(Boolean);
+  const nextTry = tries.filter((t) => Date.parse(t) > Date.now()).sort((x, y) => Date.parse(x) - Date.parse(y))[0];
+  const overdue = !nextTry && tries.length > 0;
   const parts = [
     waiting && `${plural(waiting, 'ask waits', 'asks wait')} for you in your Obysphere console`,
     direct && plural(direct, 'new direct message', 'new direct messages'),
     failed && `your Oby couldn't answer ${plural(failed, 'ask', 'asks')} today`,
-    held && `your Oby holds ${plural(held, 'ask', 'asks')} until ${nextTry ? shortTime(nextTry) : 'its runtime can answer again'}`,
+    held && `your Oby holds ${plural(held, 'ask', 'asks')} until ${nextTry ? shortTime(nextTry) : overdue ? "it's running again" : 'its runtime can answer again'}`,
   ].filter(Boolean);
   const systemMessage = (waiting ? '' : 'Your Obysphere: ') + parts.join('; ');
   const block = (f, max) => {

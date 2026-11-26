@@ -14,7 +14,8 @@
 //   fail, failNext           an answer run fails as the real runtime does, instead of answering: fail
 //                            { claude: 'limit' } every run, failNext { claude: ['rate', 'rate'] } the next runs, one
 //                            each. limit (resetInSec from now, an hour by default), limit-noreset, rate, overloaded,
-//                            credit, auth, other (its words hold a path)
+//                            credit, auth, other (its words hold a path); Claude Code also crash (its output looks
+//                            like failures, then it stops with no result and nothing on stderr)
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -90,6 +91,12 @@ stdin((prompt) => {
   record('calls.jsonl', { bin: 'claude', prompt, settings: JSON.parse(read(flag('--settings')) || 'null'), mcp: JSON.parse(read(flag('--mcp-config')) || 'null'), system: read(flag('--append-system-prompt-file')) });
   out({ type: 'system', subtype: 'init', model, tools: ['Read'], apiKeySource: 'none', session_id: 'fake-init' });
   const failed = failure('claude');
+  // crash: the model and its tools said things that look like failures, then it stopped with no result and nothing on stderr
+  if (failed === 'crash') {
+    out({ type: 'user', message: { content: [{ type: 'tool_result', content: '   428\\tfoo\\n   429\\tbar\\nplease sign in to the GitHub MCP server\\n401 Unauthorized when fetching https://example.com' }] } });
+    out({ type: 'assistant', message: { usage: { input_tokens: 529, output_tokens: 12 }, content: [{ type: 'text', text: 'The 5-hour limit reached its peak; the API returned 429 Too Many Requests and Credit balance is too low in the logs.' }] } });
+    process.exit(1);
+  }
   if (failed) {
     const words = {
       limit: () => 'Claude AI usage limit reached|' + Math.floor(resetAt() / 1000),
