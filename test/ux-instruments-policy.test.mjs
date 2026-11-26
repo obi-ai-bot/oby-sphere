@@ -198,7 +198,7 @@ describe('policy limits on the relay (fs store)', () => {
 
   test('every value the console offers, the relay takes', async () => {
     const rows = pageRows('fs');
-    assert.deepEqual(Array.from(rows, (r) => r.key).sort(), ['maxAgentBytes', 'maxDepth', 'maxFileBytes', 'maxFilesPerMessage', 'retainMessages', ...RATES.map((k) => `rate.${k}`)].sort(), 'every limit the relay enforces has a row');
+    assert.deepEqual(Array.from(rows, (r) => r.key).sort(), ['keepDays', 'maxAgentBytes', 'maxDepth', 'maxFileBytes', 'maxFilesPerMessage', 'retainMessages', ...RATES.map((k) => `rate.${k}`)].sort(), 'every limit the relay enforces has a row');
     const was = await policy();
     for (const row of rows)
       for (const v of offered(row)) {
@@ -210,7 +210,7 @@ describe('policy limits on the relay (fs store)', () => {
       const [a, b] = row.key.split('.');
       assert.ok(row.menu.includes(b ? was[a][b] : was[a]), `${row.key}'s default is a preset`);
     }
-    await set({ maxDepth: 3, maxFileBytes: 5 * MB, maxFilesPerMessage: 10, maxAgentBytes: 200 * MB, retainMessages: 5000, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 } });
+    await set({ maxDepth: 3, maxFileBytes: 5 * MB, maxFilesPerMessage: 10, maxAgentBytes: 200 * MB, retainMessages: 5000, keepDays: 0, rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 } });
     assert.deepEqual(await policy(), was);
   });
 
@@ -291,7 +291,8 @@ describe('policy limits on the relay (fs store)', () => {
     assert.deepEqual(now, was);
     assert.equal(now.retainMessages, 100);
     assert.deepEqual(now.rate, { asksPerMin: 30, writesPerMin: 3000, joinsPerMinPerIp: 50, statusPerMin: 90, mePerMin: 12 });
-    assert.equal((await call('GET', '/api/messages?limit=1000', { key: KEY })).messages.length <= 100, true);
+    // (a store goes a little past retainMessages, 20 here, before a request cuts it back: #139)
+    assert.equal((await call('GET', '/api/messages?limit=1000', { key: KEY })).messages.length <= 100 + 20, true);
     assert.equal((await call('GET', '/api/audit?limit=1', { key: KEY })).verified, true);
   });
 });

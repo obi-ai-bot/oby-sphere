@@ -86,6 +86,15 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
         kv.set(a[0], { type: 'list', v: l, exp: live(a[0])?.exp ?? 0 }); // as in Redis, a push keeps the key's expiry
         return l.length;
       }
+      case 'LSET': {
+        const e0 = get(a[0], 'list');
+        if (!e0) throw new Error('ERR no such key');
+        let i = Number(a[1]);
+        if (i < 0) i += e0.v.length;
+        if (!(i >= 0 && i < e0.v.length)) throw new Error('ERR index out of range');
+        e0.v[i] = a[2];
+        return 'OK';
+      }
       case 'LRANGE': {
         const l = list(a[0]);
         const [s, e] = range(l.length, a[1], a[2]);
@@ -142,6 +151,23 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
           if (n !== Number(argv[0])) return -1;
           run(['RPUSH', logKey, ...argv.slice(1)], true);
           return keys.length >= 3 ? n + argv.length - 1 : list(logKey).length;
+        }
+        if (script.startsWith('-- obysphere:rewrite')) {
+          // deleting messages: overwrite entries by absolute position (one folded into the snapshot is
+          // skipped and counted), then compare-and-append as above
+          const len = list(logKey).length;
+          const n = base + len;
+          if (n !== Number(argv[0])) return [-1, 0];
+          const k = Number(argv[1]);
+          let skipped = 0;
+          for (let i = 0; i < k; i++) {
+            const at = Number(argv[2 + 2 * i]) - base;
+            if (at >= 0 && at < len) run(['LSET', logKey, at, argv[3 + 2 * i]], true);
+            else skipped++;
+          }
+          const add = argv.slice(2 + 2 * k);
+          if (add.length) run(['RPUSH', logKey, ...add], true);
+          return [n + add.length - 1, skipped];
         }
         if (script.startsWith('-- obysphere:read')) {
           const from = Number(argv[0]) - base;

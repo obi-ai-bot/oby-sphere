@@ -46,7 +46,7 @@ const CONTRACT = {
   'mcp-config': {},
   // rep.mjs, new in wave 3 (notify, admin, github)
   notify: { subs: { test: ['--via'] } },
-  admin: { subs: { claim: [], status: [], grant: [], revoke: [], policy: ['--sealed', '--max-depth', '--max-file-bytes', '--pause', '--resume'], 'rotate-key': [] } },
+  admin: { subs: { claim: [], status: [], grant: [], revoke: [], policy: ['--sealed', '--max-depth', '--max-file-bytes', '--keep-days', '--yes', '--pause', '--resume'], 'rotate-key': [] } },
   github: { subs: { status: [] } },
   // added during the build (instruments)
   instruments: { subs: { new: [], list: [], check: [], remove: [] } },
@@ -54,6 +54,8 @@ const CONTRACT = {
   away: { flags: ['--until', '--note', '--off'] },
   // the menu bar icon (#163)
   menubar: { subs: { on: [], off: [] } },
+  // deleting your own message (#139)
+  delete: {},
   // obysphere.mjs (cli)
   start: {},
   stop: {},

@@ -95,6 +95,7 @@ const DEFAULT_POLICY = {
   maxFilesPerMessage: 10,
   maxAgentBytes: CFG.store === 'redis' ? 10 * 1024 * 1024 : 200 * 1024 * 1024, // stored files per agent (each counts at least 1 KB)
   retainMessages: 5000,
+  keepDays: 0, // keeping messages for a set time: 0 is no time limit (as before), else that many days
   rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 },
   sealed: false,
 };
@@ -123,6 +124,8 @@ const POLICY_LIMITS = [
   // every kept message lives in memory (on Redis, in every instance): 50,000 are about 100 MB at a typical
   // length. Fewer than 100 would drop a busy day's conversation before anyone read it
   { key: 'retainMessages', min: 100, max: 50000, words: 'messages kept' },
+  // keeping messages for a set time: 0 is no time limit; past ten years is no limit anyone means
+  { key: 'keepDays', min: 0, max: 3650, words: 'messages kept', show: (v) => (v ? `${Number(v).toLocaleString('en-US')} days` : 'with no time limit'), range: 'keepDays is 0 (no time limit) or a whole number of days, up to 3,650.' },
   // an ask starts a model run on someone's machine: 1 a minute still lets a person ask; 600 (ten a second)
   // is past what any person sends, and still stops Obys caught asking each other in a loop
   { key: 'asksPerMin', rate: true, min: 1, max: 600, words: 'asks per minute' },
@@ -138,7 +141,7 @@ const POLICY_LIMITS = [
   // an Oby changes its profile when it starts and when its owner's settings change: 1 a minute is
   // enough for that; 600 is past any owner's clicking
   { key: 'mePerMin', rate: true, min: 1, max: 600, words: 'profile changes per minute' },
-].map((l) => ({ ...l, field: l.rate ? `rate.${l.key}` : l.key, show: (v) => (l.bytes ? fmtBytes(v) : Number(v).toLocaleString('en-US')) }));
+].map((l) => ({ ...l, field: l.rate ? `rate.${l.key}` : l.key, show: l.show || ((v) => (l.bytes ? fmtBytes(v) : Number(v).toLocaleString('en-US'))) }));
 
 // the limits a POST /api/admin/policy body sets, each checked: { maxDepth, …, rate: { asksPerMin, … } }
 function policyLimitsOf(body) {
@@ -151,7 +154,7 @@ function policyLimitsOf(body) {
     const v = l.rate ? rate?.[l.key] : body[l.key];
     if (v === undefined) continue;
     if (!Number.isInteger(v) || v < l.min || v > l.max)
-      throw err(400, 'bad_request', `${l.field} is a whole number from ${l.show(l.min)} to ${l.show(l.max)}${l.bytes ? ' (in bytes)' : ''}${l.key === 'maxFileBytes' || l.key === 'maxAgentBytes' ? ' on this store' : ''}.`);
+      throw err(400, 'bad_request', l.range || `${l.field} is a whole number from ${l.show(l.min)} to ${l.show(l.max)}${l.bytes ? ' (in bytes)' : ''}${l.key === 'maxFileBytes' || l.key === 'maxAgentBytes' ? ' on this store' : ''}.`);
     set.set(l, v);
   }
   return set;
@@ -240,8 +243,7 @@ function apply(op, liveEvents = true) {
       // rate limits merge one by one: an operation may carry only the ones it changes
       if (op.policy) S.policy = mergePolicy({ ...S.policy, ...op.policy, rate: { ...S.policy.rate, ...(op.policy.rate || {}) } });
       if (typeof op.paused === 'boolean') S.paused = op.paused;
-      // fewer messages kept: the older ones go now (the fs store compacts its log as it saves this)
-      if (op.policy?.retainMessages && messages.length > S.policy.retainMessages) trimMemory();
+      // fewer messages kept, or for less time: the cut that removes the older ones comes in the same commit (see cuts)
       ev.push(['policy', { paused: S.paused, policy: S.policy }, ALL]);
       break;
     case 'agent': {
@@ -279,12 +281,17 @@ function apply(op, liveEvents = true) {
       touch(m.from, m.ts);
       ev.push(['message', m, (st) => streamSees(st, m.channel) && (st.role !== 'rep' || involved(m, st.agentId))]);
       if (m.replyTo && waiters.has(m.replyTo)) for (const wake of waiters.get(m.replyTo)) wake();
-      if (messages.length > S.policy.retainMessages * 1.2 && store?.kind !== 'fs') trimMemory();
+      // requests cut the oldest messages long before this (see cuts); a Redis log replayed from before
+      // cuts were recorded holds every message, so memory keeps at most half again retainMessages
+      if (messages.length > Math.max(S.policy.retainMessages * 1.5, S.policy.retainMessages + 3 * cutSlack()) && store?.kind !== 'fs') trimMemory();
       break;
     }
     case 'patch': {
       const m = byId.get(op.id);
-      if (m) for (const [k, v] of Object.entries(op.fields)) if (v === null) delete m[k]; else m[k] = v; // null: the field goes (waiting, once its owner decided)
+      // a tombstone keeps only its timing (deleting messages)
+      const fields = m?.deleted ? Object.fromEntries(Object.entries(op.fields).filter(([k]) => k === 'claimedAt' || k === 'startedAt')) : op.fields;
+      if (m) for (const [k, v] of Object.entries(fields)) if (v === null) delete m[k]; else m[k] = v; // null: the field goes (waiting, once its owner decided)
+      if (m?.deleted) break;
       ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
       // an ask that now waits for its owner, or no longer does: whoever long-polls its replies looks again
       if ('waiting' in op.fields && waiters.has(op.id)) for (const wake of waiters.get(op.id)) wake();
@@ -311,6 +318,12 @@ function apply(op, liveEvents = true) {
       if (op.role === 'rep' && !op.on) delete S.status[op.agent];
       touch(op.agent, op.ts);
       if (S.agents[op.agent]) ev.push(['presence', publicAgent(S.agents[op.agent]), ALL]);
+      break;
+    case 'delete': // deleting messages: a message becomes its tombstone, its files go
+      applyDelete(op, ev);
+      break;
+    case 'expire': // keeping messages for a set time: a cut removes the oldest messages and their files
+      applyCut(op);
       break;
     case 'role': {
       // ===== admin roles: a member made an admin, or no longer one
@@ -375,8 +388,10 @@ function pushTo(map, key, value) {
 
 function index(m) {
   m.to ??= [];
-  m.files ??= [];
-  m.meta ??= {};
+  if (!m.deleted) {
+    m.files ??= [];
+    m.meta ??= {};
+  }
   m.depth ??= 0;
   messages.push(m);
   byId.set(m.id, m);
@@ -388,7 +403,7 @@ function index(m) {
 }
 
 function sizeOf(m) {
-  return (m.sealed ? Math.floor((m.sealed.ct?.length || 0) * 0.75) : Buffer.byteLength(m.text || '')) + m.files.reduce((s, f) => s + (f.size || 0), 0);
+  return (m.sealed ? Math.floor((m.sealed.ct?.length || 0) * 0.75) : Buffer.byteLength(m.text || '')) + (m.files || []).reduce((s, f) => s + (f.size || 0), 0);
 }
 
 function account(m) {
@@ -396,7 +411,7 @@ function account(m) {
   counts.messages++;
   if (m.sealed) counts.sealed++;
   counts.bytesRelayed += sizeOf(m);
-  counts.files += m.files.length;
+  counts.files += (m.files || []).length;
   if (m.kind === 'ask') {
     counts.asks++;
     if (m.depth > 0) counts.hops++;
@@ -410,6 +425,7 @@ function account(m) {
   }
   if (m.kind === 'reply') {
     counts.replies++;
+    if (m.deleted) return; // a tombstone: how it answered went with it (unaccount)
     if (m.meta?.error) counts.errors++;
     const parent = byId.get(m.replyTo);
     if (parent && parent.kind === 'ask' && parent.to.includes(m.from)) {
@@ -470,14 +486,31 @@ function contentHash(m) {
   return sha(JSON.stringify(posted));
 }
 
-// verified once from the start, then only the new tail each time it's asked
-const chain = { i: 0, prev: ZERO, seq: 0, ok: true };
+// Verified once from the start, then only the new tail each time it's asked. Besides the links,
+// what the events say must match the messages the relay holds (API.md, "Verifying the chain"):
+//   - an ask, reply or post event's content is the hash of its message; a tombstone in its place
+//     passes only when a delete event for it, with that same content, is in the chain;
+//   - a delete event carries the content of its message's own event, and its message, while the
+//     relay holds it, is a tombstone (one that still holds words fails);
+//   - an expire event names the newest message it removed (its ref) that has a message event, and
+//     a message whose event comes after the last cut's must still be held: since cuts are recorded,
+//     a message removed by hand no longer passes for one trimmed.
+const MSG_EVENTS = new Set(['ask', 'reply', 'post']);
+const chain = { i: 0, prev: ZERO, seq: 0, ok: true, read: 0, events: new Map(), deletes: new Map(), cut: null };
 function verifyChain() {
+  // what all the events say, the ones not checked yet too: a tombstone's delete event comes after its message's
+  for (; chain.read < auditEvents.length; chain.read++) {
+    const e = auditEvents[chain.read];
+    if (!e?.ref) continue;
+    if (MSG_EVENTS.has(e.type) && e.content && !chain.events.has(e.ref)) chain.events.set(e.ref, { seq: e.seq, content: e.content });
+    else if (e.type === 'delete') chain.deletes.set(e.ref, e.content ?? null);
+    else if (e.type === 'expire') chain.cut = e.ref;
+  }
+  const cutSeq = chain.cut ? (chain.events.get(chain.cut)?.seq ?? Infinity) : 0; // no cut yet: older relays trimmed without a trace
   while (chain.ok && chain.i < auditEvents.length) {
     const e = auditEvents[chain.i];
     let ok = !!e && e.seq === chain.seq + 1 && e.prev === chain.prev && e.hash === hashEvent(e);
-    // a message event must still match the message the relay holds
-    if (ok && e.content && e.ref && byId.has(e.ref)) ok = contentHash(byId.get(e.ref)) === e.content;
+    if (ok) ok = eventHolds(e, cutSeq);
     if (!ok) chain.ok = false;
     else {
       chain.prev = e.hash;
@@ -486,6 +519,25 @@ function verifyChain() {
     }
   }
   return chain.ok;
+}
+// does the relay hold what this event says (the rules above)?
+function eventHolds(e, cutSeq) {
+  if (!e.ref) return true;
+  const m = byId.get(e.ref);
+  if (MSG_EVENTS.has(e.type) && e.content) {
+    if (!m) return !chain.cut || e.seq <= cutSeq;
+    if (m.deleted) return chain.deletes.get(e.ref) === e.content;
+    return contentHash(m) === e.content;
+  }
+  if (e.type === 'delete') {
+    const own = chain.events.get(e.ref);
+    return !!own && own.seq < e.seq && own.content === (e.content ?? null) && (!m || !!m.deleted);
+  }
+  if (e.type === 'expire') {
+    const own = chain.events.get(e.ref);
+    return !!own && own.seq < e.seq;
+  }
+  return true;
 }
 
 // ================================================================ keys: hashes stored, the admin key needed at start
@@ -564,10 +616,10 @@ function fsStore() {
     msgLines++;
     if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
   }
-  // keep the newest `retainMessages` in memory and in the log (and every file record), then
-  // the counts as they are (a tally: messages dropped here still count after a restart)
+  // the log as memory holds it: every file record, the messages (a cut removed the older ones,
+  // and a deleted one is its tombstone), then the counts as they are (a tally: messages cut
+  // still count after a restart)
   function compact() {
-    trimMemory();
     const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m)), JSON.stringify({ tally: tallyOp() })];
     fs.writeFileSync(MSGS + '.tmp', lines.join('\n') + (lines.length ? '\n' : ''), { mode: 0o600 });
     msgOut?.end();
@@ -583,12 +635,19 @@ function fsStore() {
         return appendLog({ p: op.id, ...op.fields });
       case 'file':
         return appendLog({ f: op.f });
+      case 'delete': // deleting messages: the words leave the disk at once
+        appendLog({ d: op.id, at: op.at, by: op.by, files: op.files || [] });
+        compact();
+        return removeFiles(op.files);
+      case 'expire': // a cut: the messages and files it removed leave the disk at once
+        appendLog({ x: op.upto ?? null, why: op.why, at: op.at, files: op.files || [] });
+        compact();
+        return removeFiles(op.files);
       case 'audit':
         return auditOut.write(JSON.stringify(op.e) + '\n');
       case 'policy':
-        // fewer messages kept: the log on disk lets the older ones go now too
-        if (op.policy?.retainMessages && msgLines > op.policy.retainMessages + Object.keys(S.files).length) compact();
-        return save(true);
+        return save(true); // fewer messages kept, or for less time: the cut in the same commit compacts the log
+
       case 'init':
       case 'sphere':
       case 'role':
@@ -600,6 +659,9 @@ function fsStore() {
       default:
         return; // claims, status and presence live in this process only
     }
+  }
+  function removeFiles(ids) {
+    for (const id of [].concat(ids || [])) if (/^f_[\w-]{1,32}$/.test(String(id))) fs.rmSync(path.join(FILES, id), { force: true });
   }
   // a line cut short by a crash at the end of a log: dropped, not fatal
   function readLog(file) {
@@ -683,8 +745,10 @@ function fsStore() {
         }
         if (o.p) {
           const m = byId.get(o.p);
-          if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
-        } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
+          if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (k !== 'waiting' || !m.deleted) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
+        } else if (o.d) apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
+        else if ('x' in o) apply({ t: 'expire', upto: o.x, why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+        else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
       }
@@ -720,7 +784,7 @@ function fsStore() {
       for (const f of oldFiles) appendLog({ f }); // file records now live in the log
       snapDirty = true;
       saveNow(); // keys as hashes only, no file records
-      if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length || messages.length > S.policy.retainMessages) compact();
+      if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact(); // past retainMessages: the first cut, at start (init)
       setInterval(() => snapDirty && saveNow(), 15000).unref();
       setInterval(() => {
         const old = Date.now() - 120000;
@@ -838,6 +902,22 @@ local n = base + redis.call('LLEN', log)
 if n ~= tonumber(ARGV[1]) then return -1 end
 for i = 2, #ARGV do redis.call('RPUSH', log, ARGV[i]) end
 return n + #ARGV - 1`;
+// Deleting messages: as APPEND_LUA, after overwriting ARGV[2] entries of the log by absolute
+// position (ARGV[3], ARGV[4], ... : a position, then what goes there): a deleted message's own
+// entry and its files' records. A position folded into the snapshot is skipped and counted.
+// {the last position, how many were skipped}, or {-1, 0}.
+const REWRITE_LUA = `-- obysphere:rewrite${LOG_LUA}
+local len = redis.call('LLEN', log)
+local n = base + len
+if n ~= tonumber(ARGV[1]) then return {-1, 0} end
+local k = tonumber(ARGV[2])
+local skipped = 0
+for i = 0, k - 1 do
+  local at = tonumber(ARGV[3 + 2 * i]) - base
+  if at >= 0 and at < len then redis.call('LSET', log, at, ARGV[4 + 2 * i]) else skipped = skipped + 1 end
+end
+for i = 3 + 2 * k, #ARGV do redis.call('RPUSH', log, ARGV[i]) end
+return {n + #ARGV - 3 - 2 * k, skipped}`;
 // {base, entries from position ARGV[1], at most ARGV[2]}, or {base} when that position was compacted away
 const READ_LUA = `-- obysphere:read${LOG_LUA}
 local from = tonumber(ARGV[1]) - base
@@ -887,6 +967,48 @@ function redisStore() {
   let compacting = false;
   let compactAfter = 0; // after a failed compaction, wait before the next try
   let logBytes = 0;
+  // deleting messages: where each message's entry, and each file's records, are in the log (absolute
+  // positions); a deletion overwrites them there. A compaction must reach `forceAt` before its usual
+  // time: a deletion whose copy is in the snapshot, or a cut by time (keeping messages)
+  const msgAt = new Map();
+  const fileAt = new Map();
+  let forceAt = 0;
+  // a cut by count (keeping messages) brings the next compaction forward too, but at most once an
+  // hour, by the snapshot's own time (`at` in its pointer), so a busy Sphere doesn't compact at
+  // every cut: `countAt` is the position a compaction must reach, `countWait` when this instance
+  // looks again
+  let countAt = 0;
+  let countWait = 0;
+  const snapOld = (ptr) => !(Date.now() - Date.parse(ptr?.at) < CUT_EVERY_MS); // none yet, or an hour old
+  const noteAt = (op, pos) => {
+    if (op.t === 'msg' && op.m?.id) msgAt.set(op.m.id, pos);
+    else if (op.t === 'file' && op.f?.id) {
+      const l = fileAt.get(op.f.id);
+      if (!l) fileAt.set(op.f.id, [pos]);
+      else if (!l.includes(pos)) l.push(pos);
+    } else if ((op.t === 'delete' || op.t === 'expire') && op.soon) forceAt = Math.max(forceAt, pos + 1);
+    else if (op.t === 'expire' && op.why === 'count') countAt = Math.max(countAt, pos + 1);
+    // a deletion whose message was still in the tail: a compaction that read it before it was
+    // overwritten, and swapped in after, would keep its words (see watchFolds)
+    if (op.t === 'delete' && !op.soon && msgAt.get(op.id) >= base) folding.set(pos, msgAt.get(op.id));
+    if (op.t === 'expire') {
+      for (const id of msgAt.keys()) if (!byId.has(id)) msgAt.delete(id);
+      for (const id of fileAt.keys()) if (!Object.hasOwn(S.files, id)) fileAt.delete(id);
+    }
+  };
+  // deletion position -> its message's position, until a snapshot covers the deletion
+  const folding = new Map();
+  // base moved past a deleted message but not past its deletion: that snapshot may hold its words,
+  // so the next one comes as soon as it may
+  const watchFolds = () => {
+    for (const [at, mp] of folding) {
+      if (base > at) folding.delete(at);
+      else if (base > mp) {
+        forceAt = Math.max(forceAt, at + 1);
+        folding.delete(at);
+      }
+    }
+  };
   let pres = { at: 0, map: new Map() };
   let lastSweep = 0;
   let lastRefresh = 0;
@@ -929,6 +1051,7 @@ function redisStore() {
     for (;;) {
       const r = await call(['EVAL', READ_LUA, ...LOG_KEYS, String(applied), '200'], true); // a read: safe to send twice
       base = Number(r[0]);
+      if (folding.size) watchFolds(); // deleting messages
       if (r.length < 2) {
         await loadSnapshot(); // compaction: behind the compacted part, the snapshot, then the tail
         continue;
@@ -937,7 +1060,9 @@ function redisStore() {
       for (const s of items) {
         logBytes += s.length;
         try {
-          apply(JSON.parse(s));
+          const op = JSON.parse(s);
+          apply(op);
+          noteAt(op, applied);
         } catch (e) {
           console.error('a log entry failed to apply:', e.message);
         }
@@ -962,20 +1087,48 @@ function redisStore() {
         throw e;
       }
       if (!b.ops.length) return b;
-      if (await tryAppend(b)) return b;
+      if (await tryAppend(b, overwrites(b))) return b;
       await new Promise((r) => setTimeout(r, 5 + Math.random() * 20 * (attempt + 1)));
     }
     throw err(503, 'busy', 'The Sphere is busy; try again in a moment.');
   }
-  async function tryAppend(b) {
+  // deleting messages: the entries a deletion overwrites, [position, entry]: the message's own (its
+  // tombstone) and its files' records ({id, deleted}). One in the snapshot can't be: the deletion
+  // brings the next compaction forward (soon)
+  function overwrites(b) {
+    const out = [];
+    for (const op of b.ops) {
+      if (op.t !== 'delete') continue;
+      const m = byId.get(op.id);
+      const at = msgAt.get(op.id);
+      const mine = [];
+      if (m && at !== undefined) mine.push([at, JSON.stringify({ t: 'msg', m: tombstoneOf(m, op) })]);
+      for (const id of op.files || []) for (const p of fileAt.get(id) || []) mine.push([p, JSON.stringify({ t: 'file', f: { id, deleted: true } })]);
+      if (at === undefined || mine.some(([p]) => p < base)) op.soon = true;
+      out.push(...mine);
+    }
+    return out;
+  }
+  async function tryAppend(b, over = []) {
     const entries = b.ops.map((o) => JSON.stringify(o));
-    const n = await call(['EVAL', APPEND_LUA, ...LOG_KEYS, String(applied), ...entries]);
-    if (Number(n) < 0) return false;
+    let n;
+    let skipped = 0;
+    if (over.length) {
+      const r = await call(['EVAL', REWRITE_LUA, ...LOG_KEYS, String(applied), String(over.length), ...over.flatMap(([p, e]) => [String(p), e]), ...entries]);
+      n = Number(r?.[0]);
+      skipped = Number(r?.[1]) || 0;
+    } else n = Number(await call(['EVAL', APPEND_LUA, ...LOG_KEYS, String(applied), ...entries]));
+    if (!(n >= 0)) return false;
     for (let i = 0; i < b.ops.length; i++) {
       logBytes += entries[i].length;
       apply(b.ops[i]);
+      noteAt(b.ops[i], applied + i);
     }
     applied += b.ops.length;
+    if (skipped) forceAt = Math.max(forceAt, applied); // compacted between this instance's read and the deletion
+    // the bytes of the files a deletion or a cut removed
+    const gone = b.ops.flatMap((o) => (o.t === 'delete' || o.t === 'expire' ? o.files || [] : []));
+    for (let i = 0; i < gone.length; i += 100) await call(['DEL', ...gone.slice(i, i + 100).map((id) => K.file + id)]).catch((e) => console.error('removing files:', e.message));
     return true;
   }
   async function appendLocked(b) {
@@ -1044,6 +1197,7 @@ function redisStore() {
         try {
           const [p, op] = JSON.parse(s);
           if (p >= applied || op.t === 'tally') apply(op);
+          noteAt(op, p);
         } catch (e) {
           console.error('a snapshot entry failed to apply:', e.message);
         }
@@ -1072,9 +1226,11 @@ function redisStore() {
     }
     return { raw: raw || '', ptr, entries };
   }
-  // rarely: when the tail is longer than both SPHERE_COMPACT_EVERY and the snapshot
+  // rarely: when the tail is longer than both SPHERE_COMPACT_EVERY and the snapshot; sooner when a
+  // deletion or a cut must leave the snapshot (forceAt), or a cut by count the log (countAt, hourly)
   function maybeCompact() {
-    if (compacting || Date.now() < compactAfter || applied - base < Math.max(CFG.compactEvery, snapCount) || !compactionReady()) return;
+    if (compacting || CFG.compactEvery === Infinity || Date.now() < compactAfter || !compactionReady()) return;
+    if (!(forceAt > base) && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
     compacting = true;
     compact()
       .catch((e) => {
@@ -1086,12 +1242,26 @@ function redisStore() {
       });
   }
   async function compact() {
-    // the position, and the counts there (messages folded away still count), taken together
-    const at = await lock(async () => ({ pos: applied, tally: tallyOp(), retain: S.policy.retainMessages, bytes: logBytes }));
+    // a cut by count alone: not within the hour after the last compaction (one GET, then not again till then)
+    if (!(forceAt > base) && applied - base < Math.max(CFG.compactEvery, snapCount)) {
+      const raw = await call(['GET', K.snap]);
+      const ptr = raw ? parsePtr(raw) : null;
+      if (!snapOld(ptr)) {
+        countWait = Date.parse(ptr.at) + CUT_EVERY_MS;
+        return false;
+      }
+    }
+    // the position, and the counts there (messages folded away still count), taken together. First a
+    // cut to exactly retainMessages (keeping messages): the fold then drops no message a cut didn't
+    // remove, so every message after the last cut is still held
+    const at = await lock(async () => {
+      await commitLocked((b) => cutOps(b, { exact: true }));
+      return { pos: applied, tally: tallyOp(), retain: S.policy.retainMessages, bytes: logBytes };
+    });
     const read = await readOps(at.pos);
     if (!read) return false;
     snapCount = read.ptr.count;
-    if (at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
+    if (!(forceAt > read.ptr.pos) && !(countAt > read.ptr.pos && snapOld(read.raw ? read.ptr : null)) && at.pos - read.ptr.pos < Math.max(CFG.compactEvery, read.ptr.count)) return false; // another instance just did it
     const folded = foldOps(read.entries, at.retain);
     folded.push([at.pos - 1, at.tally]);
     const id = token(9);
@@ -1106,6 +1276,7 @@ function redisStore() {
       return false;
     }
     base = Math.max(base, at.pos);
+    if (folding.size) watchFolds(); // deleting messages: one this snapshot may have read before its deletion
     snapCount = folded.length;
     logBytes = bytes + Math.max(0, logBytes - at.bytes); // the snapshot, and what this instance applied after it
     return true;
@@ -1257,7 +1428,8 @@ function compactEvery(v) {
 function tallyOp() {
   const { denials, ...kept } = counts;
   const seen = Object.values(S.agents).flatMap((a) => (a.lastSeen ? [[a.id, a.lastSeen]] : [])); // touched by what a fold drops
-  return { t: 'tally', counts: kept, days: [...exchangesByDay], agents: [...agentStats].map(([id, s]) => [id, { ...s, samples: s.samples.slice() }]), seen };
+  // cuts: when the log last cut by time, and uploads, so a restart keeps to once an hour (keeping messages)
+  return { t: 'tally', counts: kept, days: [...exchangesByDay], agents: [...agentStats].map(([id, s]) => [id, { ...s, samples: s.samples.slice() }]), seen, cuts: { days: cuts.days, uploads: cuts.uploads } };
 }
 function setTally(op) {
   for (const k of Object.keys(counts)) if (k !== 'denials' && Number.isFinite(op.counts?.[k])) counts[k] = op.counts[k];
@@ -1266,6 +1438,7 @@ function setTally(op) {
   agentStats.clear();
   for (const [id, s] of op.agents || []) agentStats.set(id, { asksIn: 0, asksOut: 0, answered: 0, errors: 0, declined: 0, ...s, samples: [...(s.samples || [])] });
   for (const [id, ts] of op.seen || []) touch(id, ts);
+  for (const k of ['days', 'uploads']) if (Number.isFinite(op.cuts?.[k]) && op.cuts[k] > cuts[k]) cuts[k] = op.cuts[k];
 }
 
 // The guard for a deploy from 0.3, whose relays don't know about base. The first
@@ -1324,50 +1497,79 @@ function withoutKeys(op) {
 // Folds [position, operation] pairs, in log order, into the fewest that leave the
 // same state: each record once, where it first appeared, as it was last (with that
 // last position, so an instance that applied the log up to some position applies
-// only what is newer); the newest `retain` messages, with their patches and claims;
-// every audit event, so the chain stays whole; and every other operation as it was
-// (init, sphere, policy, the compaction mark, and ones this version doesn't know). Counts are left to a
-// tally the caller adds. A record that depends on another comes after it in the log
-// (an agent before its role, a channel before its messages), so it does here too.
-// A status is also cleared without a status operation (its member removed or
-// suspended, its representative offline); records apply where they first appeared,
-// so a status cleared after its last operation is folded as cleared.
+// only what is newer); the messages no cut removed (at most the newest `retain`), with
+// their patches and claims; every audit event, so the chain stays whole; and every other
+// operation as it was (init, sphere, policy, the compaction mark, and ones this version
+// doesn't know). Counts are left to a tally the caller adds. A record that depends on another
+// comes after it in the log (an agent before its role, a channel before its messages), so it
+// does here too. A status is also cleared without a status operation (its member removed or
+// suspended, its representative offline); records apply where they first appeared, so a
+// status cleared after its last operation is folded as cleared.
+// Deleting messages and cuts (keeping messages): a deleted message is folded as its tombstone,
+// and its files' records as {id, deleted}; a cut's messages and files are left out, and the
+// last cut of each kind stays (its messages gone, it removes nothing more), so a later fold
+// still knows the cuts are recorded.
 function foldOps(entries, retain = Infinity) {
   const ids = [];
   const last = new Map();
   const seen = new Set();
   const cleared = new Map(); // agent id -> where its status was last cleared
+  const msgAt = new Map(); // message id -> where its operation is
+  const deleted = new Map(); // message id -> { at, by }
+  const deletedFiles = new Set();
+  const cutFiles = new Set();
+  const lastCut = new Map(); // why -> where the last cut of that kind is
+  let cutTo = -1; // messages at or before this entry were cut
   entries.forEach(([, op], i) => {
     if (op.t === 'msg' && !seen.has(op.m.id)) {
       seen.add(op.m.id);
       ids.push(op.m.id);
+      msgAt.set(op.m.id, i);
     }
     const k = recordKey(op);
     if (k) last.set(k, i);
     if (op.t === 'agent' && (op.a?.removed || op.a?.suspended)) cleared.set(op.a.id, i);
     if (op.t === 'presence' && op.role === 'rep' && !op.on) cleared.set(op.agent, i);
+    if (op.t === 'delete' && typeof op.id === 'string') {
+      deleted.set(op.id, { at: op.at, by: op.by });
+      for (const f of op.files || []) deletedFiles.add(f);
+    }
+    if (op.t === 'expire') {
+      lastCut.set(String(op.why), i);
+      if (op.upto && msgAt.has(op.upto)) cutTo = Math.max(cutTo, msgAt.get(op.upto));
+      for (const f of op.files || []) cutFiles.add(f);
+    }
   });
   const asNow = (i) => {
     const [p, op] = entries[i];
     return op.t === 'status' && op.status && cleared.get(op.agent) > i ? [p, { ...op, status: null }] : entries[i];
   };
-  const kept = new Set(ids.slice(Math.max(0, ids.length - retain)));
+  const alive = ids.filter((id) => msgAt.get(id) > cutTo);
+  const kept = new Set(alive.slice(Math.max(0, alive.length - retain)));
+  const keptCuts = new Set(lastCut.values());
   const out = [];
   const done = new Set();
   const once = (k) => !done.has(k) && done.add(k);
-  for (const [p, op] of entries) {
-    if (op.t === 'tally') continue;
+  entries.forEach(([p, op], i) => {
+    if (op.t === 'tally' || op.t === 'delete') return; // a deletion is folded into its tombstone
     if (op.t === 'msg') {
-      if (kept.has(op.m.id) && once('m:' + op.m.id)) out.push([p, op]);
+      if (!kept.has(op.m.id) || !once('m:' + op.m.id)) return;
+      const d = deleted.get(op.m.id);
+      out.push(d && !op.m.deleted ? [p, { t: 'msg', m: tombstoneOf(op.m, d) }] : [p, op]);
     } else if (op.t === 'audit') {
       if (once('e:' + op.e.seq)) out.push([p, op]);
     } else if (op.t === 'patch') {
       if (kept.has(op.id)) out.push([p, op]);
+    } else if (op.t === 'expire') {
+      if (keptCuts.has(i)) out.push([p, { ...op, files: [], soon: undefined }]);
     } else if (recordKey(op)) {
-      if (op.t === 'claim' && op.ask && !kept.has(op.ask)) continue;
-      if (once(recordKey(op))) out.push(asNow(last.get(recordKey(op))));
+      if (op.t === 'claim' && op.ask && !kept.has(op.ask)) return;
+      if (op.t === 'file' && cutFiles.has(op.f?.id)) return;
+      if (!once(recordKey(op))) return;
+      const e = asNow(last.get(recordKey(op)));
+      out.push(op.t === 'file' && deletedFiles.has(op.f?.id) ? [e[0], { t: 'file', f: { id: op.f.id, deleted: true } }] : e);
     } else out.push([p, withoutKeys(op)]);
-  }
+  });
   return out;
 }
 
@@ -1783,8 +1985,9 @@ function buildMessage(b, me, body, pre) {
   let replyTo = null;
   if (body.replyTo) {
     const parent = MSG_ID.test(String(body.replyTo)) ? byId.get(String(body.replyTo)) : null;
-    if (!parent) throw err(404, 'not_found', 'replyTo: there is no such message.');
+    if (!parent || hidden(parent)) throw err(404, 'not_found', 'replyTo: there is no such message.');
     if (parent.kind !== 'ask' || !parent.to.includes(me.id)) throw err(400, 'bad_request', 'replyTo must be an ask addressed to you.');
+    if (parent.deleted) throw err(410, 'gone', 'Its asker deleted that ask: there is nothing to answer.');
     replyTo = parent.id;
   }
   const room = channelAccess(me, channel, to, replyTo); // a private or direct channel: its members only
@@ -1794,7 +1997,8 @@ function buildMessage(b, me, body, pre) {
   let depth = 0;
   if (to.length && body.cause) {
     const c = MSG_ID.test(String(body.cause)) ? byId.get(String(body.cause)) : null;
-    if (!c || c.kind !== 'ask' || !c.to.includes(me.id)) throw err(400, 'bad_request', 'cause must be the ask you are answering (an ask addressed to you).');
+    if (!c || hidden(c) || c.kind !== 'ask' || !c.to.includes(me.id)) throw err(400, 'bad_request', 'cause must be the ask you are answering (an ask addressed to you).');
+    if (c.deleted) throw err(410, 'gone', 'Its asker deleted the ask you are answering: there is nothing to pass on.');
     cause = c.id;
     depth = (c.depth || 0) + 1;
   }
@@ -1805,7 +2009,7 @@ function buildMessage(b, me, body, pre) {
   for (const f of [].concat(body.files || [])) {
     const id = f && typeof f.id === 'string' ? f.id : null;
     const meta = id ? (Object.hasOwn(S.files, id) ? S.files[id] : null) : f && f.data !== undefined ? pre[inline++] : null;
-    if (!meta || !fileSeen({ id: me.id, all: false }, meta)) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
+    if (!meta || meta.deleted || !fileSeen({ id: me.id, all: false }, meta)) throw err(404, 'not_found', `There's no file ${JSON.stringify(String(id ?? '').slice(0, 40))}; upload it first (POST /api/files).`);
     files.push({ id: meta.id, name: meta.name, mime: meta.mime, size: meta.size, sha256: meta.sha256 });
   }
 
@@ -1896,6 +2100,205 @@ function cleanMeta(meta) {
   return out;
 }
 
+// ===== deleting messages (#139)
+//
+// A member deletes its own message: a post or an ask it wrote, or a reply its Oby gave
+// (DELETE /api/messages/:id, with its token). No admin deletes another member's message:
+// suspension is the tool for abuse. The message becomes a tombstone, in place: who, to whom,
+// where, when and its place in a thread stay; its words, envelope, files and meta go, from
+// memory and from storage at once (the file store rewrites messages.jsonl; on Redis the
+// message's own entry in the log, and its files' records, are overwritten by position, and a
+// copy already folded into a snapshot leaves at a compaction the deletion brings forward). Its
+// files' records keep only {id, deleted}, and the quota they used comes back. The audit log
+// records a `delete` event carrying the same content hash as the message's own event, so the
+// chain still verifies (verifyChain). Those who got the message get `message-delete`.
+
+const TOMBSTONE_KEYS = ['id', 'ts', 'channel', 'from', 'kind', 'to', 'replyTo', 'cause', 'depth', 'claimedAt', 'startedAt'];
+
+function tombstoneOf(m, { at, by }) {
+  const t = {};
+  for (const k of TOMBSTONE_KEYS) if (m[k] !== undefined) t[k] = m[k];
+  t.deleted = { at, by };
+  return t;
+}
+
+// what a deleted message no longer counts toward: its bytes, files and seal, and how it answered.
+// An instance that replays its tombstone (account) counts it the same.
+function unaccount(m) {
+  if (m.kind === 'system') return;
+  counts.bytesRelayed = Math.max(0, counts.bytesRelayed - sizeOf(m));
+  counts.files = Math.max(0, counts.files - (m.files || []).length);
+  if (m.sealed) counts.sealed = Math.max(0, counts.sealed - 1);
+  if (m.kind !== 'reply') return;
+  if (m.meta?.error) counts.errors = Math.max(0, counts.errors - 1);
+  const s = agentStats.get(m.from);
+  if (!s) return;
+  const answer = !m.meta?.error && !m.meta?.declined && !m.meta?.expired;
+  const k = m.meta?.error ? 'errors' : answer ? 'answered' : 'declined';
+  s[k] = Math.max(0, s[k] - 1);
+  // its answer time, when it was its Oby's first answer to that ask
+  const parent = byId.get(m.replyTo);
+  if (!answer || !parent) return;
+  if ((repliesOf.get(parent.id) || []).some((r) => r !== m && r.from === m.from && nOf.get(r.id) < nOf.get(m.id))) return;
+  const i = s.samples.lastIndexOf(Date.parse(m.ts) - Date.parse(parent.ts));
+  if (i >= 0) s.samples.splice(i, 1);
+}
+
+// apply(): { t: 'delete', id, by, at, files }. Its files first: an instance may hold them as they
+// were even when the log already gave it the tombstone (overwritten on Redis).
+function applyDelete(op, ev) {
+  for (const id of [].concat(op.files || [])) {
+    const f = Object.hasOwn(S.files, id) ? S.files[id] : null;
+    if (!f || f.deleted) continue;
+    if (f.by) agentBytes.set(f.by, Math.max(0, (agentBytes.get(f.by) || 0) - Math.max(1024, f.size || 0)));
+    S.files[id] = { id, deleted: true };
+  }
+  const m = byId.get(op.id);
+  if (!m || m.deleted) return;
+  unaccount(m);
+  const t = tombstoneOf(m, op);
+  for (const k of Object.keys(m)) delete m[k];
+  Object.assign(m, t); // in place: every index holds it
+  // to the streams that got the message
+  ev.push(['message-delete', { id: m.id, channel: m.channel, deleted: m.deleted }, (st) => streamSees(st, m.channel) && (st.role !== 'rep' || involved(m, st.agentId))]);
+  if (waiters.has(m.id)) for (const wake of waiters.get(m.id)) wake();
+}
+
+// the operations for one deletion, built from the message as it is (not yet a tombstone)
+function buildDelete(b, me, m) {
+  const files = Object.values(S.files).filter((f) => !f.deleted && f.messageId === m.id).map((f) => f.id);
+  const name = (id) => S.agents[id]?.name ?? '?';
+  const parent = m.replyTo ? byId.get(m.replyTo) : null;
+  const what = m.kind === 'ask' ? `an ask to ${m.to.map(name).join(', ')}` : m.kind === 'reply' ? `a reply to ${parent?.from ? name(parent.from) : 'an ask'}` : 'a post';
+  const target = m.kind === 'ask' ? (m.to[0] ?? null) : m.kind === 'reply' ? (parent?.from ?? null) : null;
+  const n = (m.files || []).length;
+  const detail = `${me.name} deleted ${what} · #${m.channel} · ${fmtBytes(sizeOf(m))}${m.sealed ? ' sealed' : ''}${n ? ` · ${n} file${n > 1 ? 's' : ''}` : ''}`;
+  // the content hash its own event carried: the message as posted
+  b.audit('delete', { actor: me.id, target, ref: m.id, content: contentHash(m), detail });
+  b.push({ t: 'delete', id: m.id, by: me.id, at: now(), files });
+  b.result = m;
+}
+
+// ===== keeping messages for a set time (#139)
+//
+// policy.keepDays: 0 keeps messages with no time limit (as before), else for that many days.
+// Expired messages are hidden from every read at once, on every instance, by their time; at
+// most once an hour a request commits the cut that removes them, and their files. retainMessages
+// stays the most a store holds: past it (by a tenth, or 20), a request cuts the oldest. Uploads
+// never sent with a message go after a day. Each cut is an `expire` operation, { t: 'expire',
+// why: 'days' | 'count' | 'uploads', upto: the newest message it removes (in log order) or
+// null, at, files: the file ids it removes }, and an `expire` audit event (API.md). The file
+// store rewrites messages.jsonl at once; on Redis a cut's messages leave the log at the next
+// compaction, which every cut brings forward: a cut by time, or one a policy change makes, at
+// once (soon); a cut by count within the hour after the last compaction (countAt).
+
+const CUT_EVERY_MS = 3600e3; // cuts by time, and of uploads never sent: at most once an hour; compactions for cuts by count, too
+const UPLOAD_KEEP_MS = 864e5; // an upload never sent with a message goes after a day
+const cuts = { days: 0, uploads: 0, looked: 0 }; // when the log last cut by time, and uploads (from the log); when this process last looked for old uploads
+
+// how far past retainMessages a store goes before a request cuts it back: a tenth, or 20
+function cutSlack(retain = S.policy.retainMessages) {
+  return Math.max(20, Math.floor(retain / 10));
+}
+function keepMs(policy = S.policy) {
+  return Math.max(0, Number(policy?.keepDays) || 0) * 864e5;
+}
+// older than the Sphere keeps messages: hidden now, removed at the next cut
+function hidden(m) {
+  const ms = keepMs();
+  return !!ms && Date.parse(m.ts) < Date.now() - ms;
+}
+function shown(list) {
+  const ms = keepMs();
+  if (!ms) return list;
+  const t = Date.now() - ms;
+  return list.filter((m) => !(Date.parse(m.ts) < t));
+}
+
+// apply(): the messages up to `upto` (a prefix, in log order) and the files go
+function applyCut(op) {
+  if ((op.why === 'days' || op.why === 'uploads') && Date.parse(op.at) > cuts[op.why]) cuts[op.why] = Date.parse(op.at);
+  for (const id of [].concat(op.files || [])) {
+    const f = Object.hasOwn(S.files, id) ? S.files[id] : null;
+    if (!f) continue;
+    if (f.by && !f.deleted) agentBytes.set(f.by, Math.max(0, (agentBytes.get(f.by) || 0) - Math.max(1024, f.size || 0)));
+    delete S.files[id];
+  }
+  const to = op.upto ? byId.get(op.upto) : null;
+  if (!to) return; // removed already (a snapshot keeps the last cut)
+  const gone = messages.splice(0, messages.indexOf(to) + 1);
+  for (const m of gone) {
+    byId.delete(m.id);
+    nOf.delete(m.id);
+  }
+  byChannel.clear();
+  asksTo.clear();
+  repliesOf.clear();
+  for (const m of messages) {
+    pushTo(byChannel, m.channel, m);
+    for (const t of m.to) pushTo(asksTo, t, m);
+    if (m.replyTo) pushTo(repliesOf, m.replyTo, m);
+  }
+}
+
+// one cut: messages[from..to) and their files (and files whose message is gone already), as an
+// expire operation and its audit event. `taken`: files an earlier cut of this commit took.
+function pushCut(b, from, to, { why, words, soon = false }, at, taken) {
+  const gone = messages.slice(from, to);
+  const ids = new Set(gone.map((m) => m.id));
+  const files = Object.values(S.files).filter((f) => f.messageId && !taken.has(f.id) && (ids.has(f.messageId) || !byId.has(f.messageId))).map((f) => f.id);
+  for (const id of files) taken.add(id);
+  // the event names the newest message removed that has its own event (system messages have none)
+  const ref = gone.findLast((m) => m.kind !== 'system')?.id ?? null;
+  const n = gone.length;
+  const k = files.length;
+  b.audit('expire', { ref, detail: `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
+  b.push({ t: 'expire', why, upto: gone[n - 1].id, at, files, ...(soon ? { soon: true } : {}) });
+}
+
+// The cuts due now, into a commit. force: a policy change (keep for less time, or fewer): at
+// once, down to exactly retainMessages; exact: down to exactly retainMessages (before a
+// compaction). policy: the policy the cut is for (a change not applied yet).
+function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
+  const at = now();
+  const t = Date.parse(at);
+  const taken = new Set();
+  let i = 0;
+  const keep = keepMs(policy);
+  if (keep && (force || t - cuts.days >= CUT_EVERY_MS)) {
+    while (i < messages.length && Date.parse(messages[i].ts) < t - keep) i++;
+    if (i) pushCut(b, 0, i, { why: 'days', words: `older than ${Number(policy.keepDays).toLocaleString('en-US')} day${policy.keepDays === 1 ? '' : 's'}`, soon: true }, at, taken);
+  }
+  const retain = policy.retainMessages;
+  const over = messages.length - i - retain;
+  if (over > 0 && (force || exact || over > cutSlack(retain))) {
+    pushCut(b, i, i + over, { why: 'count', words: `past the newest ${Number(retain).toLocaleString('en-US')}`, soon: force }, at, taken);
+    i += over;
+  }
+  if (t - cuts.uploads >= CUT_EVERY_MS) {
+    const old = Object.values(S.files).filter((f) => !f.deleted && !f.messageId && !taken.has(f.id) && t - Date.parse(f.ts) > UPLOAD_KEEP_MS).map((f) => f.id);
+    if (old.length) {
+      b.audit('expire', { detail: `${old.length} upload${old.length === 1 ? '' : 's'} never sent removed` });
+      b.push({ t: 'expire', why: 'uploads', upto: null, at, files: old });
+    }
+  }
+}
+
+// before a request is answered: a cut, when one is due (cheap to ask: the oldest message's time,
+// how many there are, and old uploads at most once a minute here)
+async function maybeCut() {
+  const t = Date.now();
+  const keep = keepMs();
+  const retain = S.policy.retainMessages;
+  let due = messages.length - retain > cutSlack(retain);
+  if (!due && keep && messages.length && Date.parse(messages[0].ts) < t - keep && t - cuts.days >= CUT_EVERY_MS) due = true;
+  if (!due && t - cuts.looked >= 60e3 && t - cuts.uploads >= CUT_EVERY_MS) {
+    cuts.looked = t;
+    due = Object.values(S.files).some((f) => !f.deleted && !f.messageId && t - Date.parse(f.ts) > UPLOAD_KEEP_MS);
+  }
+  if (due) await store.commit((b) => cutOps(b));
+}
+
 // ================================================================ conversations: channels, members, direct messages
 //
 // A channel is public (anyone reads and posts in it; its `members` are the agents who joined),
@@ -1948,8 +2351,11 @@ function visible(v, list, channelOf = (m) => m.channel) {
 }
 // a file goes with its message's channel; one not sent with a message yet, with whoever uploaded it
 function fileSeen(v, f) {
+  if (f.deleted) return false; // deleting messages: its files went with it
   if (!f.messageId) return v.all || (!!v.id && v.id === f.by);
-  return sees(v, f.channel ?? byId.get(f.messageId)?.channel ?? null);
+  const m = byId.get(f.messageId);
+  if (m && hidden(m)) return false; // keeping messages: older than the Sphere keeps them
+  return sees(v, f.channel ?? m?.channel ?? null);
 }
 function visibleFiles(v, list) {
   return v.all ? list : list.filter((x) => fileSeen(v, (Object.hasOwn(S.files, x.id) && S.files[x.id]) || x));
@@ -2184,6 +2590,7 @@ async function route(req, res, url) {
   if (m === 'GET' && p === '/healthz') return send(res, 200, { ok: true, version: VERSION, store: store.kind, paused: S.paused, sealed: !!S.policy.sealed });
 
   await store.sync(); // redis: apply what other instances wrote first
+  await maybeCut(); // keeping messages: a cut, when one is due
 
   // ---- join with the Sphere's key: returns the agent's own token
   if (m === 'POST' && p === '/api/join') {
@@ -2263,7 +2670,7 @@ async function route(req, res, url) {
       const t = agentByName(toName) || [...Object.values(S.agents)].find((a) => a.name === toName);
       list = t ? asksTo.get(t.id) || [] : [];
     }
-    list = visible(viewOf(req, me), list);
+    list = shown(visible(viewOf(req, me), list));
     return send(res, 200, { messages: slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100)) });
   }
 
@@ -2271,17 +2678,17 @@ async function route(req, res, url) {
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const msg = byId.get(mm[1]);
     const v = viewOf(req, me);
-    if (!msg || !sees(v, msg.channel)) throw err(404, 'not_found', 'There is no such message.');
-    return send(res, 200, { message: msg, replies: visible(v, repliesOf.get(msg.id) || []) });
+    if (!msg || !sees(v, msg.channel) || hidden(msg)) throw err(404, 'not_found', 'There is no such message.');
+    return send(res, 200, { message: msg, replies: shown(visible(v, repliesOf.get(msg.id) || [])) });
   }
 
   // long-poll: wait up to ?wait= seconds for replies to a message
   if (m === 'GET' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/replies$/))) {
     const id = mm[1];
     const v = viewOf(req, me);
-    if (!byId.has(id) || !sees(v, byId.get(id).channel)) throw err(404, 'not_found', 'There is no such message.');
+    if (!byId.has(id) || !sees(v, byId.get(id).channel) || hidden(byId.get(id))) throw err(404, 'not_found', 'There is no such message.');
     const wait = Math.min(55, Math.max(0, Number(url.searchParams.get('wait')) || 0));
-    const have = visible(v, repliesOf.get(id) || []);
+    const have = shown(visible(v, repliesOf.get(id) || []));
     if (have.length || !wait) return send(res, 200, { replies: have });
     return new Promise((resolve) => {
       let done = false;
@@ -2291,7 +2698,7 @@ async function route(req, res, url) {
         clearTimeout(timer);
         waiters.get(id)?.delete(finish);
         if (waiters.get(id)?.size === 0) waiters.delete(id);
-        if (!res.writableEnded) send(res, 200, { replies: visible(v, repliesOf.get(id) || []) });
+        if (!res.writableEnded) send(res, 200, { replies: shown(visible(v, repliesOf.get(id) || [])) });
         resolve();
       };
       const timer = setTimeout(finish, wait * 1000);
@@ -2400,6 +2807,15 @@ async function route(req, res, url) {
       if (me && id === me.id && !keyAdmin) throw err(400, 'bad_request', `An admin can't ${what} its own Oby: ask another admin, or use the admin key.`);
     };
     if (m === 'GET' && p === '/api/admin/check') return send(res, 200, { ok: true, via: keyAdmin ? 'key' : 'member' });
+    // keeping messages: how many messages a shorter period would remove now (Policy asks first)
+    if (m === 'GET' && p === '/api/admin/expiring') {
+      const days = Number(url.searchParams.get('keepDays'));
+      if (!Number.isInteger(days) || days < 1 || days > 3650) throw err(400, 'bad_request', 'keepDays is a whole number of days, 1 to 3,650.');
+      const limit = Date.now() - days * 864e5;
+      let n = 0;
+      for (const x of messages) if (Date.parse(x.ts) < limit && !hidden(x)) n++;
+      return send(res, 200, { keepDays: days, messages: n });
+    }
     if (m === 'POST' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})\/role$/))) {
       const body = await readJson(req);
       if (typeof body.admin !== 'boolean') throw err(400, 'bad_request', 'admin is true or false.');
@@ -2444,6 +2860,14 @@ async function route(req, res, url) {
           b.audit('policy', { actor, detail: (body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again') + by });
         }
         if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
+        // keeping messages: a new period, or fewer kept, cuts now, in this commit, by the shorter period
+        // of the two: a shorter one removes the older messages at once, and a longer one (or no time
+        // limit) doesn't bring back the ones the old period already hid
+        const after = mergePolicy({ ...S.policy, ...pol, rate: S.policy.rate });
+        if (after.keepDays !== S.policy.keepDays || after.retainMessages < S.policy.retainMessages) {
+          const days = [S.policy.keepDays, after.keepDays].filter((d) => d > 0);
+          cutOps(b, { force: true, policy: { ...after, keepDays: days.length ? Math.min(...days) : 0 } });
+        }
       });
       return send(res, 200, { policy: { ...S.policy, paused: S.paused } });
     }
@@ -2555,13 +2979,36 @@ async function route(req, res, url) {
     return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
   }
 
+  // ===== deleting messages: your own (a post or an ask you wrote, a reply your Oby gave), with your
+  // Oby's token. A write (rate-limited), refused while suspended, and allowed while the relay is
+  // paused: it adds nothing. Deleting again gives the same tombstone.
+  if (m === 'DELETE' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
+    const id = mm[1];
+    const v = viewOf(req, me);
+    const seen = (x) => !!x && sees(v, x.channel) && !hidden(x);
+    const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`);
+    const msg0 = byId.get(id);
+    if (!seen(msg0)) throw err(404, 'not_found', 'There is no such message.');
+    if (msg0.deleted && msg0.from === me.id) return send(res, 200, { message: msg0 });
+    if (msg0.from === me.id && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
+      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id); });
+    const b = await store.commit((b) => {
+      const msg = byId.get(id);
+      if (!seen(msg)) throw err(404, 'not_found', 'There is no such message.');
+      if (msg.from !== me.id) throw notYours();
+      if (msg.deleted) return (b.result = msg);
+      buildDelete(b, me, msg);
+    });
+    return send(res, 200, { message: b.result });
+  }
+
   // only one of an agent's representative processes answers a given ask (first wins, everywhere)
   if (m === 'POST' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/claim$/))) {
     const body = await readJson(req);
     const instance = String(body.instance || '').slice(0, 64);
     const b = await store.commit((b) => {
       const msg = byId.get(mm[1]);
-      if (!msg || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      if (!msg || msg.deleted || hidden(msg) || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
       if (S.agents[me.id]?.suspended) throw denyErr('suspended', 403, "The Sphere's operator suspended this agent: it can't answer until they resume it.", me.id);
       if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' });
       const key = msg.id + ':' + me.id;
@@ -2590,7 +3037,7 @@ async function route(req, res, url) {
     const b = await store.commit((b) => {
       b.result = { ok: true };
       const msg = byId.get(mm[1]);
-      if (!msg || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      if (!msg || msg.deleted || hidden(msg) || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
       if (!until) {
         // cleared by the Oby that set it (an ask to several Obys keeps another's)
         if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
@@ -2616,7 +3063,7 @@ async function route(req, res, url) {
       const status = { state: 'working', about, note: cleanLine(body.note || '', 200), since: now() };
       b.push({ t: 'status', agent: me.id, status });
       const ask = about && byId.get(about);
-      if (ask && ask.kind === 'ask' && ask.to.includes(me.id) && !ask.startedAt) {
+      if (ask && !ask.deleted && ask.kind === 'ask' && ask.to.includes(me.id) && !ask.startedAt) {
         b.push({ t: 'patch', id: ask.id, fields: { startedAt: status.since } });
         b.audit('run', { actor: me.id, ref: ask.id, detail: `${me.name}: ${status.note || "working on it on its owner's machine"}` });
       }
@@ -2774,6 +3221,7 @@ function stats() {
 
 function listFiles() {
   return Object.values(S.files)
+    .filter((f) => !f.deleted && !(f.messageId && byId.has(f.messageId) && hidden(byId.get(f.messageId)))) // deleted, or older than the Sphere keeps messages
     .map((f) => {
       const msg = f.messageId ? byId.get(f.messageId) : null;
       return { id: f.id, name: f.name, mime: f.mime, size: f.size, sha256: f.sha256, messageId: f.messageId, sealed: !!msg?.sealed, from: msg?.from ?? f.by, to: msg?.to ?? [], channel: msg?.channel ?? null, ts: msg?.ts ?? f.ts };
@@ -3059,6 +3507,7 @@ async function init() {
     ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
     markCompaction(b); // compaction: say once, in the log, that a relay that compacts is here
   });
+  await maybeCut(); // keeping messages: past retainMessages (a log from before cuts were recorded), or expired
   startInfo = info;
   const base = CFG.publicUrl || `http://localhost:${CFG.port}`;
   if (IS_MAIN || info.created) {

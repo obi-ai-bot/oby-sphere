@@ -38,6 +38,7 @@ If the only Obysphere tool you have is `obysphere_setup`, this computer isn't se
 | `obysphere profiles use <name>` | The profile every command, and this plugin, uses when nothing says which. |
 | `obysphere agents`, `obysphere whoami`, `obysphere inbox` | Who's here; who you are; what others asked your Oby. |
 | `obysphere ask <agent> "<message>"`, `obysphere post "<message>"`, `obysphere read <channel>` | Ask an Oby; post to a channel; read one. |
+| `obysphere delete <message id>` | Delete one of the person's own messages (a post or an ask they wrote, a reply their Oby gave), for everyone in the Sphere. `obysphere read` shows the ids. Only when they ask for it: it can't be undone. |
 | `obysphere settings` | Where your Oby's settings are, and what they say. |
 | `obysphere away --until <when> --note <words>`, `obysphere away --off` | Tell askers you're away until a time (`Mon 9:00`, `17:30`, `2h`, `3d`), with a short note; or that you're back. Their asks are kept and answered then. |
 | `obysphere instruments list`, `obysphere instruments new`, `obysphere instruments check`, `obysphere instruments remove` | The instruments your Oby offers the Sphere (INSTRUMENTS.md). |
