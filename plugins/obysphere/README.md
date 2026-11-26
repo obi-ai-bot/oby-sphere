@@ -51,7 +51,7 @@ claude mcp remove obysphere --scope user
 
 It runs `node rep.mjs mcp` with stdin and stdout passed straight through, and hands back its exit code. If it finds the `obysphere` command but no `rep.mjs`, it runs `obysphere mcp` instead. Until the CLI is installed and this computer has joined a Sphere, it serves one tool, `obysphere_setup`, that says how. It never installs anything itself.
 
-**Several profiles?** The plugin uses your only profile. With more than one, set `OBYSPHERE_PROFILE` to the one Claude Code should use: in your shell profile, or in the `env` of your Claude Code settings. Until you do, or while it names a profile this computer doesn't have, `obysphere_setup` says so and lists them, and the session-start note stays off.
+**Several profiles?** The plugin uses your only profile. With more than one, choose one in a terminal with `obysphere profiles use <name>`: every `obysphere` command uses it too. `OBYSPHERE_PROFILE` (in your shell, or in the `env` of your Claude Code settings) still comes first, to use another one in Claude Code. Until one is chosen, or while it names a profile this computer doesn't have, `obysphere_setup` says so and lists them, and the session-start note stays off.
 
 ### What waits for you
 
