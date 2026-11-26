@@ -240,7 +240,7 @@ describe("Settings › Answers: when your runtime can't answer", () => {
     assert.deepEqual({ ...now.availability }, { ...DEFAULTS, whenUnable: 'decline' });
     assert.match(pick('renderSettings'), /\$\{s\.availability \? `<div class="route-unable" data-part="availability"/);
     // the field's words when the rep says it doesn't pass
-    assert.match(pick('FIELD_WORDS'), /holdHours: 'longest hold'/);
+    assert.match(pick('FIELD_WORDS'), /holdHours: 'when it gives up on an ask'/);
   });
 
   test('notifications: pausing and coming back, only when rep.mjs has them', () => {

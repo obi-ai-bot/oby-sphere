@@ -862,7 +862,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 .away-when .ctl-dd-btn { min-width: 168px; }
 .away-form .set-field { max-width: 420px; }
 .away-form .route-label-sm { margin-bottom: -6px; }
-.away-form :is(.set-field, .set-button):focus-visible, .you-away .set-button:focus-visible, #held-box .set-button:focus-visible { outline: 2px solid var(--unread); outline-offset: 2px; }
+.away-form :is(.set-field, .set-button):focus-visible, .you-away .set-button:focus-visible, #held-box .set-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 #held-box:not(:empty) { margin-bottom: 28px; }
 .ask-card .why.is-held { color: var(--muted); }
 .route-unable { padding: 14px 0 12px; border-top: 1px solid var(--line); }
@@ -2690,7 +2690,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (YOU.editing) return awayFormHtml();
     const w = YOU.away;
     const until = w?.until ? ` until ${whenWords(w.until)}` : '';
-    const row = (title, sub, buttons) => `<div class="set-group"><div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div>${sub ? `<div class="set-row-sub">${sub}</div>` : ''}</div><div class="set-row-ctl">${buttons}<span class="saved-note" data-away-note role="status" aria-live="polite"></span></div></div></div>`;
+    const row = (title, sub, buttons) => `<div class="set-group"><div class="set-row"><div class="set-row-text"><div class="set-row-title">${title}</div>${sub ? `<div class="set-row-sub">${sub}</div>` : ''}</div><div class="set-row-ctl">${buttons}<span class="saved-note" data-away-note></span></div></div></div>`;
     if (w?.by === 'owner') return row(esc(`Away${until}`), esc(w.note), '<button type="button" class="set-button" data-away="edit">Change</button><button type="button" class="set-button" data-away="back">I’m back</button>');
     const set = '<button type="button" class="set-button" data-away="edit">Set away</button>';
     if (w?.by === 'pause') return row(esc(`Paused${until}`), 'Your runtime can’t answer right now. Askers see when it can.', set);
@@ -2731,13 +2731,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       <div class="away-when">${ctlDropdown({ id: 'you-away-day', value: day, options: awayDays(now), label: 'Away until, the day', searchWords: 'Search, like Mon or Dec 3' })}<span data-away-time${day === 'none' ? ' hidden' : ''}>${ctlTime({ id: 'you-away-time', value: tm, label: 'Away until, the time' })}</span></div>
       <label class="route-label-sm" for="you-away-note">A note for askers</label>
       <input class="set-field" id="you-away-note" maxlength="120" autocomplete="off" placeholder="On holiday" value="${esc(w?.note || '')}">
-      <div class="ask-actions"><button type="button" class="modal-primary" data-away="save">Set away</button><button type="button" class="set-button" data-away="cancel">Cancel</button><span class="saved-note" data-away-note role="status" aria-live="polite"></span></div>
+      <div class="ask-actions"><button type="button" class="modal-primary" data-away="save">Set away</button><button type="button" class="set-button" data-away="cancel">Cancel</button><span class="saved-note" data-away-note></span></div>
     </div></div>`;
   }
   async function awayDo(what) {
     const box = document.getElementById('you-away');
     if (!box || YOU.busy) return;
-    const say = (words, bad = false) => { const n = box.querySelector('[data-away-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } };
+    const say = (words, bad = false) => { const n = box.querySelector('[data-away-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } a11ySay(bad ? 'problem' : 'note', words); };
     const done = (sel) => { YOU.editing = false; paintYou(true); box.querySelector(sel)?.focus(); };
     if (what === 'edit') { YOU.editing = true; paintYou(true); return box.querySelector('#you-away-day-btn')?.focus(); }
     if (what === 'cancel') return done('[data-away="edit"]');
@@ -2772,7 +2772,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function heldHtml() {
     const list = YOU.heldOff ? [] : YOU.held || [];
     if (!list.length) return '';
-    return `<div class="section-head"><h3>Held · ${list.length}</h3><span class="link">Your runtime couldn’t answer these yet: your Oby tries again on its own</span></div>` +
+    return `<div class="section-head"><h2>Held · ${list.length}</h2><span class="link">Your runtime couldn’t answer these yet: your Oby tries again on its own</span></div>` +
       list.map((h) => {
         const who = heldFrom(h.from);
         const at = h.until ? whenWords(h.until) : '';
@@ -2780,7 +2780,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         return `<div class="ask-card" data-held="${esc(h.id)}">
           <div class="who">${avatar(who, 22)}<span>${esc(obyOf(who))} asks</span><span class="room-from">@${esc(who.name)} · ${esc(where(ch))}${h.ts ? ` · ${esc(time(h.ts))}` : ''}</span><span class="why is-held">${esc(`${HELD_WHY[h.kind] || HELD_WHY.other} · ${at ? `next try ${at}` : 'next try when it can'}`)}</span></div>
           ${h.words ? `<div class="q">${esc(h.words)}</div>` : ''}
-          <div class="ask-actions"><button type="button" class="set-button" data-held-do="retry">Try now</button><button type="button" class="set-button" data-held-do="drop" title="The asker is told your Oby can’t answer it right now">Drop</button><span class="saved-note" data-note role="status"></span></div>
+          <div class="ask-actions"><button type="button" class="set-button" data-held-do="retry">Try now</button><button type="button" class="set-button" data-held-do="drop" title="The asker is told your Oby can’t answer it right now">Drop</button><span class="saved-note" data-note></span></div>
         </div>`;
       }).join('');
   }
@@ -2797,10 +2797,12 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       await local('POST', '/local/held', { id, action });
       if (action === 'drop') return gone();
       note.textContent = 'Trying it now.';
+      a11ySay('note', note.textContent);
       setTimeout(loadYou, 3000);
     } catch (e) {
       if (e.status === 404) return gone(); // answered or dropped meanwhile
       note.textContent = e.message;
+      a11ySay('problem', e.message);
       note.classList.add('is-problem');
     } finally { card.querySelectorAll('button').forEach((x) => (x.disabled = false)); }
   }
