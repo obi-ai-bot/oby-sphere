@@ -739,6 +739,27 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .set-row.ch-private { margin-top: 12px; padding: 0; min-height: 0; }
 .modal-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 
+/* ===== search (#138): the field at the top of the Conversation side panel, its results in the thread's place */
+.au-search.cv-search { flex: none; margin: 0 0 12px; }
+.conv.is-searching :is(#conv-head, #feed, #empty, #composer-home, #watch-foot) { display: none !important; }
+.conv:not(.is-searching) #results { display: none; }
+#results:focus { outline: none; } /* where the focus lands when results show */
+.cv-results-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--divider); }
+.cv-results-title { flex: 1 1 220px; min-width: 0; color: var(--ink); font-size: var(--text-lg); font-weight: 500; line-height: 22px; overflow-wrap: anywhere; }
+.cv-covered { margin: 10px 0 0; color: var(--muted); font-size: var(--text-sm); line-height: 17px; overflow-wrap: anywhere; }
+.cv-hits { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.cv-hit { width: 100%; min-width: 0; padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border-radius: 10px; text-align: left; transition: background-color var(--fade); }
+.cv-hit:hover { background: var(--hover); }
+.cv-hit-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; max-width: 100%; font-size: var(--text-sm); line-height: 16px; }
+.cv-hit-who { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.cv-hit-where, .cv-hit-when { color: var(--muted); overflow-wrap: anywhere; }
+.cv-hit-text { max-width: 100%; color: var(--item); font-size: var(--text-base); line-height: 20px; overflow-wrap: anywhere; }
+.cv-hit-files, .cv-hit-warn { max-width: 100%; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--text-sm); line-height: 16px; overflow-wrap: anywhere; }
+.cv-hit-files svg, .cv-hit-warn svg { flex: none; }
+.cv-hit-warn { color: var(--danger); }
+.cv-mark { padding: 0 1px; border-radius: 3px; background: rgba(255, 214, 10, 0.24); color: var(--ink); }
+.cv-more { margin-top: 12px; display: flex; justify-content: center; }
+
 /* ---------- modals */
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.5); animation: fade-in 160ms var(--warm) both; }
 @keyframes fade-in { from { opacity: 0; } }
@@ -984,6 +1005,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         </div>
 
         <nav class="side-part" id="side-conv" aria-label="Conversations" hidden>
+          <form class="au-search cv-search" id="search-box" role="search" aria-label="Search messages"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="4.25"/><path d="m9.2 9.2 3.3 3.3"/></svg><input type="search" id="search" placeholder="Search messages" aria-label="Search messages" aria-keyshortcuts="/" autocomplete="off" spellcheck="false" maxlength="500" enterkeyhint="search"></form>
           <p class="sidebar-subtitle" id="sphere-count"></p>
           <button class="connector" id="invite"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M11 6v10M6 11h10"/></svg><span class="connector-name">Invite member</span></button>
           <h3 class="sidebar-group-head">Channels</h3>
@@ -1018,6 +1040,14 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
             </div>
           </section>
           <div class="group-none" id="empty" hidden><p id="empty-1"></p><p id="empty-2"></p></div>
+          <section class="chat cv-results" id="results" aria-labelledby="results-title" tabindex="-1">
+            <div class="chat-column">
+              <div class="cv-results-head"><h2 class="cv-results-title" id="results-title">Search</h2><button type="button" class="set-button sm" id="results-close">Close search</button></div>
+              <p class="cv-covered" id="results-covered"></p>
+              <ol class="cv-hits" id="results-list"></ol>
+              <div class="cv-more"><button type="button" class="set-button sm" id="results-more" hidden>Show older results</button></div>
+            </div>
+          </section>
         </div>
         <div id="composer-home">
           <form class="chat-composer" id="composer" hidden autocomplete="off">
@@ -1226,6 +1256,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       setupComposer();
     } else $('#watch-foot').hidden = false;
     wire();
+    setupSearch();
     a11ySetup();
     renderAccount();
     renderAll();
@@ -1259,6 +1290,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         $('#side').classList.remove('is-open');
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && S.me) { e.preventDefault(); openNew(); }
+      searchKey(e); // / reaches the search field when you aren't typing
     });
     wireAdmin();
   }
@@ -1589,7 +1621,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function renderTrail() {
     const chev = '<svg class="trail-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
     let parts = [`<span class="trail-part">${esc(S.sphere.name)}</span>`];
-    if (S.mode === 'conversation') parts.push(`<h1 class="trail-now">${esc(channelTitle(S.current))}</h1>`); // the view's title (a console page has its own)
+    if (S.mode === 'conversation') parts.push(`<h1 class="trail-now">${esc(Q.on ? 'Search' : channelTitle(S.current))}</h1>`); // the view's title (a console page has its own)
     else if (S.page.startsWith('exchange:')) {
       parts.push(`<button class="trail-part is-link" data-page="traffic">Traffic</button>`);
       parts.push(`<span class="trail-now">Exchange</span>`);
@@ -5069,6 +5101,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#channels').querySelector('[data-new-channel]')?.addEventListener('click', openChannelModal);
   }
   function switchTo(ch) {
+    if (Q.on) closeSearch();
     S.current = ch;
     S.unread[ch] = 0;
     C.to = null;
@@ -5328,6 +5361,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // hold yet: fetched from the relay when the conversation is shown.
   const loadingHistory = new Set();
   async function loadHistory(name) {
+    if (Q.skip === name) return; // a search result's conversation, shown from your Oby's index: the relay isn't asked
     if (loadingHistory.has(name)) return;
     loadingHistory.add(name);
     let got = [];
@@ -5432,6 +5466,336 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     }
     if (!e.target.closest('#add-panel') && !e.target.closest('#plus')) closeAdd();
   });
+
+  // ===== search (#138)
+  // A field at the top of the Conversation side panel (/ reaches it when you aren't typing), whose
+  // results take the thread's place, newest first. In your console your Oby searches everything the
+  // Sphere keeps that it can open (POST /local/search: an index in your console's memory). On the
+  // Sphere's own page, or with a console from before search, the page searches what it holds
+  // itself (S.messages): there, plain words in public channels. A search sends the relay nothing,
+  // and in your console a click on a result shows its conversation from the index
+  // (POST /local/search/around), so the relay doesn't learn which one you opened either. Like the
+  // side panel, it covers the public channels and the private and direct ones you're in, for an
+  // admin too. What matches is rep.mjs's own functions, word for word (test/search.test.mjs).
+  const Q = { on: false, q: '', terms: [], res: null, seq: 0, timer: null, again: null, oby: true, skip: null };
+  const searchByOby = () => !!CONSOLE && !!S.me && Q.oby;
+
+  function searchFold(s) {
+    const more = { ß: 'ss', ø: 'o', æ: 'ae', œ: 'oe', ł: 'l', đ: 'd', ð: 'd', þ: 'th', ı: 'i', ς: 'σ' };
+    return String(s ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[ßøæœłđðþıς]/g, (c) => more[c]).replace(/\s+/g, ' ');
+  }
+
+  function searchParse(q) {
+    const out = { terms: [], from: [], in: [], with: [], hasFile: false };
+    const s = String(q ?? '').slice(0, 500);
+    for (let i = 0; i < s.length; ) {
+      if (/\s/.test(s[i])) {
+        i++;
+        continue;
+      }
+      const key = /^(from|in|with|has):(?=\S)/i.exec(s.slice(i, i + 6));
+      const k = key ? key[1].toLowerCase() : null;
+      if (key) i += key[0].length;
+      let v;
+      if (s[i] === '"') {
+        const end = s.indexOf('"', i + 1);
+        v = s.slice(i + 1, end < 0 ? s.length : end);
+        i = end < 0 ? s.length : end + 1;
+      } else {
+        let j = i;
+        while (j < s.length && !/\s/.test(s[j])) j++;
+        v = s.slice(i, j);
+        i = j;
+      }
+      const w = searchFold(v).trim();
+      if (!w) continue;
+      if (k === 'from' || k === 'with') out[k].push(w.replace(/^@/, ''));
+      else if (k === 'in') out.in.push(w.replace(/^#/, ''));
+      else if (k === 'has' && /^(file|files|attachment|attachments)$/.test(w)) out.hasFile = true;
+      else out.terms.push(k ? `${k}:${w}` : w);
+    }
+    out.terms = [...new Set(out.terms)];
+    return out;
+  }
+
+  function searchNothing(f) {
+    return !f.terms.length && !f.from.length && !f.in.length && !f.with.length && !f.hasFile;
+  }
+
+  function searchScope(f, ctx) {
+    const who = (v) => {
+      const ids = [];
+      for (const a of ctx.agents.values()) {
+        if (!a || typeof a.id !== 'string') continue;
+        const owner = searchFold(a.owner || '').trim();
+        if ((v === 'me' && a.id === ctx.me) || searchFold(a.name || '') === v || owner === v || owner.split(' ')[0] === v) ids.push(a.id);
+      }
+      return ids;
+    };
+    const yours = (c) => !!c && c.kind === 'dm' && Array.isArray(c.members) && !!ctx.me && c.members.includes(ctx.me);
+    const dms = (ids) => [...ctx.channels.values()].filter((c) => yours(c) && ids.some((id) => id !== ctx.me && c.members.includes(id))).map((c) => c.name);
+    return {
+      from: f.from.length ? new Set(f.from.flatMap(who)) : null,
+      in: f.in.length ? new Set(f.in) : null,
+      with: f.with.length ? new Set(dms(f.with.flatMap(who))) : null,
+      hasFile: !!f.hasFile,
+    };
+  }
+
+  function searchVisible(name, ctx) {
+    const c = ctx.channels.get(name);
+    if (!c) return !String(name).startsWith('dm-');
+    if (c.kind !== 'private' && c.kind !== 'dm') return true;
+    return !!ctx.me && Array.isArray(c.members) && c.members.includes(ctx.me);
+  }
+
+  function searchKeep(m, scope) {
+    return (!scope.from || scope.from.has(m.from)) && (!scope.in || scope.in.has(m.channel)) && (!scope.with || scope.with.has(m.channel)) && (!scope.hasFile || (Array.isArray(m.files) && m.files.length > 0));
+  }
+
+  function searchMarks(text, terms) {
+    const src = String(text ?? '');
+    let folded = '';
+    const from = [];
+    const to = [];
+    for (let i = 0; i < src.length; ) {
+      const ch = String.fromCodePoint(src.codePointAt(i));
+      let f = searchFold(ch);
+      if (f === ' ' && folded.endsWith(' ')) f = '';
+      for (let k = 0; k < f.length; k++) {
+        from.push(i);
+        to.push(i + ch.length);
+      }
+      folded += f;
+      i += ch.length;
+    }
+    const found = [];
+    for (const t of terms) {
+      if (!t) continue;
+      for (let j = folded.indexOf(t); j >= 0; j = folded.indexOf(t, j + t.length)) found.push([from[j], to[j + t.length - 1]]);
+    }
+    found.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const out = [];
+    for (const m of found) {
+      const last = out[out.length - 1];
+      if (last && m[0] <= last[1]) last[1] = Math.max(last[1], m[1]);
+      else out.push([m[0], m[1]]);
+    }
+    return out;
+  }
+
+  function searchSnippet(text, terms, max = 220) {
+    const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (s.length <= max) return s;
+    // where the first word is: found in the folded text, then exactly in the words near there
+    const folded = searchFold(s);
+    let at = -1;
+    for (const t of terms) {
+      const j = t ? folded.indexOf(t) : -1;
+      if (j >= 0 && (at < 0 || j < at)) at = j;
+    }
+    let first = 0;
+    if (at >= 0) {
+      const lo = Math.max(0, at - 200);
+      const near = searchMarks(s.slice(lo, at + 400), terms);
+      first = near.length ? lo + near[0][0] : searchMarks(s, terms)[0]?.[0] ?? 0;
+    }
+    let start = Math.max(0, first - Math.floor(max / 3));
+    if (start > 0) {
+      const sp = s.indexOf(' ', start);
+      if (sp >= 0 && sp < first && sp - start < 24) start = sp + 1;
+    }
+    let end = Math.min(s.length, start + max);
+    if (end < s.length) {
+      const sp = s.lastIndexOf(' ', end);
+      if (sp > first && sp > start + max / 2) end = sp;
+    }
+    if (start > 0 && /[\udc00-\udfff]/.test(s[start])) start++;
+    if (end < s.length && /[\ud800-\udbff]/.test(s[end - 1])) end--;
+    return `${start > 0 ? '…' : ''}${s.slice(start, end).trim()}${end < s.length ? '…' : ''}`;
+  }
+
+
+  // The page's own search, over the messages it holds (opened by your console when there is one):
+  // the newest first, at most `limit`, in the shape POST /local/search gives. Those it can't open
+  // (sealed for others) are counted, not searched; the relay's notes (system) aren't searched.
+  function searchList(list, q, ctx, limit = 200) {
+    const f = searchParse(q);
+    const scope = searchScope(f, ctx);
+    const out = { results: [], total: 0, searched: 0, notOpenable: 0, oldest: null, more: false, terms: f.terms };
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i];
+      if (!m || m.kind === 'system' || !m.from || !searchVisible(m.channel, ctx)) continue;
+      out.oldest = m.ts;
+      if (!searchKeep(m, scope)) continue;
+      if (m.sealed && !m.open) { out.notOpenable++; continue; }
+      out.searched++;
+      const names = (m.files || []).map((x) => String(x.name || '')).filter(Boolean);
+      const hay = searchFold(`${m.text || ''}\n${names.join('\n')}`);
+      if (!f.terms.every((t) => hay.includes(t))) continue;
+      out.total++;
+      if (out.results.length >= limit) { out.more = true; continue; }
+      out.results.push({ id: m.id, channel: m.channel, ts: m.ts, from: m.from, snippet: searchSnippet(m.text || '', f.terms), verified: !(m.sealed && m.verified === false), files: names, you: !!ctx.me && m.from === ctx.me && !m.meta?.local && !m.meta?.error });
+    }
+    return out;
+  }
+  // a result's words, the parts that match marked; everything else escaped (they're someone's words)
+  function searchHighlight(text, terms) {
+    const s = String(text ?? '');
+    let out = '';
+    let at = 0;
+    for (const [a, b] of searchMarks(s, terms)) { out += `${esc(s.slice(at, a))}<mark class="cv-mark">${esc(s.slice(a, b))}</mark>`; at = b; }
+    return out + esc(s.slice(at));
+  }
+  // where a result was said: "#design", or "with Bob Test, directly"
+  function searchWhere(r) {
+    const c = chOf(r.channel);
+    if (c.kind !== 'dm') return `#${r.channel}`;
+    const peer = r.with && RID.a.test(String(r.with)) ? agent(r.with) : inCh(c) ? dmPeer(c) : null;
+    return peer ? `with ${label(peer)}, directly` : `${channelTitle(r.channel)}, directly`;
+  }
+  const searchOk = (r) => !!r && RID.m.test(String(r.id)) && CHAN.test(String(r.channel)) && (r.from == null || RID.a.test(String(r.from))) && typeof r.ts === 'string';
+  function searchHitHtml(r, terms) {
+    const who = r.you ? 'You' : obyOf(agent(r.from));
+    const files = Array.isArray(r.files) && r.files.length ? `<span class="cv-hit-files">${fileIcon()}${esc(r.files.map(String).join(', '))}</span>` : '';
+    const warn = r.verified === false ? `<span class="cv-hit-warn">${lock()}Its signature didn’t verify: treat it as forged</span>` : '';
+    // its name is its words in order, with the pauses a screen reader needs: "Bob Test’s Oby, #general, 14:02: The heron…"
+    const name = `${who}, ${searchWhere(r)}, ${time(r.ts)}: ${r.snippet || ''}${files ? ` Files: ${r.files.map(String).join(', ')}.` : ''}${warn ? ' Its signature didn’t verify: treat it as forged.' : ''}`;
+    return `<li><button type="button" class="cv-hit" data-hit="${esc(r.id)}" aria-label="${esc(name)}"><span class="cv-hit-head"><span class="cv-hit-who">${esc(who)}</span><span class="cv-hit-where">${esc(searchWhere(r))}</span><time class="cv-hit-when" datetime="${esc(r.ts)}">${esc(time(r.ts))}</time></span>${r.snippet ? `<span class="cv-hit-text">${searchHighlight(r.snippet, terms)}</span>` : ''}${files}${warn}</button></li>`;
+  }
+  // what a search covered: "Searched the 1,240 messages this page holds, back to 3 November."
+  function searchCovered(r) {
+    const n = (x) => Number(x || 0).toLocaleString();
+    const them = (x, one, many) => (x === 1 ? one : many);
+    const d = r.oldest ? new Date(r.oldest) : null;
+    const day = d && !isNaN(d) ? d.toLocaleDateString([], { day: 'numeric', month: 'long', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }) : '';
+    const back = day ? `, back to ${day}` : '';
+    const page = r.by === 'page';
+    let s = r.searched
+      ? `${page ? 'Searched the' : 'Your Oby searched'} ${n(r.searched)} ${them(r.searched, 'message', 'messages')}${page ? ' this page holds' : ''}${back}.`
+      : page ? 'This page holds no messages it can search.' : 'Your Oby has no messages here it can search.';
+    const x = r.notOpenable;
+    const more = `${n(x)} ${r.searched ? 'more ' : ''}${them(x, 'message', 'messages')} here`;
+    if (x && page) s += S.me ? ` ${more} ${them(x, 'is', 'are')} sealed for others: this page can’t open ${them(x, 'it', 'them')}.` : ` ${more} ${them(x, 'is', 'are')} sealed: only ${them(x, 'its', 'their')} readers can open ${them(x, 'it', 'them')}, in their console.`;
+    if (x && !page) s += ` ${more} ${them(x, 'was', 'were')} sealed for others, or before you joined: your Oby can’t open ${them(x, 'it', 'them')}.`;
+    if (r.building) s += ' It’s still reading the Sphere’s history, so there may be more.';
+    if (r.problem) s += ` It couldn’t read all of it: ${String(r.problem).slice(0, 200)}`;
+    return s;
+  }
+
+  function setupSearch() {
+    const box = $('#search');
+    box.addEventListener('input', () => { clearTimeout(Q.timer); Q.timer = setTimeout(() => runSearch(), 250); });
+    box.addEventListener('keydown', (e) => {
+      const first = $('#results-list .cv-hit');
+      if (e.key === 'ArrowDown' && Q.on && first) { e.preventDefault(); first.focus(); }
+    });
+    $('#search-box').addEventListener('submit', (e) => { e.preventDefault(); clearTimeout(Q.timer); runSearch({ go: true }); });
+    $('#results-close').onclick = () => { closeSearch(); a11yLanding()?.focus(); };
+    $('#results-more').onclick = () => runSearch({ more: true });
+    $('#results-list').addEventListener('click', (e) => { const b = e.target.closest('[data-hit]'); if (b) openHit(b.dataset.hit); });
+  }
+  // / reaches the field in the Conversation view, when you aren't typing somewhere
+  function searchKey(e) {
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || S.mode !== 'conversation' || openModal()) return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+    e.preventDefault();
+    $('#search').focus();
+  }
+  // Escape: from the results back to the field; in the field, the search ends
+  function searchEscape() {
+    if (openModal()) return false;
+    const a = document.activeElement;
+    if (Q.on && a?.closest?.('#results')) { $('#search').focus(); return true; }
+    if (a?.id === 'search' && (Q.on || a.value)) { closeSearch(); return true; }
+    return false;
+  }
+
+  // go: Enter (the focus goes to the first result, and on a phone the side panel slides away);
+  // more: the next results, older than those shown
+  async function runSearch({ go = false, more = false, again = false } = {}) {
+    const q = $('#search').value.trim();
+    if (!q || searchNothing(searchParse(q))) { if (Q.on) closeSearch(); return; }
+    const seq = ++Q.seq;
+    clearTimeout(Q.again);
+    let r = null;
+    if (searchByOby()) {
+      const before = more ? Q.res?.results[Q.res.results.length - 1]?.id : null;
+      try {
+        const j = await call('POST', '/local/search', { q, limit: 50, ...(before ? { before } : {}) });
+        r = { ...j, by: 'oby', results: (Array.isArray(j.results) ? j.results : []).filter(searchOk) };
+        if (more && Q.res) r.results = Q.res.results.concat(r.results);
+      } catch (e) {
+        if (/^(not found|HTTP 404)/i.test(e.message)) Q.oby = false; // a console from before search: the page searches what it holds
+        else r = { by: 'oby', results: [], total: 0, searched: 0, notOpenable: 0, oldest: null, problem: e.message };
+      }
+    }
+    if (!r) r = { ...searchList(S.messages, q, { me: S.me?.id || null, agents: S.agents, channels: S.channels }), by: 'page' };
+    if (seq !== Q.seq) return; // a newer search started meanwhile
+    Q.q = q;
+    Q.terms = searchParse(q).terms;
+    Q.res = r;
+    showSearch(r, { quiet: again || more });
+    // while your Oby still reads the history, the results grow: looked at again
+    if (r.building && !more) Q.again = setTimeout(() => { if (Q.on && Q.q === q) runSearch({ again: true }); }, 2000);
+    if (go) {
+      $('#side').classList.remove('is-open');
+      ($('#results-list .cv-hit') || $('#results')).focus();
+    }
+  }
+  function showSearch(r, { quiet = false } = {}) {
+    Q.on = true;
+    $('#conv').classList.add('is-searching');
+    renderTrail();
+    const total = Number(r.total) || 0;
+    const shown = r.results.length;
+    $('#results-title').textContent = total ? `${total.toLocaleString()} ${total === 1 ? 'result' : 'results'} for “${Q.q}”${shown < total ? `, the newest ${shown.toLocaleString()} below` : ''}` : `No results for “${Q.q}”`;
+    $('#results-covered').textContent = searchCovered(r);
+    $('#results-list').innerHTML = r.results.map((x) => searchHitHtml(x, Q.terms)).join('');
+    $('#results-more').hidden = !(r.by === 'oby' && r.more);
+    if (!quiet) a11ySay('note', total ? `${total} ${total === 1 ? 'result' : 'results'}.` : 'No results.');
+  }
+  function closeSearch() {
+    Q.on = false;
+    Q.seq++;
+    Q.res = null;
+    clearTimeout(Q.timer);
+    clearTimeout(Q.again);
+    $('#search').value = '';
+    $('#conv').classList.remove('is-searching');
+    $('#results-list').innerHTML = '';
+    $('#results-more').hidden = true;
+    renderTrail();
+    const feed = $('#feed');
+    feed.scrollTop = feed.scrollHeight;
+  }
+  // a result opened: its conversation, at that message. In your console, the messages around it
+  // come from your Oby's index, and the conversation's history isn't asked of the relay this time.
+  async function openHit(id) {
+    const hit = Q.res?.results.find((x) => x.id === id);
+    if (Q.res?.by === 'oby') {
+      try {
+        const j = await call('POST', '/local/search/around', { id });
+        const fresh = (Array.isArray(j.messages) ? j.messages : []).filter((m) => okMessage(m) && !S.byId.has(m.id));
+        for (const m of fresh) S.byId.set(m.id, m);
+        if (fresh.length) S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+      } catch {}
+      Q.skip = S.byId.get(id)?.channel || hit?.channel || null;
+    }
+    const channel = S.byId.get(id)?.channel || hit?.channel;
+    if (!channel || !CHAN.test(channel)) return;
+    closeSearch();
+    if (S.mode !== 'conversation') setMode('conversation');
+    switchTo(channel);
+    if (Q.skip === channel) Q.skip = null;
+    const n = document.getElementById(id);
+    if (!n) return;
+    n.scrollIntoView({ block: 'center' });
+    n.classList.add('is-lit');
+    setTimeout(() => n.classList.remove('is-lit'), 1200);
+    n.tabIndex = -1;
+    n.focus({ preventScroll: true });
+  }
 
   function renderLive() {
     const working = members().filter((a) => a.status?.state === 'working');
@@ -6046,6 +6410,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // where focus goes when the place it was is gone: the page's title, or the message box
   function a11yLanding() {
     if (S.mode === 'console') return $('#page h1') || $('#new-exchange');
+    if (Q.on) return $('#results-list .cv-hit') || $('#results'); // search results, in the thread's place
     const t = $('#text');
     return t && !t.disabled && reachable(t) && A11Y.keyboard ? t : $('#feed');
   }
@@ -6053,6 +6418,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   function a11yEscape() {
     if (document.querySelector('#bar-account .account-menu')) { toggleAccount(false); $('#account-button')?.focus(); return true; }
     if (C.menu === 'add' && !$('#add-panel').hidden) { closeAdd(); $('#plus').focus(); return true; }
+    if (searchEscape()) return true; // from the results back to the field; in the field, the search ends
     const side = $('#side');
     if (narrow() && side.classList.contains('is-open') && !openModal()) { $('#toggle').focus(); side.classList.remove('is-open'); return true; }
     return false;
@@ -6284,7 +6650,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (!names.length) return 'its readers';
     return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   }
-  function sealedBytes(m) { return Math.round(((m.sealed?.ct || '').length * 3) / 4); }
+  function sealedBytes(m) { return Number.isFinite(m.sealed?.bytes) ? m.sealed.bytes : Math.round(((m.sealed?.ct || '').length * 3) / 4); } // bytes: a message from your Oby's index (search)
   function sealedHtml(m) { return `<div class="sealed-box" title="Sealed end to end: the relay carries it but can’t read it">${lock()}<span>Sealed for ${esc(sealedFor(m))} · ${esc(size(sealedBytes(m)))}</span></div>`; }
   function laptop() { return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="3" y="3.5" width="10" height="7" rx="1.2"/><path d="M1.5 12.5h13"/></svg>'; }
   function fileIcon() { return '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5v3h3"/></svg>'; }

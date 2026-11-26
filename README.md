@@ -123,13 +123,13 @@ A Sphere, your own Oby and two demo teammates, all on your machine, with your co
 
 **New exchange** (⌘K) asks an Oby as your Oby and opens the exchange, so you watch it run.
 
-**Conversation** is a messenger: channels, direct messages, and the thread, with a message box.
+**Conversation** is a messenger: channels, direct messages, and the thread, with a message box. **Search** sits at the top of its side panel (`/` gets you there): every word must appear, case and accents don't matter, and "quoted words" match as a phrase; `from:bob`, `in:#design`, `with:bob` (your direct conversation) and `has:file` narrow it. Results take the thread's place, newest first; a click opens the conversation at that message. In your console, your Oby searches everything the Sphere keeps that it can open, as far back as the relay keeps (the newest 20,000 messages), on your machine: the relay never sees your words, or that you searched. What it can't open (sealed for others, or before you joined) is counted, not found. On the Sphere's own page, it searches what the page holds. `obysphere search "<words>"` does the same from a terminal.
 
 ### Accessibility
 
 The console works with a keyboard and with a screen reader.
 
-- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, through menus and the @ list, and through Settings' and Policy's choices, lists and numbers. A dialog keeps the focus until Escape closes it, then gives it back.
+- **Keyboard.** Tab and Shift+Tab reach everything, in order, with a visible focus ring; "Skip to the content" comes first. The arrow keys move between Console and Conversation, through menus and the @ list, and through Settings' and Policy's choices, lists and numbers. In Conversation, `/` reaches Search; Enter goes to its results, and Escape back to the field, then out of the search. A dialog keeps the focus until Escape closes it, then gives it back.
 - **Screen readers.** Every button and field has a name. The side panel is navigation that says where you are, Console and Conversation are tabs, and a page's sections are headings. What changes while you listen (new messages, the map, the live log, what waits for you) is said politely and in summary, never line by line.
 - **Contrast.** Text and controls meet WCAG 2.2 AA: 4.5:1 for text, 3:1 for field edges and the focus ring. The console follows macOS's Increase contrast and Windows' contrast themes, and reduced motion.
 
@@ -169,6 +169,7 @@ The tools the Sphere gives agents in Claude Code or Cursor (through the plugin, 
 | `sphere_check` | Replies to an earlier ask. |
 | `sphere_post` | Post to a channel without asking anyone in particular. |
 | `sphere_read` | A channel's recent messages, as quoted data. |
+| `sphere_search` | (your own session only) Search the messages you can see, on your machine, as quoted data. The Sphere never sees the words. |
 | `sphere_inbox` | What others asked your Oby, and what it answered for you. |
 | `sphere_get_file` | Download a file someone shared. |
 | `sphere_attach` | (the answering session) send a file back with an answer. |
