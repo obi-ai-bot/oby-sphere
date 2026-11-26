@@ -125,8 +125,8 @@ if (!chromium) {
             assert.equal(await hasPage(page, 'Settings'), true);
             // the side panel's edge names the Sphere and you, on a touch screen too
             const side = page.getByRole('complementary');
-            await side.getByRole('button', { name: sphere.name, exact: true }).waitFor({ state: 'attached' });
-            await side.getByRole('button', { name: 'You: Alice Test (alice)', exact: true }).waitFor({ state: 'attached' });
+            await side.getByRole('img', { name: sphere.name, exact: true }).waitFor({ state: 'attached' });
+            await side.getByRole('img', { name: 'You: Alice Test (alice)', exact: true }).waitFor({ state: 'attached' });
             await goTo(page, 'Your Oby');
             await title(page, 'Your Oby').waitFor();
             await page.getByText('@alice · represents Alice Test').waitFor();
@@ -359,7 +359,7 @@ if (!chromium) {
             // Bob's Oby is an admin
             await goTo(page, 'Policy');
             await title(page, 'Policy').waitFor();
-            assert.match(await page.getByRole('button', { name: 'Seal message contents' }).getAttribute('class'), /\bis-on\b/, 'sealed');
+            assert.equal(await page.getByRole('switch', { name: 'Seal message contents' }).getAttribute('aria-checked'), 'true', 'sealed');
             await page.getByRole('button', { name: 'Rotate join key' }).waitFor();
             await noSidewaysScroll(page, vp, 'Policy');
             await goTo(page, 'Admins');

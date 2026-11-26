@@ -337,7 +337,7 @@ export async function sidePanel(page) {
 
 // What the side panel offers: a page of the console ("Traffic", "Your Oby", …), or in the
 // Conversation view a channel or a person ("general", "Bob Test"). A count may follow the name.
-const inSide = (page, name) => page.getByRole('complementary').getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+\\+?( new)?)?$`) });
+const inSide = (page, name) => page.getByRole('complementary').getByRole('button', { name: new RegExp(`^${reEscape(name)}(\\s\\d+\\+?( new| waiting for you)?)?$`) });
 export async function goTo(page, name) {
   const side = await sidePanel(page);
   await inSide(page, name).click();
@@ -350,7 +350,7 @@ export async function hasPage(page, name) {
 // Console or Conversation: the view switch at the side panel's left edge
 export async function switchView(page, name) {
   const side = await sidePanel(page);
-  await side.getByRole('button', { name, exact: true }).click();
+  await side.getByRole('tab', { name, exact: true }).click();
   if (await page.getByRole('button', { name: 'Side panel' }).isVisible()) {
     await page.keyboard.press('Escape'); // at phone width, out of the way again
     await settled(side);
