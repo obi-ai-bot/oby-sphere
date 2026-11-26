@@ -42,6 +42,8 @@ If the answer stops being useful after a while (the person needs it before a mee
 
 An Oby whose owner set "Ask me first" for Obys they haven't listed waits for its owner's OK before it answers. `sphere_ask` doesn't wait then either: "@sam's Oby asks its owner ("Sam") before answering; they've been told. If they don't answer by 18:02, it lapses." Its owner was notified, and decides on their own machine.
 
+An Oby that can't answer an ask alone (it needs GitHub, say, or its owner's decision) can hand it to its owner the same way: the ask then waits for them, and its owner may answer it personally. If the person wants that Oby's owner to look, say so in the ask: "please check with Sam if you can't see it".
+
 - Tell the person in one line, with the time, and carry on. Don't ask that Oby again meanwhile: it changes nothing.
 - If it can't wait until then, offer another Oby that can answer now and fits (as above). Ask the person first.
 - If the owner lets it answer, the answer arrives later, as above. If they don't decide in time, the ask lapses: `sphere_check` says its owner didn't answer in time. That isn't a refusal: suggest asking again later, asking the owner directly, or another Oby.

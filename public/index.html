@@ -725,6 +725,10 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 @media (prefers-reduced-motion: reduce) { .ctl-pop { animation: none; } }
 .warn { color: var(--needs); }
 .saved-note { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+/* an ask your Oby handed you (sphere_ask_owner): what it needs, in its own note */
+.stuck-note { display: grid; gap: 4px; margin: 8px 0 2px; padding: 10px 12px; border-radius: 10px; background: var(--chip); color: var(--text); font-size: var(--text-md); line-height: 20px; }
+.stuck-head { display: inline-flex; align-items: center; gap: 6px; color: var(--needs); font-size: var(--text-sm); font-weight: 500; }
+.stuck-head svg { flex: none; }
 /* your Oby's look (Your Oby): its face, then a colour and eyes to pick from */
 #you-look { margin-bottom: 12px; }
 .look { display: flex; align-items: center; gap: 20px; padding: 14px 0; }
@@ -3189,7 +3193,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     box.innerHTML = pendingHtml();
     wirePending();
   }
-  const REASON_WORDS = { approve: 'you asked to approve asks from this Oby', default: 'you approve asks from Obys you haven’t listed' };
+  const REASON_WORDS = { approve: 'you asked to approve asks from this Oby', default: 'you approve asks from Obys you haven’t listed', stuck: 'your Oby couldn’t answer it alone' };
+  const NEED_WORDS = { access: 'It needs something it can’t reach', decision: 'It needs your decision', knowledge: 'It needs something only you know' };
   function pendingHtml() {
     const list = S.pending || [];
     // an ask its asker deleted while it waited for you (deleting messages): said for a few minutes, in its place
@@ -3201,11 +3206,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
+        ${p.stuck ? `<div class="stuck-note"><span class="stuck-head">${obyPic(S.me, 16)}${esc(NEED_WORDS[p.stuck.need] || NEED_WORDS.access)}</span><span>${esc(p.stuck.note)}</span></div>` : ''}
         <div class="ask-actions">
-          <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : 'Let my Oby answer'}</button>
+          <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : p.stuck ? 'Let my Oby try again' : 'Let my Oby answer'}</button>
           ${p.always === true && p.from?.name ? `<button class="set-button" data-decide="always" title="Answers this one, and adds @${esc(p.from.name)} to Who can ask: its asks are answered from now on">Always answer @${esc(p.from.name)}</button>` : ''}
           ${(typeof p.risky === 'boolean' ? p.risky : risky) ? `<button class="set-button" data-decide="trust" title="As for an Oby you trust: with what your settings mark “Trusted Obys only”">Let it answer with everything you allow</button>` : ''}
           <button class="set-button" data-decide="write">Answer myself</button>
+          ${p.stuck?.need === 'access' && CONSOLE ? '<button class="set-button" data-page="settings" title="What your Oby may reach: change it, then let it try again">Settings</button>' : ''}
           <button class="set-button" data-decide="decline">Decline</button>
           <span class="saved-note" data-note></span>
         </div>
@@ -3844,7 +3851,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   // ---- errors on the field: rep.mjs answers { error: "routing.rules[0].use.model: is …", field }
-  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers', neverRead: 'never read', whenUnable: 'when your runtime can’t answer', otherRuntime: 'the runtime that answers instead', holdHours: 'when it gives up on an ask', showReason: 'telling askers why' };
+  const FIELD_WORDS = { runtime: 'runtime', model: 'model', effort: 'effort', timeLimitMin: 'time limit', about: '“is about”', from: '“is from”', hasFiles: 'files', hop: 'passed on', channel: 'channel', name: 'name', agents: 'listed Obys', declineTopics: 'declined topics', asksPerAgentPerDay: 'asks per Oby per day', answersPerDay: 'answers per day', acceptFiles: 'asks with files', sendFiles: 'sending files', consultOthers: 'asking other Obys', acceptHops: 'passed-on asks', folders: 'folders', path: 'folder', write: 'folder access', shell: 'shell', fetch: 'opening web pages', search: 'web search', browser: 'Chrome', mcp: 'MCP servers', neverRead: 'never read', whenUnable: 'when your runtime can’t answer', otherRuntime: 'the runtime that answers instead', holdHours: 'when it gives up on an ask', showReason: 'telling askers why', askOwner: 'asking you when it can’t answer alone' };
   const dotted = (f) => String(f || '').replace(/\[(\d+)\]/g, '.$1');
   function fieldWords(field) {
     if (!field) return '';
@@ -4275,6 +4282,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       <div class="route-unable-rows">${otherRow}
         <div class="set-row"><div class="set-row-text"><div class="set-row-title" id="${fid('availability.holdHours')}-l">Gives up on an ask after, in hours</div><div class="set-row-sub">Counted from when it was asked: a held ask, or one that came while your Oby was offline, gets a short reply instead after that.</div></div><div class="set-row-ctl">${ctlStepper({ id: fid('availability.holdHours'), value: Number(a.holdHours) || AVAIL_DEFAULTS.holdHours, min: 1, max: 168, step: 1, labelledby: `${fid('availability.holdHours')}-l`, attrs: 'data-k="availability.holdHours"' })}</div></div>
         ${swRow('availability.showReason', !!a.showReason, 'Tell askers why', 'Such as “out of usage”. Off, they see only when your Oby can answer.')}
+        ${'askOwner' in a ? swRow('availability.askOwner', a.askOwner !== false, 'Ask me when it can’t answer alone', 'When an ask needs something your Oby can’t reach, like GitHub, or a decision of yours, it comes to Waiting for you with a note. Off, your Oby says what it would need.') : '' /* only a rep.mjs that has it sends it */}
       </div>`;
   }
 
