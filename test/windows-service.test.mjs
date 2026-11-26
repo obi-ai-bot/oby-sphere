@@ -435,6 +435,14 @@ c.on('exit', (code) => process.exit(code === null ? 1 : code));`], { env, stdio:
     cleanups.push(() => alive(sup2) && process.kill(sup2, 'SIGKILL'));
     await waitFor(() => pids().length === 3);
     const third = pids()[2];
+    // a spec it can't read for a moment (another program holding it) isn't a change: it keeps
+    // running. Where a file's mode can't make it unreadable (Windows, root), this part is skipped
+    if (!WIN && process.getuid?.() !== 0) {
+      fs.chmodSync(specFile, 0);
+      await sleep(2500); // two of its checks, a second apart
+      fs.chmodSync(specFile, 0o600);
+      assert.ok(alive(sup2) && alive(third), 'still running after a spec it could not read');
+    }
     writeSpec('two');
     await waitFor(() => !alive(sup2) && !alive(third), 10000);
     assert.match(fs.readFileSync(log, 'utf8'), /obysphere: the service was changed or removed: stopping/);

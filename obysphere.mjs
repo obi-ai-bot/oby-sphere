@@ -799,8 +799,18 @@ async function serviceRun() {
       return e.code !== 'EPERM';
     }
   };
+  // the spec's id now: null when it's gone, undefined when it can't be read just now (another
+  // program holding it open, say), which is no reason to stop
+  const specId = () => {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))?.id ?? null;
+    } catch (e) {
+      return e.code === 'ENOENT' ? null : undefined;
+    }
+  };
   setInterval(() => {
-    if (readJson(file, null)?.id !== s.id) end('the service was changed or removed: stopping');
+    const id = specId();
+    if (id !== undefined && id !== s.id) end('the service was changed or removed: stopping');
     else if (parentGone()) end('its task ended: stopping');
   }, 1000);
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGBREAK']) process.on(sig, () => end(`${sig}: stopping`));
