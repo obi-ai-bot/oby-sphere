@@ -8,8 +8,9 @@
 // A wrong key fails at #1, a relay serving a forged log with verified: true fails, and a data
 // folder's audit.jsonl checks with no profile. The key never reaches argv, a request (a recording
 // proxy sees every one), the output or a file. Step 2: a cut or a rewrite after an export is caught
-// with --since and with the head the profile kept, and a log that only grew passes. And the rule
-// for deleted messages (#139), against logs built here with the HMAC. `npm test`.
+// with --since and with the head the profile kept, and a log that only grew passes. The rule for
+// deleted messages (#139), against logs built here with the HMAC. And the console: Export all saves
+// the whole log as JSON Lines, which the CLI checks, and the Audit log page says how. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -19,6 +20,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
 
@@ -657,6 +659,95 @@ describe('deleted messages, against logs built by hand', () => {
     const r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [msgB]);
     assert.equal(r.code, 0, r.out);
     assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 1]);
+  });
+});
+
+// ---- the console: Export all saves the whole log as JSON Lines, and the Audit log page says its
+// "Chain verified" is the relay's word, and how to check it yourself. The page's own functions, in
+// a sandbox (the browser tests click through it in Chromium).
+
+describe("the console's Audit log", () => {
+  const SCRIPT = /<script>([\s\S]*?)<\/script>/.exec(fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8'))[1];
+  const piece = (re, name) => {
+    const m = re.exec(SCRIPT);
+    assert.ok(m, `the page has ${name}`);
+    const start = m.index + 1;
+    if (/^ {2}const /.test(SCRIPT.slice(start))) return SCRIPT.slice(start, SCRIPT.indexOf(';\n', start) + 1);
+    let depth = 0;
+    for (let i = SCRIPT.indexOf('{', start); i < SCRIPT.length; i++) {
+      if (SCRIPT[i] === '{') depth++;
+      else if (SCRIPT[i] === '}' && --depth === 0) return SCRIPT.slice(start, i + 1);
+    }
+    throw new Error(`${name} has no end`);
+  };
+  const fnOf = (n) => piece(new RegExp(`\\n  (?:async )?function ${n}\\(`), n);
+  const constOf = (n) => piece(new RegExp(`\\n  const ${n} = `), n);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const page = (ctx) => {
+    vm.createContext(ctx);
+    vm.runInContext(`${constOf('auditFiltering')}\n${constOf('auditExportLabel')}\n${fnOf('auditHead')}\n${fnOf('exportAudit')}\nthis.f = { auditHead, exportAudit };`, ctx);
+    return ctx.f;
+  };
+  const AU = () => ({ q: '', type: 'all', member: '', time: 'all', exporting: false });
+
+  test('the page says "Chain verified" is the relay’s word, and how to check the log yourself', () => {
+    const ctx = { S: { auditVerified: true, auditHead: { seq: 2600 }, audit: [] }, AU: AU(), head: (t, sub, right = '') => `<h1>${t}</h1><p>${sub}</p>${right}`, esc };
+    const { auditHead } = page(ctx);
+    assert.match(auditHead(), /Chain verified · 2,600 events/);
+    assert.match(auditHead(), /<p class="au-own" id="au-own">That’s the relay’s own word\. To check the log yourself, export all of it and run <code>obysphere admin audit verify &lt;file&gt;<\/code> on your machine, with the admin key\.<\/p>/);
+    ctx.S.auditVerified = false;
+    assert.match(auditHead(), /Chain broken[\s\S]*That’s the relay’s own word/);
+    ctx.S.auditVerified = null;
+    assert.doesNotMatch(auditHead(), /au-own/, "no log published: nothing to check");
+    assert.ok(!/admin key[^<]*<input|type="password"/.test(auditHead()), 'the page never asks for the key to check it');
+  });
+
+  test('Export all saves every event, past 1,000, as JSON Lines named for the Sphere and the day; Export shown stays JSON', async () => {
+    const events = chain(Array.from({ length: 2600 }, (_, i) => ({ ts: new Date(Date.UTC(2026, 10, 20, 9, 0, i)).toISOString(), type: 'post', actor: 'a_bob001', target: null, ref: null, detail: `bob · #general · ${i} B` })), ADMIN);
+    const head = { seq: 2600, hash: events.at(-1).hash };
+    const run = async (au) => {
+      const got = { saved: null, type: null, link: null, asked: [] };
+      const ctx = {
+        S: { sphere: { name: 'Our Team’s Sphere' }, auditHead: head, auditVerified: true, audit: events.slice(-1000) },
+        AU: au,
+        api: async (url) => {
+          got.asked.push(url);
+          const after = Number(new URL(url, 'http://x').searchParams.get('after'));
+          return { events: events.filter((e) => e.seq > after).slice(0, 1000), head, verified: true, total: events.length };
+        },
+        updateAudit: () => {},
+        auditShown: () => events.slice(-3).reverse(),
+        Blob: class {
+          constructor(parts, o) {
+            got.saved = parts.join('');
+            got.type = o?.type;
+          }
+        },
+        URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
+        document: { createElement: () => (got.link = { click() {} }), querySelector: () => null },
+        setTimeout: () => {},
+      };
+      await page(ctx).exportAudit();
+      return got;
+    };
+    const all = await run(AU());
+    assert.equal(all.asked.length, 3, 'three pages');
+    assert.equal(all.saved, lines(events), 'one event per line, as the relay sent it');
+    assert.match(all.link.download, /^our-team-s-sphere-audit-\d{4}-\d{2}-\d{2}\.jsonl$/);
+    assert.equal(all.type, 'application/jsonl');
+    const shown = await run({ ...AU(), q: 'bob' });
+    assert.equal(shown.link.download, 'our-team-s-sphere-audit-shown.json');
+    assert.equal(JSON.parse(shown.saved).events.length, 3);
+    assert.equal(JSON.parse(shown.saved).filter.search, 'bob');
+  });
+
+  test('what Export all saves checks with the CLI', async () => {
+    const m = machine('console');
+    const events = chain([{ ts: '2026-11-20T09:00:00.000Z', type: 'join', actor: 'a_bob001', target: null, ref: null, detail: 'bob joined, representing Bob' }], ADMIN);
+    const file = path.join(m.files, 'console.jsonl');
+    fs.writeFileSync(file, lines(events));
+    const r = await m.rep(['admin', 'audit', 'verify', file], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(r.code, 0, r.out);
   });
 });
 

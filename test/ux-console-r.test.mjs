@@ -115,9 +115,9 @@ describe('the audit log keeps what it loads', () => {
     assert.ok(!auditHead().includes('<img'), auditHead());
     ctx.S.auditHead = { seq: 1234 };
     assert.match(auditHead(), /Chain verified · 1,234 events/);
-    assert.match(auditHead(), /data-export title="Download as JSON">Export all</);
+    assert.match(auditHead(), /data-export title="Download the whole log, as JSON Lines">Export all</); // JSON Lines: #141
     ctx.AU.exporting = true;
-    assert.match(auditHead(), /data-export title="Download as JSON" disabled>Exporting…</);
+    assert.match(auditHead(), /data-export title="Download the whole log, as JSON Lines" disabled>Exporting…</);
   });
 });
 
@@ -144,7 +144,8 @@ describe('Export all', () => {
     };
     const { exportAudit } = sandbox({ consts: ['auditFiltering', 'auditExportLabel'], fns: ['exportAudit'] }, ctx);
     await exportAudit();
-    return { out: saved && JSON.parse(saved), clicked, ctx };
+    // Export all saves JSON Lines, one event per line (#141)
+    return { out: saved && { events: saved.split('\n').filter(Boolean).map((l) => JSON.parse(l)) }, clicked, ctx };
   };
 
   test('pages past a page short of 1,000: the head says where the log ends', async () => {

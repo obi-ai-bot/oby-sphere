@@ -96,8 +96,26 @@ if (!chromium) {
       } finally {
         await hooks?.close();
         await world?.stop();
+        await (await exportSphere?.catch(() => null))?.world.stop();
       }
     });
+
+    // #141: a Sphere of its own, not sealed, with more than 1,000 events (two members' posts,
+    // through the API), for the Audit log's Export all. Made the first time a flow needs it.
+    let exportSphere = null;
+    const exportWorld = () =>
+      (exportSphere ??= (async () => {
+        const w = new World();
+        const s = await w.startSphere({ name: 'Audit Export Sphere', sealed: false });
+        const tokens = [];
+        for (const name of ['dana', 'eli']) {
+          const r = await fetch(`${s.url}/api/join`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sphere-key': s.key }, body: JSON.stringify({ name, owner: name }) });
+          tokens.push((await r.json()).token);
+        }
+        const post = (i) => fetch(`${s.url}/api/messages`, { method: 'POST', headers: { authorization: `Bearer ${tokens[i % 2]}`, 'content-type': 'application/json' }, body: JSON.stringify({ channel: 'general', text: `Note ${i}` }) });
+        for (let i = 0; i < 1100; i += 50) for (const r of await Promise.all(Array.from({ length: 50 }, (_, j) => post(i + j)))) assert.equal(r.status, 200);
+        return { world: w, sphere: s };
+      })());
 
     for (const vp of VIEWPORTS) {
       describe(`at ${vp.name} width (${vp.viewport.width}×${vp.viewport.height})`, () => {
@@ -507,6 +525,34 @@ if (!chromium) {
             assert.equal(refused.status, 403, JSON.stringify(refused.body));
             assert.match(refused.body.error, /needs an admin/);
             assert.equal((await world.policy()).maxFilesPerMessage, was + 1, 'unchanged');
+          });
+        });
+
+        test('Audit log: Export all saves every event (more than 1,000) as JSON Lines, and the CLI checks the file', EACH, async (t) => {
+          const { world: w, sphere: s } = await exportWorld();
+          await run(t, `${s.url}/#key=${encodeURIComponent(s.key)}`, vp, async (page) => {
+            await title(page, s.name).waitFor();
+            await goTo(page, 'Audit log');
+            await title(page, 'Audit log').waitFor();
+            await page.getByText(/^Chain verified · [\d,]+ events$/).waitFor();
+            // "Chain verified" is the relay's word: the page says so, and how to check it yourself
+            const own = page.locator('#au-own');
+            await own.getByText('That’s the relay’s own word.', { exact: false }).waitFor();
+            await own.getByText('obysphere admin audit verify <file>', { exact: true }).waitFor();
+            await noSidewaysScroll(page, vp, 'the audit log, with how to check it');
+            const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export all' }).click()]);
+            assert.match(download.suggestedFilename(), /^audit-export-sphere-audit-\d{4}-\d{2}-\d{2}\.jsonl$/);
+            const file = path.join(w.tmp, `audit-${vp.name}.jsonl`);
+            await download.saveAs(file);
+            const events = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+            const { head } = await (await fetch(`${s.url}/api/audit?limit=1`, { headers: { 'x-sphere-key': s.key } })).json();
+            assert.ok(events.length > 1000, `${events.length} events`);
+            assert.deepEqual(events.map((e) => e.seq), Array.from({ length: head.seq }, (_, i) => i + 1), 'every event, in order');
+            await page.getByRole('button', { name: 'Export all' }).waitFor(); // the button is back
+            // and the check on this machine, with the admin key: the CLI's, never the page's
+            const r = await w.rep(['admin', 'audit', 'verify', file], { env: { OBYSPHERE_ADMIN_KEY: s.admin } });
+            assert.equal(r.code, 0, r.out);
+            assert.match(r.out, new RegExp(`The file checks with this key: ${head.seq.toLocaleString('en-US')} events`));
           });
         });
 
