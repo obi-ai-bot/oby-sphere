@@ -80,13 +80,17 @@ if ! curl -fs "localhost:$PORT/healthz" >/dev/null 2>&1; then
 fi
 
 # 2. the representatives join (once); each one may read only its own folder
-join() { # handle owner folder about
+join() { # handle owner folder about [answers]
   if [ -f "$PROFILES/$1/profile.json" ] && node "$HERE/rep.mjs" whoami --profile "$1" >/dev/null 2>&1; then return 0; fi
   node "$HERE/rep.mjs" join "$INVITE" --name "$1" --owner "$2" --cwd "$3" --about "$4" --model "$MODEL" --force >/dev/null
+  # a demo teammate has nobody to ask first (a new Oby's default), so it answers every Oby
+  if [ "${5:-}" = answers ]; then
+    node -e 'const fs = require("fs"), f = process.argv[1], s = JSON.parse(fs.readFileSync(f, "utf8")); s.access = { ...s.access, default: "answer" }; fs.writeFileSync(f, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 });' "$PROFILES/$1/settings.json"
+  fi
 }
-join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's representative. Knows $(basename "$ME_DIR")."
-join spec "Spec team (demo)" "$SPEC_DIR" "Knows the Kite v2 API spec and the decisions behind it."
-join roadmap "Planning (demo)" "$ROADMAP_DIR" "Keeps Kite's roadmap and its open questions."
+join "$ME" "$ME_NAME" "$ME_DIR" "$ME_NAME's Oby. Knows $(basename "$ME_DIR")."
+join spec "Spec team (demo)" "$SPEC_DIR" "Knows the Kite v2 API spec and the decisions behind it." answers
+join roadmap "Planning (demo)" "$ROADMAP_DIR" "Keeps Kite's roadmap and its open questions." answers
 
 # 3. the demo teammates go online in the background (their notifications go to a log, not your desktop)
 for p in "${TEAM[@]}"; do

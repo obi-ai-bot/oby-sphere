@@ -35,7 +35,9 @@ const BIN_DIR = path.resolve(process.env.OBYSPHERE_BIN_DIR || path.join(os.homed
 const RELEASES_API = trimSlash(process.env.OBYSPHERE_RELEASES_API || `https://api.github.com/repos/${REPO}`);
 const DOWNLOAD_BASE = trimSlash(process.env.OBYSPHERE_DOWNLOAD_BASE || `https://github.com/${REPO}`);
 const MAIN_TARBALL = process.env.OBYSPHERE_DOWNLOAD_BASE ? `${DOWNLOAD_BASE}/archive/refs/heads/main.tar.gz` : `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
-// tests and dry runs: which system's service to write, and whether to run launchctl, systemctl and open
+// for tests only: OBYSPHERE_SERVICE_PLATFORM (darwin, linux or win32) says which system's service
+// to write, whatever this one is; OBYSPHERE_SERVICE_DRYRUN writes down the launchctl, systemctl,
+// schtasks and open commands instead of running them
 const PLATFORM = process.env.OBYSPHERE_SERVICE_PLATFORM || process.platform;
 const DRY = /^(|0|false|no|off)$/i.test(process.env.OBYSPHERE_SERVICE_DRYRUN || '') ? null : process.env.OBYSPHERE_SERVICE_DRYRUN;
 const NO_CHECK = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_NO_UPDATE_CHECK || '');
@@ -65,6 +67,7 @@ Join and run your Oby
                  [--about "what your Oby knows"] [--profile <name>] [--insecure]
   obysphere start [--profile p | --all] [--foreground]
                                    run your console and Oby in the background; it starts again at login
+                                   (a LaunchAgent on macOS, a systemd user unit on Linux, a scheduled task on Windows)
   obysphere stop | restart [--profile p | --all]
   obysphere status [--json]        each profile: running or not, its console, its Sphere, versions, updates
   obysphere open [--profile p]     your console, in the browser
@@ -87,6 +90,7 @@ Claude Code and Cursor
 
 Notifications
   obysphere notify test [--via desktop|slack|phone|all]
+  obysphere notify app             macOS: build the app that shows them again
 
 GitHub
   obysphere github status          how gh is signed in, and what your Oby may do on GitHub
@@ -291,6 +295,7 @@ async function consoleAnswers(port) {
 
 function serviceDir() {
   if (process.env.OBYSPHERE_SERVICE_DIR) return path.resolve(process.env.OBYSPHERE_SERVICE_DIR);
+  if (PLATFORM === 'win32') return taskDir();
   if (PLATFORM === 'darwin') return path.join(os.homedir(), 'Library', 'LaunchAgents');
   return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd', 'user');
 }
@@ -299,6 +304,7 @@ const unitName = (name) => `obysphere-${name}.service`;
 function serviceFile(name) {
   if (PLATFORM === 'darwin') return path.join(serviceDir(), `${label(name)}.plist`);
   if (PLATFORM === 'linux') return path.join(serviceDir(), unitName(name));
+  if (PLATFORM === 'win32') return taskFile(name, '.xml');
   return null;
 }
 function serviceInstalled(name) {
@@ -324,7 +330,8 @@ function appForService() {
 // what the service runs: `rep.mjs ui --serve`, with the profiles folder fixed and your PATH
 // (so it finds claude, codex, cursor-agent and gh). No keys: the token stays in profile.json.
 function serviceSpec(name, port, app = appForService()) {
-  const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin' };
+  // OBYSPHERE_CLI: it runs for `obysphere`, so what the console says to type names it (as run() does)
+  const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', OBYSPHERE_CLI: '1' };
   for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK', 'OBYSPHERE_RELEASES_API']) if (process.env[k]) env[k] = process.env[k];
   return {
     profile: name,
@@ -416,6 +423,7 @@ async function installService(name, port, app = appForService()) {
   rotate(s.log);
   const file = serviceFile(name);
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (PLATFORM === 'win32') return installTask(name, port, s, app);
   if (PLATFORM === 'darwin') {
     fs.writeFileSync(file, plist(s), { mode: 0o644 });
     const domain = `gui/${uid()}`;
@@ -439,6 +447,7 @@ async function installService(name, port, app = appForService()) {
 
 function removeService(name) {
   const file = serviceFile(name);
+  if (PLATFORM === 'win32') return removeTask(name);
   if (PLATFORM === 'darwin') runOs('launchctl', ['bootout', `gui/${uid()}/${label(name)}`]);
   else runOs('systemctl', ['--user', 'disable', '--now', unitName(name)]);
   fs.rmSync(file, { force: true });
@@ -467,7 +476,7 @@ async function announce(name, port) {
 
 async function start() {
   const names = targets();
-  if (opt.foreground || (PLATFORM !== 'darwin' && PLATFORM !== 'linux')) {
+  if (opt.foreground || !serviceHere()) {
     if (names.length > 1) die('In the foreground it runs one profile at a time: pass --profile <name>.');
     if (!opt.foreground) say(dim("There's no background service on this system yet: your console runs in this terminal. Keep it open; Ctrl+C stops it."));
     const port = await consolePort(names[0]);
@@ -492,20 +501,20 @@ async function start() {
 }
 
 async function stop() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') die('Here your console runs in a terminal: stop it there with Ctrl+C.');
+  if (!serviceHere()) die('Here your console runs in a terminal: stop it there with Ctrl+C.');
   for (const n of targets()) {
     if (!serviceInstalled(n)) {
       const port = savedPort(n);
       say(port && (await consoleAnswers(port)) ? `${n} runs in a terminal, not in the background: stop it there (Ctrl+C).` : `${n} isn't running in the background.`);
       continue;
     }
-    removeService(n);
+    await removeService(n);
     say(`${dim('○')} ${bold(n)} stopped. It won't start at login until you run obysphere start again.`);
   }
 }
 
 async function restart() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') die('Here your console runs in a terminal: stop it there with Ctrl+C, then obysphere start.');
+  if (!serviceHere()) die('Here your console runs in a terminal: stop it there with Ctrl+C, then obysphere start.');
   for (const n of targets()) {
     const port = await consolePort(n);
     // a console in a terminal holds the port: a service started now would only fail to listen, again and again
@@ -521,7 +530,7 @@ async function restart() {
 
 // after an update or a rollback: every service again, from `current`
 async function restartServices() {
-  if (PLATFORM !== 'darwin' && PLATFORM !== 'linux') return;
+  if (!serviceHere()) return;
   const names = listProfiles().filter(serviceInstalled);
   for (const n of names) await installService(n, await consolePort(n), path.join(APP_HOME, 'current'));
   if (names.length)
@@ -577,6 +586,256 @@ async function openCmd() {
   const r = runOs(bin, args, { detach: true });
   if (r.status !== 0) die(`couldn't open a browser: open ${url} yourself`);
   say(`Opening ${cyan(url)}`);
+}
+
+// ================================================================ the background service on Windows
+//
+// A scheduled task of your own, made from an XML file as a LaunchAgent is from its plist. It
+// starts when you log on, runs only while you're logged on (InteractiveToken) and with the least
+// privileges, so it needs no admin rights and no UAC prompt. A task name belongs to the whole
+// computer, and a user without admin rights can't count on making a folder in Task Scheduler's
+// library, so yours sits in its root folder as Obysphere-<profile>-<your user name>, the way
+// per-user updaters name theirs.
+//
+// Its action is wscript.exe with a small JScript file, because Windows Script Host is a part of
+// Windows that can start a console program with no window at all (WshShell.Run, window style 0)
+// and wait for it. A .cmd file, or node.exe itself, opens a console window; PowerShell's
+// -WindowStyle Hidden still flashes one; `conhost --headless` is undocumented and security tools
+// flag it; Node's windowsHide hides only the windows of the programs Node starts; and VBScript is
+// being removed from Windows, while JScript stays.
+//
+// The JScript file runs `obysphere.mjs service-run`, a small supervisor that does what launchd
+// and systemd do on the other systems: it runs `rep.mjs ui --serve` as the plist and the unit
+// say (the same spec), writes its output to <profile>/logs/, starts it again 5 seconds after it
+// stops, and ends (with it) when the task is ended (schtasks /end), or when its spec changes or
+// goes (restart, stop). Task Scheduler's own restart on failure is only a backstop.
+//
+// What `schtasks /query` shows of the task is wscript.exe and that file's path. Nothing in the
+// three files (the task's XML, the JScript file, the spec) is secret: the profile, with its
+// token, is read from disk.
+
+const SERVICE_SYSTEMS = new Set(['darwin', 'linux', 'win32']);
+function serviceHere() {
+  return SERVICE_SYSTEMS.has(PLATFORM);
+}
+
+// %LOCALAPPDATA%\obysphere\services: the task's XML, its JScript file and the spec, per profile
+function taskDir() {
+  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'obysphere', 'services');
+}
+const taskFile = (name, ext) => path.join(serviceDir(), `obysphere-${name}${ext}`);
+function winUserName() {
+  if (process.env.USERNAME) return process.env.USERNAME;
+  try {
+    return os.userInfo().username;
+  } catch {
+    return 'me';
+  }
+}
+// who the task runs as, and whose logon starts it: you (DOMAIN\user)
+const winUser = () => (process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${winUserName()}` : winUserName());
+const taskName = (name) => `Obysphere-${name}-${winUserName().replace(/[^\w.-]+/g, '_').slice(0, 40)}`;
+
+// one argument as Windows programs read their command line (the C runtime's rules): quoted when
+// it has a space or a quote, with the backslashes before a quote, or before the closing one, doubled
+function winArg(a) {
+  const s = String(a);
+  if (s && !/[\s"]/.test(s)) return s;
+  return `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+}
+// a JScript string literal in plain ASCII: Windows Script Host reads a .js file in the system's
+// code page, so anything else is a \u escape
+const jsString = (s) => JSON.stringify(String(s)).replace(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
+function taskScript(name, command) {
+  return `// Obysphere: ${name}'s console and Oby. The scheduled task ${taskName(name)} runs this with
+// wscript.exe when you log on. Written by obysphere start; obysphere stop removes it.
+// Node starts with no window (0), and this waits for it (true) and ends with its exit code.
+var shell = WScript.CreateObject("WScript.Shell");
+WScript.Quit(shell.Run(${jsString(command)}, 0, true));
+`;
+}
+
+function taskXml(name, s, script) {
+  const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); // text only, no attributes
+  const wscript = path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
+  return `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>${x(`Obysphere: ${name}'s console and Oby, written by obysphere start. obysphere stop removes it.`)}</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>${x(winUser())}</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>${x(winUser())}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>5</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${x(wscript)}</Command>
+      <Arguments>${x(`//B //Nologo //E:JScript ${winArg(script)}`)}</Arguments>
+      <WorkingDirectory>${x(s.cwd)}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+`;
+}
+
+// schtasks: the one first on your PATH, never one in the folder you're in (which Windows would
+// look in first); else Windows' own
+function schtasks(args) {
+  return runOs(DRY ? 'schtasks' : schtasksBin(), args);
+}
+function schtasksBin() {
+  if (process.platform !== 'win32') return which('schtasks') || 'schtasks';
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    const f = dir && path.isAbsolute(dir) ? path.join(dir, 'schtasks.exe') : null;
+    if (f && fs.existsSync(f)) return f;
+  }
+  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'schtasks.exe');
+}
+
+async function untilQuiet(port) {
+  for (let i = 0; i < 24 && !DRY && (await consoleAnswers(port)); i++) await sleep(250);
+}
+
+async function installTask(name, port, s, app) {
+  const task = taskName(name);
+  const [xmlFile, script, specFile] = ['.xml', '.js', '.json'].map((e) => taskFile(name, e));
+  const command = [s.args[0], '--preserve-symlinks-main', path.join(app, 'obysphere.mjs'), 'service-run', '--spec', specFile].map(winArg).join(' ');
+  // WshShell.Run and Task Scheduler both put a variable's value in place of %NAME%
+  const word = `${command} ${script} ${s.cwd}`.split('%').slice(1, -1).find((v) => v && process.env[v] !== undefined);
+  if (word !== undefined) throw new Error(`Windows would read %${word}% in these paths as a variable, so a task can't run them: obysphere start --foreground runs your console in this terminal.\n  ${command}`);
+  // a new id: a supervisor still running from before sees it and stops
+  writeSecret(specFile, { ...s, task, id: randomBytes(8).toString('hex') });
+  fs.writeFileSync(script, taskScript(name, command), { mode: 0o644 });
+  fs.writeFileSync(xmlFile, Buffer.from('\ufeff' + taskXml(name, s, script), 'utf16le'), { mode: 0o644 });
+  schtasks(['/end', '/tn', task]); // not running: fine
+  const made = schtasks(['/create', '/tn', task, '/xml', xmlFile, '/f']);
+  if (made.status !== 0) {
+    // nothing left behind: a task from before (a restart, an update) goes too, since without its
+    // files obysphere stop couldn't find it; its supervisor saw the spec change and stops
+    schtasks(['/delete', '/tn', task, '/f']); // none from before: fine
+    for (const f of [xmlFile, script, specFile]) fs.rmSync(f, { force: true });
+    await untilQuiet(port);
+    throw new Error(`schtasks couldn't create the task ${task}: ${clean(made.stderr || made.stdout, 300) || `exit code ${made.status}`}`);
+  }
+  await untilQuiet(port); // the one from before lets go of the port
+  const ran = schtasks(['/run', '/tn', task]);
+  if (ran.status !== 0) throw new Error(`schtasks couldn't start the task ${task}: ${clean(ran.stderr || ran.stdout, 300) || `exit code ${ran.status}`}`);
+}
+
+async function removeTask(name) {
+  const task = taskName(name);
+  fs.rmSync(taskFile(name, '.json'), { force: true }); // its supervisor stops within a second
+  schtasks(['/end', '/tn', task]);
+  schtasks(['/delete', '/tn', task, '/f']);
+  for (const e of ['.js', '.xml']) fs.rmSync(taskFile(name, e), { force: true });
+  await untilQuiet(savedPort(name));
+}
+
+// the spec's environment over this one's; on Windows, where PATH and Path are one name, without twins
+function specEnv(base, add) {
+  const env = { ...base };
+  const names = new Set(Object.keys(add).map((k) => k.toUpperCase()));
+  if (process.platform === 'win32') for (const k of Object.keys(env)) if (names.has(k.toUpperCase())) delete env[k];
+  return { ...env, ...add };
+}
+
+// obysphere.mjs service-run --spec <file>: what the task's JScript file starts, not a command for people
+async function serviceRun() {
+  if (typeof opt.spec !== 'string') die('usage: obysphere service-run --spec <file> (the Windows task runs it)');
+  const file = path.resolve(opt.spec);
+  const s = readJson(file, null);
+  const strings = (a) => Array.isArray(a) && a.length > 0 && a.every((v) => typeof v === 'string');
+  const ok = s && strings(s.args) && typeof s.cwd === 'string' && typeof s.log === 'string' && typeof s.id === 'string' && s.env && typeof s.env === 'object' && Object.values(s.env).every((v) => typeof v === 'string');
+  if (!ok) die(`${file} isn't a service spec`);
+  const note = (m) => {
+    try {
+      fs.appendFileSync(s.log, `[${new Date().toISOString()}] obysphere: ${m}\n`);
+    } catch {}
+  };
+  let child = null;
+  let done = false;
+  const end = (why) => {
+    if (done) return;
+    done = true;
+    note(why);
+    try {
+      child?.kill();
+    } catch {}
+    process.exit(0);
+  };
+  // the task ended: wscript.exe, which waits for this, is gone (on Windows a parent's id stays put)
+  const parent = process.ppid;
+  const parentGone = () => {
+    if (process.ppid !== parent) return true;
+    try {
+      process.kill(parent, 0);
+      return false;
+    } catch (e) {
+      return e.code !== 'EPERM';
+    }
+  };
+  // the spec's id now: null when it's gone, undefined when it can't be read just now (another
+  // program holding it open, say), which is no reason to stop
+  const specId = () => {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'))?.id ?? null;
+    } catch (e) {
+      return e.code === 'ENOENT' ? null : undefined;
+    }
+  };
+  setInterval(() => {
+    const id = specId();
+    if (id !== undefined && id !== s.id) end('the service was changed or removed: stopping');
+    else if (parentGone()) end('its task ended: stopping');
+  }, 1000);
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGBREAK']) process.on(sig, () => end(`${sig}: stopping`));
+  const env = specEnv(process.env, s.env);
+  fs.mkdirSync(path.dirname(s.log), { recursive: true, mode: 0o700 });
+  while (!done) {
+    rotate(s.log);
+    note('starting your console and Oby');
+    const fd = fs.openSync(s.log, 'a');
+    const why = await new Promise((resolve) => {
+      // its own console, with no window; the runtimes it starts share it, so they open none either
+      child = spawn(s.args[0], s.args.slice(1), { cwd: s.cwd, env, stdio: ['ignore', fd, fd], windowsHide: true });
+      child.once('error', (e) => resolve(e.message));
+      child.once('exit', (code, signal) => resolve(signal || `exit code ${code}`));
+    });
+    fs.closeSync(fd);
+    child = null;
+    if (done) break;
+    note(`it stopped (${clean(why, 200)}); starting it again in 5 seconds`);
+    await sleep(5000);
+  }
 }
 
 // ================================================================ status, version, doctor
@@ -1526,7 +1785,7 @@ function parseArgs(list) {
 }
 
 function which(bin) {
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : ['']; // node.exe, as the file is named
   for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
     for (const e of exts) {
@@ -1619,7 +1878,7 @@ function die(m) {
 
 // ================================================================ run (last, so every constant above exists)
 
-const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, update, version, doctor, server, help };
+const OWN = { start, stop, restart, status, logs, open: openCmd, profiles, update, version, doctor, server, help, 'service-run': serviceRun };
 if (cmd === '--help' || cmd === '-h') help();
 else if (cmd === '--version' || cmd === '-v') version();
 else if (Object.hasOwn(OWN, cmd)) {

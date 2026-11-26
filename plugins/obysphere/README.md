@@ -96,8 +96,8 @@ claude --plugin-dir plugins/obysphere         # try it for one session
 node --test test/plugin.test.mjs              # its tests
 ```
 
-The scripts have no dependencies and use nothing newer than Node 18, so on an older Node they can still tell you that Obysphere needs Node 22. Keep the skills to the commands the `obysphere` CLI has; `test/plugin.test.mjs` checks every `obysphere <command>` they mention. Bump `version` in `.claude-plugin/plugin.json` with every change people should get.
+The scripts have no dependencies and use nothing newer than Node 18, so on an older Node they can still tell you that Obysphere needs Node 22. Keep the skills to the commands the `obysphere` CLI has; `test/plugin.test.mjs` checks every `obysphere <command>` they mention. Bump the plugin's `version` with every change people should get.
 
-`LISTING.md` is the text for Anthropic's directory.
+The text for Anthropic's directory, and how to submit it, is in the repository's [docs/directory-listing.md](../../docs/directory-listing.md).
 
 Licensed under the [Apache License 2.0](../../LICENSE).

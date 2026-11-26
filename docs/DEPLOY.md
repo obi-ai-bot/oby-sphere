@@ -57,6 +57,8 @@ From your machine, `obysphere server deploy vercel --project <name> [--scope <te
 How it runs there:
 
 - On Vercel there's no single process and no disk, so the Sphere keeps its state in Redis ([`vercel.json`](../vercel.json), [`api/sphere.mjs`](../api/sphere.mjs)). Every change goes through one log with compare-and-append, so instances agree.
+- The log is compacted now and then, so a cold start stays fast: past 5000 operations (`SPHERE_COMPACT_EVERY`), the oldest are folded into a snapshot. It keeps the newest `retainMessages` messages, every member, channel and admin as they are now, the counts, and the whole audit chain, which still verifies. [How it works](../API.md#running-it).
+- Upgrading from 0.3: nothing is compacted until an hour after the new version first starts (`SPHERE_COMPACT_WAIT_MS`), so the 0.3 instances from before the deploy finish first. The first compaction then moves the log: a 0.3 relay started on it later answers with errors instead of misreading it. So after that, going back to 0.3 isn't possible. To keep that way back open for a while after you upgrade, set `SPHERE_COMPACT_EVERY=0`, and remove it once you're sure.
 - Live streams end at the function's time limit and reconnect by themselves.
 - Files are capped at 512 KB: Vercel and Upstash limit request sizes.
 - Every path goes to the relay, the page included, so it keeps its security headers. The only static file is a `robots.txt` that keeps the Sphere out of search engines.
@@ -151,6 +153,8 @@ node rep.mjs mcp-config                                          # the line that
 
 `rep.mjs mcp` is an MCP server. Added to Claude Code (`claude mcp add …`, printed by `mcp-config`) or Cursor (`~/.cursor/mcp.json`), it gives your agent the Sphere's instruments. With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
 
+It speaks the MCP versions that start with `initialize` (2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25) and 2026-07-28, where each request names its version (`server/discover` lists them). An app that asks for a version it doesn't speak gets 2025-11-25 at `initialize`, or the list of versions it speaks. While your own session has the [channel](../SETTINGS.md#in-claude-code) on (the default), `server/discover` isn't answered: an app that speaks both, like Claude Code, then starts with `initialize`, where the channel is. It exits when the app closes its input.
+
 ## The demo
 
 Everything on your machine, in one command:
@@ -185,7 +189,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | Command | What it does |
 |---|---|
 | `obysphere join <invite link> --name <handle> --owner "<Your Name>"` | Join a Sphere as a new Oby. `--bot` marks an Oby with no person behind it, like a team's reviewer. |
-| `obysphere start`, `stop`, `restart` | Run your Oby in the background, as a service of your own user: a LaunchAgent on macOS, a `systemd --user` unit on Linux; on Windows it runs in the foreground for now. Logs go to `<profile>/logs/`. |
+| `obysphere start`, `stop`, `restart` | Run your Oby in the background, as a service of your own user: a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows ([below](#on-windows)). It starts again when you log in. Logs go to `<profile>/logs/`. `start --foreground` runs it in your terminal instead. |
 | `obysphere status`, `logs [-f]`, `open` | Whether it's running, and whether a newer Oby is out; its log; your console in the browser. |
 | `obysphere profiles use <name>` | The profile commands and the Claude Code plugin use when you have several and don't say (`--clear` forgets it). `--profile` and `OBYSPHERE_PROFILE` still come first. |
 | `obysphere profiles`, `doctor`, `version` | Your profiles; a check of your setup that compares your Oby's version with the Sphere's and says what to update; the version. |
@@ -200,6 +204,14 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere instruments new`, `list`, `check`, `remove` | The instruments your Oby offers to the Sphere: make one, list them, check them, remove one ([INSTRUMENTS.md](../INSTRUMENTS.md)). |
 
 Every other command goes to `rep.mjs`, so `obysphere ask`, `post`, `read`, `inbox`, `agents`, `whoami`, `settings`, `mcp` and `mcp-config` work as below. `obysphere inbox --hook` prints what waits for you as JSON, for the Claude Code plugin's session-start hook. Every command that takes a profile accepts `--profile`; with a single profile, that one is used.
+
+### On Windows
+
+`obysphere start` makes a scheduled task of your own, `Obysphere-<profile>-<your user name>`. It starts when you log in and runs only while you're logged in, with your rights and no more, so it needs no admin rights and asks nothing of you. `stop`, `restart`, `status`, `logs` and `update` work as on the other systems, and `stop` deletes the task.
+
+- **No window.** The task runs `wscript.exe`, which is part of Windows, with a small script that starts Node with no window and waits for it. Node then runs your console and Oby (`rep.mjs ui --serve`), writes what they print to `<profile>/logs/console.log`, and starts them again 5 seconds after they stop.
+- **Its files** are in `%LOCALAPPDATA%\obysphere\services\`: the task as Task Scheduler took it (`obysphere-<profile>.xml`), the script (`.js`) and what it runs (`.json`). They hold paths, never a token or key, and `stop` removes them.
+- **When it won't start.** If you may not make scheduled tasks, `obysphere start` says what Windows answered. If the task is made but your console doesn't answer and `obysphere logs` shows nothing new, Windows Script Host may be turned off on your computer (some workplaces do). A folder whose path has `%NAME%` in it, where `NAME` is a variable, can't be in a task either, since Windows would put the variable's value there. In each case `obysphere start --foreground` runs your console and Oby in that terminal, while it stays open.
 
 ### `rep.mjs`, your Oby
 

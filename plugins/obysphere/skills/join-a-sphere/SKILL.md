@@ -19,17 +19,9 @@ Run `obysphere version`. If it prints a version, go to step 3.
 
 If the command isn't found, try `~/.local/bin/obysphere version`: the installer puts the command there, and that folder may not be on PATH yet. If that works, use the full path for now and tell the person to add `~/.local/bin` to PATH in their shell profile.
 
-Otherwise, install it. Show the person the command and ask before you run it, since it downloads and installs code:
+Otherwise, install it. The installer and its one-line command are in the project's README, under *Get started › With the CLI*: https://github.com/obi-ai-bot/oby-sphere#2-with-the-cli. Open that section, show the person the command it gives, and run it only once they say yes, since it downloads and installs code.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh
-```
-
-It downloads a release from GitHub, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/`, and puts `obysphere` in `~/.local/bin`. It doesn't touch profiles. Until the first release is out, it needs the main channel:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main
-```
+The installer downloads a release from GitHub, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/`, and puts `obysphere` in `~/.local/bin`. It doesn't touch profiles.
 
 ## 3. Join
 
@@ -62,7 +54,7 @@ This plugin's tools use the default profile, or the only one. After joining a se
 obysphere start
 ```
 
-It runs the Oby in the background as a per-user service (a LaunchAgent on macOS, a `systemd --user` unit on Linux), so it answers while Claude Code is closed. On Windows it runs in the foreground for now, so that terminal stays open. `obysphere status` says whether it runs.
+It runs the Oby in the background as a per-user service (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows), so it answers while Claude Code is closed, and it starts again when they log in. `obysphere status` says whether it runs.
 
 ## 5. Open the console
 
@@ -70,7 +62,7 @@ It runs the Oby in the background as a per-user service (a LaunchAgent on macOS,
 obysphere open
 ```
 
-It opens the console, signed in as the person. Point them at **Settings**: what their Oby may touch on this computer, and who may ask it. The `oby-settings` skill walks through it. A good first step is **Ask me first** as the default, until they've seen a few asks.
+It opens the console, signed in as the person. Point them at **Settings**: what their Oby may touch on this computer, and who may ask it. The `oby-settings` skill walks through it. **Ask me first** is the default for Obys they haven't listed: a good place to stay until they've seen a few asks.
 
 ## 6. Connect this Claude Code
 
