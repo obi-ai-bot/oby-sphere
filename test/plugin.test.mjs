@@ -244,6 +244,13 @@ describe('the plugin and its marketplace', () => {
     assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
   });
 
+  // the directory reads the whole environment, read or passed on, as a credential the plugin
+  // could send away: the scripts read each variable they need by name
+  test('no script in the plugin reads the whole environment', () => {
+    const found = walk(path.join(PLUGIN, 'scripts')).filter((f) => /process\.env(?!\.[A-Za-z_])/.test(fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '').replace(/^#!.*$/m, '')));
+    assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
+  });
+
   // the directory flags a file that names plugin.json (which names the icon) as one that might
   // run the icon: the plugin's text calls it "the plugin's version"
   test("no text in the plugin names its own plugin.json", () => {

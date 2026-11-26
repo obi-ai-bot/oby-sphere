@@ -27,11 +27,24 @@ const realpath = (p) => {
 
 export const nodeMajor = () => Number(String(process.versions.node).split('.')[0]) || 0;
 
+// The variables the plugin reads, each by name. It never reads, copies or passes on the whole
+// environment: the plugin directory reads that as a credential that could leave the machine.
+const vars = () => ({
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  PATH: process.env.PATH,
+  Path: process.env.Path,
+  PATHEXT: process.env.PATHEXT,
+  OBYSPHERE_APP_HOME: process.env.OBYSPHERE_APP_HOME,
+  OBYSPHERE_HOME: process.env.OBYSPHERE_HOME,
+  OBYSPHERE_PROFILE: process.env.OBYSPHERE_PROFILE,
+});
+
 // the home folder, from the environment given (so a test's HOME is the one used)
 const homeDir = (env) => (process.platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
 
 // a command on PATH, as the shell would find it
-export function which(name, env = process.env) {
+export function which(name, env = vars()) {
   const dirs = String(env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
   const win = process.platform === 'win32';
   const exts = win ? String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [''];
@@ -53,7 +66,7 @@ export function which(name, env = process.env) {
 }
 
 // where install.sh puts versions and `current`: $OBYSPHERE_APP_HOME, then ~/.local/share/obysphere
-export function appHomes(env = process.env) {
+export function appHomes(env = vars()) {
   const homes = [];
   if (env.OBYSPHERE_APP_HOME) homes.push(path.resolve(env.OBYSPHERE_APP_HOME));
   homes.push(path.join(homeDir(env), '.local', 'share', 'obysphere'));
@@ -64,7 +77,7 @@ export function appHomes(env = process.env) {
 //   { rep, bin }  its rep.mjs is known: run it with this Node
 //   { rep: null, bin }  only the `obysphere` command is known: run that
 //   null  not installed
-export function findCli(env = process.env) {
+export function findCli(env = vars()) {
   const bin = which('obysphere', env);
   if (bin) {
     // a symlink into an install, or an npm bin: rep.mjs sits beside the real file
@@ -85,13 +98,13 @@ export function findCli(env = process.env) {
 }
 
 // where profiles may be: $OBYSPHERE_HOME, else both ~/.obysphere and ~/.obysphere-mvp
-export function profileHomes(env = process.env) {
+export function profileHomes(env = vars()) {
   if (env.OBYSPHERE_HOME) return [path.resolve(env.OBYSPHERE_HOME)];
   return [path.join(homeDir(env), '.obysphere'), path.join(homeDir(env), '.obysphere-mvp')];
 }
 
 // the profiles in the first of those folders that holds any (a folder with a profile.json)
-export function profiles(env = process.env) {
+export function profiles(env = vars()) {
   for (const dir of profileHomes(env)) {
     try {
       const names = fs.readdirSync(dir).filter((d) => isFile(path.join(dir, d, 'profile.json')));
@@ -102,14 +115,14 @@ export function profiles(env = process.env) {
 }
 
 // has this computer joined a Sphere?
-export const hasProfile = (env = process.env) => profiles(env).length > 0;
+export const hasProfile = (env = vars()) => profiles(env).length > 0;
 
 // a profile name as rep.mjs reads it (its slug())
 const slug = (s) => String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
 
 // the profile named by --profile (or --profile=) in these arguments, else by OBYSPHERE_PROFILE;
 // undefined when neither names one
-export function chosenProfile(args = [], env = process.env) {
+export function chosenProfile(args = [], env = vars()) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--profile') return String(args[i + 1] ?? '');
     if (String(args[i]).startsWith('--profile=')) return String(args[i]).slice('--profile='.length);
@@ -119,9 +132,9 @@ export function chosenProfile(args = [], env = process.env) {
 
 // the default profile, chosen with `obysphere profiles use <name>`: the name in .default-profile in
 // the folder that holds the profiles, when it names one of them; else null
-export function defaultProfile(env = process.env) {
+export function defaultProfile(env = vars()) {
   for (const dir of profileHomes(env)) {
-    const names = profiles({ ...env, OBYSPHERE_HOME: dir });
+    const names = profiles({ OBYSPHERE_HOME: dir });
     if (!names.length) continue;
     try {
       const n = slug(fs.readFileSync(path.join(dir, '.default-profile'), 'utf8').trim());
@@ -135,14 +148,14 @@ export function defaultProfile(env = process.env) {
 
 // several profiles, and nothing says which one (no --profile, OBYSPHERE_PROFILE or default):
 // the CLI would stop and ask
-export function profileUnclear(args = [], env = process.env) {
+export function profileUnclear(args = [], env = vars()) {
   if (chosenProfile(args, env) !== undefined) return false;
   if (defaultProfile(env)) return false;
   return profiles(env).length > 1;
 }
 
 // a profile is named, but this computer has none by that name: the CLI would stop with "no profile"
-export function profileMissing(args = [], env = process.env) {
+export function profileMissing(args = [], env = vars()) {
   const name = chosenProfile(args, env);
   if (name === undefined || !hasProfile(env)) return false;
   return !profiles(env).includes(slug(name));
