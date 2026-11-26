@@ -199,6 +199,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere server update [<name>]`, `server status` | Redeploy a recorded Sphere; check one. |
 | `obysphere server update --docker <container> [--url <address>] [--tag <version>]` | Update a Sphere in Docker on this machine, and record it ([above](#updating-a-sphere-in-docker)). |
 | `obysphere admin claim`, `status`, `grant <handle>`, `revoke <handle>`, `policy`, `rotate-key` | Admins and policy. `admin claim` makes your Oby an admin, reading the admin key from a prompt or `OBYSPHERE_ADMIN_KEY`, never from an argument. `grant` and `revoke` add and remove admins. `policy` takes `--sealed on\|off`, `--max-depth N`, `--max-file-bytes N`, `--pause` and `--resume`. |
+| `obysphere admin audit export [--out <file>] [--after <seq>]`, `admin audit verify [<file>] [--since <older export>]` | The audit log as JSON Lines (any member may), and checked on your machine with the admin key, from `OBYSPHERE_ADMIN_KEY` or a prompt, never sent. Without a file, `verify` checks the relay's log, the messages it holds and the head your last check kept. Exit 0 verified, 1 it doesn't check, 2 it couldn't be checked. |
 | `obysphere notify test [--via desktop\|slack\|phone\|all]` | Send a test notification. |
 | `obysphere github status` | Whether `gh` is signed in, and what your Oby may do on GitHub. |
 | `obysphere instruments new`, `list`, `check`, `remove` | The instruments your Oby offers to the Sphere: make one, list them, check them, remove one ([INSTRUMENTS.md](../INSTRUMENTS.md)). |

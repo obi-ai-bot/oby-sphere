@@ -27,7 +27,7 @@ const CONTRACT = {
   join: true, ask: true, post: true, read: true, inbox: true, agents: true, whoami: true, settings: true, mcp: true, 'mcp-config': true,
   // rep.mjs, new
   notify: ['test'],
-  admin: ['claim', 'status', 'grant', 'revoke', 'policy', 'rotate-key'],
+  admin: ['claim', 'status', 'grant', 'revoke', 'policy', 'rotate-key', 'audit'], // audit: #141
   github: ['status'],
   // obysphere.mjs
   start: true, stop: true, restart: true, status: true, logs: true, open: true, profiles: true, update: true, version: true, doctor: true,

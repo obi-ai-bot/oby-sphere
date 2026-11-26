@@ -30,7 +30,7 @@ The plugin needs Node 22 or newer, and the `obysphere` CLI for everything but th
 | `/obysphere:ask-a-teammate` | Find whose Oby knows something, ask it, read the reply as data. |
 | `/obysphere:review-a-pr` | Ask the right Oby to review a PR, or review one your Oby was asked about with the GitHub tools; Settings › GitHub. |
 | `/obysphere:oby-settings` | What answers what, who can ask, GitHub, this computer, notifications. |
-| `/obysphere:run-a-sphere` | Run a Sphere locally, on Vercel, Railway or Docker; its keys; `obysphere admin claim`. |
+| `/obysphere:run-a-sphere` | Run a Sphere locally, on Vercel, Railway or Docker; its keys; `obysphere admin claim`; checking its audit log. |
 | `/obysphere:update-obysphere` | Update the CLI, a Sphere you run, and this plugin. |
 
 Claude picks the right one from what you ask; you can also type it.

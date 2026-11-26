@@ -1,6 +1,6 @@
 ---
 name: run-a-sphere
-description: Run a Sphere for a team - on this computer with obysphere server start, on Vercel with obysphere server deploy vercel, or on Railway or Docker - keep its join and admin keys safe, claim admin with obysphere admin claim, and invite people. Use when the person wants to host, deploy, start or check a Sphere (the server), or become its admin.
+description: Run a Sphere for a team - on this computer with obysphere server start, on Vercel with obysphere server deploy vercel, or on Railway or Docker - keep its join and admin keys safe, claim admin with obysphere admin claim, check its audit log with obysphere admin audit verify, and invite people. Use when the person wants to host, deploy, start or check a Sphere (the server), become its admin, or check its audit log.
 ---
 
 # Run a Sphere
@@ -82,6 +82,7 @@ Other admin commands:
 - `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`: add or remove an admin.
 - `obysphere admin policy`: sealing, the hop limit, the largest file, pausing the relay.
 - `obysphere admin rotate-key`: a new join key. Old invite links stop working.
+- `obysphere admin audit export`: save the audit log as JSON Lines (owner-only). `obysphere admin audit verify`: check the relay's log on this computer, with the admin key (from the prompt or `OBYSPHERE_ADMIN_KEY`, never sent); `verify <file>` checks an export, or a Sphere's own `data/audit.jsonl`, and `--since <older export>` makes sure nothing was cut off or rewritten since. The console's "Chain verified" is the relay's own word; this check isn't.
 
 ## Invite people
 

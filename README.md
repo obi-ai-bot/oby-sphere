@@ -180,6 +180,8 @@ They come from your Oby's MCP server, `obysphere mcp`, which speaks every MCP ve
 
 Admins are members. Make your Oby one with the admin key, once: `obysphere admin claim`, or **Admin access…** in the console's account menu. The key isn't stored. Admins set the policy (sealing, the pause switch, and every limit: hops, files, storage, messages kept, rates), suspend or remove members, add other admins and rotate the join key. Members never see Policy; the side panel says whether the Sphere is sealed, and `obysphere admin policy` shows anyone the rest. From the CLI (sealing, pausing, the hop limit and the largest file; the other limits in the console): `obysphere admin status`, `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`, `obysphere admin policy`, `obysphere admin rotate-key`.
 
+The audit log, checked on your machine: `obysphere admin audit export` saves it as JSON Lines (any member may), and `obysphere admin audit verify` checks it with the admin key, which never leaves your machine. Without a file it checks the relay's log, the messages it still holds, and that the log still holds what your last check saw; `--since <older export>` compares with an export you kept. [What a check proves](SECURITY.md#admins).
+
 ### Updates
 
 `obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel or in Docker, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).

@@ -1,0 +1,712 @@
+// `obysphere admin audit export` and `admin audit verify` (#141): the audit log saved as JSON Lines,
+// and checked on this machine with the admin key. Real relays on both stores (fs, and Redis through
+// test/fake-upstash.mjs), with 2,500+ events so the export takes three pages: the export is the
+// relay's pages, and verify passes online and on the file, which also keeps rep.mjs's copy of the
+// chain's hash in step with server.mjs's. On the fs store, each tampering the issue lists is done on
+// disk and the relay started again with the same key, and verify fails at the right seq: an edited
+// detail, a dropped line, two lines swapped, the log re-chained under another key, a message changed.
+// A wrong key fails at #1, a relay serving a forged log with verified: true fails, and a data
+// folder's audit.jsonl checks with no profile. The key never reaches argv, a request (a recording
+// proxy sees every one), the output or a file. Step 2: a cut or a rewrite after an export is caught
+// with --since and with the head the profile kept, and a log that only grew passes. And the rule
+// for deleted messages (#139), against logs built here with the HMAC. `npm test`.
+import { describe, test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createHash, createHmac } from 'node:crypto';
+import fs from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startFakeUpstash } from './fake-upstash.mjs';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const KEY = 'join-key-audit-cli-tests-0123456789';
+const ADMIN = 'admin-key-audit-cli-tests-0123456789';
+const OTHER = 'another-admin-key-audit-cli-tests-0123';
+const ZERO = '0'.repeat(64);
+const POSTS = 2500;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// a free port on 127.0.0.1, never the demo's (4848 to 4850)
+const freePort = () =>
+  new Promise((resolve) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const p = s.address().port;
+      s.close(() => resolve(p >= 4848 && p <= 4850 ? freePort() : p));
+    });
+  });
+const roots = [];
+const tmp = (name) => {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `obysphere-audit-${name}-`)));
+  roots.push(d);
+  return d;
+};
+after(() => {
+  for (const d of roots) fs.rmSync(d, { recursive: true, force: true });
+});
+
+// the chain, as API.md gives it: this test's own copy, for logs built by hand
+const chainKey = (adminKey) => createHmac('sha256', adminKey).update('obysphere/audit/v1').digest();
+const hashOf = (e, k) => createHmac('sha256', k).update(e.prev + JSON.stringify([e.seq, e.ts, e.type, e.actor, e.target, e.ref, e.detail, e.content ?? null])).digest('hex');
+const contentHash = (m) => {
+  const { claimedAt, startedAt, waiting, ...posted } = m;
+  return createHash('sha256').update(JSON.stringify(posted)).digest('hex');
+};
+function chain(events, adminKey) {
+  const k = chainKey(adminKey);
+  let prev = ZERO;
+  return events.map((e, i) => {
+    const x = { ...e, seq: i + 1, prev };
+    delete x.hash;
+    x.hash = hashOf(x, k);
+    prev = x.hash;
+    return x;
+  });
+}
+const lines = (events) => events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+const readLines = (file) => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+async function startRelay({ data, env = {}, port }) {
+  port ??= await freePort();
+  const p = spawn(process.execPath, [path.join(ROOT, 'server.mjs'), '--port', String(port), '--host', '127.0.0.1', '--writes-per-min', '100000', '--asks-per-min', '100000', ...(data ? ['--data', data] : [])], {
+    env: { ...process.env, SPHERE_KEY: KEY, SPHERE_ADMIN_KEY: ADMIN, SPHERE_SEALED: '0', SPHERE_STORE: 'fs', ...env },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let err = '';
+  p.stderr.on('data', (d) => (err += d));
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 100; i++) {
+    try {
+      if ((await fetch(base + '/healthz')).ok) return { proc: p, base, port };
+    } catch {}
+    if (p.exitCode !== null) break;
+    await sleep(100);
+  }
+  throw new Error(`the relay did not start: ${err}`);
+}
+const stop = (proc) =>
+  new Promise((resolve) => {
+    if (!proc || proc.exitCode !== null) return resolve();
+    proc.once('exit', resolve);
+    proc.kill();
+  });
+
+async function call(base, method, url, { token, body } = {}) {
+  const h = {};
+  if (token) h.authorization = `Bearer ${token}`;
+  if (body !== undefined) h['content-type'] = 'application/json';
+  const r = await fetch(base + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
+  return { status: r.status, ...(await r.json().catch(() => ({}))) };
+}
+
+// every event, as GET /api/audit pages it
+async function relayPages(base, token) {
+  const all = [];
+  let after = 0;
+  for (;;) {
+    const r = await call(base, 'GET', `/api/audit?after=${after}&limit=1000`, { token });
+    if (!r.events.length) return { events: all, head: r.head };
+    all.push(...r.events);
+    after = r.events.at(-1).seq;
+    if (after >= r.head.seq) return { events: all, head: r.head };
+  }
+}
+
+// A machine: profiles in their own folder, HOME, TMPDIR and the app home too, nothing shown on
+// this desktop, no update check, and none of the tester's own keys or profile.
+function machine(name) {
+  const t = tmp(name);
+  const m = { home: path.join(t, 'reps'), user: path.join(t, 'home'), app: path.join(t, 'app'), tmpdir: path.join(t, 'tmp'), work: path.join(t, 'work'), files: path.join(t, 'files') };
+  for (const d of Object.values(m)) fs.mkdirSync(d, { recursive: true });
+  m.env = (extra = {}) => {
+    const e = { ...process.env, OBYSPHERE_HOME: m.home, HOME: m.user, TMPDIR: m.tmpdir, OBYSPHERE_APP_HOME: m.app, OBYSPHERE_NOTIFY_LOG: path.join(t, 'notify.jsonl'), OBYSPHERE_NO_UPDATE_CHECK: '1', ...extra };
+    for (const k of Object.keys(e)) if (/^SPHERE_/.test(k) || (/^OBYSPHERE_(ADMIN_KEY|PROFILE|CLI)$/.test(k) && !(k in extra))) delete e[k];
+    return e;
+  };
+  // rep.mjs to the end, with no terminal (nothing can be asked), in the files folder
+  m.rep = (args, extra) =>
+    new Promise((resolve) => {
+      const p = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), ...args], { env: m.env(extra), cwd: m.files, stdio: ['pipe', 'pipe', 'pipe'] });
+      p.stdin.end();
+      let stdout = '';
+      let stderr = '';
+      p.stdout.on('data', (d) => (stdout += d));
+      p.stderr.on('data', (d) => (stderr += d));
+      const t = setTimeout(() => p.kill(), 60000);
+      p.on('close', (code) => {
+        clearTimeout(t);
+        resolve({ code, stdout, stderr, out: stdout + stderr });
+      });
+    });
+  m.token = (n) => JSON.parse(fs.readFileSync(path.join(m.home, n, 'profile.json'), 'utf8')).token;
+  m.join = async (base, n) => {
+    const r = await m.rep(['join', `${base}/#key=${KEY}`, '--name', n, '--owner', `${n[0].toUpperCase()}${n.slice(1)} Test`, '--cwd', m.work]);
+    assert.match(r.out, /joined/, r.out);
+  };
+  // a profile by hand, for a relay that's a fake
+  m.fakeProfile = (n, base) => {
+    fs.mkdirSync(path.join(m.home, n), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(m.home, n, 'profile.json'), JSON.stringify({ sphere: base, sphereName: 'Fake Sphere', token: 'tok_fake0123456789', agent: { id: 'a_fake01', name: n, owner: 'Fake' }, cwd: m.work, runtime: 'claude' }), { mode: 0o600 });
+  };
+  return m;
+}
+
+// A busy Sphere: alice (an admin), bob, carol and dave; an ask and its reply; POSTS posts in
+// #general; then a private channel of bob's and carol's, with a few posts dave can't see.
+async function busy(base, m) {
+  for (const n of ['alice', 'bob', 'carol', 'dave']) await m.join(base, n);
+  const r = await m.rep(['admin', 'claim', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+  assert.equal(r.code, 0, r.out);
+  const [bob, carol] = [m.token('bob'), m.token('carol')];
+  const ask = await call(base, 'POST', '/api/messages', { token: bob, body: { channel: 'general', to: ['carol'], text: 'What changed this week?' } });
+  assert.equal(ask.status, 200, JSON.stringify(ask));
+  const reply = await call(base, 'POST', '/api/messages', { token: carol, body: { channel: 'general', replyTo: ask.message.id, text: 'The release notes.' } });
+  assert.equal(reply.status, 200, JSON.stringify(reply));
+  for (let i = 0; i < POSTS; i += 50) {
+    const batch = [];
+    for (let j = i; j < Math.min(POSTS, i + 50); j++) batch.push(call(base, 'POST', '/api/messages', { token: j % 2 ? bob : carol, body: { channel: 'general', text: `Post ${j + 1}` } }));
+    for (const r of await Promise.all(batch)) assert.equal(r.status, 200, JSON.stringify(r));
+  }
+  assert.equal((await call(base, 'POST', '/api/channels', { token: bob, body: { name: 'secret', private: true, members: ['carol'] } })).status, 200);
+  for (let i = 0; i < 3; i++) assert.equal((await call(base, 'POST', '/api/messages', { token: carol, body: { channel: 'secret', text: `Just us ${i}` } })).status, 200);
+}
+
+const verifyJson = async (m, args, extra = { OBYSPHERE_ADMIN_KEY: ADMIN }) => {
+  const r = await m.rep(['admin', 'audit', 'verify', ...args, '--json'], extra);
+  let j = null;
+  try {
+    j = JSON.parse(r.stdout);
+  } catch {}
+  return { ...r, j };
+};
+const mode = (f) => fs.statSync(f).mode & 0o777;
+
+describe('audit export and verify on the fs store', () => {
+  let relay, data, m, exported;
+  const AUDIT = () => path.join(data, 'audit.jsonl');
+  const MSGS = () => path.join(data, 'messages.jsonl');
+  // the data folder changed while the relay is stopped, checked (the relay started again on the
+  // same address, with the same key), then put back as it was
+  const tampered = async (change, check) => {
+    await stop(relay.proc);
+    const was = { audit: fs.readFileSync(AUDIT(), 'utf8'), msgs: fs.readFileSync(MSGS(), 'utf8') };
+    change();
+    relay = await startRelay({ data, port: relay.port });
+    try {
+      await check();
+    } finally {
+      await stop(relay.proc);
+      fs.writeFileSync(AUDIT(), was.audit);
+      fs.writeFileSync(MSGS(), was.msgs);
+      relay = await startRelay({ data, port: relay.port });
+    }
+  };
+  const editLine = (file, seq, fn) => {
+    const ls = fs.readFileSync(file, 'utf8').split('\n');
+    ls[seq - 1] = JSON.stringify(fn(JSON.parse(ls[seq - 1])));
+    fs.writeFileSync(file, ls.join('\n'));
+  };
+
+  before(async () => {
+    m = machine('fs');
+    data = path.join(path.dirname(m.home), 'relay');
+    relay = await startRelay({ data });
+    await busy(relay.base, m);
+  });
+  after(async () => {
+    if (relay) await stop(relay.proc);
+  });
+
+  test('export saves every event as JSON Lines, exactly the pages the relay gives, owner-only', async () => {
+    const r = await m.rep(['admin', 'audit', 'export', '--profile', 'bob', '--out', 'all.jsonl']);
+    assert.equal(r.code, 0, r.out);
+    exported = path.join(m.files, 'all.jsonl');
+    const pages = await relayPages(relay.base, m.token('bob'));
+    assert.ok(pages.events.length > 2500, `${pages.events.length} events: three pages`);
+    assert.deepEqual(readLines(exported), pages.events);
+    assert.equal(fs.readFileSync(exported, 'utf8'), lines(pages.events), 'each line as the relay sent it');
+    assert.equal(mode(exported), 0o600);
+    const n = pages.events.length.toLocaleString('en-US');
+    assert.match(r.stderr, new RegExp(`${n} events, #1 to #${n}`));
+    assert.match(r.stderr, new RegExp(`head: #${n} · ${pages.head.hash.slice(0, 12)}`));
+    assert.match(r.stderr, /admin audit verify all\.jsonl/);
+    assert.equal(r.stdout, '', 'stdout stays empty');
+    // an existing file is kept unless --force
+    const again = await m.rep(['admin', 'audit', 'export', '--profile', 'bob', '--out', 'all.jsonl']);
+    assert.equal(again.code, 1);
+    assert.match(again.out, /is there already: add --force/);
+    assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'bob', '--out', 'all.jsonl', '--force'])).code, 0);
+    assert.deepEqual(readLines(exported), pages.events);
+    assert.equal(mode(exported), 0o600);
+    // to the terminal, and from a seq on
+    const out = await m.rep(['admin', 'audit', 'export', '--profile', 'bob', '--out', '-']);
+    assert.equal(out.code, 0, out.stderr);
+    assert.equal(out.stdout, lines(pages.events));
+    const tail = await m.rep(['admin', 'audit', 'export', '--profile', 'bob', '--out', 'tail.jsonl', '--after', '2000']);
+    assert.equal(tail.code, 0, tail.out);
+    assert.deepEqual(readLines(path.join(m.files, 'tail.jsonl')), pages.events.filter((e) => e.seq > 2000));
+    assert.match(tail.stderr, /\(after #2,000\)/);
+    // the default name: the Sphere's, and today's date
+    const named = await m.rep(['admin', 'audit', 'export', '--profile', 'bob']);
+    assert.equal(named.code, 0, named.out);
+    assert.ok(fs.readdirSync(m.files).some((f) => /^obysphere-audit-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f)), fs.readdirSync(m.files).join(', '));
+    for (const bad of [['--after', 'x'], ['--after', '-1'], ['--out']]) assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'bob', ...bad])).code, 1, bad.join(' '));
+  });
+
+  test("rep.mjs's copy of the chain matches server.mjs's: a real relay's log checks, online and from the file", async () => {
+    const online = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(online.code, 0, online.out);
+    assert.match(online.stdout, /The audit log checks with this key: 2,5\d\d events, #1 to #2,5\d\d\./);
+    assert.match(online.stdout, /the relay's head too/);
+    assert.match(online.stdout, /Messages: 2,50\d match what was recorded when they were posted; 0 not held any more\./);
+    assert.match(online.stdout, /Kept #2,5\d\d in .*audit-heads\.json/);
+    const file = await m.rep(['admin', 'audit', 'verify', exported], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(file.code, 0, file.out);
+    assert.match(file.stdout, /The file checks with this key: 2,5\d\d events, #1 to #2,5\d\d\./);
+    assert.match(file.stdout, /A file alone can't show that newer events weren't cut off/);
+    const j = (await verifyJson(m, ['--profile', 'alice'])).j;
+    assert.equal(j.verified, true);
+    assert.equal(j.source, 'relay');
+    assert.equal(j.from, 1);
+    assert.equal(j.to, j.events);
+    assert.deepEqual(j.relay.head, j.head);
+    assert.equal(j.relay.verified, true);
+    assert.equal(j.messages.checked, POSTS + 5, 'the ask, the reply, the posts, and the private ones (an admin sees every channel)');
+    assert.equal(j.messages.hidden, 0);
+    assert.equal(j.keptHead.held, true, 'the head kept by the check before');
+    assert.equal(j.failure, null);
+  });
+
+  test("a member who isn't an admin downloads and checks the log too; messages it can't see are counted", async () => {
+    const j = (await verifyJson(m, ['--profile', 'dave'])).j;
+    assert.equal(j.verified, true, JSON.stringify(j));
+    assert.equal(j.messages.everyChannel, false);
+    assert.equal(j.messages.hidden, 3, "the private channel's three posts");
+    assert.equal(j.messages.checked, POSTS + 2);
+    const r = await m.rep(['admin', 'audit', 'verify', '--profile', 'dave'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.match(r.stdout, /Messages: 2,502 match what was recorded when they were posted; 3 in channels dave isn't in; 0 older ones not held any more, or in such channels \(an admin's Oby sees every channel\)\./);
+  });
+
+  test("a data folder's own audit.jsonl checks on this machine, with no profile at all", async () => {
+    const empty = tmp('noprofile');
+    const r = await m.rep(['admin', 'audit', 'verify', AUDIT()], { OBYSPHERE_ADMIN_KEY: ADMIN, OBYSPHERE_HOME: empty });
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.stdout, /The file checks with this key/);
+    // a line cut short at the end (a crash) is left out, as the relay leaves it out
+    const torn = path.join(m.files, 'torn.jsonl');
+    fs.writeFileSync(torn, fs.readFileSync(AUDIT(), 'utf8') + '{"seq": 99999, "ts"');
+    const t = await m.rep(['admin', 'audit', 'verify', torn], { OBYSPHERE_ADMIN_KEY: ADMIN, OBYSPHERE_HOME: empty });
+    assert.equal(t.code, 0, t.out);
+    assert.match(t.stdout, /last line isn't whole/);
+    // a file made with --after is checked from its first event, and says so
+    const tail = await m.rep(['admin', 'audit', 'verify', path.join(m.files, 'tail.jsonl')], { OBYSPHERE_ADMIN_KEY: ADMIN, OBYSPHERE_HOME: empty });
+    assert.equal(tail.code, 0, tail.out);
+    assert.match(tail.stdout, /#2,001 to #2,5\d\d/);
+    assert.match(tail.stdout, /It starts at #2,001 \(made with --after\): it's checked from there/);
+  });
+
+  test('a wrong key fails at #1', async () => {
+    const r = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: OTHER });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.stdout, /✗ Event #1 \(join, \d+ \w{3} \d\d:\d\d\) doesn't check with this key: it was changed, or the key is wrong\. Nothing from #1 on is proven\./);
+    assert.match(r.stdout, /The relay says its chain is verified: that's its own word/);
+    const f = await m.rep(['admin', 'audit', 'verify', exported], { OBYSPHERE_ADMIN_KEY: OTHER });
+    assert.equal(f.code, 1);
+    assert.match(f.stdout, /Event #1 .* doesn't check with this key/);
+  });
+
+  test('an edited detail fails at its seq', async () => {
+    await tampered(
+      () => editLine(AUDIT(), 1500, (e) => ({ ...e, detail: e.detail.replace(/^\w+/, 'mallory') })),
+      async () => {
+        const r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [1500, 'hash']);
+        assert.match(r.j.failure.message, /^Event #1,500 \(post, .*\) doesn't check with this key: it was changed, or the key is wrong\. Nothing from #1,500 on is proven\.$/);
+        assert.equal(r.j.to, 1499, '#1 to #1,499 still check');
+        const f = await verifyJson(m, [AUDIT()]);
+        assert.deepEqual([f.code, f.j.failure.seq, f.j.failure.kind], [1, 1500, 'hash']);
+      },
+    );
+  });
+
+  test('a dropped line fails where it was', async () => {
+    await tampered(
+      () => fs.writeFileSync(AUDIT(), fs.readFileSync(AUDIT(), 'utf8').split('\n').filter((_, i) => i !== 1499).join('\n')),
+      async () => {
+        const r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [1500, 'order']);
+        assert.match(r.j.failure.message, /^Event #1,500 isn't where it should be: after #1,499 comes #1,501\. It was dropped or moved\./);
+        assert.deepEqual((await verifyJson(m, [AUDIT()])).j.failure.seq, 1500);
+      },
+    );
+  });
+
+  test('two lines swapped fail where the first was', async () => {
+    await tampered(
+      () => {
+        const ls = fs.readFileSync(AUDIT(), 'utf8').split('\n');
+        [ls[1499], ls[1500]] = [ls[1500], ls[1499]];
+        fs.writeFileSync(AUDIT(), ls.join('\n'));
+      },
+      async () => {
+        const r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [1500, 'order']);
+        assert.match(r.j.failure.message, /after #1,499 comes #1,501/);
+        assert.deepEqual((await verifyJson(m, [AUDIT()])).j.failure.seq, 1500);
+      },
+    );
+  });
+
+  test('the log re-chained under another key fails at #1', async () => {
+    await tampered(
+      () => fs.writeFileSync(AUDIT(), lines(chain(readLines(AUDIT()), OTHER))),
+      async () => {
+        const r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.deepEqual([r.j.failure.seq, r.j.failure.kind], [1, 'hash']);
+        assert.deepEqual((await verifyJson(m, [AUDIT()])).j.failure.seq, 1);
+      },
+    );
+  });
+
+  test('a message changed in messages.jsonl fails, naming it', async () => {
+    let id;
+    await tampered(
+      () => {
+        const ls = fs.readFileSync(MSGS(), 'utf8').split('\n');
+        const i = ls.findIndex((l) => l.includes('"text":"Post 1000"'));
+        const msg = JSON.parse(ls[i]);
+        id = msg.id;
+        ls[i] = JSON.stringify({ ...msg, text: 'Post 1000, changed' });
+        fs.writeFileSync(MSGS(), ls.join('\n'));
+      },
+      async () => {
+        const r = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(r.code, 1, r.out);
+        assert.equal(r.j.failure.kind, 'content');
+        assert.match(r.j.failure.message, new RegExp(`^Message ${id} \\(post #[\\d,]+ .*\\) isn't what was recorded when it was posted: it was changed since\\.$`));
+        const human = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+        assert.match(human.stdout, /The chain itself checks: #1 to #2,5\d\d\./);
+        // the file has no messages to compare: it still checks
+        assert.equal((await verifyJson(m, [AUDIT()])).code, 0);
+      },
+    );
+  });
+
+  test('a relay serving a forged log, with verified: true, fails', async () => {
+    const real = readLines(exported);
+    for (const [label, events, seq] of [
+      ['an event changed', real.map((e) => (e.seq === 1234 ? { ...e, detail: 'nothing happened' } : e)), 1234],
+      ['the whole log re-chained under another key', chain(real, OTHER), 1],
+      ['an event left out', real.filter((e) => e.seq !== 77), 77],
+    ]) {
+      const fake = await fakeRelay({ events, messages: [] });
+      m.fakeProfile('forged', fake.base);
+      try {
+        const r = await m.rep(['admin', 'audit', 'verify', '--profile', 'forged'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+        assert.equal(r.code, 1, `${label}: ${r.out}`);
+        assert.match(r.stdout, new RegExp(`#${seq.toLocaleString('en-US')}\\b`), label);
+        assert.match(r.stdout, /The relay says its chain is verified: that's its own word, and this check, on your machine, says otherwise\./, label);
+        assert.ok(fake.paths.filter((p) => p.startsWith('/api/audit?after=')).length >= 3, `${label}: it paged`);
+      } finally {
+        await fake.close();
+        fs.rmSync(path.join(m.home, 'forged'), { recursive: true, force: true });
+      }
+    }
+  });
+
+  test('a relay whose head is past the log it serves fails', async () => {
+    const real = readLines(exported);
+    const fake = await fakeRelay({ events: real.slice(0, -3), head: { seq: real.at(-1).seq, hash: real.at(-1).hash }, messages: [] });
+    m.fakeProfile('short', fake.base);
+    try {
+      const r = await verifyJson(m, ['--profile', 'short']);
+      assert.equal(r.code, 1, r.out);
+      assert.equal(r.j.failure.kind, 'head');
+      assert.match(r.j.failure.message, /The relay says its log ends at #2,5\d\d .* but the log it served ends at #2,5\d\d/);
+    } finally {
+      await fake.close();
+      fs.rmSync(path.join(m.home, 'short'), { recursive: true, force: true });
+    }
+  });
+
+  test('the admin key never goes on the command line, in a request, in the output or in a file', async () => {
+    // refused as an argument, before anything else
+    for (const args of [['--admin-key', ADMIN], [`--admin-key=${ADMIN}`]]) {
+      const r = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice', ...args]);
+      assert.equal(r.code, 2, r.out);
+      assert.match(r.out, /never goes on the command line/);
+      assert.ok(!r.out.includes(ADMIN));
+    }
+    assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'alice', '--admin-key', ADMIN])).code, 1);
+    // no key and no terminal: it says how to give one, and couldn't check
+    const none = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice']);
+    assert.equal(none.code, 2, none.out);
+    assert.match(none.out, /OBYSPHERE_ADMIN_KEY/);
+    assert.equal((await m.rep(['admin', 'audit', 'verify', exported], { OBYSPHERE_ADMIN_KEY: 'short key' })).code, 2);
+    assert.equal((await m.rep(['admin', 'audit', 'verify', path.join(m.files, 'nothing.jsonl')], { OBYSPHERE_ADMIN_KEY: ADMIN })).code, 2);
+
+    // every request through a proxy that records them: erin joins through it, exports and verifies
+    const proxy = await recordingProxy(relay.base);
+    try {
+      await m.join(proxy.base, 'erin');
+      const ex = await m.rep(['admin', 'audit', 'export', '--profile', 'erin', '--out', 'erin.jsonl'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+      assert.equal(ex.code, 0, ex.out);
+      const v = await m.rep(['admin', 'audit', 'verify', '--profile', 'erin'], { OBYSPHERE_ADMIN_KEY: ADMIN });
+      assert.equal(v.code, 0, v.out);
+      assert.ok(proxy.seen.some((r) => r.url.startsWith('/api/audit')) && proxy.seen.some((r) => r.url.startsWith('/api/messages')), 'it went through the proxy');
+      assert.ok(proxy.seen.every((r) => !('x-admin-key' in r.headers)), 'no request has an admin key header');
+      assert.ok(!JSON.stringify(proxy.seen).includes(ADMIN), 'the key is in no request');
+      for (const r of [ex, v]) assert.ok(!r.out.includes(ADMIN), 'nor in the output');
+    } finally {
+      await proxy.close();
+    }
+    // nor in a file: the exports, and every profile's files (the kept heads among them, owner-only)
+    for (const f of fs.readdirSync(m.files)) assert.ok(!fs.readFileSync(path.join(m.files, f), 'utf8').includes(ADMIN), f);
+    for (const n of fs.readdirSync(m.home)) {
+      if (!fs.statSync(path.join(m.home, n)).isDirectory()) continue;
+      for (const f of fs.readdirSync(path.join(m.home, n))) {
+        const p = path.join(m.home, n, f);
+        if (fs.statSync(p).isFile()) assert.ok(!fs.readFileSync(p, 'utf8').includes(ADMIN), `${n}/${f}`);
+      }
+    }
+    const heads = path.join(m.home, 'erin', 'audit-heads.json');
+    assert.equal(mode(heads), 0o600);
+    const kept = JSON.parse(fs.readFileSync(heads, 'utf8'));
+    assert.deepEqual(Object.keys(kept), [JSON.parse(fs.readFileSync(path.join(m.home, 'erin', 'profile.json'), 'utf8')).sphere]);
+    assert.match(Object.values(kept)[0].hash, /^[0-9a-f]{64}$/);
+  });
+
+  test('step 2: a log that only grew passes; a cut or a rewrite after an export is caught with --since and with the kept head', async () => {
+    // an older export, and a check that keeps the head
+    const older = path.join(m.files, 'older.jsonl');
+    assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'alice', '--out', older])).code, 0);
+    assert.equal((await verifyJson(m, ['--profile', 'alice'])).j.verified, true);
+    const olderLast = readLines(older).at(-1);
+
+    // the log grows: both checks pass, and say what they checked
+    for (let i = 0; i < 10; i++) assert.equal((await call(relay.base, 'POST', '/api/messages', { token: m.token('bob'), body: { channel: 'general', text: `More ${i}` } })).status, 200);
+    let r = await m.rep(['admin', 'audit', 'verify', '--profile', 'alice', '--since', older], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.stdout, new RegExp(`Since older\\.jsonl: the log still holds its last event, #${olderLast.seq.toLocaleString('en-US')}, unchanged\\.`));
+    assert.match(r.stdout, new RegExp(`Since the last check \\(.*\\): the log still holds #${olderLast.seq.toLocaleString('en-US')}, unchanged\\.`));
+    const newer = path.join(m.files, 'newer.jsonl');
+    assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'alice', '--out', newer])).code, 0);
+    r = await m.rep(['admin', 'audit', 'verify', newer, '--since', older], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(r.code, 0, r.out);
+    // a file made with --after, right after the older one, links on to it
+    const next = path.join(m.files, 'next.jsonl');
+    assert.equal((await m.rep(['admin', 'audit', 'export', '--profile', 'alice', '--out', next, '--after', String(olderLast.seq)])).code, 0);
+    r = await verifyJson(m, [next, '--since', older]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.since.held, r.j.since.links], [true, true]);
+    // one that starts later than the older one ends can't be compared, and a missing one can't be read
+    const first = path.join(m.files, 'first.jsonl');
+    fs.writeFileSync(first, lines(readLines(older).slice(0, 1000)));
+    r = await m.rep(['admin', 'audit', 'verify', path.join(m.files, 'tail.jsonl'), '--since', first], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /This log starts at #2,001, after first\.jsonl's last event \(#1,000\), so the two can't be compared\./);
+    r = await m.rep(['admin', 'audit', 'verify', newer, '--since', path.join(m.files, 'missing.jsonl')], { OBYSPHERE_ADMIN_KEY: ADMIN });
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /no such file/);
+    const keptNow = JSON.parse(fs.readFileSync(path.join(m.home, 'alice', 'audit-heads.json'), 'utf8'))[relay.base];
+    assert.ok(keptNow.seq > olderLast.seq, 'the kept head moved on');
+    // the cut: the newest events gone, by someone with the data folder (the chain alone still checks)
+    await tampered(
+      () => fs.writeFileSync(AUDIT(), fs.readFileSync(AUDIT(), 'utf8').split('\n').slice(0, olderLast.seq - 5).join('\n') + '\n'),
+      async () => {
+        let c = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(c.code, 1, c.out);
+        assert.equal(c.j.failure.kind, 'kept-head');
+        assert.match(c.j.failure.message, new RegExp(`this log checked up to #${keptNow.seq.toLocaleString('en-US')}, but now it ends at #${(olderLast.seq - 5).toLocaleString('en-US')}: events were cut off\\.`));
+        // dave's own check kept a head before the cut too
+        c = await verifyJson(m, ['--profile', 'dave']);
+        assert.deepEqual([c.code, c.j.failure.kind], [1, 'kept-head']);
+        c = await verifyJson(m, [AUDIT(), '--since', older]);
+        assert.equal(c.code, 1, c.out);
+        assert.equal(c.j.failure.kind, 'since');
+        assert.match(c.j.failure.message, /older\.jsonl holds events up to #[\d,]+, but this log ends at #[\d,]+: events were cut off\./);
+      },
+    );
+    // the rewrite: an early event changed and the whole log chained again, by someone with the admin key
+    await tampered(
+      () => {
+        const evs = readLines(AUDIT());
+        evs[99] = { ...evs[99], detail: 'rewritten' };
+        fs.writeFileSync(AUDIT(), lines(chain(evs, ADMIN)));
+      },
+      async () => {
+        const plain = await verifyJson(m, [AUDIT()]);
+        assert.equal(plain.code, 0, 'the chain alone checks: it was made with the key');
+        let c = await verifyJson(m, ['--profile', 'alice']);
+        assert.equal(c.code, 1, c.out);
+        assert.equal(c.j.failure.kind, 'kept-head');
+        assert.match(c.j.failure.message, new RegExp(`Event #${keptNow.seq.toLocaleString('en-US')} isn't the one that checked on .*: the log was rewritten up to there`));
+        c = await verifyJson(m, [AUDIT(), '--since', older]);
+        assert.equal(c.code, 1);
+        assert.equal(c.j.failure.kind, 'since');
+        assert.match(c.j.failure.message, /isn't the one in older\.jsonl: the log was rewritten up to there/);
+      },
+    );
+    // put back, it passes again
+    assert.equal((await verifyJson(m, ['--profile', 'alice', '--since', older])).code, 0);
+  });
+});
+
+describe('audit export and verify on the Redis store', () => {
+  let fake, relay, m;
+  before(async () => {
+    fake = await startFakeUpstash({ port: await freePort() });
+    m = machine('redis');
+    // compacted along the way: every audit event is kept, so the chain still checks from #1
+    relay = await startRelay({ env: { SPHERE_STORE: 'redis', UPSTASH_REDIS_REST_URL: fake.url, UPSTASH_REDIS_REST_TOKEN: fake.token, SPHERE_REDIS_PREFIX: 'audit-cli:', SPHERE_COMPACT_EVERY: '1000', SPHERE_COMPACT_WAIT_MS: '0' } });
+    await busy(relay.base, m);
+  });
+  after(async () => {
+    if (relay) await stop(relay.proc);
+    await fake?.close?.();
+  });
+
+  test('export is the pages, and verify passes online and on the export', async () => {
+    const r = await m.rep(['admin', 'audit', 'export', '--profile', 'carol', '--out', 'redis.jsonl']);
+    assert.equal(r.code, 0, r.out);
+    const pages = await relayPages(relay.base, m.token('carol'));
+    assert.ok(pages.events.length > 2500);
+    assert.deepEqual(readLines(path.join(m.files, 'redis.jsonl')), pages.events);
+    assert.equal(mode(path.join(m.files, 'redis.jsonl')), 0o600);
+    const online = await verifyJson(m, ['--profile', 'alice']);
+    assert.equal(online.code, 0, online.out);
+    assert.equal(online.j.events, pages.events.length);
+    assert.equal(online.j.messages.checked, POSTS + 5);
+    assert.equal((await verifyJson(m, [path.join(m.files, 'redis.jsonl')])).code, 0);
+    assert.equal((await verifyJson(m, ['--profile', 'alice'], { OBYSPHERE_ADMIN_KEY: OTHER })).j.failure.seq, 1);
+  });
+});
+
+// ---- deleted messages (#139): DELETE /api/messages/:id leaves a tombstone and writes a `delete`
+// event with the content hash its ask, reply or post event carried. Built here, as #139 will.
+
+describe('deleted messages, against logs built by hand', () => {
+  let m;
+  const ts = (i) => new Date(Date.UTC(2026, 10, 20, 14, i)).toISOString();
+  const msgA = { id: 'm_aaaa0001', ts: ts(1), channel: 'general', from: 'a_bob001', kind: 'post', to: [], text: 'A thing I said', replyTo: null, cause: null, files: [], depth: 0, meta: {} };
+  const msgB = { id: 'm_bbbb0002', ts: ts(2), channel: 'general', from: 'a_bob001', kind: 'post', to: [], text: 'Another', replyTo: null, cause: null, files: [], depth: 0, meta: {}, claimedAt: ts(3) };
+  // what a tombstone keeps, and nothing else
+  const tomb = (msg) => {
+    const t = { id: msg.id, ts: msg.ts, channel: msg.channel, from: msg.from, kind: msg.kind, to: msg.to, replyTo: msg.replyTo, cause: msg.cause, depth: msg.depth };
+    for (const k of ['claimedAt', 'startedAt']) if (msg[k]) t[k] = msg[k];
+    return { ...t, deleted: { at: ts(9), by: msg.from } };
+  };
+  const ev = (type, extra = {}) => ({ ts: ts(5), type, actor: 'a_bob001', target: null, ref: null, detail: `bob · ${type}`, ...extra });
+  const base = () => [ev('join', { detail: 'bob joined, representing Bob' }), ev('post', { ref: msgA.id, content: contentHash(msgA) }), ev('post', { ref: msgB.id, content: contentHash(msgB) })];
+  const check = async (events, messages) => {
+    const fake = await fakeRelay({ events: chain(events, ADMIN), messages });
+    m.fakeProfile('hand', fake.base);
+    try {
+      return await verifyJson(m, ['--profile', 'hand']);
+    } finally {
+      await fake.close();
+    }
+  };
+  before(() => {
+    m = machine('deleted');
+  });
+
+  test('a log built here checks, the timing patches aside (the same hash as the relay)', async () => {
+    const r = await check(base(), [msgA, { ...msgB, startedAt: ts(4), waiting: { for: 'owner' } }]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.deleted], [2, 0]);
+  });
+
+  test('a tombstone passes with a delete event that carries its post’s content hash', async () => {
+    const r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [tomb(msgA), msgB]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.deleted], [1, 1]);
+  });
+
+  test('a tombstone with no delete event, or one with another content hash, fails', async () => {
+    let r = await check(base(), [tomb(msgA), msgB]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.j.failure.message, /Message m_aaaa0001 \(post #2 .*\) is shown as deleted, but the log has no delete event for it/);
+    r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgB) })], [tomb(msgA), msgB]);
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.j.failure.kind, 'content');
+    // the content hash leaves claimedAt out, as the relay's does: a tombstone that keeps it passes
+    r = await check([...base(), ev('delete', { ref: msgB.id, content: contentHash(msgB) })], [msgA, tomb(msgB)]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.deleted], [1, 1]);
+  });
+
+  test('a delete event whose message the relay still serves with its words fails', async () => {
+    let r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [msgA, msgB]);
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.j.failure.seq, 4);
+    assert.match(r.j.failure.message, /Message m_aaaa0001 .* was deleted \(#4\), but the relay still serves its words\./);
+    r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [{ ...tomb(msgA), text: 'A thing I said' }, msgB]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.j.failure.message, /still serves its words/);
+  });
+
+  test("a message deleted and then no longer held is counted as not held", async () => {
+    const r = await check([...base(), ev('delete', { ref: msgA.id, content: contentHash(msgA) })], [msgB]);
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual([r.j.messages.checked, r.j.messages.notHeld], [1, 1]);
+  });
+});
+
+// ---- fakes: a relay that serves what it's given, and a proxy that records every request
+
+async function fakeRelay({ events, head, messages = [] }) {
+  const paths = [];
+  const last = events.at(-1);
+  const h = head ?? { seq: last?.seq ?? 0, hash: last?.hash ?? ZERO };
+  const server = http.createServer((req, res) => {
+    paths.push(req.url);
+    const u = new URL(req.url, 'http://x');
+    const send = (o) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(o));
+    };
+    if (u.pathname === '/api/info') return send({ sphere: { name: 'Fake Sphere' }, me: { id: 'a_fake01', name: 'fake' }, admin: true });
+    if (u.pathname === '/api/audit') {
+      const after = Number(u.searchParams.get('after')) || 0;
+      const limit = Math.min(1000, Number(u.searchParams.get('limit')) || 200);
+      return send({ events: events.filter((e) => e.seq > after).slice(0, limit), head: h, verified: true, total: events.length });
+    }
+    if (u.pathname === '/api/messages') return send({ messages: u.searchParams.get('before') ? [] : messages });
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end('{"error":"not found"}');
+  });
+  const port = await freePort();
+  await new Promise((r) => server.listen(port, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${port}`, paths, close: () => new Promise((r) => server.close(r)) };
+}
+
+async function recordingProxy(target) {
+  const seen = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = Buffer.concat(chunks);
+    seen.push({ method: req.method, url: req.url, headers: { ...req.headers }, body: body.toString('utf8') });
+    const headers = {};
+    for (const [k, v] of Object.entries(req.headers)) if (!['host', 'connection', 'content-length'].includes(k)) headers[k] = v;
+    try {
+      const r = await fetch(target + req.url, { method: req.method, headers, body: body.length ? body : undefined });
+      res.writeHead(r.status, { 'content-type': r.headers.get('content-type') || 'application/json' });
+      res.end(Buffer.from(await r.arrayBuffer()));
+    } catch {
+      res.writeHead(502);
+      res.end();
+    }
+  });
+  const port = await freePort();
+  await new Promise((r) => server.listen(port, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${port}`, seen, close: () => new Promise((r) => server.close(r)) };
+}
