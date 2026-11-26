@@ -275,8 +275,10 @@ function apply(op, liveEvents = true) {
     }
     case 'patch': {
       const m = byId.get(op.id);
-      if (m) Object.assign(m, op.fields);
+      if (m) for (const [k, v] of Object.entries(op.fields)) if (v === null) delete m[k]; else m[k] = v; // null: the field goes (waiting, once its owner decided)
       ev.push(['message-update', { id: op.id, ...op.fields }, (st) => WATCHERS(st) && streamSees(st, m?.channel)]);
+      // an ask that now waits for its owner, or no longer does: whoever long-polls its replies looks again
+      if ('waiting' in op.fields && waiters.has(op.id)) for (const wake of waiters.get(op.id)) wake();
       break;
     }
     case 'audit':
@@ -450,9 +452,10 @@ function hashEvent(e, key = chainKey) {
     .update(e.prev + JSON.stringify([e.seq, e.ts, e.type, e.actor, e.target, e.ref, e.detail, e.content ?? null]))
     .digest('hex');
 }
-// what a message event's `content` covers: the message as posted (not its later timing patches)
+// what a message event's `content` covers: the message as posted (not its later timing patches,
+// nor whether it waits for its owner)
 function contentHash(m) {
-  const { claimedAt, startedAt, ...posted } = m;
+  const { claimedAt, startedAt, waiting, ...posted } = m;
   return sha(JSON.stringify(posted));
 }
 
@@ -668,7 +671,7 @@ function fsStore() {
         }
         if (o.p) {
           const m = byId.get(o.p);
-          if (m) for (const k of ['claimedAt', 'startedAt']) if (o[k]) m[k] = o[k];
+          if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
         } else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.id) apply({ t: 'msg', m: o }, false);
       }
@@ -1046,15 +1049,15 @@ function awayOf(a) {
   return { until: w.until ?? null, note: w.note || '', since: w.since ?? null };
 }
 
-// a time in the next `days` days, as ISO, or a 400 naming the field. `slackMs` forgives a sender's
-// clock that runs a little off the relay's: that much in the past counts as now, that much past the
+// a time in the next `days` days, as ISO, or a 400 naming the field. The slack forgives a sender's
+// clock that runs a little off the relay's: `pastMs` in the past counts as now, `overMs` past the
 // limit as the limit.
-function futureTime(v, days, field, slackMs = 0) {
+function futureTime(v, days, field, { pastMs = 0, overMs = 0 } = {}) {
   let t = Date.parse(String(v));
   const now = Date.now();
   const max = now + days * 864e5;
-  if (!Number.isFinite(t) || t <= now - slackMs || (!slackMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
-  if (t > max + slackMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
+  if (!Number.isFinite(t) || t <= now - pastMs || (!pastMs && t <= now)) throw err(400, 'bad_request', `${field} is a time in the future (ISO 8601).`);
+  if (t > max + overMs) throw err(400, 'bad_request', `${field} is at most ${days} days ahead.`);
   t = Math.min(Math.max(t, now + 1000), max);
   return new Date(t).toISOString();
 }
@@ -1468,7 +1471,7 @@ function buildMessage(b, me, body, pre) {
     if (mins != null) {
       if (!Number.isInteger(mins) || mins < 1 || mins > 10080) throw err(400, 'bad_request', 'neededWithinMinutes is a whole number of minutes, 1 to 10080 (7 days).');
       m.neededBy = new Date(Date.now() + mins * 60e3).toISOString(); // on the relay's clock, which every Oby reads it by
-    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', 120e3);
+    } else if (body.neededBy != null) m.neededBy = futureTime(body.neededBy, 7, 'neededBy', { pastMs: 120e3, overMs: 120e3 });
   }
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
@@ -1536,7 +1539,7 @@ function cleanMeta(meta) {
   if (num(meta.durationMs, 864e5, false)) out.durationMs = Math.round(meta.durationMs);
   if (num(meta.costUsd, 1e4, false)) out.costUsd = meta.costUsd;
   if (num(meta.turns, 1e5, true)) out.turns = meta.turns;
-  for (const k of ['local', 'error', 'declined', 'expired', 'unable']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer
+  for (const k of ['local', 'error', 'declined', 'expired', 'unable', 'lapsed']) if (typeof meta[k] === 'boolean') out[k] = meta[k]; // expired, unable: an ask that got too old, or a runtime that couldn't answer; lapsed: its owner didn't OK it in time
   if (meta.answeredBy === 'agent' || meta.answeredBy === 'owner') out.answeredBy = meta.answeredBy;
   if (typeof meta.instrument === 'string' && INSTRUMENT_NAME.test(meta.instrument)) out.instrument = meta.instrument; // instruments
   if (meta.tools && typeof meta.tools === 'object' && !Array.isArray(meta.tools)) {
@@ -2230,6 +2233,30 @@ async function route(req, res, url) {
     return send(res, 200, b.result);
   }
 
+  // an ask that waits for its Oby's owner to OK it (their settings say "Ask me first"): from an Oby
+  // it's addressed to, { for: 'owner', until } while it waits, { for: null } once its owner decided.
+  // Metadata only, like claimedAt: the asker's tools and the console say it waits, and until when.
+  if (m === 'POST' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})\/waiting$/))) {
+    if (!(await store.rate('status', me.id, S.policy.rate.statusPerMin))) throw err(429, 'rate_limited', 'Too many status changes. Try again in a moment.');
+    const body = await readJson(req, 4096);
+    if (body.for !== null && body.for !== 'owner') throw err(400, 'bad_request', 'for is "owner" (the ask waits for its owner\'s OK) or null (it no longer does).');
+    const until = body.for === 'owner' ? futureTime(body.until, 7, 'until') : null;
+    const b = await store.commit((b) => {
+      b.result = { ok: true };
+      const msg = byId.get(mm[1]);
+      if (!msg || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      if (!until) {
+        // cleared by the Oby that set it (an ask to several Obys keeps another's)
+        if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        return;
+      }
+      if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' }); // as a claim says it
+      const since = msg.waiting?.by === me.id ? msg.waiting.since : now();
+      b.push({ t: 'patch', id: msg.id, fields: { waiting: { for: 'owner', until, since, by: me.id } } });
+    });
+    return send(res, 200, b.result);
+  }
+
   if (m === 'POST' && p === '/api/status') {
     if (!(await store.rate('status', me.id, S.policy.rate.statusPerMin))) throw err(429, 'rate_limited', 'Too many status changes. Try again in a moment.');
     const body = await readJson(req, 4096);
@@ -2260,7 +2287,7 @@ async function route(req, res, url) {
     let away = null;
     if (body.off !== true) {
       if (body.note != null && typeof body.note !== 'string') throw err(400, 'bad_request', 'note is text.');
-      const until = body.until == null ? null : futureTime(body.until, 30, 'until');
+      const until = body.until == null ? null : futureTime(body.until, 30, 'until', { overMs: 120e3 }); // "30 days" from a clock a little ahead is forgiven
       away = { until, note: cleanLine(body.note || '', 120), since: awayOf(S.agents[me.id])?.since ?? now() };
     }
     await store.commit((b) => {

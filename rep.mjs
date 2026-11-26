@@ -77,7 +77,7 @@ const ACCESS_DEFAULT = 'approve'; // Obys you haven't listed: Ask me first, unle
 const TIME_LIMIT_DEFAULT = 10; // minutes, when a route sets none
 const TIME_LIMIT_MAX = 120;
 const ABOUT_MAX = 500; // characters in what a rule is about
-// a minute, for the time limits (tests make it shorter)
+// a minute, for the time limits and the reminder before an ask that waits for you lapses (tests make it shorter)
 const MINUTE_MS = Math.max(50, Number(process.env.OBYSPHERE_MINUTE_MS) || 60e3);
 const SHELL_MODES = ['off', 'read', 'full'];
 const BUILT_IN_MCP = ['obysphere', 'claude-in-chrome']; // never one of "your MCP servers"
@@ -788,12 +788,14 @@ async function localApi(req, res, url, p) {
     if (route === '/local/version' && m === 'GET') return sendJson(res, 200, localVersion());
     if (route === '/local/pending' && m === 'GET') {
       let risky = false;
+      let s = null; // always: "Always answer @x" is offered for an Oby you haven't listed in Who can ask
       try {
-        risky = riskyReach(loadSettings(p));
+        s = loadSettings(p);
+        risky = riskyReach(s);
       } catch {}
       // instruments: a use of a command instrument is run or not; "everything you allow" doesn't apply to it
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && inst(instrument)?.kind !== 'command', ...(inst(instrument) ? { instrument: inst(instrument) } : {}) });
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && inst(instrument)?.kind !== 'command', always: !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}) });
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)) });
     }
     if (route === '/local/github' && m === 'GET') return sendJson(res, 200, await githubStatus(p));
@@ -826,7 +828,7 @@ async function localApi(req, res, url, p) {
     if (pm && m === 'POST') {
       const b = await json();
       if (['act', 'comment'].includes(b.decision) || githubPendingKind(p, pm[1])) return sendJson(res, 200, githubDecide(p, pm[1], b));
-      if (!['answer', 'trust', 'decline', 'write'].includes(b.decision)) return sendJson(res, 400, { error: 'decision: answer, trust, decline or write', field: 'decision' });
+      if (!['answer', 'trust', 'decline', 'write', 'always'].includes(b.decision)) return sendJson(res, 400, { error: 'decision: answer, always, trust, decline or write', field: 'decision' }); // always: answer, and that Oby's asks from now on
       if (b.decision === 'write' && (typeof b.text !== 'string' || !b.text.trim())) return sendJson(res, 400, { error: 'text: your answer, in words', field: 'text' });
       if (b.text !== undefined && String(b.text).length > 20000) return sendJson(res, 400, { error: 'text: at most 20,000 characters', field: 'text' });
       decidePending(p, pm[1], { decision: b.decision, ...(b.decision === 'write' ? { text: String(b.text) } : {}) });
@@ -1649,7 +1651,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
 
       // in neutral words: the asker learns the kind of reason, never your words, lists or limits
       const decline = async (reason) => {
-        await reply(`${cleanLine(p.agent.owner, 60)}'s Oby isn't taking this ask: ${DECLINE[reason]}.`, [], { declined: true, local: true, ...(reason === 'owner' ? { answeredBy: 'owner' } : {}) });
+        // timeout: it waited for you, and you didn't decide in time (it lapsed)
+        const words = reason === 'timeout' ? `@${p.agent.name}'s Oby didn't get its owner's OK in time.` : `${cleanLine(p.agent.owner, 60)}'s Oby isn't taking this ask: ${DECLINE[reason]}.`;
+        await reply(words, [], { declined: true, local: true, ...(reason === 'timeout' ? { lapsed: true } : {}), ...(reason === 'owner' ? { answeredBy: 'owner' } : {}) });
         settled = true;
         log(yellow(`→ declined: ${DECLINE[reason]}`));
         if (reason === 'settings') notifyOwner(p, { type: 'failed', from: asker, channel: msg.channel, body: 'Your settings need fixing, so your Oby declined it.', ref: msg.id });
@@ -1682,7 +1686,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       let ownerSaid = held?.approved || null; // 'answer' or 'trust', once you decided this ask (kept while it's held)
       for (;;) {
         // it waited for you while your Oby was stopped, past the time it waits: declined, as if it had lapsed here
-        if ((c.g.approve || approveAll) && !ownerSaid && lapsed) return decline('timeout');
+        if ((c.g.approve || approveAll) && !ownerSaid && lapsed) {
+          await api.post(`/api/messages/${msg.id}/waiting`, { for: null }).catch(() => {}); // the stopped process said it waits: no more
+          return decline('timeout');
+        }
         if ((c.g.approve || approveAll) && !ownerSaid) {
           const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use);
           if (d.decision === 'decline') return decline('owner');
@@ -1692,6 +1699,13 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
             settled = true;
             log(green('→ sent your answer'));
             return;
+          }
+          if (d.decision === 'always') {
+            try {
+              log(dim(alwaysAnswer(p, asker) ? `  ${asker} is in Who can ask now: your Oby answers its asks` : `  Who can ask stays as it is for ${asker}: you listed it already, or don't ask first for Obys you haven't listed`));
+            } catch (e) {
+              log(yellow(`  couldn't add ${asker} to Who can ask: `) + printable(e.message));
+            }
           }
           ownerSaid = d.decision === 'trust' ? 'trust' : 'answer';
           log(dim(`  you let your Oby answer${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
@@ -1738,21 +1752,35 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     );
     const wait = waitMs >= 2 * 3600e3 ? `${Math.round(waitMs / 3600e3)} h` : waitMs >= 120e3 ? `${Math.round(waitMs / 60e3)} min` : `${Math.round(waitMs / 1000)} s`;
     log(yellow('  ⏸ waiting for you') + dim(` · your console's Waiting for you${terminal ? ', or here' : ''} · ${away?.by === 'owner' ? `you're away: it waits for your return, up to ${wait}` : `declined if no answer in ${wait}`}`));
+    const asker = slug(from.name);
+    // the asker sees that it waits for you, and until when (an older relay has no place for it: 404)
+    const until = new Date(Math.min(Date.parse(w.expiresAt), Date.now() + 7 * 864e5 - 60e3)).toISOString();
+    const told = api.post(`/api/messages/${msg.id}/waiting`, { for: 'owner', until }).catch(() => {});
+    // a long wait: told once more, 15 minutes before it lapses
+    const soon = waitMs > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id }), waitMs - 15 * MINUTE_MS) : null;
+    soon?.unref?.();
+    // "always answer": offered for an Oby you haven't listed in Who can ask
+    let always = false;
+    try {
+      always = canAlwaysAnswer(settingsNow(), asker);
+    } catch {}
     const ac = new AbortController();
-    if (terminal) prompts = prompts.then(() => askInTerminal(w.id, slug(from.name), ac.signal, risky)).catch(() => {});
+    if (terminal) prompts = prompts.then(() => askInTerminal(w.id, asker, ac.signal, risky, always)).catch(() => {});
     try {
       return await waitPending(p, w.id, waitMs);
     } finally {
       ac.abort();
+      clearTimeout(soon);
+      told.then(() => api.post(`/api/messages/${msg.id}/waiting`, { for: null })).catch(() => {});
     }
   }
 
-  async function askInTerminal(id, asker, signal, risky = false) {
+  async function askInTerminal(id, asker, signal, risky = false, always = false) {
     if (signal.aborted) return;
     log(dim(`  ${asker}'s ask:`));
-    const d = await askOwner(`  ${bold('[Enter]')} let my Oby answer   ${risky ? `${bold('[t]')} with everything you allow   ` : ''}${bold('[w]')} write the answer myself   ${bold('[d]')} decline  > `, { signal });
+    const d = await askOwner(`  ${bold('[Enter]')} let my Oby answer   ${always ? `${bold('[a]')} always answer @${asker}   ` : ''}${risky ? `${bold('[t]')} with everything you allow   ` : ''}${bold('[w]')} write the answer myself   ${bold('[d]')} decline  > `, { signal });
     if (d === null) return;
-    const decision = d === 'd' ? 'decline' : d === 'w' ? 'write' : d === 't' && risky ? 'trust' : 'answer';
+    const decision = d === 'd' ? 'decline' : d === 'w' ? 'write' : d === 't' && risky ? 'trust' : d === 'a' && always ? 'always' : 'answer';
     let text;
     if (decision === 'write') {
       text = await askOwner('  your answer > ', { text: true, signal });
@@ -2703,7 +2731,7 @@ function cooldownDueNow(p, id) {
   const all = readCooldowns(p);
   const e = all[id];
   if (!e) return;
-  const past = new Date(Date.now() - (e.kind === 'limit' ? HOLD_RETRY_MS : RECHECK_MS) - 1000).toISOString();
+  const past = new Date(0).toISOString(); // checked long ago: due whatever interval the process that reads it uses
   all[id] = { ...e, until: e.kind === 'limit' && e.until ? new Date().toISOString() : e.until, checkedAt: past };
   writeSecret(cooldownFile(p), all);
 }
@@ -3202,11 +3230,18 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
   const t0 = Date.now();
+  let looked = 0; // when the ask was last read: it may wait for its owner's OK (the relay wakes the long-poll then)
   while (Date.now() < deadline) {
     const left = Math.ceil((deadline - Date.now()) / 1000);
-    const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(25, Math.max(1, left))}`);
+    const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(looked ? 25 : 5, Math.max(1, left))}`);
     const r = (replies || []).find((x) => validMessage(x) && x.from === target.id);
     if (r) return formatReply(r, target, openFor(p, r, here), here);
+    // its owner's settings say "Ask me first": they've been told, so don't keep the asker waiting
+    if (Date.now() - looked >= 3000) {
+      looked = Date.now();
+      const w = ownerWaitOf(await api.get(`/api/messages/${msg.id}`).then((x) => x.message, () => null), target);
+      if (w) return `@${slug(target.name)}'s Oby asks its owner (${JSON.stringify(cleanLine(target.owner, 60))}) before answering; they've been told. If they don't answer by ${shortTime(w.until)}, it lapses. ${later}`;
+    }
     // its runtime ran out of usage while you waited (it holds the ask), or its owner stepped away
     const now = await api.get('/api/agents').then(({ agents: all }) => (all || []).find((x) => validAgent(x) && x.id === target.id), () => null);
     if (now && awayShown(now)) return away(now);
@@ -3226,6 +3261,15 @@ function neededByOf(v) {
 // an ask's deadline, as the relay kept it (an older relay keeps none: then nothing is promised)
 function neededByIn(m) {
   return shortTime(m?.neededBy) ? m.neededBy : null;
+}
+
+// an ask that waits for an Oby's owner to OK it, as that Oby told the relay (`waiting`): { until },
+// or null when it doesn't, its time has passed, or another Oby it was addressed to said so
+function ownerWaitOf(m, a) {
+  const w = m?.waiting;
+  if (!w || typeof w !== 'object' || w.for !== 'owner' || !shortTime(w.until) || Date.parse(w.until) <= Date.now()) return null;
+  if (w.by != null && w.by !== a?.id) return null;
+  return { until: w.until };
 }
 
 // what an ask's deadline means for an Oby that can't start it now
@@ -3254,6 +3298,8 @@ async function toolCheck(api, p, a) {
     if (x.removed) return `@${slug(x.name)} has left this Sphere`;
     if (x.suspended) return `@${slug(x.name)} is suspended by the operator`;
     if (x.status?.state === 'working' && x.status.about === mid) return `@${slug(x.name)} is working on it`;
+    const ow = x.online && ownerWaitOf(message, x); // a representative that stopped stopped waiting too
+    if (ow) return `@${slug(x.name)}'s Oby is waiting for its owner's OK (${JSON.stringify(cleanLine(x.owner, 60))}) until ${shortTime(ow.until)}; if they don't answer by then, it lapses`;
     const w = awayShown(x);
     if (w) return `${awayWords(x, w)}; it will be answered ${w.until ? 'then' : "when it's back"}`;
     if (x.online) return `@${slug(x.name)} is online`;
@@ -3400,12 +3446,18 @@ function formatReply(r, target, o, agents = []) {
       declined: r.meta?.declined || undefined,
       expired: r.meta?.expired === true || undefined, // too old, or past its deadline, to be started
       unable: r.meta?.unable === true || undefined, // its runtime couldn't answer
+      lapsed: r.meta?.lapsed === true || undefined, // it waited for its owner's OK, which didn't come in time
       model: r.meta?.model ? cleanLine(r.meta.model, 80) : undefined,
       seconds: Number.isFinite(r.meta?.durationMs) ? Math.round(r.meta.durationMs / 100) / 10 : undefined,
     },
     files: files.length ? files : undefined,
   };
-  const lead = r.meta?.expired === true ? `Expired: @${slug(target.name)}'s Oby won't answer this ask (its reply says why). Ask again if it still matters.` : `@${slug(target.name)} replied.`;
+  const lead =
+    r.meta?.lapsed === true
+      ? `Lapsed: its owner (${JSON.stringify(cleanLine(target.owner, 60))}) didn't answer in time, so @${slug(target.name)}'s Oby won't answer this ask. Ask again later if it still matters, or ask another Oby.`
+      : r.meta?.expired === true
+        ? `Expired: @${slug(target.name)}'s Oby won't answer this ask (its reply says why). Ask again if it still matters.`
+        : `@${slug(target.name)} replied.`;
   return `${lead}${warn} Fetch files with sphere_get_file.\n${quoted('Who replied, and their words', `${JSON.stringify(details, null, 1)}\n---\n${o ? o.text : r.text}`)}`;
 }
 
@@ -5355,14 +5407,27 @@ function decidePending(p, id, decision) {
     throw e;
   }
 }
-// your decision: { decision: answer | trust (with everything you allow) | decline | write (with text) | timeout }
+// "Always answer @x" on an ask that waited for you: an Oby you haven't listed in Who can ask, while
+// such Obys wait for you (Ask me first), is listed as "answer" from now on. One you listed keeps its
+// entry, never loosened. true when added.
+function canAlwaysAnswer(s, handle) {
+  return !!handle && s.access.default === 'approve' && !Object.hasOwn(s.access.agents, handle);
+}
+function alwaysAnswer(p, handle) {
+  const s = loadSettings(p);
+  if (!canAlwaysAnswer(s, handle)) return false;
+  s.access.agents[handle] = 'answer';
+  writeSettings(p, validateSettings(s));
+  return true;
+}
+// your decision: { decision: answer | always (answer, and list that Oby as "answer") | trust (with everything you allow) | decline | write (with text) | timeout }
 async function waitPending(p, id, ms) {
   const dir = pendingDir(p);
   const file = path.join(dir, `${id}.decision.json`);
   // the entry's own lapse time when it's sooner (an ask taken over from a stopped process: what was left of its wait)
   const lapses = Date.parse(readJsonFile(path.join(dir, `${id}.json`), null)?.expiresAt);
   const deadline = Math.min(Date.now() + ms, Number.isFinite(lapses) ? lapses : Infinity);
-  const ok = (d) => d && ['answer', 'trust', 'decline', 'write', 'timeout', 'act', 'comment'].includes(d.decision); // act, comment: a GitHub item
+  const ok = (d) => d && ['answer', 'always', 'trust', 'decline', 'write', 'timeout', 'act', 'comment'].includes(d.decision); // act, comment: a GitHub item
   try {
     for (;;) {
       const d = readJsonFile(file, null);
@@ -6678,7 +6743,7 @@ async function noticeMessage(p, m) {
     if (!type && new RegExp(`(^|[^\\w@-])@${p.agent.name}(?![\\w-])`, 'i').test(o.text)) type = 'mention';
     if (!type) return;
     const from = slug(agents.get(m.from)?.name) || 'unknown';
-    const title = type !== 'answered' ? null : m.meta?.declined ? `@${from} declined your ask` : m.meta?.error ? `@${from} couldn't answer your ask` : null;
+    const title = type !== 'answered' ? null : m.meta?.lapsed ? `@${from}'s owner didn't answer in time` : m.meta?.declined ? `@${from} declined your ask` : m.meta?.error ? `@${from} couldn't answer your ask` : null;
     notifyOwner(p, { type, from, channel: m.channel, body: o.text, ref: m.id, ...(type === 'answered' ? { ask: m.replyTo } : {}), ...(title ? { title } : {}) });
   } catch {}
 }

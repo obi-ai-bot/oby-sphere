@@ -169,9 +169,9 @@ describe("when your Oby's runtime can't answer", () => {
     availability: { holdHours: 20, ...availability },
   });
   const setBob = (o) => fs.writeFileSync(path.join(bobDir(), 'settings.json'), JSON.stringify(settings(o)), { mode: 0o600 });
-  const startBob = async () => {
+  const startBob = async (extra = {}) => {
     bobOut = '';
-    bob = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env() });
+    bob = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env(extra) });
     procs.push(bob);
     bob.stdout.on('data', (d) => (bobOut += d));
     bob.stderr.on('data', (d) => (bobOut += d));
@@ -362,27 +362,38 @@ describe("when your Oby's runtime can't answer", () => {
   test('out of credit or signed out: tried again at the next check, not at every ask', async () => {
     await fresh();
     setBob();
-    fake.control({ cursorSignedIn: true, fail: { claude: 'credit' } });
-    const before = claudeCalls();
-    const a = await ask('alice', 'credit one');
-    await waitFor(() => held().length === 1, 10000, 'held');
-    assert.equal(cooldown().claude.kind, 'credit');
-    assert.equal(cooldown().claude.until, null);
-    const b = await ask('alice', 'credit two');
-    await waitFor(() => held().length === 2, 10000, 'both held');
-    assert.ok(claudeCalls() >= before + 1);
-    // the second was held by the cooldown, without a run (a check later may try either one: that's the check)
-    assert.match(bobOut, /credit two[\s\S]*route: [\s\S]*Claude Code is paused \(it couldn't answer a moment ago/);
-    assert.equal(held().find((h) => h.id === b.id).kind, 'credit');
-    fake.control({ cursorSignedIn: true }); // credit bought
-    assert.match((await replyTo(a, 'alice', 15000)).text, /^fake answer from/);
-    assert.match((await replyTo(b, 'alice', 15000)).text, /^fake answer from/);
-    // signed out, the same way
-    fake.control({ cursorSignedIn: true, failNext: { claude: ['auth'] } });
-    const c = await ask('alice', 'signed out?');
-    await waitFor(() => held().length === 1, 10000, 'held, signed out');
-    assert.equal(held()[0].kind, 'auth');
-    assert.match((await replyTo(c, 'alice', 15000)).text, /^fake answer from/);
+    // a slower clock for this one (a check: 20 s here), so the second ask surely comes before it; Retry ends it
+    await stopBob();
+    await startBob({ OBYSPHERE_RETRY_MS: '1000' });
+    try {
+      fake.control({ cursorSignedIn: true, fail: { claude: 'credit' } });
+      const before = claudeCalls();
+      const a = await ask('alice', 'credit one');
+      await waitFor(() => held().length === 1, 10000, 'held');
+      assert.equal(cooldown().claude.kind, 'credit');
+      assert.equal(cooldown().claude.until, null);
+      const b = await ask('alice', 'credit two');
+      await waitFor(() => held().length === 2, 10000, 'both held');
+      assert.equal(claudeCalls(), before + 1, 'the second never ran: the runtime cools down until its check');
+      assert.ok(Date.parse(held().find((h) => h.id === a.id).until) - Date.now() > 10e3, 'tried again at the check');
+      assert.equal(held().find((h) => h.id === b.id).kind, 'credit');
+      fake.control({ cursorSignedIn: true }); // credit bought, and the owner says try again
+      assert.deepEqual(await local('POST', '/local/held', { id: a.id, action: 'retry' }), { status: 200, ok: true });
+      assert.match((await replyTo(a, 'alice', 15000)).text, /^fake answer from/);
+      assert.match((await replyTo(b, 'alice', 15000)).text, /^fake answer from/, 'the other goes next, its runtime back');
+      await waitFor(() => held().length === 0, 5000, 'nothing held (a reply goes out a moment before its held file goes)');
+      // signed out, the same way
+      fake.control({ cursorSignedIn: true, failNext: { claude: ['auth'] } });
+      const c = await ask('alice', 'signed out?');
+      await waitFor(() => held().length === 1 && held()[0].id === c.id, 10000, 'held, signed out');
+      assert.equal(held()[0].kind, 'auth');
+      assert.equal(cooldown().claude?.kind, 'auth', `${JSON.stringify(cooldown())}\n${bobOut.slice(-4000)}`);
+      assert.deepEqual(await local('POST', '/local/held', { id: c.id, action: 'retry' }), { status: 200, ok: true });
+      assert.match((await replyTo(c, 'alice', 15000)).text, /^fake answer from/);
+    } finally {
+      await stopBob();
+      await startBob();
+    }
   });
 
   test('the longest hold: an ask held past it gets the "expired" reply', async () => {
@@ -577,7 +588,9 @@ describe("when your Oby's runtime can't answer", () => {
     await startBob();
     const r = await replyTo(m);
     assert.equal(r.meta.declined, true);
-    assert.match(r.text, /no answer from its owner/);
+    assert.equal(r.meta.lapsed, true, 'as a wait that lapses here');
+    assert.equal(r.text, "@bob's Oby didn't get its owner's OK in time.");
+    assert.equal((await call('GET', `/api/messages/${m.id}`, { tok: token('alice') })).message.waiting ?? null, null, 'no longer said to wait');
     await sleep(500);
     assert.equal((await repliesOf(m)).length, 1);
     assert.equal(await pendingFor(m.id), undefined);
@@ -666,7 +679,7 @@ describe("when your Oby's runtime can't answer", () => {
     // the relay keeps that claim 15 minutes, as it would for bob's stopped process
     assert.equal((await call('POST', `/api/messages/${m.id}/claim`, { tok: token('bob'), body: { instance: 'feedfacefeed' } })).ok, true);
     await startBob();
-    const said = /m_\w+: another process of yours claimed it/g;
+    const said = new RegExp(`${m.id}: another process of yours claimed it`, 'g');
     await waitFor(() => (bobOut.match(said) || []).length >= 1, 8000, 'set aside');
     // looked at again after the claim could lapse (16 min; 3.2 s here): still claimed here, so set aside again
     await waitFor(() => (bobOut.match(said) || []).length >= 2, 10000, `looked at again\n${bobOut}`);
