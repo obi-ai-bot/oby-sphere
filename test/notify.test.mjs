@@ -213,7 +213,7 @@ describe('notifications', () => {
     assert.equal(r.code, 0, r.out);
     assert.ok(!('notify' in JSON.parse(r.stdout)), 'nothing written for a file that has no notify section');
     r = await rep(['settings', '--profile', 'bob']);
-    assert.match(r.stdout, /Notifications\n {2}ways: this computer, your console, Claude Code\n {2}for: what waits for you, asks to your Oby, direct messages, mentions, answers to your asks, asks your Oby couldn't answer\n {2}quiet hours: none/);
+    assert.match(r.stdout, /Notifications\n {2}ways: this computer, your console, Claude Code\n {2}for: what waits for you, asks to your Oby, direct messages, mentions, answers to your asks, asks your Oby couldn't answer, your Oby pausing \(out of usage, signed out\), your Oby back after a pause\n {2}quiet hours: none/);
 
     const port = await freePort();
     uiBase = `http://127.0.0.1:${port}`;
@@ -228,7 +228,7 @@ describe('notifications', () => {
     }, 8000, 'the console');
     const g = await local('GET', '/local/settings');
     assert.equal(g.status, 200);
-    assert.deepEqual(g.settings.notify, { desktop: true, console: true, claude: true, phone: { url: null, content: 'summary' }, slack: { webhookUrl: null, content: 'summary' }, events: { waiting: true, asked: true, direct: true, mention: true, answered: true, failed: true }, quiet: { from: null, to: null } });
+    assert.deepEqual(g.settings.notify, { desktop: true, console: true, claude: true, phone: { url: null, content: 'summary' }, slack: { webhookUrl: null, content: 'summary' }, events: { waiting: true, asked: true, direct: true, mention: true, answered: true, failed: true, paused: true, resumed: true }, quiet: { from: null, to: null } });
     // the console's address, for the links in notifications
     assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'bob', 'notify', 'console.json'), 'utf8')).url, `http://bob.localhost:${port}/`);
 
@@ -502,7 +502,7 @@ describe('notifications', () => {
     setBob({ desktop: false }, { default: 'answer' });
     const mark = log2();
     const reply = await replyTo(await ask('alice', 'can you answer this?'), 'alice');
-    assert.match(reply.text, /couldn't answer this one/);
+    assert.match(reply.text, /^I can't answer this one right now\.$/);
     const failed = await waitFor(() => logLines().slice(mark).find((l) => l.type === 'failed' && l.way === 'console'), 8000, 'failed');
     assert.equal(failed.title, "Your Oby couldn't answer @alice");
     assert.equal(failed.body, "Claude Code isn't installed on this machine.");
@@ -517,7 +517,7 @@ describe('notifications', () => {
     const mcp = mcpClient(['--profile', 'bob']);
     const init = await mcp.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
     assert.deepEqual(init.result.capabilities, { tools: {}, experimental: { 'claude/channel': {} } });
-    assert.match(init.result.instructions, /<channel source="obysphere" kind="waiting\|asked\|direct\|mention\|answered\|failed">/);
+    assert.match(init.result.instructions, /<channel source="obysphere" kind="waiting\|asked\|direct\|mention\|answered\|failed\|paused\|resumed">/);
     // an answering session never gets the channel
     const session = mcpClient(['--profile', 'bob', '--as-session']);
     const sinit = await session.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });

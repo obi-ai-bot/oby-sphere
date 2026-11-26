@@ -247,6 +247,7 @@ describe("your Oby's settings", () => {
       machine: { folders: [{ path: work, write: false }], shell: 'off', web: { fetch: false, search: false }, browser: 'off', mcp: [] },
       // a section the file doesn't have takes its defaults (GitHub off)
       github: { enabled: false, repos: [], read: true, comment: 'ask', requestChanges: 'ask', approve: 'ask', merge: 'never', push: 'never', protected: ['main', 'master', 'release/*'], signature: true },
+      availability: { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false },
     };
     assert.deepEqual(JSON.parse(r.stdout), want);
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), want, 'the file is rewritten as version 2');
@@ -369,6 +370,16 @@ describe("your Oby's settings", () => {
     await bad((s) => (s.routing.default.modle = 'x'), 'routing.default.modle', /isn't a setting/);
     await bad((s) => (s.version = 1), 'version', /reads version 2/);
     await bad((s) => (s.version = 3), 'version');
+    // availability: what happens to an ask when its runtime can't answer
+    await bad((s) => (s.availability = []), 'availability', /is \{ whenUnable, otherRuntime, holdHours, showReason \}/);
+    await bad((s) => (s.availability = { whenUnable: 'later' }), 'availability.whenUnable', /is hold, other or decline, not "later"/);
+    await bad((s) => (s.availability = { whenUnable: 'other' }), 'availability.otherRuntime', /the runtime that answers instead/);
+    await bad((s) => (s.availability = { whenUnable: 'other', otherRuntime: 'copilot' }), 'availability.otherRuntime', /claude, codex or cursor, or null/);
+    await bad((s) => (s.availability = { holdHours: 0 }), 'availability.holdHours', /whole hours from 1 to 168/);
+    await bad((s) => (s.availability = { holdHours: 169 }), 'availability.holdHours', /1 to 168/);
+    await bad((s) => (s.availability = { holdHours: 2.5 }), 'availability.holdHours', /whole hours/);
+    await bad((s) => (s.availability = { showReason: 'yes' }), 'availability.showReason', /true or false/);
+    await bad((s) => (s.availability = { holdHourz: 3 }), 'availability.holdHourz', /isn't a setting \(availability has whenUnable, otherRuntime, holdHours, showReason\)/);
     // null time limit: 10; Cursor's effort: none; a rule with no condition is kept
     const loose = full();
     loose.routing.default.timeLimitMin = null;
@@ -380,6 +391,16 @@ describe("your Oby's settings", () => {
     assert.deepEqual(ok.settings.routing.rules[0].when, { about: '', from: [], hasFiles: null, hop: null, channel: null });
     assert.equal(ok.settings.machine.folders[1].write, true);
     assert.equal(fs.statSync(settingsPath()).mode & 0o777, 0o600);
+    // availability left out: the defaults, which the console gets like any section
+    assert.deepEqual(ok.settings.availability, { whenUnable: 'hold', otherRuntime: null, holdHours: 24, showReason: false });
+    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: holds the ask until it can, up to 24 h\n {2}asks older than 24 h when your Oby comes online get a short "expired" reply · askers see only when it can answer/);
+    const av = await local('PUT', '/local/settings', { settings: { ...loose, availability: { whenUnable: 'other', otherRuntime: 'codex', holdHours: 48, showReason: true } } });
+    assert.equal(av.status, 200, JSON.stringify(av));
+    assert.deepEqual((await local('GET', '/local/settings')).settings.availability, { whenUnable: 'other', otherRuntime: 'codex', holdHours: 48, showReason: true });
+    assert.match((await rep(['settings', '--profile', 'bob'])).out, /when its runtime can't answer: Codex answers instead \(Codex and Cursor only for Obys you trust; others are declined\)\n {2}asks older than 48 h/);
+    const dec = await local('PUT', '/local/settings', { settings: { ...loose, availability: { whenUnable: 'decline', holdHours: null } } });
+    assert.deepEqual(dec.settings.availability, { whenUnable: 'decline', otherRuntime: null, holdHours: 24, showReason: false }, 'null: the default');
+    assert.equal((await local('PUT', '/local/settings', { settings: loose })).status, 200);
 
     // this machine: each runtime, how it's signed in (never the email or org), its models and efforts
     const e = await local('GET', '/local/environment');
@@ -894,11 +915,12 @@ describe("your Oby's settings", () => {
     writeSettings(full());
     fake.control({ cursorSignedIn: true, claudeMissing: true });
     await declined('alice', 'hello', /its owner's settings don't allow this/);
-    // and the default can't answer: it says so, naming the runtime
+    // and the default can't answer: declined in plain words (the owner's notification names the runtime)
     const before = fake.calls().length;
     const r = await replyTo(await ask('erin', 'status?', { channel: 'ops' }), 'erin');
     assert.equal(r.meta.error, true);
-    assert.equal(r.text, "I couldn't answer this one on Bob Test's machine: Claude Code isn't installed there.");
+    assert.equal(r.text, "I can't answer this one right now.", 'plain words: never which runtime, nor why');
+    assert.equal(r.meta.unable, true);
     assert.equal(fake.calls().length, before);
     fake.control({ cursorSignedIn: true });
   });
@@ -1050,13 +1072,14 @@ describe("your Oby's settings", () => {
     const k = old.classifications().find((x) => x.prompt.includes(text));
     assert.ok(k && !k.argv.includes('--restricted') && flagOf(k, '--setting-sources') === 'project', JSON.stringify(k?.argv));
 
-    // an answer: refused, saying why, before Claude Code runs
+    // an answer: refused before Claude Code runs; the asker reads plain words, the owner why
     const m = (await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text, to: [ids.erin] } })).message;
     let reply;
     for (let i = 0; i < 40 && !reply; i++) reply = ((await call('GET', `/api/messages/${m.id}/replies?wait=3`, { tok: token('alice') })).replies || []).find((y) => y.from === ids.erin);
     assert.ok(reply, out);
     assert.equal(reply.meta.error, true);
-    assert.match(reply.text, /this Claude Code is too old to answer safely .*: update it with claude update$/);
+    assert.equal(reply.text, "I can't answer this one right now.");
+    assert.match(out, /this Claude Code is too old to answer safely .*: update it with claude update/);
     assert.deepEqual(old.calls(), [], 'Claude Code never ran an answer');
     ui.kill();
   });

@@ -11,6 +11,10 @@
 //   cursorSignedIn, cursorSleepMs; cursorModels 'current': the model in use isn't Cursor's default
 //   codexLogin               'chatgpt' (default), 'apikey' or 'none'; codexModels 'ok', 'bundled', 'flagged' (the
 //                            catalog flags its second model as the default) or 'fail'; codexSleepMs; codexMissing
+//   fail, failNext           an answer run fails as the real runtime does, instead of answering: fail
+//                            { claude: 'limit' } every run, failNext { claude: ['rate', 'rate'] } the next runs, one
+//                            each. limit (resetInSec from now, an hour by default), limit-noreset, rate, overloaded,
+//                            credit, auth, other (its words hold a path)
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -23,6 +27,18 @@ const read = (f) => { try { return f ? fs.readFileSync(f, 'utf8') : null; } catc
 const record = (file, o) => fs.appendFileSync(path.join(here, file), JSON.stringify({ argv, cwd: process.cwd(), envKeys: Object.keys(process.env).sort(), ...o }) + '\\n');
 const stdin = (fn) => { let s = ''; process.stdin.on('data', (d) => (s += d)); process.stdin.on('end', () => fn(s)); };
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
+// how this run fails, if it does (failNext is used up one run at a time)
+const failure = (bin) => {
+  const next = control.failNext && Array.isArray(control.failNext[bin]) ? control.failNext[bin] : [];
+  if (next.length) {
+    const f = next.shift();
+    fs.writeFileSync(path.join(here, 'control.json'), JSON.stringify(control));
+    return f;
+  }
+  return (control.fail && control.fail[bin]) || null;
+};
+const resetAt = () => Date.now() + (control.resetInSec ?? 3600) * 1000;
+const clock = (ms) => { const d = new Date(ms); return (d.getHours() % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0') + (d.getHours() < 12 ? ' AM' : ' PM'); };
 `;
 
 const CLAUDE = `${COMMON}
@@ -73,6 +89,21 @@ stdin((prompt) => {
   const model = flag('--model') || 'fake-default';
   record('calls.jsonl', { bin: 'claude', prompt, settings: JSON.parse(read(flag('--settings')) || 'null'), mcp: JSON.parse(read(flag('--mcp-config')) || 'null'), system: read(flag('--append-system-prompt-file')) });
   out({ type: 'system', subtype: 'init', model, tools: ['Read'], apiKeySource: 'none', session_id: 'fake-init' });
+  const failed = failure('claude');
+  if (failed) {
+    const words = {
+      limit: () => 'Claude AI usage limit reached|' + Math.floor(resetAt() / 1000),
+      'limit-noreset': () => 'Claude AI usage limit reached',
+      rate: () => 'API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization of 50,000 input tokens per minute."}}',
+      overloaded: () => 'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+      credit: () => 'Credit balance is too low',
+      auth: () => 'Invalid API key · Please run /login',
+      other: () => "Error: EACCES: permission denied, open '" + process.cwd() + "/secret-plan.md'",
+    }[failed]();
+    out({ type: 'assistant', message: { model: '<synthetic>', content: [{ type: 'text', text: words }] } });
+    out({ type: 'result', subtype: 'success', is_error: true, result: words, session_id: 'fake-session-' + Date.now(), num_turns: 1 });
+    process.exit(1);
+  }
   out({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: {} }] } });
   const finish = () => out({ type: 'result', subtype: 'success', is_error: false, result: control.text || ('fake answer from ' + model), session_id: 'fake-session-' + Date.now(), total_cost_usd: 0.01, num_turns: 1, modelUsage: { [model]: {} } });
   if (control.sleepMs) {
@@ -96,6 +127,16 @@ if (argv[0] === '--list-models') {
 }
 stdin((prompt) => {
   record('calls.jsonl', { bin: 'cursor', prompt });
+  const failed = failure('cursor');
+  if (failed === 'auth') {
+    process.stderr.write("Authentication required. Please run 'cursor-agent login' first, or set CURSOR_API_KEY environment variable.\\n");
+    process.exit(1);
+  }
+  if (failed) {
+    const words = { limit: () => "You've hit your usage limit. Your limit resets at " + clock(resetAt()) + '.', 'limit-noreset': () => "You've hit your usage limit for fast requests.", rate: () => 'Rate limit exceeded. Please try again in a few moments.', overloaded: () => 'The model is overloaded. Please try again.', credit: () => 'Payment required: check your billing details.', other: () => 'Error: something broke in ' + process.cwd() }[failed]();
+    out({ type: 'result', subtype: 'error', is_error: true, result: words, session_id: 'cursor-session-' + Date.now() });
+    process.exit(1);
+  }
   const i = argv.indexOf('--model');
   const answer = () => out({ type: 'result', subtype: 'success', is_error: false, result: 'cursor answer from ' + (i >= 0 ? argv[i + 1] : 'default'), session_id: flag('--resume') || 'cursor-session-' + Date.now(), duration_ms: 5 });
   if (control.cursorSleepMs) setTimeout(answer, control.cursorSleepMs);
@@ -129,6 +170,21 @@ if (argv[0] === 'exec') {
     const model = flag('-m') || 'codex-default';
     out({ type: 'thread.started', thread_id: thread });
     out({ type: 'turn.started' });
+    const failed = failure('codex');
+    if (failed) {
+      const words = {
+        limit: () => "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at " + clock(resetAt()) + '.',
+        'limit-noreset': () => "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro) or try again later.",
+        rate: () => 'exceeded retry limit, last status: 429 Too Many Requests, request id: 7f3c2a10-1b9e-4d55-a0c4-2f1e9b7d6c3a',
+        overloaded: () => 'stream error: the model is overloaded, last status: 529',
+        credit: () => 'Quota exceeded. You exceeded your current quota, please check your plan and billing details.',
+        auth: () => 'Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.',
+        other: () => 'stream disconnected before completion: error sending request for url (' + process.cwd() + ')',
+      }[failed]();
+      out({ type: 'error', message: words });
+      out({ type: 'turn.failed', error: { message: words } });
+      process.exit(1);
+    }
     out({ type: 'item.completed', item: { id: 'i0', type: 'command_execution', command: 'ls', exit_code: 0 } });
     out({ type: 'item.completed', item: { id: 'i1', type: 'mcp_tool_call', server: 'obysphere', tool: 'sphere_read' } });
     const finish = () => {
