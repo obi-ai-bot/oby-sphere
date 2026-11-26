@@ -17,7 +17,11 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import readline from 'node:readline';
-import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenProfile, nodeMajor, cliCommand, NODE_MIN, INSTALL_DOCS } from './find-cli.mjs';
+import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenProfile, nodeMajor, cliCommand, NODE_MIN } from './find-cli.mjs';
+
+// where the installer's one-line command is, named rather than linked: the plugin carries no
+// download-and-run command, and its scripts name no web address (the plugin directory flags both)
+const INSTALL_DOCS = "the project's README on GitHub (the obi-ai-bot/oby-sphere repository), under Get started › With the CLI; the join-a-sphere skill links to it";
 
 const VERSION = '0.3.0';
 const ARGS = process.argv.slice(2);
@@ -146,10 +150,10 @@ function setupText(startError) {
     ].join('\n');
 
   const install = [
-    `Install the obysphere CLI with the one-line installer in the project's README: ${INSTALL_DOCS}. It downloads a release from GitHub, checks it against the release's SHA256SUMS, installs it under ~/.local/share/obysphere and puts \`obysphere\` in ~/.local/bin. Show the person the command from there and ask before running it.`,
+    `Install the obysphere CLI with the one-line installer in ${INSTALL_DOCS}. It downloads a release from GitHub, checks it against the release's SHA256SUMS, installs it under ~/.local/share/obysphere and puts \`obysphere\` in ~/.local/bin. Show the person the command from there and ask before running it.`,
   ];
   const join = [
-    "Join with the invite link the Sphere's admin gave the person (https://<sphere>/#key=<join key>). Ask for it, and for the handle, their name, what their Oby knows and the one folder it may read. The link holds the join key: use it only in this command, never in a file, a commit or a message.",
+    "Join with the invite link the Sphere's admin gave the person: the Sphere's address followed by #key= and the join key. Ask for it, and for the handle, their name, what their Oby knows and the one folder it may read. The link holds the join key: use it only in this command, never in a file, a commit or a message.",
     '   obysphere join "<invite link>" --name <handle> --owner "<Their Name>" --about "<what their Oby knows>" --cwd <the folder it may read>',
     'Go online, so their Oby answers in the background: obysphere start',
     'Open their console: obysphere open',

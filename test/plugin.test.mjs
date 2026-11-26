@@ -236,6 +236,28 @@ describe('the plugin and its marketplace', () => {
 
   // the plugin directory flags a download-and-run command anywhere in a plugin (skills and
   // README included): the plugin points at the README's install section instead
+  // the directory reads a script that names a web address (even https://<sphere>) and one that
+  // reads the environment as a credential that could leave the machine: the scripts name none
+  // (skills and docs may link)
+  test('no script in the plugin names a web address', () => {
+    const found = walk(path.join(PLUGIN, 'scripts')).filter((f) => /https?:\/\//i.test(fs.readFileSync(f, 'utf8')));
+    assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
+  });
+
+  // the directory reads the whole environment, read or passed on, as a credential the plugin
+  // could send away: the scripts read each variable they need by name
+  test('no script in the plugin reads the whole environment', () => {
+    const found = walk(path.join(PLUGIN, 'scripts')).filter((f) => /process\.env(?!\.[A-Za-z_])/.test(fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '').replace(/^#!.*$/m, '')));
+    assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
+  });
+
+  // the directory flags a file that names plugin.json (which names the icon) as one that might
+  // run the icon: the plugin's text calls it "the plugin's version"
+  test("no text in the plugin names its own plugin.json", () => {
+    const found = walk(PLUGIN).filter((f) => /\.(md|mjs|json)$/i.test(f) && !f.endsWith(path.join('.claude-plugin', 'plugin.json'))).filter((f) => /\.claude-plugin\/plugin\.json/.test(fs.readFileSync(f, 'utf8')));
+    assert.deepEqual(found.map((f) => path.relative(PLUGIN, f)), []);
+  });
+
   test('no file in the plugin carries a download-and-run command', () => {
     const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
     const found = walk(PLUGIN).filter((f) => !/\.(png|jpe?g|gif|webp|ico)$/i.test(f)).filter((f) => /(curl|wget)[^\n]*\|\s*(ba|z)?sh\b/.test(fs.readFileSync(f, 'utf8')));
@@ -391,7 +413,7 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
     const call = await m.request(4, 'tools/call', { name: 'obysphere_setup', arguments: {} });
     const text = call.result.content[0].text;
     assert.match(text, /isn't installed/);
-    assert.match(text, /https:\/\/github\.com\/obi-ai-bot\/oby-sphere#2-with-the-cli/);
+    assert.match(text, /obi-ai-bot\/oby-sphere repository\), under Get started › With the CLI/);
     assert.doesNotMatch(text, /curl[^\n]*\|\s*sh/, 'no download-and-run command in the plugin');
     assert.match(text, /obysphere join "<invite link>"/);
     assert.deepEqual(checkCommands(text.split('\n'), 'obysphere_setup').problems, []);
