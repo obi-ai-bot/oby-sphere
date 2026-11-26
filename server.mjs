@@ -2860,10 +2860,14 @@ async function route(req, res, url) {
           b.audit('policy', { actor, detail: (body.sealed ? 'sealing on: messages must be sealed, and the relay can no longer read them' : 'sealing off: plain messages are accepted again') + by });
         }
         if (Object.keys(pol).length) b.push({ t: 'policy', policy: pol });
-        // keeping messages: kept for less time, or fewer kept, removes the older ones now, in this commit
+        // keeping messages: a new period, or fewer kept, cuts now, in this commit, by the shorter period
+        // of the two: a shorter one removes the older messages at once, and a longer one (or no time
+        // limit) doesn't bring back the ones the old period already hid
         const after = mergePolicy({ ...S.policy, ...pol, rate: S.policy.rate });
-        const sooner = !!keepMs(after) && (!keepMs() || after.keepDays < S.policy.keepDays);
-        if (sooner || after.retainMessages < S.policy.retainMessages) cutOps(b, { force: true, policy: after });
+        if (after.keepDays !== S.policy.keepDays || after.retainMessages < S.policy.retainMessages) {
+          const days = [S.policy.keepDays, after.keepDays].filter((d) => d > 0);
+          cutOps(b, { force: true, policy: { ...after, keepDays: days.length ? Math.min(...days) : 0 } });
+        }
       });
       return send(res, 200, { policy: { ...S.policy, paused: S.paused } });
     }

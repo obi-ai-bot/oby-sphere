@@ -225,6 +225,22 @@ for (const kind of ['fs', 'redis']) {
       assert.equal((await audit()).verified, true);
     });
 
+    test('a longer period, or none, never brings back a message the old one hid', async () => {
+      assert.equal((await policy()).keepDays, 1);
+      const m = (await call(R.base, 'POST', '/api/messages', { token: alice.token, body: { text: 'hidden for good' } })).message;
+      await age([m.id], 2); // past 1 day, with a cut by time this hour already: hidden, not cut yet
+      assert.equal((await call(R.base, 'GET', `/api/messages/${m.id}`, { admin: ADMIN })).status, 404, 'hidden');
+      assert.ok(!(await audit()).events.some((e) => e.type === 'expire' && e.ref === m.id), 'not cut yet');
+      assert.equal((await call(R.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { keepDays: 30 } })).status, 200);
+      assert.equal((await call(R.base, 'GET', `/api/messages/${m.id}`, { admin: ADMIN })).status, 404, 'it stays gone');
+      assert.ok(!(await held()).some((x) => x.id === m.id));
+      assert.ok((await audit()).events.some((e) => e.type === 'expire' && e.ref === m.id && /older than 1 day removed/.test(e.detail)), 'cut by the old period, in the same commit');
+      await R.stop();
+      R = await relay(env(), procs);
+      assert.equal((await call(R.base, 'GET', `/api/messages/${m.id}`, { admin: ADMIN })).status, 404);
+      assert.equal((await audit()).verified, true);
+    });
+
     test('a cut by count is recorded the same way', async () => {
       assert.equal((await call(R.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { keepDays: 0, retainMessages: 100 } })).status, 200);
       for (let i = 0; i < 125; i++) assert.equal((await call(R.base, 'POST', '/api/messages', { token: alice.token, body: { text: `count ${i}` } })).status, 200);
