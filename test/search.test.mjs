@@ -81,6 +81,8 @@ describe('what a search matches (the page and rep.mjs, the same functions)', () 
     html: msg({ text: 'Here is <b>bold</b> & <script>alert(1)</script> flamingo', from: 'a_alice' }),
     file: msg({ text: 'the plan, attached', files: [{ id: 'f_1', name: 'retry-plan.md' }] }),
     forged: msg({ text: 'forged flamingo', sealed: { to: { a_alice: {}, a_bob: {} } }, open: true, verified: false, channel: 'dm-ab' }),
+    // #139's tombstone of a message: no words, no files, `deleted`
+    gone: (({ text, files, ...t }) => ({ ...t, claimedAt: null, startedAt: null, deleted: { at: t.ts, by: t.from } }))(msg({})),
   };
   const LIST = Object.values(M);
   const search = (q, me) => f.searchList(LIST, q, view(me));
@@ -126,7 +128,7 @@ describe('what a search matches (the page and rep.mjs, the same functions)', () 
   test("a sealed message that wasn't opened is counted, not searched; the relay's notes aren't searched", () => {
     const r = search('flamingo');
     assert.equal(r.notOpenable, 1);
-    assert.equal(search('zzzz').searched, LIST.length - 4, "all but the sealed one, the system note, and the two in conversations alice isn't in");
+    assert.equal(search('zzzz').searched, LIST.length - 5, "all but the sealed one, the system note, the deleted one (#139), and the two in conversations alice isn't in");
     assert.ok(!ids('joined').length);
     assert.equal(r.results.find((x) => x.id === M.forged.id).verified, false, "a signature that doesn't verify is marked");
   });

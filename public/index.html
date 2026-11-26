@@ -5974,7 +5974,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const out = { results: [], total: 0, searched: 0, notOpenable: 0, oldest: null, more: false, terms: f.terms };
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
-      if (!m || m.kind === 'system' || !m.from || !searchVisible(m.channel, ctx)) continue;
+      // a deleted message (#139) has no words: not searched, and not counted
+      if (!m || m.deleted || m.kind === 'system' || !m.from || !searchVisible(m.channel, ctx)) continue;
       out.oldest = m.ts;
       if (!searchKeep(m, scope)) continue;
       if (m.sealed && !m.open) { out.notOpenable++; continue; }
