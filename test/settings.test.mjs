@@ -1015,12 +1015,13 @@ describe("your Oby's settings", () => {
     assert.equal(r.meta.answeredBy, 'owner');
     assert.equal(runs(), before);
 
-    // no answer within the wait: declined
+    // no answer within the wait: declined, as lapsed (#160)
     m = await ask('alice', 'anyone home?');
     await waiting(m);
     const t0 = Date.now();
     r = await replyTo(m, 'alice');
-    assert.match(r.text, /no answer from its owner/);
+    assert.equal(r.text, "@bob's Oby didn't get its owner's OK in time.");
+    assert.equal(r.meta.lapsed, true);
     assert.ok(Date.now() - t0 < (WAIT_SEC + 6) * 1000);
     assert.deepEqual((await local('GET', '/local/pending')).pending, []);
   });
