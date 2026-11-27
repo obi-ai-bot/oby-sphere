@@ -545,8 +545,8 @@ describe("the console page's admin markup", () => {
   const HOSTILE = 'a_x" autofocus onfocus="alert(1)';
   const render = (fn, agents, S) => {
     const ctx = {
-      S: { me: { id: 'a_me' }, admin: true, adminKey: null, sphere: { policy: {} }, ...S },
-      members: () => agents.slice(),
+      S: { me: { id: 'a_me' }, admin: true, adminKey: null, sphere: { policy: {} }, agents: new Map(agents.map((a) => [a.id, a])), ...S },
+      members: () => agents.filter((a) => !a.removed),
       isMe: (a) => a.id === 'a_me',
       ownerName: (a) => a.owner,
       picture: () => '',
@@ -588,5 +588,16 @@ describe("the console page's admin markup", () => {
     assert.ok(!html.includes('onfocus'), 'the id never reaches the markup');
     assert.equal((html.match(/data-remove=/g) || []).length, 1);
     assert.ok(!render('pageMembers', agents, { admin: false }).includes('data-remove'), 'no actions for a member who is not an admin');
+  });
+
+  test("Members: a removed member's handle can be released, by an admin, once", () => {
+    const gone = [...agents, { id: 'a_gone', name: 'dave', owner: 'Dave', removed: true }, { id: 'a_freed', name: 'erin', owner: 'Erin', removed: true, released: true }, { id: HOSTILE + '2', name: 'x', owner: 'X', removed: true }];
+    const html = render('pageMembers', gone);
+    assert.match(html, /<h2 class="set-sec-title">Removed<\/h2>/);
+    assert.match(html, /data-release="a_gone"/);
+    assert.equal((html.match(/data-release=/g) || []).length, 1, 'not one already released, nor an id the relay should never send');
+    assert.ok(!html.includes('onfocus'));
+    assert.ok(!html.includes('data-remove="a_gone"'), 'a removed member is no longer among the members');
+    assert.ok(!render('pageMembers', gone, { admin: false }).includes('Removed'), 'only admins see removed members');
   });
 });

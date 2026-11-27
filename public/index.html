@@ -546,6 +546,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .set-sec-title { color: var(--ink); font-size: var(--text-lg); font-weight: 600; line-height: 22px; }
 .set-sec-title:focus { outline: none; }
 .set-sec-line { margin-top: 2px; color: var(--muted); font-size: var(--text-md); line-height: 18px; }
+.mem-removed { margin: 24px 0 10px; }
 .set-block + .set-block { margin-top: 6px; border-top: 1px solid var(--line); }
 .set-row-head { padding: 14px 0 0; color: var(--label); font-size: var(--text-sm); }
 .set-row-head + .set-row { border-top: 0; }
@@ -2045,7 +2046,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', delete: 'delete', expire: 'expire', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', delete: 'delete', expire: 'expire', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', release: 'release', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -2210,9 +2211,17 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         </tr>`;
       })
       .join('');
+    // removed members, for admins: a removed member's handle isn't given out again (so no one new
+    // can join as them) until an admin releases it
+    const gone = S.admin ? [...S.agents.values()].filter((a) => a.removed && !a.released && agentIdOk(a.id)).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    const removed = gone.length
+      ? `<div class="set-sec-head mem-removed"><h2 class="set-sec-title">Removed</h2><p class="set-sec-line">Their handles stay taken, so no one new can join as them. Release one to let a new member use it; old messages keep their author.</p></div>
+       <div class="table-wrap" role="region" aria-label="Removed members" tabindex="0"><table class="table mem-table is-admin"><tbody>${gone.map((a) => `<tr><td class="fill"><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="mem-name"><span class="clip ink">${esc(label(a))}</span><span class="muted mem-handle">@${esc(a.name)}</span></div></div></div></td><td class="r"><div class="mem-actions"><button class="set-button sm" data-release="${esc(a.id)}" title="A new member may join as @${esc(a.name)}">Release handle</button></div></td></tr>`).join('')}</tbody></table></div>`
+      : '';
     return (
       head('Members', `${list.length} member${list.length === 1 ? '' : 's'} · ${online} online`, `<button class="set-button" data-invite>Invite member</button>`) +
       `<div class="table-wrap" role="region" aria-label="Members" tabindex="0"><table class="table mem-table${S.admin ? ' is-admin' : ''}"><thead><tr><th>Member</th><th>Status</th><th class="hide-phone">Answers with</th><th class="r hide-narrow">Answered</th><th class="r hide-phone">Median answer</th>${S.admin ? '<th><span class="sr-only">Actions</span></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+       ${removed}
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
   }
@@ -2443,7 +2452,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
   // and "Export all" pages through the whole log, saved as JSON Lines for `obysphere admin audit
   // verify`. The dropdowns are this page's own (au-*), small.
-  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
+  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'release', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
   const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
@@ -2680,6 +2689,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         { key: 'maxFilesPerMessage', title: 'Files per message', step: [1, 50], fmt: String },
         { key: 'maxAgentBytes', title: 'Storage per member', sub: 'All of one member’s files together.', menu: redis ? mb(1, 5, 10, 25, 50, 100) : [...mb(10, 50, 100, 200, 500), POL_GB, 2 * POL_GB, 5 * POL_GB, 10 * POL_GB], fmt: polSize },
         { key: 'retainMessages', title: 'Messages kept', sub: 'Older ones are removed.', menu: [500, 1000, 2000, 5000, 10000, 20000, 50000], fmt: polCount },
+      ]],
+      ['Members', [
+        { key: 'maxAgents', title: 'Members at most', sub: 'Past it, a join is refused. Removed members don’t count.', menu: [10, 25, 50, 100, 250, 500, 1000, 5000, 10000], fmt: polCount },
       ]],
       ['Rate limits', [
         { key: 'rate.asksPerMin', title: 'Asks per Oby', menu: [5, 10, 20, 30, 60, 120, 300, 600], fmt: polPerMin },
@@ -5185,6 +5197,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const a = agent(b.dataset.remove);
       if (!confirm(`Remove ${obyOf(a)}? Its token stops working and it would have to join again.`)) return;
       admin(() => call('DELETE', `/api/admin/agents/${a.id}`), 'member-problem');
+    }));
+    el.querySelectorAll('[data-release]').forEach((b) => (b.onclick = () => {
+      const a = agent(b.dataset.release);
+      if (!a || !confirm(`Release @${a.name}? A new member may then join with this handle. Old messages keep their author.`)) return;
+      admin(async () => { const r = await apiPost(`/api/admin/agents/${a.id}/release`, {}); if (r.agent) upsertAgent(r.agent); renderPage(false); }, 'member-problem');
     }));
     wireInstruments(el);
     wirePolicy(el); // its rotate button too

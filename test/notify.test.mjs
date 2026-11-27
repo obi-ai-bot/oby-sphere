@@ -374,13 +374,15 @@ describe('notifications', () => {
   });
 
   test('asks: a burst becomes one notification per way; serve --notify keeps the desktop on; Slack escapes and clips the words', async () => {
-    setBob({ desktop: false, slack: { webhookUrl: slackUrl(), content: 'full' }, phone: { url: phoneUrl(), content: 'summary' } });
+    // alice is listed (Answer): an Oby bob declines notifies nothing (owner-session.test.mjs). No
+    // runtime is installed here, so each ask is answered "can't answer"
+    setBob({ desktop: false, slack: { webhookUrl: slackUrl(), content: 'full' }, phone: { url: phoneUrl(), content: 'summary' } }, { agents: { alice: 'answer' } });
     await startServe('--notify');
     try {
       const mark = logLines().length;
       const h = hits.length;
       const asks = await Promise.all(['one', 'two', 'three'].map((w) => ask('alice', `burst ${w}`)));
-      for (const m of asks) assert.equal((await replyTo(m, 'alice')).meta?.declined, true);
+      for (const m of asks) assert.ok(await replyTo(m, 'alice'));
       const lines = await waitFor(() => {
         const x = logLines().slice(mark).filter((l) => l.type === 'asked');
         return x.length >= 5 && x;
@@ -391,7 +393,8 @@ describe('notifications', () => {
       assert.deepEqual(all.map((l) => l.way).sort(), ['claude', 'console', 'desktop', 'phone', 'slack'], 'the desktop too: serve --notify');
       assert.ok(lines.every((l) => l.title === '3 asks for your Oby'), JSON.stringify(lines));
       assert.equal(all.find((l) => l.way === 'console').body, 'From @alice.');
-      const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/')); return s.length && s; }, 4000, 'the Slack request');
+      // the asks' (each one also fails here: no runtime is installed)
+      const slack = await waitFor(() => { const s = hits.slice(h).filter((x) => x.path.startsWith('/services/') && /^3 asks for your Oby/.test(JSON.parse(x.body).text)); return s.length && s; }, 4000, 'the Slack request');
       assert.equal(slack.length, 1);
       assert.match(JSON.parse(slack[0].body).text, /^3 asks for your Oby\. Open your console: <http:\/\/bob\.localhost:\d+\/#page=traffic>\n> From @alice\.$/);
       assert.ok(all.every((l) => /^http:\/\/bob\.localhost:\d+\/#page=traffic$/.test(l.link)), `several asks lead to Traffic: ${JSON.stringify(all.map((l) => l.link))}`);
@@ -407,7 +410,7 @@ describe('notifications', () => {
       assert.equal(one.title, '@alice asks your Oby');
       assert.ok(logLines().slice(m2).filter((l) => l.type === 'asked').every((l) => l.link.endsWith(`/#page=exchange:${single.id}`)), 'one ask leads to its exchange');
       // the log line is written as the request goes out: wait for the fake Slack to get it
-      const slackNow = await waitFor(() => { const s = hits.filter((x) => x.path.startsWith('/services/')); return s.length > slackBefore && s; }, 4000, 'the Slack request for one ask');
+      const slackNow = await waitFor(() => { const s = hits.filter((x) => x.path.startsWith('/services/')).slice(slackBefore).filter((x) => JSON.parse(x.body).text.startsWith('@alice asks your Oby')); return s.length && s; }, 4000, 'the Slack request for one ask');
       const text = JSON.parse(slackNow.at(-1).body).text;
       assert.ok(text.startsWith('@alice asks your Oby. Open your console: <http://bob.localhost:'), text);
       assert.ok(text.includes('\n> &lt;!channel&gt; &amp; &lt;@U123&gt; xxx'), text);
@@ -426,12 +429,12 @@ describe('notifications', () => {
   test("quiet hours: only what waits for you comes through, at high priority; an ask that waits is told once", async () => {
     const now = new Date().getHours() * 60 + new Date().getMinutes();
     const quiet = { from: hhmm(now - 5), to: hhmm(now + 60) };
-    setBob({ desktop: false, phone: { url: phoneUrl(), content: 'summary' }, quiet });
+    setBob({ desktop: false, phone: { url: phoneUrl(), content: 'summary' }, quiet }, { agents: { alice: 'answer' } });
     let mark = log2();
     await replyTo(await ask('alice', 'a quiet ask'), 'alice');
     await sleep(COALESCE_MS + 1000);
     assert.deepEqual(logLines().slice(mark), [], 'nothing in quiet hours');
-    const quietOne = (await local('GET', '/local/notifications')).notifications.at(-1);
+    const quietOne = (await local('GET', '/local/notifications')).notifications.filter((x) => x.type === 'asked').at(-1);
     assert.deepEqual([quietOne.type, quietOne.quiet, quietOne.console], ['asked', true, false], 'kept in the history, shown nowhere');
 
     // an ask that waits for you comes through, at high priority
@@ -458,8 +461,9 @@ describe('notifications', () => {
     const ctx = j.hookSpecificOutput.additionalContext;
     const fence = /QUOTED-[0-9A-F]{12}/.exec(ctx)?.[0];
     assert.ok(fence, ctx);
-    assert.ok(ctx.indexOf('please look at this one') > ctx.indexOf(fence) && ctx.indexOf('please look at this one') < ctx.lastIndexOf(fence), 'the ask is inside the fence');
-    assert.match(ctx, /"@alice"/);
+    // who and where, inside the fence; not the words of an Oby bob hasn't listed as Answer or Trust
+    assert.ok(ctx.indexOf('"@alice"') > ctx.indexOf(fence) && ctx.indexOf('"@alice"') < ctx.lastIndexOf(fence), 'the ask is inside the fence');
+    assert.ok(!ctx.includes('please look at this one'), ctx);
     assert.ok(r.ms < 3500, `quick: ${r.ms} ms`);
     for (const secret of [token('bob'), SLACK_SECRET, TOPIC]) assert.ok(!r.stdout.includes(secret), 'never a token or an address');
     await replyTo(w, 'alice'); // no one decided: declined after the wait
@@ -513,12 +517,12 @@ describe('notifications', () => {
     assert.equal(failed.body, "Claude Code isn't installed on this machine.");
     const r = await rep(['inbox', '--hook', '--profile', 'bob']);
     const j = JSON.parse(r.stdout);
-    assert.match(j.systemMessage, /^Your Obysphere: your Oby couldn't answer 1 ask today$/);
+    assert.match(j.systemMessage, /^Your Obysphere: your Oby couldn't answer \d+ asks? today$/); // the asks above failed too: alice is one bob answers
     assert.match(j.hookSpecificOutput.additionalContext, /"couldntAnswerToday"/);
   });
 
   test("answers, mentions and direct messages from the streams; the MCP channel tells your own Claude Code session, once", async () => {
-    setBob({ desktop: false });
+    setBob({ desktop: false }, { agents: { alice: 'answer' } }); // her words reach bob's Claude Code: he lists her
     const mcp = mcpClient(['--profile', 'bob']);
     const init = await mcp.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
     assert.deepEqual(init.result.capabilities, { tools: {}, experimental: { 'claude/channel': {} } });
@@ -545,7 +549,8 @@ describe('notifications', () => {
     const pushed = await waitFor(() => mcp.channel().find((x) => x.params.meta.kind === 'answered'), 5000, 'the channel');
     assert.deepEqual(pushed.params.meta, { kind: 'answered', count: '1', from: 'alice', channel: 'general' });
     const fence = /QUOTED-[0-9A-F]{12}/.exec(pushed.params.content)?.[0];
-    assert.ok(fence && pushed.params.content.startsWith('Your Obysphere: an answer to your ask. Your console: http://bob.localhost:'), pushed.params.content);
+    assert.ok(fence && pushed.params.content.startsWith('Your Obysphere: an answer to your ask.\n'), pushed.params.content);
+    assert.doesNotMatch(pushed.params.content, /localhost|http:/, "the console's address isn't Claude's to open");
     const inside = pushed.params.content.split(fence)[2]; // the label names the fence too
     assert.ok(inside.includes('the plan is <b>ship it</b>') && inside.includes('@alice answered your ask'), 'what came from the Sphere is inside the fence');
 
@@ -591,7 +596,7 @@ describe('notifications', () => {
 
     // Claude Code off: the channel stays quiet; `notify test --via claude` while it's on gets through
     const before = mcp.channel().length;
-    setBob({ desktop: false, claude: false });
+    setBob({ desktop: false, claude: false }, { agents: { alice: 'answer' } });
     mark = log2();
     await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: 'again @bob' } });
     await waitFor(() => logLines().slice(mark).some((l) => l.type === 'mention'), 8000, 'the mention');
@@ -599,7 +604,7 @@ describe('notifications', () => {
     assert.equal(mcp.channel().length, before);
     assert.deepEqual(logLines().slice(mark).map((l) => l.way), ['console']);
     assert.equal((await rep(['inbox', '--hook', '--profile', 'bob'])).stdout, '', 'the SessionStart summary is part of the Claude Code way');
-    setBob({ desktop: false });
+    setBob({ desktop: false }, { agents: { alice: 'answer' } });
     await rep(['notify', 'test', '--profile', 'bob', '--via', 'claude']);
     const t = await waitFor(() => mcp.channel().find((x) => x.params.meta.kind === 'test'), 5000, 'the test on the channel');
     assert.match(t.params.content, /^Your Obysphere: a test notification\./);
@@ -673,7 +678,7 @@ describe('notifications', () => {
     const dir = path.join(home, 'vic');
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ sphere: `http://127.0.0.1:${fake.address().port}`, sphereName: 'Fake', token: 'tok-vic-0123456789', agent: me }), { mode: 0o600 });
-    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 2, routing: { default: { runtime: 'claude' } }, access: { default: 'decline' }, machine: { folders: [{ path: work, write: false }] }, notify: { desktop: false } }), { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 2, routing: { default: { runtime: 'claude' } }, access: { default: 'approve' }, machine: { folders: [{ path: work, write: false }] }, notify: { desktop: false } }), { mode: 0o600 });
     const mcp = mcpClient(['--profile', 'vic']);
     try {
       await waitFor(() => streams.size > 0, 8000, "the rep's stream");

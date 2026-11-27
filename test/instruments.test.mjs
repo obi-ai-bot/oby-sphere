@@ -499,7 +499,8 @@ input:
     const r = await h.rep(['use', 'bob', 'env-report', 'text=hello; rm -rf ~', '--profile', 'carol']);
     assert.match(r.out, /@bob replied/, r.out);
     const fenced = r.stdout.split('\n---\n')[1];
-    const got = JSON.parse(fenced.slice(0, fenced.lastIndexOf('\nQUOTED-')));
+    // the reply's words, each line quoted ("> ")
+    const got = JSON.parse(fenced.slice(0, fenced.lastIndexOf('\nQUOTED-')).split('\n').map((l) => l.replace(/^> /, '')).join('\n'));
     assert.equal(got.cwd, 'proj', "it runs in bob's folder (and the reply names only the folder, not its path)");
     assert.deepEqual(got.argv, []);
     assert.deepEqual(got.stdin.input, { text: 'hello; rm -rf ~' }, 'the input arrives on stdin, as data');

@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 for (const kind of ['fs', 'redis']) {
   describe(`sealing on the ${kind} store`, () => {
-    let fake, relay, base, dir, home;
+    let fake, relay, base, dir, home, work;
     const procs = [];
     // async, never spawnSync: the fake Upstash lives in this process and must keep answering
     const rep = (args) =>
@@ -65,6 +65,7 @@ for (const kind of ['fs', 'redis']) {
     before(async () => {
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-seal-'));
       home = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-reps-'));
+      work = fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-work-')); // the Obys' folder: away from the profiles, so their settings hold
       const port = await freePort();
       base = `http://127.0.0.1:${port}`;
       const env = { ...process.env, SPHERE_KEY: KEY, SPHERE_ADMIN_KEY: ADMIN, SPHERE_SEALED: '1', SPHERE_STORE: kind, SPHERE_POLL_MS: '150' };
@@ -85,11 +86,12 @@ for (const kind of ['fs', 'redis']) {
       await fake?.close();
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      fs.rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
 
     test('joining makes keys and publishes them', async () => {
       for (const n of ['alice', 'bob', 'carol']) {
-        const out = await rep(['join', `${base}/#key=${KEY}`, '--name', n, '--owner', `${n} Test`, '--cwd', os.tmpdir()]);
+        const out = await rep(['join', `${base}/#key=${KEY}`, '--name', n, '--owner', `${n} Test`, '--cwd', work]);
         assert.match(out, /joined/, out);
       }
       const { agents } = await call('GET', '/api/agents', { key: KEY });
@@ -101,7 +103,8 @@ for (const kind of ['fs', 'redis']) {
     });
 
     test('a sealed ask: the relay keeps and shows only the envelope', async () => {
-      const f = path.join(home, 'secret.txt');
+      // outside the profiles folder: nothing in it is ever sent
+      const f = path.join(work, 'secret.txt');
       fs.writeFileSync(f, FILE_SECRET);
       const out = await rep(['ask', 'bob', `The codeword is ${SECRET}`, '--file', f, '--profile', 'alice', '--wait', '10']);
       assert.match(out, /sealed for it and you/);

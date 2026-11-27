@@ -2,6 +2,11 @@
 // SessionStart hook. It only looks: at PATH and a few folders. It runs nothing and
 // reads no profile's contents (only whether a profile.json exists).
 //
+// Claude Code starts the plugin in whatever folder is open, and a project is anyone's code: a
+// PATH entry that isn't a full path (node_modules/.bin, .) names a folder inside it, so it's
+// skipped, and a CLI found inside the open folder is used only when it's in an app home (the
+// installer's). Otherwise opening a project would run its own rep.mjs as you, with your token.
+//
 // No dependencies, and nothing newer than Node 18, so on an older Node it can still
 // say "Obysphere needs Node 22".
 
@@ -43,9 +48,9 @@ const named = () => ({
 // the home folder, from the environment given (so a test's HOME is the one used)
 const homeDir = (vars) => (process.platform === 'win32' ? vars.USERPROFILE : vars.HOME) || os.homedir();
 
-// a command on PATH, as the shell would find it
+// a command on PATH, as the shell would find it; only in folders named by their full path
 export function which(name, vars = named()) {
-  const dirs = String(vars.PATH || vars.Path || '').split(path.delimiter).filter(Boolean);
+  const dirs = String(vars.PATH || vars.Path || '').split(path.delimiter).filter((d) => d && path.isAbsolute(d));
   const win = process.platform === 'win32';
   const exts = win ? String(vars.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [''];
   for (const dir of dirs) {
@@ -73,16 +78,32 @@ export function appHomes(vars = named()) {
   return [...new Set(homes)];
 }
 
+const inside = (file, dir) => {
+  const r = path.relative(dir, file);
+  return r === '' || (r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r));
+};
+
+// A file the plugin may run: in an app home, or outside the folder Claude Code has open (cwd).
+// The open folder is anyone's project, unless it's your home folder or one above it.
+export function trustedPlace(file, vars = named(), cwd = process.cwd()) {
+  const real = realpath(file);
+  if (appHomes(vars).some((h) => inside(real, realpath(h)))) return true;
+  const open = realpath(cwd);
+  if (inside(realpath(homeDir(vars)), open)) return true;
+  return !inside(real, open) && !inside(file, open);
+}
+
 // The installed CLI:
 //   { rep, bin }  its rep.mjs is known: run it with this Node
 //   { rep: null, bin }  only the `obysphere` command is known: run that
 //   null  not installed
-export function findCli(vars = named()) {
-  const bin = which('obysphere', vars);
+export function findCli(vars = named(), cwd = process.cwd()) {
+  const found = which('obysphere', vars);
+  const bin = found && trustedPlace(found, vars, cwd) ? found : null;
   if (bin) {
     // a symlink into an install, or an npm bin: rep.mjs sits beside the real file
     const beside = path.join(path.dirname(realpath(bin)), 'rep.mjs');
-    if (isFile(beside)) return { rep: beside, bin };
+    if (isFile(beside) && trustedPlace(beside, vars, cwd)) return { rep: beside, bin };
   }
   for (const home of appHomes(vars)) {
     const rep = path.join(home, 'current', 'rep.mjs');
@@ -91,7 +112,7 @@ export function findCli(vars = named()) {
   if (bin) {
     // a shim in <prefix>/bin for an install in <prefix>/share/obysphere
     const shared = path.resolve(path.dirname(bin), '..', 'share', 'obysphere', 'current', 'rep.mjs');
-    if (isFile(shared)) return { rep: shared, bin };
+    if (isFile(shared) && trustedPlace(shared, vars, cwd)) return { rep: shared, bin };
     return { rep: null, bin };
   }
   return null;
@@ -117,8 +138,16 @@ export function profiles(vars = named()) {
 // has this computer joined a Sphere?
 export const hasProfile = (vars = named()) => profiles(vars).length > 0;
 
-// a profile name as rep.mjs reads it (its slug())
-const slug = (s) => String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+// a profile name as rep.mjs reads it (its slug()): cut before any regex, the dashes trimmed by hand
+// (/^-+|-+$/ takes quadratic time on a long run of dashes)
+const slug = (s) => {
+  const t = String(s || '').slice(0, 256).toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-');
+  let a = 0;
+  let b = t.length;
+  while (a < b && t[a] === '-') a++;
+  while (b > a && t[b - 1] === '-') b--;
+  return t.slice(a, b).slice(0, 32);
+};
 
 // the profile named by --profile (or --profile=) in these arguments, else by OBYSPHERE_PROFILE;
 // undefined when neither names one

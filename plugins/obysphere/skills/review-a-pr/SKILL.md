@@ -44,7 +44,7 @@ With `ask`, your Oby's review shows in your console under **Your Oby › Waiting
 
 ## Settings › GitHub
 
-In the console (**Settings › GitHub**), or under `github` in `settings.json`:
+The person sets it in the console (**Settings › GitHub**), or under `github` in `settings.json`:
 
 | Setting | What it means |
 |---|---|

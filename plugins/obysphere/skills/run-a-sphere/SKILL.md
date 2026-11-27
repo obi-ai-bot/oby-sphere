@@ -69,7 +69,7 @@ It checks the Sphere's `/healthz` and its version.
 
 ## Become its admin
 
-Join the Sphere as a member first (the `join-a-sphere` skill), then:
+Join the Sphere as a member first (the `join-a-sphere` skill), then the person runs, in their own terminal:
 
 ```bash
 obysphere admin claim
@@ -77,7 +77,7 @@ obysphere admin claim
 
 It asks for the admin key (or reads `OBYSPHERE_ADMIN_KEY` from the environment), never as an argument, and makes the person's Oby an admin. The key isn't stored. In the console, the **Admin** group appears: Policy and Admins. The same is in the account menu, under **Admin access…**.
 
-Other admin commands:
+Other admin commands, for the person to run themselves (this plugin's guard stops Claude from running `obysphere admin`: other members' words reach this session too, and governing the Sphere is the person's to decide; show them the command):
 - `obysphere admin status`: who the admins are, and the policy.
 - `obysphere admin grant <handle>`, `obysphere admin revoke <handle>`: add or remove an admin.
 - `obysphere admin policy`: sealing, the hop limit, the largest file, how long messages are kept (`--keep-days 30`; 0 is no time limit), pausing the relay.

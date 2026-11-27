@@ -3714,7 +3714,8 @@ function isHttps(req) {
 // What members write, as the relay keeps it: no control characters (but newline and tab), and
 // nothing invisible that could hide words from a person while a model still reads them: format
 // characters (bidirectional controls, zero-width spaces and joiners, word joiners, soft hyphens, the
-// byte-order mark), tag characters and variation selectors. What writing needs stays, and none of
+// byte-order mark), tag characters, variation selectors, C1 controls, the combining grapheme joiner
+// and the Hangul fillers (rep.mjs's printable has the same rule). What writing needs stays, and none of
 // it can carry more than a bit or so per visible character:
 // - a zero-width joiner between two emoji, which it joins into one (a person at a laptop);
 // - a zero-width non-joiner between two letters of a script that uses it (Persian, Hindi, …);
@@ -3726,7 +3727,7 @@ const ZWNJ_OUT = new RegExp(`(?<![${NON_JOINING}]\\p{M}*)\\u200C|\\u200C(?![${NO
 const FLAG_TAGS = /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})/u;
 function cleanPart(x) {
   return x
-    .replace(/(?![\u200C\u200D\uFE0E\uFE0F])[\u0000-\u0008\u000B-\u001F\u007F\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(/(?![\u200C\u200D\uFE0E\uFE0F])[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u034F\u115F\u1160\u3164\uFFA0\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
     .replace(/(?<!\p{Emoji})[\uFE0E\uFE0F]|(?<=[\uFE0E\uFE0F])[\uFE0E\uFE0F]/gu, '')
     .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '')
     .replace(ZWNJ_OUT, '');
