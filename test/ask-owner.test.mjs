@@ -149,8 +149,15 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     procs.push(c.proc);
     return c;
   };
+  // today's count of alice's asks handed to bob (in the profile's usage file): cleared, so each test hands from 0
+  const usageFile = () => {
+    const d = new Date();
+    return path.join(bobDir(), 'usage', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`);
+  };
+  const clearCount = () => fs.rmSync(usageFile(), { force: true });
   // an ask whose run hands it to bob
-  const handed = async (text) => {
+  const handed = async (text, { fresh = true } = {}) => {
+    if (fresh) clearCount();
     const m = await ask(text);
     const run = await runFor(text);
     const s = session(run);
@@ -224,7 +231,7 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     const n = await waitFor(() => notes().find((x) => x.type === 'waiting' && x.title === "Your Oby needs you for @alice's ask"), 8000, 'the notification');
     assert.equal(n.body, NOTE);
     assert.match(n.link, /#page=you$/, 'a click opens Waiting for you');
-    assert.match(bobOut, /→ handed to you: Wants the pull requests waiting on their review/);
+    assert.match(bobOut, /→ handed to you: its note is in your console's Waiting for you/, 'its words stay out of the log');
     // Claude Code's start of the day hears it too
     const hook = JSON.parse((await rep(['inbox', '--hook', '--profile', 'bob'])).out || '{}');
     assert.match(JSON.stringify(hook), /1 ask waits for you/);
@@ -285,8 +292,27 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     await startBob();
   });
 
-  test('at most 3 of one asker’s asks a day', async () => {
-    // three of alice's asks already handed to bob today (their notes, as the tool leaves them)
+  test('at most 3 of one asker’s asks a day, counted when handed: ending them gives none back', async () => {
+    clearCount();
+    // three of alice's asks handed to bob, and ended (each note goes when its ask ends)
+    for (const text of ['First: the open incidents?', 'Second: the release date?', 'Third: the on-call rota?']) {
+      const { m, w } = await handed(text, { fresh: false });
+      await local('POST', `/local/pending/${w.id}`, { decision: 'decline' });
+      await replyTo(m.id);
+      await waitFor(() => !fs.existsSync(path.join(bobDir(), 'handoff', `${m.id}.json`)), 8000, 'the note gone');
+    }
+    const m = await ask('A fourth: the staging URL?');
+    const run = await runFor('A fourth: the staging URL?');
+    const s = session(run);
+    assert.equal(await s.call('sphere_ask_owner', { note: NOTE }), "Bob Test was already handed 3 of this asker's asks today. Answer with what you have, and say plainly what's missing.");
+    s.close();
+    assert.equal((await replyTo(m.id)).meta.answeredBy, 'agent', 'answered as usual');
+    assert.equal(JSON.parse(fs.readFileSync(usageFile(), 'utf8')).handoffsByAsker[ids.alice], 3, 'counted in the day, in the usage file');
+    clearCount();
+  });
+
+  test('at most 3 of one asker’s asks at once, too', async () => {
+    // three of alice's asks already handed to bob and still open (their notes, as the tool leaves them)
     const dir = path.join(bobDir(), 'handoff');
     fs.mkdirSync(dir, { recursive: true });
     for (const id of ['m_other1', 'm_other2', 'm_other3']) fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ askId: id, asker: ids.alice, note: 'earlier', need: 'access', at: new Date().toISOString() }));

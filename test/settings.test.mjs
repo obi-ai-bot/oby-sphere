@@ -89,7 +89,8 @@ describe("your Oby's settings", () => {
         ...(over.rules || []),
       ],
     },
-    access: { default: 'answer', agents: { [GHOST]: 'decline', carol: 'trust', dave: 'trust' }, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, declineTopics: [TOPIC_ONLY], asksPerAgentPerDay: 0, answersPerDay: 0, rules: RULES, ...over.access },
+    // hops: answer (a hop is taken as the Oby passing it on gets); without it, hops wait for you (test/answering-guards.test.mjs)
+    access: { default: 'answer', agents: { [GHOST]: 'decline', carol: 'trust', dave: 'trust' }, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, hops: 'answer', declineTopics: [TOPIC_ONLY], asksPerAgentPerDay: 0, answersPerDay: 0, rules: RULES, ...over.access },
     machine: { folders: [{ path: payments, write: false }, { path: web, write: true }], shell: 'full', web: { fetch: true, search: false }, browser: 'off', mcp: ['linear'], ...over.machine },
   });
   // an ask to bob over the relay's API; files are uploaded first
@@ -918,8 +919,9 @@ describe("your Oby's settings", () => {
   test('access: declined by Oby, topic, files and hops, before any model', async () => {
     writeSettings(full({ access: { agents: { carol: 'decline' }, declineTopics: ['salary', 'hiring plan'] } }));
     await declined('carol', 'hello', /it doesn't take asks from you\.$/);
-    await declined('alice', "What's the SALARY band?", /on this topic/);
-    await declined('alice', 'any news on the hiring   plan?', /on this topic/);
+    // a topic reads as any other setting: the asker can't tell which word was the reason (and it's counted)
+    await declined('alice', "What's the SALARY band?", /its owner's settings don't allow this\.$/);
+    await declined('alice', 'any news on the hiring   plan?', /its owner's settings don't allow this\.$/);
     await answered('alice', 'is there a nonsalary option?'); // inside another word: not the topic
     writeSettings(full({ access: { acceptFiles: false, acceptHops: false } }));
     await declined('alice', 'see attached', /with files/, { files: [{ name: 'a.txt', data: 'x' }] });
@@ -1151,7 +1153,7 @@ describe('a decline on a sealed Sphere', () => {
     await sleep(1500);
     const out = await rep(['ask', 'bob', 'What were the quarterly numbers?', '--profile', 'alice', '--wait', '20']);
     assert.match(out, /"declined": true/, out);
-    assert.match(out, /bob Sealed's Oby isn't taking this ask: it doesn't take asks on this topic\./);
+    assert.match(out, /bob Sealed's Oby isn't taking this ask: its owner's settings don't allow this\./);
     assert.match(out, /"sealed": true/);
     let all = '';
     for (const n of fs.readdirSync(data)) if (fs.statSync(path.join(data, n)).isFile()) all += fs.readFileSync(path.join(data, n), 'latin1');

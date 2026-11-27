@@ -68,7 +68,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
   const settings = (github = {}, over = {}) => ({
     version: 2,
     routing: { default: { runtime: 'claude', model: 'sonnet' } },
-    access: { default: 'answer', agents: { carol: 'trust' }, ...over.access },
+    access: { default: 'answer', agents: { carol: 'trust' }, hops: 'answer', ...over.access },
     machine: { folders: [{ path: payments, write: true }, { path: tools, write: false }], shell: 'full', web: { fetch: false, search: false }, ...over.machine },
     github: { enabled: true, repos: ['acme-labs/*'], ...github },
   });
@@ -355,23 +355,25 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     assert.ok((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'x'.repeat(20001) })).isError, 'at most 20,000 characters');
     s.close();
 
-    // trusted, for carol (trusted, asking for herself): at once, signed as her Oby's
+    // trusted, for carol (trusted, asking for herself): at once, signed as her Oby's, on the commit read
     writeSettings(settings({ approve: 'trusted' }));
     ({ run } = await ask('carol', 'approve acme/payments#7 please'));
     s = session(run);
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
     r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'approve', body: 'LGTM' });
     assert.equal(r.text, 'Done: approved acme/payments#7 on GitHub, as Bob Test, signed as written by their Oby.');
-    assert.deepEqual(gh.writes().at(-1).argv, ['pr', 'review', '7', '--repo=acme/payments', '--approve', `--body=LGTM\n\n${SIGNED}`]);
+    const v = reviewVars(gh.writes().at(-1).argv);
+    assert.deepEqual([v.pr, v.event, v.commit, v.body], ['PR_kwFAKE7', 'APPROVE', HEAD, `LGTM\n\n${SIGNED}`]);
     // no words: the signature alone; signature off: nothing
     await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE' });
-    assert.deepEqual(gh.writes().at(-1).argv.slice(4), ['--approve', `--body=${SIGNED}`]);
+    assert.equal(reviewVars(gh.writes().at(-1).argv).body, SIGNED);
     writeSettings(settings({ approve: 'trusted', signature: false }));
     await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE' });
-    assert.deepEqual(gh.writes().at(-1).argv.slice(4), ['--approve']);
+    assert.ok(!('body' in reviewVars(gh.writes().at(-1).argv)), 'no body at all');
     // GitHub refusing it: said, nothing claimed
     gh.control({ failWrites: true });
     r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' });
-    assert.match(r.text, /^GitHub didn't take it: gh said "GraphQL: Resource not accessible/);
+    assert.match(r.text, /^GitHub didn't take it: gh said "gh: Resource not accessible/);
     gh.control({});
     // a closed pull request: nothing to do
     gh.control({ state: 'MERGED' });
@@ -384,6 +386,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     let m;
     ({ m, run } = await ask('alice', 'approve acme/payments#7 please'));
     s = session(run);
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
     const w1 = gh.writes().length;
     r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'Looks right to me.' });
     assert.match(r.text, /^This waits for Bob Test: it's in their Waiting for you now/);
@@ -400,6 +403,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     writeSettings(settings());
     let { m, run } = await ask('alice', 'Could you approve acme/payments#7 if it looks right?');
     let s = session(run);
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
     let r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'Looks right to me: the fix matches the issue.' });
     assert.match(r.text, /waits for Bob Test/);
     let w = await waitingItem(m.id);
@@ -415,11 +419,12 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     // the decisions it takes
     assert.equal((await local('POST', `/local/pending/${w.id}`, { decision: 'answer' })).status, 400);
     assert.equal((await local('POST', `/local/pending/${w.id}`, { decision: 'nope' })).status, 400);
-    // approve on GitHub: gh pr review --approve, signed as approved by you
+    // approve on GitHub: the review on the commit read, signed as approved by you
     assert.deepEqual(await local('POST', `/local/pending/${w.id}`, { decision: 'act' }), { status: 200, ok: true });
     const reply = await threadSays(m, /^Bob Test approved acme\/payments#7 on GitHub\.$/);
     assert.equal(reply.meta.answeredBy, 'owner');
-    assert.deepEqual(gh.writes().at(-1).argv, ['pr', 'review', '7', '--repo=acme/payments', '--approve', `--body=Looks right to me: the fix matches the issue.\n\n${APPROVED}`]);
+    const v = reviewVars(gh.writes().at(-1).argv);
+    assert.deepEqual([v.pr, v.event, v.commit, v.body], ['PR_kwFAKE7', 'APPROVE', HEAD, `Looks right to me: the fix matches the issue.\n\n${APPROVED}`]);
     assert.equal((await local('POST', `/local/pending/${w.id}`, { decision: 'act' })).status, 404, 'decided once');
     assert.deepEqual((await local('GET', '/local/pending')).pending.filter((x) => x.kind === 'github'), []);
 
@@ -427,6 +432,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     ({ m, run } = await ask('alice', 'and #8?'));
     s.close();
     s = session(run);
+    await s.call('github_pr', { repo: 'acme/payments', number: 8 });
     await s.call('github_review', { repo: 'acme/payments', number: 8, event: 'REQUEST_CHANGES', body: 'The test misses the empty case.' });
     w = await waitingItem(m.id);
     assert.deepEqual([w.github.button, w.options], ['Request changes on GitHub', ['act', 'comment', 'decline']]);
@@ -438,6 +444,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     ({ m, run } = await ask('alice', 'and #9?'));
     s.close();
     s = session(run);
+    await s.call('github_pr', { repo: 'acme/payments', number: 9 });
     await s.call('github_review', { repo: 'acme/payments', number: 9, event: 'APPROVE' });
     w = await waitingItem(m.id);
     assert.deepEqual(w.options, ['act', 'decline'], 'no words to post as a comment');
@@ -500,6 +507,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     ({ m, run } = await ask('carol', 'merge acme/payments#7'));
     s = session(run);
     assert.ok((await s.tools()).includes('github_merge'));
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
     assert.ok((await s.call('github_merge', { repo: 'acme/payments', number: 7, method: 'octopus' })).isError);
     const before = gh.writes().length;
     assert.match((await s.call('github_merge', { repo: 'acme/payments', number: 7, method: 'squash' })).text, /waits for Bob Test/, 'even for an Oby you trust');
@@ -539,6 +547,67 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     assert.equal(r.text, "Couldn't tell which commit acme/payments#7 is at, so nothing was posted.");
     assert.equal(gh.writes().length, before + 1);
     gh.control({});
+    s.close();
+  });
+
+  // a review's variables, as the GraphQL mutation gets them (one --raw-field=name=value each)
+  const reviewVars = (argv) => Object.fromEntries(argv.slice(2).map((x) => /^--raw-field=([^=]+)=([\s\S]*)$/.exec(x)).filter(Boolean).map((m) => [m[1], m[2]]));
+
+  test("an approval or a merge needs github_pr's read in this ask: none, or another ask's, posts nothing; the read lasts for the ask, and the review names the commit read", async () => {
+    writeSettings(settings({ approve: 'trusted', merge: 'ask' }));
+    const { m, run } = await ask('carol', 'approve acme/payments#7 if it looks right');
+    let s = session(run);
+    const before = gh.writes().length;
+    // never read in this ask: nothing is approved, merged or put in Waiting for you
+    let r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' });
+    assert.equal(r.text, "You haven't read acme/payments#7 in this ask: read it with github_pr first (an approval covers only the commit you read). Nothing was posted.");
+    r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'REQUEST_CHANGES', body: 'Not yet.' });
+    assert.match(r.text, /^You haven't read acme\/payments#7 in this ask/);
+    r = await s.call('github_merge', { repo: 'acme/payments', number: 7 });
+    assert.match(r.text, /^You haven't read acme\/payments#7 in this ask: read it with github_pr first \(a merge covers only the commit you read\)/);
+    assert.equal(gh.writes().length, before);
+    await sleep(1500);
+    assert.deepEqual((await local('GET', '/local/pending')).pending.filter((x) => x.kind === 'github'), [], 'nothing waits for you');
+    // read, in one process of the session; the approval, in another (as after a restart): the read holds for the ask
+    assert.match((await s.call('github_pr', { repo: 'acme/payments', number: 7 })).text, /"headCommit": "abc1234def5678"/);
+    s.close();
+    const kept = path.join(home, 'bob', 'github-read', `${m.id}.json`);
+    assert.equal(fs.statSync(kept).mode & 0o777, 0o600, 'kept for the ask, 0600');
+    s = session(run);
+    r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' });
+    assert.equal(r.text, 'Done: approved acme/payments#7 on GitHub, as Bob Test, signed as written by their Oby.');
+    // the review is GraphQL's addPullRequestReview, on the commit read: never gh pr review, which takes whatever the head is then
+    const w = gh.writes().at(-1).argv;
+    assert.deepEqual(w.slice(0, 2), ['api', 'graphql']);
+    const v = reviewVars(w);
+    assert.match(v.query, /addPullRequestReview\(input: \{ pullRequestId: \$pr, event: \$event, commitOID: \$commit, body: \$body \}\)/);
+    assert.deepEqual([v.pr, v.event, v.commit, v.body], ['PR_kwFAKE7', 'APPROVE', HEAD, `LGTM\n\n${SIGNED}`]);
+    s.close();
+    // another ask (a conversation resumed, say): its own read is needed
+    const next = await ask('carol', 'and approve it once more?');
+    s = session(next.run);
+    r = await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE' });
+    assert.match(r.text, /^You haven't read acme\/payments#7 in this ask/);
+    // a comment, or a review that only comments, needs no read
+    writeSettings(settings({ approve: 'trusted', comment: 'trusted' }));
+    assert.match((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'Seen.' })).text, /^Done: commented on/);
+    assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'COMMENT', body: 'A note.' })).text, /^Done: posted a review on/);
+    assert.equal(reviewVars(gh.writes().at(-1).argv).commit, HEAD, 'on the commit it is at now');
+    s.close();
+  });
+
+  test('a GitHub item from a hop says so in Waiting for you', async () => {
+    writeSettings(settings());
+    const toCarol = (await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: 'carol, ask bob to approve #7', to: [ids.carol] } })).message;
+    const before = fake.calls().length;
+    const hop = (await call('POST', '/api/messages', { tok: token('carol'), body: { channel: 'general', text: 'approve acme/payments#7?', to: [ids.bob], cause: toCarol.id } })).message;
+    await until(() => fake.calls().length > before, 'the hop is answered');
+    const s = session(fake.calls().at(-1));
+    await s.call('github_pr', { repo: 'acme/payments', number: 7 });
+    assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'Fine.' })).text, /waits for Bob Test/);
+    const w = await waitingItem(hop.id);
+    assert.deepEqual([w.from.name, w.depth], ['carol', 1]);
+    await local('POST', `/local/pending/${w.id}`, { decision: 'decline' });
     s.close();
   });
 
@@ -589,6 +658,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
       const run = fake.calls().findLast((c) => c.mcp?.mcpServers?.obysphere?.args?.includes('erin'));
       assert.equal(run.mcp.mcpServers.obysphere.env.SPHERE_GITHUB_ASKER, ids.carol);
       const s = session(run);
+      await s.call('github_pr', { repo: 'acme/payments', number: 7 });
       assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'Fine by me.' })).text, /waits for Erin Test/);
       const dir = path.join(home, 'erin', 'pending');
       const w = await until(() => (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((n) => /^w_[0-9a-f]{12}\.json$/.test(n)).map((n) => JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'))).find((x) => x.kind === 'github'), `erin's GitHub item\n${erinOut.slice(-2000)}`);
@@ -603,5 +673,26 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
       proxy.close();
       proxy.closeAllConnections?.();
     }
+  });
+
+  test('at most 20 GitHub items wait for you per asker: one asker filling them leaves room for the others', async () => {
+    writeSettings(settings());
+    // twenty of alice's already wait (as her asks' sessions would have queued them for this serve)
+    const dir = path.join(home, 'bob', 'github');
+    fs.mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < 20; i++) {
+      const rid = `g_${String(i).padStart(12, '0')}`;
+      fs.writeFileSync(path.join(dir, `${rid}.json`), JSON.stringify({ rid, action: 'comment', repo: 'acme/payments', number: 100 + i, event: null, method: null, body: `note ${i}`, repPid: serve.pid, asker: ids.alice, askId: null, channel: 'general', sealed: false, createdAt: new Date().toISOString() }), { mode: 0o600 });
+    }
+    await until(async () => (await local('GET', '/local/pending')).pending.filter((x) => x.kind === 'github').length === 20, 'twenty items wait');
+    let { run } = await ask('alice', 'comment on #7 too');
+    let s = session(run);
+    assert.equal((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'One more.' })).text, "20 of this asker's GitHub actions already wait for Bob Test: nothing more is added for it until they decide those. Nothing was posted.");
+    s.close();
+    ({ run } = await ask('carol', 'comment on #7 please'));
+    s = session(run);
+    assert.match((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'From carol.' })).text, /^This waits for Bob Test/, "carol's still goes in");
+    s.close();
+    for (const w of (await local('GET', '/local/pending')).pending.filter((x) => x.kind === 'github')) await local('POST', `/local/pending/${w.id}`, { decision: 'decline' });
   });
 });

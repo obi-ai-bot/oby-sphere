@@ -234,7 +234,7 @@ describe("an answer to a hop sees what anyone may, not what the Oby that passed 
         JSON.stringify({
           version: 2,
           routing: { default: { runtime: 'claude', model: null, effort: null, timeLimitMin: 10 }, rules: [] },
-          access: { default: 'answer', agents: {}, consultOthers: true, acceptHops: true },
+          access: { default: 'answer', agents: {}, consultOthers: true, acceptHops: true, hops: 'answer' },
           machine: { folders: [{ path: work, write: false }], shell: 'off', web: { fetch: false, search: false }, browser: 'off', mcp: [] },
         }),
         { mode: 0o600 },

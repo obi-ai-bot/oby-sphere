@@ -73,6 +73,8 @@ const SECRET_FILES = [
   '.yarnrc.yml', '_netrc', '.gitcookies', '.dockercfg', '.config/gh/', '.composer/auth.json', '.config/composer/auth.json', '.m2/settings*.xml', '.gradle/gradle.properties',
   // the answering runtimes' own sign-ins (Claude Code's is *credential*.json)
   '.codex/auth.json',
+  // a deployed Sphere's keys (obysphere server deploy: ~/.local/share/obysphere/servers/<project>.keys)
+  '*.keys', '.local/share/obysphere/servers/',
   // clouds and clusters
   '.azure/', '.config/gcloud/', '.boto', '.s3cfg', '*accessKeys.csv', 'rootkey.csv',
   '*service-account*.json', '*service_account*.json', '*serviceAccount*.json',
@@ -89,6 +91,7 @@ const SECRET_HOME = [
   '.azure', '.config/gcloud', '.password-store', '.boto', '.s3cfg', '.dockercfg', '.gitcookies', '.yarnrc.yml', '.vault-token', '.terraformrc',
   '.terraform.d/credentials.tfrc.json', '.cargo/credentials', '.cargo/credentials.toml', '.gem/credentials', '.composer/auth.json', '.config/composer/auth.json',
   '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf', '.codex/auth.json',
+  '.local/share/obysphere/servers',
 ];
 // the three forms of a list of such names (also of your own, machine.neverRead: the never-read section)
 function denyListForms(names) {
@@ -117,6 +120,9 @@ const SECRETISH = SECRET_LISTS.regex; // the deny-list table above
 const EDIT_DENY = [
   'Edit(**/.env*)', 'Edit(**/*.pem)', 'Edit(**/*.key)', 'Edit(**/.ssh/**)', 'Edit(**/.git/**)', 'Edit(**/.claude/**)', 'Edit(**/.mcp.json)', 'Edit(**/.cursor/**)',
   'Edit(**/.vscode/**)', 'Edit(**/.idea/**)', 'Edit(**/.husky/**)', 'Edit(**/.npmrc)', 'Edit(**/.obysphere*/**)',
+  // the instructions each runtime loads from a folder (Claude Code's CLAUDE.md, Codex's AGENTS.md, Cursor's
+  // rules), CI workflows, and git's attributes (filters, diff drivers): written once, they steer every run after
+  'Edit(**/CLAUDE.md)', 'Edit(**/CLAUDE.local.md)', 'Edit(**/AGENTS.md)', 'Edit(**/AGENTS.override.md)', 'Edit(**/.cursorrules)', 'Edit(**/.github/**)', 'Edit(**/.gitattributes)',
 ];
 // the same secrets for the shell's sandbox (shell: read), where they hold for every command, `grep -r` included
 const SECRET_GLOBS = SECRET_LISTS.globs; // the deny-list table above
@@ -229,6 +235,9 @@ const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['mi
 const EFFORT_LABEL = { minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
 const ACCESS = ['decline', 'approve', 'answer', 'trust'];
 const ACCESS_DEFAULT = 'approve'; // Obys you haven't listed: Ask me first, unless the file says otherwise
+// asks passed on from another ask (hops): never trust; Ask me first, unless the file says otherwise
+const HOPS = ['decline', 'approve', 'answer'];
+const HOPS_DEFAULT = 'approve';
 const TIME_LIMIT_DEFAULT = 10; // minutes, when a route sets none
 const TIME_LIMIT_MAX = 120;
 const ABOUT_MAX = 500; // characters in what a rule is about
@@ -258,7 +267,33 @@ const STOPPED = '(I stopped here: this answer reached the time limit my owner se
 const CLAUDE_TOO_OLD = "this Claude Code is too old to answer safely (it can't keep settings files and their hooks out): update it with claude update";
 const READ_ONLY_COMMANDS = ['ls', 'cat', 'head', 'tail', 'wc', 'rg', 'grep', 'find', 'git log', 'git show', 'git diff', 'git status', 'git blame'];
 // flags that would make those commands run a program, write a file or read outside the folders
-const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)'];
+const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)', ...gitDiffPathDeny()];
+// git diff with two paths, one outside its repository (or outside any repository), compares them as two
+// files, wherever they are: --no-index without the flag. So it never names a path that can leave the
+// folders: an absolute one (quoted too), one in a home folder (~), a variable or a command's output ($,
+// backquotes), braces that expand to paths ({a,b}: GIT_DIFF_BRACES), or .. as a folder. Revisions (HEAD~1, main..feature,
+// @{1}) and paths inside the folders stay. A deny list of the usual forms, as for git push.
+function gitDiffPathDeny() {
+  const lead = ['/', "'/", '"/', '~', "'~", '"~', '..', "'..", '"..'];
+  return [
+    ...lead.flatMap((x) => [`Bash(git diff ${x}*)`, `Bash(git diff * ${x}*)`]),
+    'Bash(git diff *../*)', 'Bash(git diff */..)', 'Bash(git diff */.. *)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)',
+    'Bash(git diff *$*)', 'Bash(git diff *`*)',
+  ];
+}
+// braces that expand to paths ({/etc/hosts,x}) hold a comma, which --disallowedTools would split: in the
+// settings file only, beside the allow rules it guards (they're never on the command line either)
+const GIT_DIFF_BRACES = 'Bash(git diff *{*,*}*)';
+// places in your home folder the read-only shell's sandbox never reads, besides the secrets: what holds
+// other conversations and your own words (Claude Code's transcripts and prompt history, Codex's and
+// Cursor's sessions, shell histories), a deployed Sphere's keys, and macOS's Library (mail, messages,
+// browsers' data). Not one that holds one of your folders. Never ~/.config whole: git reads its config there.
+const SANDBOX_HOME_DENY = [
+  '.claude/projects', '.claude/history.jsonl', '.claude/todos', '.claude/file-history', '.claude/session-env', '.claude/plans', '.claude/debug',
+  '.codex', '.cursor', '.local/share/obysphere', '.local/share/fish',
+  '.zsh_history', '.zhistory', '.zsh_sessions', '.bash_history', '.bash_sessions', '.histfile', '.sh_history', '.python_history', '.node_repl_history', '.psql_history', '.mysql_history', '.sqlite_history', '.irb_history', '.rediscli_history', '.lesshst', '.viminfo',
+  'Library',
+];
 // folders an Oby may never be given (under your home folder), besides home itself and its Obysphere profiles
 const PRIVATE_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.claude', '.cursor', '.local', '.npm'];
 const APPROVE_WAIT_MS = Math.max(1, Number(process.env.OBYSPHERE_APPROVE_WAIT_SEC) || 3600) * 1000;
@@ -269,7 +304,7 @@ const REP_INSTANCE = randomBytes(6).toString('hex');
 // why a declined ask was declined: the asker sees these words, nothing more
 const DECLINE = {
   access: "it doesn't take asks from you",
-  topic: "it doesn't take asks on this topic",
+  topic: "its owner's settings don't allow this", // the same words as other settings: a topic isn't told apart
   files: "it doesn't take asks with files",
   hops: "it doesn't take asks passed on from another ask",
   limit: 'it has reached its limit for today',
@@ -297,6 +332,11 @@ const tty = process.stderr.isTTY;
 const c = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const dim = c(2), bold = c(1), green = c(32), cyan = c(36), yellow = c(33), red = c(31), magenta = c(35);
 const log = (...a) => process.stderr.write(a.join(' ') + '\n'); // stdout belongs to MCP in `mcp`
+// the words of asks and answers, in this process's log: in a terminal, or with OBYSPHERE_LOG_WORDS=1. Not
+// by default in a file, such as the background service's logs/console.log, which stays on disk: there,
+// who, ids and sizes only
+const LOG_WORDS = tty || truthyEnv(process.env.OBYSPHERE_LOG_WORDS);
+const logWords = (text, max = Infinity) => (LOG_WORDS ? indent(printable(String(text).length > max ? String(text).slice(0, max) + ' …' : text), dim('  │ ')) : dim(`  │ (${String(text).length} characters; OBYSPHERE_LOG_WORDS=1 shows the words)`));
 const out = (s) => console.log(printable(s)); // what the relay said, never as terminal escapes
 
 // ================================================================ commands
@@ -1086,8 +1126,10 @@ async function localApi(req, res, url, p) {
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
       // stuck: your Oby tried, and handed it to you (sphere_ask_owner): its note, and what it needs
       const stuckOf = (x) => (isMap(x) && typeof x.note === 'string' ? { note: cleanLine(x.note, 400), need: HANDOFF_NEEDS.includes(x.need) ? x.need : 'access' } : null);
-      // unsure: who asks didn't check against the Oby first seen under that handle: no everything-you-allow, no always
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, unsure }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
+      // depth: passed on by from for someone else (a hop), who can't be named; unsure: who asks didn't check
+      // against the Oby first seen under that handle. Either way: neither everything you allow nor always answer
+      const hopOf = (d) => (Number.isInteger(d) && d > 0 ? d : 0);
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth, unsure }) => ({ id, askId, from, channel, ts, text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
       // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
@@ -1106,15 +1148,15 @@ async function localApi(req, res, url, p) {
       const who = from ? `Asks from ${from}` : 'Asks from anyone not listed';
       // the same checks as a real ask, in the same order (the day's limits read, not counted)
       const g = gate(s, { from, text: b.text, files: b.hasFiles ? 1 : 0, depth: b.hop ? 1 : 0 });
-      const over = g.decline ? null : limitReached(readUsage(p), s, from);
-      const declined = g.decline || (over ? 'limit' : null);
+      const over = g.decline && g.decline !== 'topic' ? null : limitReached(readUsage(p), s, from); // a topic is checked after the limits
+      const declined = (g.decline !== 'topic' && g.decline) || (over ? 'limit' : null) || g.decline || null;
       if (declined) {
         const limitWords = { agent: `${from || 'This Oby'} has used up its asks for today (your limit per Oby).`, day: 'Your Oby has given all its answers for today (your limit for all Obys together).' }[over];
         const why = { access: `${who} are declined.`, topic: 'Asks on this topic are declined.', files: 'Asks with files are declined.', hops: 'Asks passed on from another ask are declined.', limit: limitWords }[declined];
         return sendJson(res, 200, { rule: null, name: null, use: null, how: null, fellBack: null, note: `${why} No rule is tried, and no runtime runs.`, answerable: false, declined });
       }
       const r = await chooseRoute(p, s, { text: b.text, from, hasFiles: !!b.hasFiles, hop: !!b.hop, channel: slug(b.channel || 'general') || 'general' }, { trusted: !!g.trusted });
-      const pre = g.approve ? `${who} wait for you first. ` : g.untrusted === 'hop' ? `Passed on from another ask, so it's answered as any Oby's ask (no risky reach). ` : '';
+      const pre = g.approve ? (b.hop ? `${from ? `Asks ${from} passes on` : 'Asks passed on'} from another ask wait for you first. ` : `${who} wait for you first. `) : g.untrusted === 'hop' ? `Passed on from another ask, so it's answered as any Oby's ask (no risky reach). ` : '';
       return sendJson(res, 200, { rule: r.rule, name: r.name, use: r.use, how: r.how, fellBack: r.fellBack, note: pre + r.note, answerable: !r.decline && !r.unusable, declined: r.decline || null });
     }
     const pm = route.match(/^\/local\/pending\/(w_[0-9a-f]{12})$/);
@@ -2034,8 +2076,30 @@ function auditReport(res, relay) {
 // notifications even if your settings turn them off), deferMs (the answerer inside a Claude
 // Code session waits, so a terminal `serve` takes the ask when one runs), overrides ({ model,
 // cwd } for this run only), terminal (this process may ask you in its terminal: a TTY `serve`).
+// the background service (obysphere start) writes this process's output to <profile>/logs/console.log,
+// a file launchd or systemd opened once, for as long as it runs: past LOG_MAX_BYTES it's copied to
+// console.log.1 (the one before goes) and emptied where it is, so it never grows without end
+const LOG_MAX_BYTES = Math.max(1024, Number(process.env.OBYSPHERE_LOG_MAX_BYTES) || 5 * 1024 * 1024);
+const LOG_CHECK_MS = Math.max(50, Number(process.env.OBYSPHERE_LOG_CHECK_MS) || 60e3);
+function keepLogSmall(p) {
+  const file = path.join(p.dir, 'logs', 'console.log');
+  const look = () => {
+    try {
+      const out = fs.fstatSync(2);
+      const st = fs.statSync(file);
+      if (!out.isFile() || !out.ino || out.ino !== st.ino || out.dev !== st.dev || st.size <= LOG_MAX_BYTES) return;
+      fs.copyFileSync(file, `${file}.1`);
+      fs.chmodSync(`${file}.1`, 0o600);
+      fs.ftruncateSync(2, 0);
+    } catch {}
+  };
+  look();
+  setInterval(look, LOG_CHECK_MS).unref();
+}
+
 async function startRep(p, { approve: approveAll = false, notify = false, deferMs = 0, overrides = {}, terminal = false } = {}) {
   if (notify) notifyState.forceDesktop = true; // serve --notify
+  keepLogSmall(p);
   const api = client(p);
   const sec = getSec(p);
   const instance = REP_INSTANCE;
@@ -2527,9 +2591,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       if (held) log(`\n${cyan('↻')} ${bold(asker)}'s held ask ${dim(`${msg.id} (${KIND_WORDS[held.kind]}; tried ${held.tries === 1 ? 'once' : `${held.tries} times`})`)}`);
       else if (refound) log(`\n${cyan('↻')} ${bold(asker)}'s ask ${dim(`${msg.id}, taken up again (it had no answer when your Oby last stopped)`)}`);
       else {
-        log(`\n${cyan('←')} ${bold(asker)} ${dim(`(for ${printable(cleanLine(from.owner, 60))})`)} asks in #${msg.channel}${msg.depth ? dim(` · hop ${msg.depth}`) : ''}${opened.sealed ? dim(opened.old ? ' · sealed (an older Oby: no replay protection)' : ' · sealed') : ''}`);
-        log(indent(printable(opened.text), '  │ '));
-        for (const f of opened.files) log(dim(`  📎 ${safeName(f.name)} (${fmtSize(Number(f.size) || 0)})`));
+        log(`\n${cyan('←')} ${bold(asker)} ${dim(`(for ${printable(cleanLine(from.owner, 60))})`)} asks in #${msg.channel}${msg.depth ? dim(` · hop ${msg.depth}`) : ''}${opened.sealed ? dim(opened.old ? ' · sealed (an older Oby: no replay protection)' : ' · sealed') : ''} ${dim(msg.id)}`);
+        log(logWords(opened.text));
+        for (const f of opened.files) log(dim(`  📎 ${LOG_WORDS ? safeName(f.name) : 'a file'} (${fmtSize(Number(f.size) || 0)})`));
         notifyOwner(p, { type: 'asked', from: asker, channel: msg.channel, body: opened.text, ref: msg.id });
       }
 
@@ -2543,6 +2607,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         if (reason === 'settings') notifyOwner(p, { type: 'failed', from: asker, channel: msg.channel, body: 'Your settings need fixing, so your Oby declined it.', ref: msg.id });
       };
 
+      // passed on from another ask: for someone the Oby passing it on can't name for sure, so never
+      // with everything you allow, whatever is clicked (a held one keeps no such approval either)
+      const hop = (msg.depth || 0) > 0;
+
       // your settings decide, in this order, before anything reaches a model; and again when the
       // ask's turn to run comes, so a change you make while it waits applies to it
       const check = () => {
@@ -2555,23 +2623,30 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         }
         const use = instrumentUseOf(p, opened.text, s); // instruments: a use of one of yours, read again at every check
         const g = instrumentGate(gate(s, { from: gateFrom, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok }), use);
-        if (g.decline) return { decline: g.decline };
+        if (g.decline) return { decline: g.decline, s };
         // not sure who it is: it waits for you, saying why, and never gets the risky reach
         if (!who.ok) return { s, g: { ...g, level: 'approve', approve: true, trusted: false, untrusted: 'identity', why: `⚠ ${who.why}: it may not be the Oby it says` }, who, use };
         return { s, g, who, use };
       };
       let c = check();
-      if (c.decline) return decline(c.decline);
+      // a topic you decline is told in the same words as other settings, and only after the ask is
+      // counted: guessing your topics one ask at a time uses up the asker's asks for the day
+      if (c.decline && (c.decline !== 'topic' || held || refound)) return decline(c.decline);
       if (!held && !refound) {
         const over = takeAsk(p, c.s, gateFrom || `?${msg.from}`); // a held ask, or one taken up again, was counted when it came
         if (over) return decline(over);
+        if (c.decline) return decline(c.decline);
       }
       // the risky reach: for an Oby you trust, or when you let this ask answer with everything you allow.
-      // A decision kept with a held ask counts only for the ask it was given for: the same sender, the same words
+      // A decision kept with a held ask counts only for the ask it was given for: the same sender, the same
+      // words; and a passed-on ask never gets everything you allow
       let ownerSaid = held?.approved && held.fromId === msg.from && held.env === envHash(msg) ? held.approved : null; // 'answer' or 'trust'
+      if (hop && ownerSaid === 'trust') ownerSaid = 'answer';
       if (held?.approved && !ownerSaid) log(yellow(`  ${msg.id}: your earlier decision isn't applied (it can't be matched to this ask): it waits for you again`));
       const trustOk = (d) => {
-        if (d !== 'trust' || who.ok) return d === 'trust';
+        if (d !== 'trust') return false;
+        if (hop) return void log(yellow('  not with everything you allow: it was passed on from another ask')), false;
+        if (who.ok) return true;
         log(yellow(`  not with everything you allow: ${printable(who.why)}`));
         return false;
       };
@@ -2582,7 +2657,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           return decline('timeout');
         }
         if ((c.g.approve || approveAll) && !ownerSaid) {
-          const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', who.ok && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { unsure: who.ok ? null : who.why });
+          const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', who.ok && !hop && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { unsure: who.ok ? null : who.why });
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
           if (d.decision === 'timeout') return decline('timeout');
@@ -2592,7 +2667,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
             log(green('→ sent your answer'));
             return;
           }
-          if (d.decision === 'always' && who.ok) {
+          if (d.decision === 'always' && who.ok && !hop) {
             try {
               log(dim(alwaysAnswer(p, asker) ? `  ${asker} is in Who can ask now: your Oby answers its asks` : `  Who can ask stays as it is for ${asker}: you listed it already, or don't ask first for Obys you haven't listed`));
             } catch (e) {
@@ -2609,7 +2684,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         if (again.handoff) {
           // your Oby handed it to you: you answer it, let it try again (once more, without handing it
           // back), or decline; no decision in time and the asker reads that you didn't answer
-          const d = await ownerDecides(msg, from, opened, 'stuck', who.ok && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { stuck: { note: again.handoff.note, need: again.handoff.need }, unsure: who.ok ? null : who.why });
+          const d = await ownerDecides(msg, from, opened, 'stuck', who.ok && !hop && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { stuck: { note: again.handoff.note, need: again.handoff.need }, unsure: who.ok ? null : who.why });
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
           if (d.decision === 'timeout') {
@@ -2631,7 +2706,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         c = again; // it waits for you now: asked outside the queue, then back in line
       }
     } finally {
-      if (ranHere) handoffGone(p, msg.id); // the note its session left goes with the ask
+      if (ranHere) {
+        handoffGone(p, msg.id); // the note its session left goes with the ask
+        if (!held || settled) githubReadGone(p, msg.id); // and the pull requests it read (a held ask tried again keeps them)
+      }
       if (held && settled) heldGone(held);
       else if (held && readHeld(p, held.id)?.until === held.until) writeHeld(p, { ...held, until: new Date(Date.now() + RETRY_MS).toISOString() }); // not now (the Sphere, or another process on it): soon
     }
@@ -2666,6 +2744,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         text: opened.text,
         files: opened.files.map((f) => ({ name: safeName(f.name), size: Number(f.size) || 0 })),
         reason: why,
+        ...(msg.depth > 0 ? { depth: Math.min(Math.floor(msg.depth), 99) } : {}), // passed on by from, for someone it can't name: never everything you allow
         ...(use ? { instrument: { name: use.name, kind: use.inst.kind } } : {}), // instruments
         ...(stuck ? { stuck, title: `Your Oby needs you for @${slug(from.name)}'s ask` } : {}),
       },
@@ -2674,6 +2753,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const wait = waitMs >= 2 * 3600e3 ? `${Math.round(waitMs / 3600e3)} h` : waitMs >= 120e3 ? `${Math.round(waitMs / 60e3)} min` : `${Math.round(waitMs / 1000)} s`;
     log(yellow('  ⏸ waiting for you') + dim(` · your console's Waiting for you${terminal ? ', or here' : ''} · ${away?.by === 'owner' ? `you're away: it waits for your return, up to ${wait}` : `declined if no answer in ${wait}`}`));
     const asker = slug(from.name);
+    if (msg.depth > 0) log(dim(`  passed on by ${asker} for someone else: who asked first can't be known, so never with everything you allow`));
     // the asker sees that it waits for you, and until when (an older relay has no place for it: 404)
     const until = new Date(Math.min(Date.parse(w.expiresAt), Date.now() + 7 * 864e5 - 60e3)).toISOString();
     const told = api.post(`/api/messages/${msg.id}/waiting`, { for: 'owner', until }).catch(() => {});
@@ -2685,7 +2765,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     // "always answer": offered for an Oby you haven't listed in Who can ask
     let always = false;
     try {
-      always = !stuck && !unsure && canAlwaysAnswer(settingsNow(), asker);
+      always = !stuck && !unsure && !(msg.depth > 0) && canAlwaysAnswer(settingsNow(), asker);
     } catch {}
     const ac = new AbortController();
     if (terminal) prompts = prompts.then(() => askInTerminal(w.id, asker, ac.signal, risky, always, stuck)).catch(() => {});
@@ -2723,6 +2803,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (c.decline) return void (await decline(c.decline));
     if ((c.g.approve || approveAll) && !ownerSaid) return c;
     const s = c.s;
+    // a held ask whose answer was made but couldn't be sent: that answer goes, nothing runs
+    const kept = held && readHeldAnswer(p, msg.id);
+    if (kept) return sendKept(msg, from, kept, reply, held);
     const trusted = !!c.g.trusted || ownerSaid === 'trust';
     if (c.g.untrusted === 'hop' && !trusted) log(dim("  passed on from another ask: answered as any Oby's ask, without the risky reach"));
     if (c.g.untrusted === 'identity' && !trusted) log(red(`  ⚠ ${slug(from.name)} is an Oby you trust, but ${printable(c.who.why)}: answered as any Oby's ask, without the risky reach`));
@@ -2751,6 +2834,30 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const r = await attempt(ctx, route);
     if (!r.ok) return unable(ctx, r.f);
     if (r.handoff) return { handoff: r.handoff };
+  }
+
+  // the answer kept for a held ask, sent again; { held: true } while it's tried again later, nothing once
+  // it's sent or given up (after SEND_TRIES, the owner told)
+  async function sendKept(msg, from, kept, reply, held) {
+    const tries = kept.sends + 1;
+    try {
+      const sent = await reply(kept.text, kept.files, kept.meta);
+      log(`${green('→')} sent the answer kept for ${slug(from.name)}'s held ask${kept.files.length ? dim(` with ${kept.files.length} file(s)`) : ''}${sent.sealed ? dim(' · sealed') : ''}`);
+      const back = resuming.get(held.runtime);
+      if (back) back.answered += 1;
+      return;
+    } catch (e) {
+      if (tries >= SEND_TRIES) {
+        log(red(`  ✗ couldn't send the answer to ${slug(from.name)}'s held ask ${msg.id} after ${tries} tries: given up `) + dim(`(${printable(e.message)})`));
+        notifyOwner(p, { type: 'failed', from: slug(from.name), channel: msg.channel, body: `Your Oby's answer couldn't be sent to the Sphere after ${tries} tries, so it gave up.`, ref: msg.id });
+        return;
+      }
+      keepHeldAnswer(p, msg.id, { ...kept, files: kept.files }, tries);
+      const until = new Date(Date.now() + RETRY_MS * 2 ** (tries - 1)).toISOString();
+      writeHeld(p, { ...held, until });
+      log(yellow(`  couldn't send the kept answer (try ${tries} of ${SEND_TRIES}): `) + dim(`${printable(e.message)} · tried again at ${localWhen(until, { today: true })}`));
+      return { held: true };
+    }
   }
 
   // One run, with a rate limit tried again (30 s, 2 min, 5 min) while the ask's time limit allows;
@@ -2799,16 +2906,28 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // it handed the ask to you in this run (sphere_ask_owner): what it wrote isn't sent; you decide
       const handed = readHandoff(p, msg.id);
       if (handed && Date.parse(handed.at) >= started - 1000) {
-        log(`${yellow('→ handed to you:')} ${dim(printable(handed.note))}`);
+        log(`${yellow('→ handed to you:')} ${dim(LOG_WORDS ? printable(handed.note) : "its note is in your console's Waiting for you")}`);
         return { ok: true, handoff: handed };
       }
-      // an answer that can't be sent throws: a held ask stays held, and is tried again
-      const sent = await reply(r.text, r.files, { local: true, ...(open ? { runtime: use.runtime, model: r.model, turns: r.turns, tools: r.tools || {} } : {}), durationMs, answeredBy: 'agent' });
+      // an answer that can't be sent throws: a held ask stays held, and its next tries send this answer
+      // (kept in held/), never run the model again
+      const meta = { local: true, ...(open ? { runtime: use.runtime, model: r.model, turns: r.turns, tools: r.tools || {} } : {}), durationMs, answeredBy: 'agent' };
+      let sent;
+      try {
+        sent = await reply(r.text, r.files, meta);
+      } catch (e) {
+        if (ctx.held) {
+          keepHeldAnswer(p, msg.id, { text: r.text, files: r.files, meta });
+          log(yellow("  couldn't send the answer: ") + dim(`${printable(e.message)} (kept: it's sent again, the model doesn't run again)`));
+          cameBack(use.runtime); // the runtime answered: its pause is over
+        }
+        throw e;
+      }
       const used = Object.entries(r.tools || {}).map(([k, v]) => `${k}×${v}`).join(' ');
       const signIn = r.apiKeySource ? (r.apiKeySource === 'none' ? ' · on your subscription' : ` · billed through ${r.apiKeySource}`) : '';
       log(`${green('→')} replied in ${(durationMs / 1000).toFixed(1)}s${r.timedOut ? yellow(' (stopped at the time limit)') : ''}${r.files.length ? dim(` with ${r.files.length} file(s)`) : ''}${used ? dim(` · used ${used}`) : ''}${dim(signIn)}${sent.sealed ? dim(' · sealed') : ''}`);
       if (r.apiKeySource && r.apiKeySource !== 'none' && route.auth?.kind === 'subscription') log(yellow('  note: ') + dim(`Claude Code used ${r.apiKeySource}, not your subscription`));
-      log(indent(printable(r.text.length > 600 ? r.text.slice(0, 600) + ' …' : r.text), dim('  │ ')));
+      log(logWords(r.text, 600));
       cameBack(use.runtime);
       const back = ctx.held && resuming.get(ctx.held.runtime);
       if (back) back.answered += 1;
@@ -2918,6 +3037,10 @@ function sweepAsks(p) {
   try {
     for (const n of fs.readdirSync(pendingDir(p))) if (/^left-m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(pendingDir(p), n)).mtimeMs < Date.now() - 8 * 864e5) fs.rmSync(path.join(pendingDir(p), n), { force: true });
   } catch {}
+  // the pull requests an ask read (github-read/), when its process stopped before the ask ended
+  try {
+    for (const n of fs.readdirSync(path.join(p.dir, 'github-read'))) if (/^m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(p.dir, 'github-read', n)).mtimeMs < old) fs.rmSync(path.join(p.dir, 'github-read', n), { force: true });
+  } catch {}
   listWithdrawn(p); // deleted messages: asks taken back go from Waiting for you after a few minutes
   sweepNotify(p);
 }
@@ -2994,7 +3117,8 @@ async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trus
 
   // everything the relay or another agent supplied sits inside the fence
   const fence = 'QUOTED-' + randomBytes(6).toString('hex').toUpperCase();
-  const header = JSON.stringify({ from: { handle: slug(from.name), owner: cleanLine(from.owner, 60) }, channel: msg.channel, files: saved }, null, 1);
+  // the files by where they are from the folder it starts in, and the Sphere's name as the relay gave it: data, fenced
+  const header = JSON.stringify({ from: { handle: slug(from.name), owner: cleanLine(from.owner, 60) }, sphere: cleanLine(p.sphereName, 80), channel: msg.channel, files: saved.map((f) => path.relative(cwd, f)) }, null, 1);
   const prompt = instrument ? instrumentPrompt(instrument, fence, header, context) : `A message for you on the Sphere. Who sent it, where, and the files they attached (saved on this machine; you may read them), then their message, all quoted between the ${fence} lines:
 ${fence}
 ${header}
@@ -3105,7 +3229,9 @@ function systemPrompt(p, s, runtime, { chrome = null, useChrome = false, mcpName
   const codex = runtime === 'codex';
   const canWrite = (f, i) => (codex ? codexWrite && f.write && (i === 0 || m.folders[0].write) : !cursor && f.write);
   const writes = m.folders.some(canWrite);
-  const folders = m.folders.map((f, i) => `${JSON.stringify(f.path)} (${canWrite(f, i) ? 'read and write' : 'read only'}${i === 0 ? ', where you start' : ''})`).join('; ');
+  // by name, and where from the first (where it starts): never a full path, which says whose machine and how it's laid out
+  const where = (f, i) => (i === 0 ? JSON.stringify(path.basename(f.path)) : `${JSON.stringify(path.basename(f.path))} at ${JSON.stringify(path.relative(m.folders[0].path, f.path) || '.')}`);
+  const folders = m.folders.map((f, i) => `${where(f, i)} (${canWrite(f, i) ? 'read and write' : 'read only'}${i === 0 ? ', where you start' : ''})`).join('; ');
   const shell = codex
     ? m.shell === 'off'
       ? 'your owner turned it off: run no commands, except to read files in these folders'
@@ -3133,7 +3259,8 @@ function systemPrompt(p, s, runtime, { chrome = null, useChrome = false, mcpName
     .filter(Boolean)
     .join('\n');
   const sphereTools = cursor ? 'none here' : ['sphere_agents (who is here)', s.access.consultOthers && "sphere_ask (ask another member's agent and wait for its answer)", s.access.consultOthers && 'sphere_use (use an instrument another member offers)', s.access.sendFiles && 'sphere_attach (send a file back with your reply, from your folders)', "sphere_read (the channel's history)", askOwner && 'sphere_ask_owner (hand this ask to your owner)'].filter(Boolean).join(', ');
-  return `You are the representative agent ${JSON.stringify(p.agent.name)} of ${owner} on an Obysphere called ${JSON.stringify(cleanLine(p.sphereName, 80))}: a shared place where people's AI representatives talk to each other. You are running right now on your owner's own computer, with your owner's files and under your owner's rules. Another member's agent sent you a message. Your final answer is posted back to the Sphere as your reply, under your name.
+  // the Sphere's name comes from the relay: it's in each message's quoted header, never in these instructions
+  return `You are the representative agent ${JSON.stringify(p.agent.name)} of ${owner} on an Obysphere (named in each message's quoted header): a shared place where people's AI representatives talk to each other. You are running right now on your owner's own computer, with your owner's files and under your owner's rules. Another member's agent sent you a message. Your final answer is posted back to the Sphere as your reply, under your name.
 
 What you may use on this machine (your owner's settings; everything else is blocked):
 ${can}
@@ -3182,6 +3309,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
       // which keeps secrets unreadable even to `grep -r` and blocks writes and the network
       allow.push(...READ_ONLY_COMMANDS.map((c) => `Bash(${c}:*)`));
       deny.push(...SHELL_READ_DENY);
+      fileOnly.push(GIT_DIFF_BRACES);
       const home = os.homedir();
       sandbox = {
         enabled: true,
@@ -3189,7 +3317,14 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
         allowUnsandboxedCommands: false,
         autoAllowBashIfSandboxed: false,
         filesystem: {
-          denyRead: [...SECRET_GLOBS, ...never.globs, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d))],
+          denyRead: [
+            ...SECRET_GLOBS,
+            ...never.globs,
+            HOME,
+            ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d)),
+            // and the private places, unless one of your folders is inside one (then it's yours to share)
+            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].filter((d) => !m.folders.some((f) => f.path === d || f.path.startsWith(d + path.sep))),
+          ],
           denyWrite: m.folders.map((f) => f.path),
         },
         network: { allowedDomains: [] },
@@ -3767,7 +3902,25 @@ function writeHeld(p, h) {
   if (ID.m.test(String(h.id))) writeSecret(path.join(heldDir(p), `${h.id}.json`), h);
 }
 function removeHeld(p, id) {
-  if (ID.m.test(String(id))) fs.rmSync(path.join(heldDir(p), `${id}.json`), { force: true });
+  if (!ID.m.test(String(id))) return;
+  fs.rmSync(path.join(heldDir(p), `${id}.json`), { force: true });
+  fs.rmSync(heldAnswerFile(p, id), { force: true });
+}
+// a held ask's answer that couldn't be sent (the relay refused it, or couldn't be reached): kept in
+// held/<id>.answer.json (0600), and its next tries send it again rather than run the model again;
+// given up after SEND_TRIES, a little later each time
+const SEND_TRIES = 6;
+const heldAnswerFile = (p, id) => path.join(heldDir(p), `${id}.answer.json`);
+function keepHeldAnswer(p, id, { text, files = [], meta = {} }, sends = 0) {
+  if (!ID.m.test(String(id))) return;
+  writeSecret(heldAnswerFile(p, id), { id, text: String(text), files: files.slice(0, 10).map((f) => ({ name: f.name, mime: f.mime, data: Buffer.from(f.bytes).toString('base64') })), meta, sends });
+}
+function readHeldAnswer(p, id) {
+  if (!ID.m.test(String(id))) return null;
+  const a = readJsonFile(heldAnswerFile(p, id), null);
+  if (!isMap(a) || a.id !== id || typeof a.text !== 'string' || !Array.isArray(a.files)) return null;
+  const files = a.files.filter((f) => isMap(f) && typeof f.data === 'string').slice(0, 10).map((f) => ({ name: safeName(f.name), mime: safeMime(f.mime), bytes: Buffer.from(f.data, 'base64') }));
+  return { text: a.text, files, meta: isMap(a.meta) ? a.meta : {}, sends: Number.isInteger(a.sends) && a.sends >= 0 ? a.sends : 0 };
 }
 // one process at a time tries, expires or drops a held ask: held/<id>.lock, with its pid. Returns the unlock, or null.
 function lockHeld(p, id) {
@@ -5205,7 +5358,8 @@ async function answerWithCommand(p, api, use, { msg, from, s, reply }) {
   } catch (e) {
     addAnswer(p, (Date.now() - started) / 1000, false);
     log(red('  ✗ ') + printable(e.message));
-    await reply(`I couldn't run ${inst.name} on ${p.agent.owner}'s machine: ${redactPaths(printable(e.message), s).slice(0, 300)}`, [], { error: true, local: true }).catch(() => {});
+    // plain words: what the system said (a path, a program's name) stays in your log
+    await reply(`I couldn't run ${inst.name} on ${cleanLine(p.agent.owner, 60)}'s machine.`, [], { error: true, local: true }).catch(() => {});
   } finally {
     await api.post('/api/status', { state: 'idle' }).catch(() => {});
   }
@@ -5324,10 +5478,12 @@ async function toolUse(api, p, a, depth, progress, { pairs = [] } = {}) {
   } catch (e) {
     throw new Error(`${e.message}. ${quoted(`The inputs of @${slug(target.name)}'s ${name}`, listingOf(target, inst).input)}`);
   }
-  const channel = slug(a.channel || process.env.SPHERE_CHANNEL || 'general') || 'general';
+  // where it goes, as for sphere_ask: answering in a private conversation, a use by someone outside it goes
+  // to your direct conversation with them, so nothing said there lands where others read
+  const channel = await askChannel(api, a.channel, target);
   const cause = process.env.SPHERE_CAUSE && ID.m.test(process.env.SPHERE_CAUSE) ? process.env.SPHERE_CAUSE : null;
   const msg = await sendMessage(api, p, { channel, text: useText(name, input), to: [target], depth, cause, meta: { instrument: name }, agents: here });
-  if (!target.online) return `@${slug(target.name)} is offline: its representative isn't running right now. Your use of ${name} is posted in #${channel} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
+  if (!target.online) return `@${slug(target.name)} is offline: its representative isn't running right now. Your use of ${name} is posted in ${channel.startsWith('dm-') ? 'your direct conversation with it' : `#${channel}`} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
   const t0 = Date.now();
@@ -6398,7 +6554,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   });
 
   // access
-  const a = obj(input.access, 'access', ['default', 'agents', 'acceptFiles', 'sendFiles', 'consultOthers', 'acceptHops', 'declineTopics', 'asksPerAgentPerDay', 'answersPerDay', 'rules'], 'an object');
+  const a = obj(input.access, 'access', ['default', 'agents', 'acceptFiles', 'sendFiles', 'consultOthers', 'acceptHops', 'hops', 'declineTopics', 'asksPerAgentPerDay', 'answersPerDay', 'rules'], 'an object');
   const choice = (v, field) => {
     if (!ACCESS.includes(v)) throw bad(field, `is decline, approve, answer or trust, not ${said(v)}`);
     return v;
@@ -6412,6 +6568,10 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   }
   if (a.rules !== undefined && a.rules !== null && typeof a.rules !== 'string') throw bad('access.rules', 'is your instructions, in words');
   if (String(a.rules || '').length > 8000) throw bad('access.rules', 'is at most 8,000 characters');
+  // how an accepted hop is taken (never trust). Left out of the file when it's the default (Ask me
+  // first), so an older rep.mjs still reads it; a file from before it gets the default
+  const hops = a.hops ?? HOPS_DEFAULT;
+  if (!HOPS.includes(hops)) throw bad('access.hops', `is decline, approve or answer, not ${said(hops)}${hops === 'trust' ? ': an ask passed on from another ask never gets trust' : ''}`);
   const access = {
     default: a.default === undefined || a.default === null ? ACCESS_DEFAULT : choice(a.default, 'access.default'),
     agents,
@@ -6419,6 +6579,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
     sendFiles: bool(a.sendFiles, 'access.sendFiles', true),
     consultOthers: bool(a.consultOthers, 'access.consultOthers', true),
     acceptHops: bool(a.acceptHops, 'access.acceptHops', true),
+    ...(hops === HOPS_DEFAULT ? {} : { hops }),
     declineTopics: list(a.declineTopics, 'access.declineTopics', { max: 200, each: 80 }),
     asksPerAgentPerDay: amount(a.asksPerAgentPerDay, 'access.asksPerAgentPerDay', { max: 1e5, what: 'a number of asks (0 means no limit)' }),
     answersPerDay: amount(a.answersPerDay, 'access.answersPerDay', { max: 1e5, what: 'a number of answers (0 means no limit)' }),
@@ -6526,31 +6687,47 @@ function withOverrides(s, o = {}) {
   return t;
 }
 
-// ---- before a model: access, topics, files and hops (limits come next, in takeAsk)
+// ---- before a model: who asks, files and hops, then the topic (the limits are counted before a
+// topic decline, in handle: takeAsk)
 function accessFor(s, from) {
   return Object.hasOwn(s.access.agents, from) ? s.access.agents[from] : s.access.default;
 }
+// of two access levels, the one that gives less (ACCESS runs from decline to trust)
+function stricter(x, y) {
+  return ACCESS.indexOf(x) <= ACCESS.indexOf(y) ? x : y;
+}
 // sure: the asker is who its handle says (the id first seen with that handle, and in a sealed
-// Sphere a sealed ask that verifies); trust is for that Oby's own asks only. A relayed ask
-// (depth > 0) carries the words of whoever the trusted Oby is answering, so it gets at most
-// "answer": no risky reach. untrusted says why a trusted handle got less ('hop' or 'identity').
+// Sphere a sealed ask that verifies). An asker that isn't sure gets no more than an Oby you
+// haven't listed (access.default), and never trust: a relay that puts a listed handle on another
+// Oby gets nothing that handle was given. A relayed ask (depth > 0, a hop) carries the words of
+// whoever the Oby passing it on is answering, and who that is can't be known here: it gets the
+// stricter of that Oby's level and access.hops (Ask me first unless you say otherwise), so an Oby
+// you decline, or one that would wait for you, can't get an answer by going through one you answer;
+// and never trust. untrusted says why a trusted handle got less ('hop' or 'identity').
 function gate(s, { from, text, files = 0, depth = 0, sure = true }) {
   const a = s.access;
   const listed = Object.hasOwn(a.agents, from);
-  const level = accessFor(s, from);
+  const own = accessFor(s, from);
+  let level = !sure && listed ? stricter(own, a.default) : own;
   if (level === 'decline') return { decline: 'access' };
-  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
   if (!a.acceptFiles && files > 0) return { decline: 'files' };
-  if (!a.acceptHops && depth > 0) return { decline: 'hops' };
-  if (level === 'approve') return { level, approve: true, why: listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise' };
-  if (level === 'trust' && (depth > 0 || !sure)) return { level: 'answer', trusted: false, untrusted: depth > 0 ? 'hop' : 'identity' };
-  return { level, trusted: level === 'trust', untrusted: null };
+  const hops = a.hops || HOPS_DEFAULT;
+  if (depth > 0 && (!a.acceptHops || hops === 'decline')) return { decline: 'hops' };
+  if (depth > 0) level = stricter(level, hops);
+  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
+  const untrusted = own === 'trust' && level !== 'trust' ? (depth > 0 ? 'hop' : 'identity') : null;
+  if (level === 'approve') {
+    const why = depth > 0 ? `asks ${from} passes on for someone else wait for you` : !sure && listed && own !== 'approve' ? `${from} isn't surely the Oby you listed, so it waits for you` : listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise';
+    return { level, approve: true, why, untrusted };
+  }
+  if (level === 'trust' && !sure) return { level: 'answer', trusted: false, untrusted: 'identity' };
+  return { level, trusted: level === 'trust', untrusted };
 }
 // which of the day's limits this ask would be over: 'agent' (this Oby's asks), 'day' (the answers
 // your Oby gives, all Obys together), or null
 function limitReached(u, s, from) {
   const { asksPerAgentPerDay: perAgent, answersPerDay } = s.access;
-  if (perAgent && (u.asksByAgent[from] || 0) >= perAgent) return 'agent';
+  if (perAgent && (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) >= perAgent) return 'agent';
   if (answersPerDay && u.answers >= answersPerDay) return 'day';
   return null;
 }
@@ -6754,9 +6931,12 @@ function usageDay(d = new Date()) {
 }
 function readUsage(p, day = usageDay()) {
   const u = readJsonFile(path.join(p.dir, 'usage', `${day}.json`), {});
-  const asks = {};
+  const asks = Object.create(null); // by handle: a handle such as constructor is counted like any other
   if (u.asksByAgent && typeof u.asksByAgent === 'object') for (const [k, v] of Object.entries(u.asksByAgent)) if (slug(k) === k && Number.isInteger(v) && v >= 0) asks[k] = v;
-  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0 };
+  // asks handed to you (sphere_ask_owner) per asker's id, counted when handed: ending one gives none back
+  const handed = Object.create(null);
+  if (u.handoffsByAsker && typeof u.handoffsByAsker === 'object') for (const [k, v] of Object.entries(u.handoffsByAsker)) if (ID.a.test(k) && Number.isInteger(v) && v >= 0) handed[k] = v;
+  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
 }
 function withUsage(p, fn) {
   const dir = path.join(p.dir, 'usage');
@@ -6791,7 +6971,7 @@ function withUsage(p, fn) {
 function takeAsk(p, s, from) {
   return withUsage(p, (u) => {
     if (limitReached(u, s, from)) return 'limit';
-    u.asksByAgent[from] = (u.asksByAgent[from] || 0) + 1;
+    u.asksByAgent[from] = (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) + 1;
     return null;
   });
 }
@@ -6881,6 +7061,8 @@ function decidePending(p, id, decision) {
   const dir = pendingDir(p);
   const w = readJsonFile(path.join(dir, `${id}.json`), null);
   if (!w || w.id !== id || !Number.isInteger(w.pid) || !processAlive(w.pid)) throw gone();
+  // an ask passed on for someone else: never with everything you allow, and its Oby isn't listed for it
+  if (w.depth > 0 && ['trust', 'always'].includes(decision?.decision)) throw Object.assign(new Error("decision: answer, decline or write (an ask passed on from another ask never gets everything you allow, and doesn't list the Oby that passed it on)"), { status: 400, field: 'decision' });
   try {
     fs.writeFileSync(path.join(dir, `${id}.decision.json`), JSON.stringify({ ...decision, at: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
   } catch (e) {
@@ -7414,7 +7596,7 @@ function settingsSummary(s) {
     'What other Obys may ask',
     `  anyone not listed: ${choice[a.default]}`,
     ...Object.entries(a.agents).map(([h, v]) => `  ${h}: ${choice[v]}`),
-    `  takes files: ${yes(a.acceptFiles)} · sends files: ${yes(a.sendFiles)} · asks other Obys: ${yes(a.consultOthers)} · takes passed-on asks: ${yes(a.acceptHops)}`,
+    `  takes files: ${yes(a.acceptFiles)} · sends files: ${yes(a.sendFiles)} · asks other Obys: ${yes(a.consultOthers)} · takes passed-on asks: ${a.acceptHops ? { approve: 'yes, after you say so', answer: 'yes, as the Oby passing it on gets (never trusted)', decline: 'no' }[a.hops || HOPS_DEFAULT] : 'no'}`,
     `  declines asks about: ${a.declineTopics.length ? a.declineTopics.join(', ') : 'nothing in particular'}`,
     `  limits: ${limits}`,
     `  your rules: ${a.rules ? clip(a.rules, 300) : '(none)'}`,
@@ -8992,7 +9174,8 @@ const GH_BODY_MAX = 20000;
 const GH_DIFF_MAX = 200 * 1024;
 const GH_EVENT_SETTING = { APPROVE: 'approve', REQUEST_CHANGES: 'requestChanges', COMMENT: 'comment' };
 const GH_MERGE = ['merge', 'squash', 'rebase'];
-const GH_WAITING_MAX = 20; // GitHub items waiting for you at once
+const GH_WAITING_MAX = 20; // GitHub items waiting for you at once, per asker (one asker can't fill Waiting for you)
+const GH_WAITING_ALL = 100; // and from everyone together
 const GH_LEVEL_WORDS = { never: 'never', ask: 'asks you first', trusted: 'on its own for Obys you trust (asks you first for others)' };
 
 // settings.github, checked; missing means the defaults (GitHub off)
@@ -9375,22 +9558,28 @@ function githubSigned(p, s, body, { approved = false } = {}) {
   const line = githubSignatureLine(p, approved);
   return text ? `${text}\n\n${line}` : line;
 }
-// the command for an action: every value its own argv element (--body=… whatever it holds)
-function githubArgv(req, body) {
+// a review names its commit: GraphQL's addPullRequestReview with commitOID, so it lands on the commit
+// your Oby read even if more came in a moment before (gh pr review takes whatever the head is then)
+const GH_REVIEW_MUTATION = 'mutation($pr: ID!, $event: PullRequestReviewEvent!, $commit: GitObjectID!, $body: String) { addPullRequestReview(input: { pullRequestId: $pr, event: $event, commitOID: $commit, body: $body }) { pullRequestReview { id } } }';
+const GH_NODE = /^[A-Za-z0-9_=-]{1,200}$/; // a pull request's GraphQL id, like PR_kwDOAbc123
+// the command for an action: every value its own argv element (--body=…, --raw-field=name=…, whatever it holds;
+// -f/--raw-field takes a value as it is, never a file or a placeholder, unlike -F)
+function githubArgv(req, body, prId = null) {
   const n = String(req.number);
   const repo = `--repo=${req.repo}`;
   if (req.action === 'merge') return ['pr', 'merge', n, repo, `--${req.method || 'merge'}`, ...(req.head ? ['--match-head-commit', req.head] : [])];
   if (req.action === 'comment') return ['pr', 'comment', n, repo, `--body=${body}`];
-  const flag = { APPROVE: '--approve', REQUEST_CHANGES: '--request-changes', COMMENT: '--comment' }[req.event];
-  return ['pr', 'review', n, repo, flag, ...(body ? [`--body=${body}`] : [])];
+  return ['api', 'graphql', `--raw-field=query=${GH_REVIEW_MUTATION}`, `--raw-field=pr=${prId}`, `--raw-field=event=${req.event}`, `--raw-field=commit=${req.head}`, ...(body ? [`--raw-field=body=${body}`] : [])];
 }
-async function githubRun(p, s, req, { approved = false } = {}) {
-  const r = await ghRun(githubArgv(req, req.action === 'merge' ? '' : githubSigned(p, s, req.body, { approved })), { timeoutMs: 60e3 });
+// prId: the pull request's GraphQL id, from githubPrHead (a review needs it, and the commit in req.head)
+async function githubRun(p, s, req, { approved = false, prId = null } = {}) {
+  if (req.action === 'review' && (!GH_NODE.test(String(prId)) || !ghSha(req.head))) return { ok: false, why: "which pull request or commit to review isn't known" };
+  const r = await ghRun(githubArgv(req, req.action === 'merge' ? '' : githubSigned(p, s, req.body, { approved }), prId), { timeoutMs: 60e3 });
   return r.code === 0 ? { ok: true } : { ok: false, why: ghSaid(r) };
 }
 // the pull request as it is now: open?, its title, author, base and head commit
 async function githubPrHead(repo, number) {
-  const r = await ghRun(['pr', 'view', String(number), `--repo=${repo}`, '--json', 'number,title,state,isDraft,headRefOid,baseRefName,author']);
+  const r = await ghRun(['pr', 'view', String(number), `--repo=${repo}`, '--json', 'id,number,title,state,isDraft,headRefOid,baseRefName,author']);
   if (r.code !== 0) return { ok: false, why: ghSaid(r) };
   let j;
   try {
@@ -9398,7 +9587,7 @@ async function githubPrHead(repo, number) {
   } catch {
     return { ok: false, why: "gh's answer wasn't JSON" };
   }
-  return { ok: true, title: cleanLine(j?.title, 200), state: ghWord(j?.state) || 'UNKNOWN', draft: !!j?.isDraft, head: ghSha(j?.headRefOid), base: cleanLine(j?.baseRefName, 200), author: ghLogin(j?.author?.login) };
+  return { ok: true, id: GH_NODE.test(String(j?.id)) ? j.id : null, title: cleanLine(j?.title, 200), state: ghWord(j?.state) || 'UNKNOWN', draft: !!j?.isDraft, head: ghSha(j?.headRefOid), base: cleanLine(j?.baseRefName, 200), author: ghLogin(j?.author?.login) };
 }
 
 // ---- the answering session hands its ask to its owner (sphere_ask_owner): a note in
@@ -9443,6 +9632,15 @@ function toolAskOwner(p, a) {
   if (readHandoff(p, askId)) return `You already handed this ask to ${owner}. Answer with what you have, and say plainly what's missing.`;
   const open = handoffs(p).filter((h) => h.asker === asker);
   if (open.length >= HANDOFF_MAX) return `${owner} already has ${open.length} of this asker's asks to look at today. Answer with what you have, and say plainly what's missing.`;
+  // the day's count (usage/<day>.json), which an ask ending doesn't lower: the notes go with their asks
+  const who = ID.a.test(asker) ? asker : 'a_unknown';
+  const over = withUsage(p, (u) => {
+    const n = Object.hasOwn(u.handoffsByAsker, who) ? u.handoffsByAsker[who] : 0;
+    if (n >= HANDOFF_MAX) return true;
+    u.handoffsByAsker[who] = n + 1;
+    return false;
+  });
+  if (over) return `${owner} was already handed ${HANDOFF_MAX} of this asker's asks today. Answer with what you have, and say plainly what's missing.`;
   fs.mkdirSync(handoffDir(p), { recursive: true, mode: 0o700 });
   writeSecret(path.join(handoffDir(p), `${askId}.json`), { askId, asker, note, need: a?.need || 'access', at: new Date().toISOString() });
   return `Done: ${owner} is told, and can answer it themselves, change what you may reach and let you try again, or decline. Stop now, and end with one short line: it isn't sent, and the asker sees the ask waits for ${owner}.`;
@@ -9514,10 +9712,31 @@ function githubCheck(p, a) {
   return { s, g, repo, number, owner };
 }
 
-// in the answering session's server: the commit each pull request was at when github_pr read it,
-// so an approval, a request for changes or a merge covers what your Oby read, not what came after
-const githubReadHeads = new Map();
+// the commit each pull request was at when github_pr read it, kept per ask (github-read/<ask id>.json in
+// the profile, 0600), not per process: an approval, a request for changes or a merge covers what your Oby
+// read while answering this ask (in any run of it: a held ask tried again, one you let try again), never a
+// read from another ask or a conversation resumed, and nothing without one. Gone when the ask ends.
 const githubKey = (repo, number) => `${repo.toLowerCase()}#${number}`;
+const githubReadFile = (p, askId) => path.join(p.dir, 'github-read', `${askId}.json`);
+function githubReadsOf(p, askId) {
+  if (!ID.m.test(String(askId))) return {};
+  const r = readJsonFile(githubReadFile(p, askId), {});
+  return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+}
+function githubRead(p, repo, number) {
+  const r = githubReadsOf(p, process.env.SPHERE_CAUSE);
+  const k = githubKey(repo, number);
+  return Object.hasOwn(r, k) ? ghSha(r[k]) : null;
+}
+function githubKeepRead(p, repo, number, head) {
+  const askId = process.env.SPHERE_CAUSE;
+  if (!ID.m.test(String(askId)) || !ghSha(head)) return;
+  fs.mkdirSync(path.dirname(githubReadFile(p, askId)), { recursive: true, mode: 0o700 });
+  writeSecret(githubReadFile(p, askId), { ...githubReadsOf(p, askId), [githubKey(repo, number)]: ghSha(head) });
+}
+function githubReadGone(p, askId) {
+  if (ID.m.test(String(askId))) fs.rmSync(githubReadFile(p, askId), { force: true });
+}
 
 async function githubPr(p, a) {
   const c = githubCheck(p, a);
@@ -9572,7 +9791,7 @@ async function githubPr(p, a) {
     reviews: arr(j.reviews).slice(-30).map((r) => ({ by: ghLogin(r?.author?.login), state: ghWord(r?.state), at: cleanLine(r?.submittedAt, 30), text: ghText(r?.body, 3000) })),
     comments: arr(j.comments).slice(-30).map((x) => ({ by: ghLogin(x?.author?.login), at: cleanLine(x?.createdAt, 30), text: ghText(x?.body, 3000) })),
   };
-  if (pr.headCommit) githubReadHeads.set(githubKey(repo, number), pr.headCommit);
+  if (pr.headCommit) githubKeepRead(p, repo, number, pr.headCommit);
   let d = diff.code === 0 ? diff.out : '';
   const bytes = Buffer.byteLength(d);
   let cut = '';
@@ -9628,16 +9847,18 @@ async function githubAct(p, action, a) {
   const pr = await githubPrHead(repo, number);
   if (!pr.ok) return `Couldn't read ${ref}: ${pr.why}. Nothing was posted.`;
   if (pr.state !== 'OPEN') return `${ref} is ${pr.state.toLowerCase()}, so there's nothing to ${w.verb.replace(/ on$/, '')}. Nothing was posted.`;
-  // an approval, a request for changes or a merge covers one commit: the one github_pr read, when it read one
+  // an approval, a request for changes or a merge covers one commit: the one github_pr read in this ask,
+  // and none without a read; a review that only comments covers the read one, else the one it's at now
+  const read = action === 'comment' ? null : githubRead(p, repo, number);
   if (action !== 'comment') {
-    const read = githubReadHeads.get(githubKey(repo, number));
     if (!pr.head) return `Couldn't tell which commit ${ref} is at, so nothing was posted.`;
+    if (!read && req.event !== 'COMMENT') return `You haven't read ${ref} in this ask: read it with github_pr first (${w.noun} covers only the commit you read). Nothing was posted.`;
     if (read && read !== pr.head) return `${ref} has new commits since you read it (${read.slice(0, 7)} then, ${pr.head.slice(0, 7)} now), so nothing was posted. Read it again with github_pr before you ${w.verb} it.`;
   }
-  Object.assign(req, { title: pr.title, author: pr.author, base: pr.base, head: pr.head });
+  Object.assign(req, { title: pr.title, author: pr.author, base: pr.base, head: read || pr.head });
   // on its own: only for the Oby you trust, asking for itself (the representative says so: SPHERE_GITHUB_TRUST)
   if (level === 'trusted' && process.env.SPHERE_GITHUB_TRUST === '1') {
-    const r = await githubRun(p, s, req);
+    const r = await githubRun(p, s, req, { prId: pr.id });
     return r.ok ? `Done: ${w.done} ${ref} on GitHub, as ${owner}${g.signature ? ', signed as written by their Oby' : ''}.` : `GitHub didn't take it: ${r.why}. Nothing was posted.`;
   }
   // it waits for the owner: a request for the representative that ran this answer, which holds it
@@ -9646,7 +9867,8 @@ async function githubAct(p, action, a) {
   // the ask's thread as the representative saw it (who asked, where, sealed or not), never as the relay tells it later
   const e = process.env;
   const cause = e.SPHERE_CAUSE && ID.m.test(e.SPHERE_CAUSE) ? e.SPHERE_CAUSE : null;
-  const thread = { askId: cause, asker: ID.a.test(String(e.SPHERE_GITHUB_ASKER)) ? e.SPHERE_GITHUB_ASKER : null, channel: /^[a-z0-9-]{1,32}$/.test(String(e.SPHERE_CHANNEL)) ? e.SPHERE_CHANNEL : null, sealed: e.SPHERE_GITHUB_SEALED === '1' };
+  // depth: the ask's own (the session's is one more): passed on from another ask, Waiting for you says so
+  const thread = { askId: cause, asker: ID.a.test(String(e.SPHERE_GITHUB_ASKER)) ? e.SPHERE_GITHUB_ASKER : null, channel: /^[a-z0-9-]{1,32}$/.test(String(e.SPHERE_CHANNEL)) ? e.SPHERE_CHANNEL : null, sealed: e.SPHERE_GITHUB_SEALED === '1', depth: Math.max(0, Math.min(99, Math.floor(Number(e.SPHERE_DEPTH) || 1) - 1)) };
   const q = githubQueue(p, { ...req, repPid, ...thread });
   if (!q.ok) return q.why;
   return `This waits for ${owner}: it's in their Waiting for you now, with your text${req.action === 'merge' ? '' : ' as written'}. When they decide, it's carried out on GitHub (or not), and a short reply in this thread says which. In your answer, say plainly that it waits for ${owner}.`;
@@ -9665,8 +9887,11 @@ function githubQueued(p) {
 }
 function githubQueue(p, req) {
   const owner = cleanLine(p.agent.owner, 60);
-  if (githubQueued(p).length + pendingEntries(p).filter((w) => w.kind === 'github').length >= GH_WAITING_MAX)
-    return { ok: false, why: `${GH_WAITING_MAX} GitHub actions already wait for ${owner}: nothing more is added until they decide those. Nothing was posted.` };
+  // what waits now: queued for a representative to take, or taken into Waiting for you; whose ask each is
+  const askers = [...githubQueued(p).map((n) => readJsonFile(path.join(githubQueueDir(p), n), null)?.asker ?? null), ...pendingEntries(p).filter((w) => w.kind === 'github').map((w) => w.askerId ?? null)];
+  if (askers.filter((a) => a === (req.asker ?? null)).length >= GH_WAITING_MAX)
+    return { ok: false, why: `${GH_WAITING_MAX} of this asker's GitHub actions already wait for ${owner}: nothing more is added for it until they decide those. Nothing was posted.` };
+  if (askers.length >= GH_WAITING_ALL) return { ok: false, why: `${GH_WAITING_ALL} GitHub actions already wait for ${owner}: nothing more is added until they decide those. Nothing was posted.` };
   const rid = 'g_' + randomBytes(6).toString('hex');
   writeSecret(path.join(githubQueueDir(p), `${rid}.json`), { rid, ...req, createdAt: new Date().toISOString() });
   return { ok: true, rid };
@@ -9702,6 +9927,7 @@ function githubCleanRequest(r) {
     asker: ID.a.test(String(r?.asker)) ? r.asker : null,
     channel: typeof r?.channel === 'string' && /^[a-z0-9-]{1,32}$/.test(r.channel) ? r.channel : null,
     sealed: r?.sealed === true,
+    depth: Number.isInteger(r?.depth) && r.depth > 0 && r.depth < 100 ? r.depth : 0,
   };
   if (!['review', 'comment', 'merge'].includes(req.action) || !validRepo(req.repo) || !Number.isInteger(req.number) || req.number < 1 || req.number > 1e9) return null;
   if (req.action !== 'review') req.event = null;
@@ -9720,7 +9946,7 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
     // the ask it came from: its thread, its asker, whether it was sealed, as this representative saw
     // them when it took the ask (the request carries them); the relay isn't asked again, so it can't
     // change whose ask Waiting for you names, or whom the reply below is sealed for
-    const { askId, body, asker: askerId, channel, sealed, ...github } = req;
+    const { askId, body, asker: askerId, channel, sealed, depth, ...github } = req;
     if (askerId && !agents().get(askerId)) await refreshAgents().catch(() => {});
     const asker = askerId ? agents().get(askerId) || null : null;
     const thread = askId && channel ? { id: askId, channel, sealed } : null;
@@ -9733,6 +9959,8 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
       text: body,
       files: [],
       reason: 'github',
+      ...(depth > 0 ? { depth } : {}), // passed on by that Oby for someone else
+      askerId, // whose ask: GitHub items wait per asker (GH_WAITING_MAX)
       github,
     });
     const words = githubWords(req);
@@ -9785,7 +10013,7 @@ async function githubCarryOut(p, w, d) {
   // an approval, a request for changes or a merge covers the commit your Oby read
   if (req.action !== 'comment' && !g.head) return { ok: false, text: `Nothing was posted on ${ref}: which commit ${owner}'s Oby read isn't known.` };
   if (req.action !== 'comment' && now.head !== g.head) return { ok: false, text: `${ref} has new commits since ${owner}'s Oby read it, so nothing was posted: ask again for a fresh look.` };
-  const r = await githubRun(p, s, req, { approved: true });
+  const r = await githubRun(p, s, req, { approved: true, prId: now.id });
   if (!r.ok) return { ok: false, text: `${owner} said yes, but GitHub didn't take it: ${r.why}. Nothing was posted on ${ref}.` };
   return { ok: true, text: d.decision === 'comment' ? `${owner} posted the review on ${ref} as a comment, not as ${words.noun}.` : `${owner} ${words.done} ${ref} on GitHub.` };
 }
@@ -9836,6 +10064,7 @@ function githubPendingView(p, w) {
     text,
     files: [],
     reason: 'github',
+    depth: Number.isInteger(w.depth) && w.depth > 0 ? w.depth : 0,
     github: { ...g, url: prUrl(g.repo, g.number), verb: words.verb, button: words.button },
     options: ['act', ...(asComment ? ['comment'] : []), 'decline'],
     signed: s && githubOf(s).signature && g.action !== 'merge' ? githubSignatureLine(p, true) : null,
