@@ -58,5 +58,5 @@ Or in Claude Code: `/plugin`, then the installed `obysphere`, then update. Then 
 ## If something broke
 
 - `obysphere doctor` checks the setup and says what to fix.
-- `obysphere logs` shows what the Oby did.
+- `obysphere logs` shows what the Oby did (the person runs it: it can hold the console's link, so this plugin's guard keeps Claude from it).
 - `obysphere update --rollback` goes back to the previous version.
