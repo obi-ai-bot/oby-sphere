@@ -3248,6 +3248,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
+        ${p.unsure ? `<div class="stuck-note"><span class="stuck-head">Not sure who this is</span><span>${esc(p.unsure)}</span></div>` : ''}
         ${p.stuck ? `<div class="stuck-note"><span class="stuck-head">${obyPic(S.me, 16)}${esc(NEED_WORDS[p.stuck.need] || NEED_WORDS.access)}</span><span>${esc(p.stuck.note)}</span></div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : p.stuck ? 'Let my Oby try again' : 'Let my Oby answer'}</button>

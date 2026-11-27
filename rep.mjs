@@ -1086,7 +1086,8 @@ async function localApi(req, res, url, p) {
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
       // stuck: your Oby tried, and handed it to you (sphere_ask_owner): its note, and what it needs
       const stuckOf = (x) => (isMap(x) && typeof x.note === 'string' ? { note: cleanLine(x.note, 400), need: HANDOFF_NEEDS.includes(x.need) ? x.need : 'access' } : null);
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}) });
+      // unsure: who asks didn't check against the Oby first seen under that handle: no everything-you-allow, no always
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, unsure }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
       // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
