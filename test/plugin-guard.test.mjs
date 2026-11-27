@@ -7,16 +7,19 @@
 // can't be stalled. No network: every home, install and profile folder is a temp folder. `npm test`.
 import { describe, test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findCli, trustedPlace, profileMissing } from '../plugins/obysphere/scripts/find-cli.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'obysphere');
 const GUARD = path.join(PLUGIN, 'scripts', 'guard.mjs');
+const MCP = path.join(PLUGIN, 'scripts', 'mcp.mjs');
+const POSIX = process.platform !== 'win32';
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const temps = [];
 const tmpDir = (name) => {
@@ -132,5 +135,51 @@ describe('the guard (scripts/guard.mjs)', () => {
     assert.doesNotMatch(src, /https?:\/\//i);
     assert.doesNotMatch(src.replace(/^\s*\/\/.*$/gm, ''), /process\.env(?!\.[A-Za-z_])/);
     assert.doesNotMatch(src.replace(/^\s*\/\/.*$/gm, ''), /\b(?:const|let|var)\s+env\b|\benv\s*[,)=]/);
+  });
+});
+
+describe('finding the CLI: never from the open project', () => {
+  // a project someone else wrote, with its own "obysphere" and rep.mjs in node_modules/.bin
+  const project = () => {
+    const dir = tmpDir('obysphere-project-');
+    const binDir = path.join(dir, 'node_modules', '.bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(path.join(binDir, 'rep.mjs'), "import fs from 'node:fs'; fs.writeFileSync(process.env.FAKE_PID, 'ran'); process.exit(0);\n");
+    fs.writeFileSync(path.join(binDir, 'obysphere'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const home = path.join(dir, '..', path.basename(dir) + '-home');
+    fs.mkdirSync(home, { recursive: true });
+    temps.push(home);
+    const profiles = path.join(home, 'profiles');
+    fs.mkdirSync(path.join(profiles, 'alice'), { recursive: true });
+    fs.writeFileSync(path.join(profiles, 'alice', 'profile.json'), '{}');
+    return { dir, binDir, home, vars: { HOME: home, USERPROFILE: home, OBYSPHERE_HOME: profiles, OBYSPHERE_APP_HOME: path.join(home, 'app') } };
+  };
+
+  test('a PATH entry that is not a full path is skipped, and nothing in the open folder runs', { skip: !POSIX && 'shell scripts' }, async () => {
+    const pr = project();
+    assert.equal(findCli({ ...pr.vars, PATH: 'node_modules/.bin' }, pr.dir), null, 'relative: skipped');
+    assert.equal(findCli({ ...pr.vars, PATH: pr.binDir }, pr.dir), null, 'inside the open folder: not trusted');
+    assert.equal(trustedPlace(path.join(pr.binDir, 'rep.mjs'), pr.vars, pr.dir), false);
+    assert.equal(trustedPlace(path.join(pr.binDir, 'rep.mjs'), pr.vars, os.tmpdir() === pr.dir ? '/' : path.join(pr.home, 'elsewhere')), true, 'outside the open folder: fine');
+    // the open folder is the home folder: a project can't be that
+    assert.equal(trustedPlace(path.join(pr.binDir, 'rep.mjs'), { ...pr.vars, HOME: pr.dir }, pr.dir), true);
+    // the plugin's MCP server, started in that project: the setup tool, and the project's rep.mjs never runs
+    const pid = path.join(pr.home, 'ran');
+    const p = spawn(process.execPath, [MCP], { cwd: pr.dir, env: { ...pr.vars, PATH: `node_modules/.bin${path.delimiter}${path.dirname(process.execPath)}`, FAKE_PID: pid }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) + '\n');
+    for (let i = 0; i < 50 && !out.includes('\n'); i++) await new Promise((r) => setTimeout(r, 100));
+    p.stdin.end();
+    await new Promise((r) => p.on('close', r));
+    assert.ok(!fs.existsSync(pid), "the project's rep.mjs didn't run");
+    assert.deepEqual(JSON.parse(out.split('\n')[0]).result.tools.map((t) => t.name), ['obysphere_setup']);
+  });
+
+  test("a name made to stall find-cli's slug costs nothing", () => {
+    const pr = project();
+    const t0 = Date.now();
+    profileMissing(['--profile', `a${'-'.repeat(200000)}a`], pr.vars);
+    assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0} ms`);
   });
 });
