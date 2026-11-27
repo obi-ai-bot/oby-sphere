@@ -657,8 +657,8 @@ function fsStore() {
   }
   // the log as memory holds it: every file record, the messages (a cut removed the older ones,
   // and a deleted one is its tombstone), then the counts as they are (a tally: messages cut
-  // still count after a restart)
-  // written a piece at a time, never as one string: a log of any size fits
+  // still count after a restart). Written a piece at a time, never as one string: a log of any
+  // size fits
   function compact() {
     const fd = fs.openSync(MSGS + '.tmp', 'w', 0o600);
     let n = 0;
