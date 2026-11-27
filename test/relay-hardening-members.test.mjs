@@ -85,8 +85,7 @@ describe("other members' metadata", () => {
     assert.deepEqual(Object.keys(w.each).sort(), [m.bob.id, m.carol.id].sort(), 'each waiting Oby is kept');
     assert.equal((await wait('carol', id, { for: null })).ok, true);
     w = await waiting(id);
-    assert.equal(w.by, m.bob.id, "carol clearing hers leaves bob's");
-    assert.deepEqual(Object.keys(w.each), [m.bob.id]);
+    assert.deepEqual(w, { for: 'owner', until: bobUntil, since: w.since, by: m.bob.id }, "carol clearing hers leaves bob's, in the shape of one");
     assert.equal((await wait('bob', id, { for: null })).ok, true);
     assert.equal(await waiting(id), undefined, 'none left');
   });

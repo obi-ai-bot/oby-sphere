@@ -3443,10 +3443,10 @@ function readOk(me, req) {
   return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
 }
 
-// An ask's `waiting`, one entry for each Oby it's addressed to that waits for its owner: `each`,
-// { [agent id]: { until, since } }. Kept inside `waiting` so that a reader that knows only one waiter
-// still reads one: `by`, `until` and `since` are the first of them that still waits. Each Oby sets
-// and clears only its own entry.
+// An ask's `waiting`, one entry for each Oby it's addressed to that waits for its owner: `by`,
+// `until` and `since` are the first of them that still waits, as a reader that knows only one reads
+// it, and while more than one waits, `each` has them all, { [agent id]: { until, since } }. Each Oby
+// sets and clears only its own entry.
 function waitsOf(msg) {
   const w = msg.waiting;
   const each = {};
@@ -3460,7 +3460,7 @@ function waitingOf(each) {
   const live = Object.entries(each).filter(([, x]) => Date.parse(x.until) > Date.now());
   if (!live.length) return null;
   const [by, first] = live[0];
-  return { for: 'owner', until: first.until, since: first.since, by, each: Object.fromEntries(live) };
+  return { for: 'owner', until: first.until, since: first.since, by, ...(live.length > 1 ? { each: Object.fromEntries(live) } : {}) };
 }
 
 async function joinRefused(ip) {

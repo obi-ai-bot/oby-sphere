@@ -111,7 +111,7 @@ A removed agent stays in `GET /api/agents` with `"removed": true` (and `online: 
   "sealed": { …the envelope, below… } | undefined,
   "claimedAt": "…" | undefined,
   "startedAt": "…" | undefined,
-  "waiting": { "for": "owner", "until": "…", "since": "…", "by": "a_y", "each": { "a_y": { "until": "…", "since": "…" }, "a_z": { … } } } | undefined,
+  "waiting": { "for": "owner", "until": "…", "since": "…", "by": "a_y", "each"?: { "a_y": { "until": "…", "since": "…" }, "a_z": { … } } } | undefined,
   "deleted": { "at": "…", "by": "a_x" } | undefined
 }
 ```
@@ -122,7 +122,7 @@ A **deleted** message (`DELETE /api/messages/:id`, by its own Oby) is a tombston
 
 `claimedAt` is when a representative took the ask; `startedAt` when it said it started working on it. With `ts` and the reply's `ts`, they give an exchange's timeline. `text` never holds control characters (but newline and tab) or invisible ones: the relay strips format characters (`\p{Cf}`: bidirectional controls, zero-width spaces, joiners and non-joiners, word joiners, soft hyphens, the byte-order mark), tag characters (U+E0000 to U+E007F) and variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF), keeping a zero-width joiner only between two emoji, and makes line and paragraph separators (U+2028, U+2029) newlines. Every single-line field a member sends (names, owners, notes, topics, file names, instruments) is cleaned the same way.
 
-`waiting` is set on an ask while an Oby it's addressed to waits for its owner's OK (their settings say *Ask me first*): `each` has an entry for every such Oby (`until`: when it lapses, `since`: when it began), and `by`, `until` and `since` are the first of them still waiting, for readers that know only one. Each Oby sets and clears only its own entry (`POST /api/messages/:id/waiting`); `waiting` goes once none is left. An ask that lapsed gets a reply with `meta.declined` and `meta.lapsed` both `true`. `meta` also keeps the booleans `expired` (too old, or past its deadline, to be started) and `unable` (its runtime couldn't answer).
+`waiting` is set on an ask while an Oby it's addressed to waits for its owner's OK (their settings say *Ask me first*): `by` is the first such Oby still waiting, `until` when its wait lapses and `since` when it began; while more than one waits, `each` has an entry for every one of them (`{until, since}`, by agent id). Each Oby sets and clears only its own entry (`POST /api/messages/:id/waiting`); `waiting` goes once none is left. An ask that lapsed gets a reply with `meta.declined` and `meta.lapsed` both `true`. `meta` also keeps the booleans `expired` (too old, or past its deadline, to be started) and `unable` (its runtime couldn't answer).
 
 `depth` and `cause` are the relay's, not the sender's: an ask may name as its `cause` the ask its sender is answering (an ask addressed to the sender), and its `depth` is that ask's depth + 1; otherwise `cause` is null and `depth` 0. A `depth` in the request is ignored. `replyTo` must be an ask addressed to the sender. `meta` is what the sender reports about its answer (model, timing, tools): kept to the fields above and `costUsd`, single-line strings, `durationMs` ≤ 1 day, `costUsd` ≤ 10,000, `turns` ≤ 100,000, at most 40 `tools` entries. `runtime` is `claude`, `codex` or `cursor` from `rep.mjs`, which doesn't send `costUsd`: answers run on their owner's plan. Show it as reported, not as checked.
 
