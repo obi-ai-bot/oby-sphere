@@ -1170,7 +1170,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const okFile = (f) => !!f && RID.f.test(String(f.id));
   const okMessage = (m) => !!m && RID.m.test(String(m.id)) && CHAN.test(String(m.channel)) && (m.from == null || RID.a.test(String(m.from)))
     && (m.replyTo == null || RID.m.test(String(m.replyTo))) && (m.cause == null || RID.m.test(String(m.cause)))
-    && (m.to == null || (Array.isArray(m.to) && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.every(okFile)));
+    && (m.to == null || (Array.isArray(m.to) && m.to.length <= 64 && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.length <= 10 && m.files.every(okFile)))
+    && (m.deleted ? !('text' in m) : typeof m.text === 'string' && Number.isInteger(m.depth ?? 0));
   // words as the page shows them: no control or direction-override characters. The relay cleans the
   // plain words it keeps, but sealed words are opened on your machine as their sender wrote them.
   const cleanText = (s) => String(s ?? '').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
@@ -5204,6 +5205,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">${p.depth > 0 ? `for an ask @${esc(p.from?.name || '?')} passed on for someone else` : `for @${esc(p.from?.name || '?')}’s ask`} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
         ${pr ? `<div class="gh-pr">${pr}</div>` : ''}
         ${p.text ? `<div class="q">${esc(p.text)}</div>` : g.action === 'review' ? '<div class="gh-quiet">No words: an approval on its own.</div>' : ''}
+        ${p.unsure ? `<div class="stuck-note"><span class="stuck-head">Not sure who this is</span><span>${esc(p.unsure)}</span></div>` : ''}
         ${p.signed ? `<div class="gh-quiet">Signed “${esc(p.signed)}”.</div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="act">${esc(g.button || 'Do it on GitHub')}</button>
@@ -5812,10 +5814,18 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
+  // who wrote a message: the handle and owner's name your console pinned for its id (m.fromPinned),
+  // whatever the relay's list calls that id now; the list's record when there's no pin (your own)
+  const sender = (m) => {
+    const a = agent(m.from);
+    const f = m.fromPinned;
+    return f && typeof f.name === 'string' && f.name ? { ...a, name: f.name, owner: typeof f.owner === 'string' && f.owner ? f.owner : a.owner } : a;
+  };
+  const whoWrote = (m) => `<span class="who">${esc(obyLower(sender(m)))}</span>`;
   function messageHtml(m, prev) {
     if (m.kind === 'system') return `<p class="sys" id="${esc(m.id)}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
     if (m.deleted) return goneHtml(m); // deleting messages
-    const a = agent(m.from);
+    const a = sender(m);
     const mine = isMe(a);
     const mt = m.meta || {};
     const you = mine && !mt.local && !mt.error;
@@ -5823,8 +5833,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const cause = m.cause ? S.byId.get(m.cause) : null;
     let did = '';
     if (m.to.length) did = `asks ${m.to.map(who).join(', ')}`;
-    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${who(parent.from)}</button>`;
-    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${who(cause.from)}</button>`;
+    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${whoWrote(parent)}</button>`;
+    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${whoWrote(cause)}</button>`;
     const cont = prev && !prev.deleted && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
     let state = '';
     if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(machineOf(a))}</p>`;
@@ -5845,7 +5855,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
     // your console says so (m.unsealed): a plain message where your Oby seals
     if (m.unsealed) state += `<p class="room-state is-refused">Not sealed: the relay could have written it</p>`;
-    const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
+    // the relay calls its sender by another handle or owner now than the one first seen for it
+    if (m.fromUnsure) state += `<p class="room-state is-refused">Not sure who this is: ${esc(m.fromUnsure)}</p>`;
+    const t =`<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}

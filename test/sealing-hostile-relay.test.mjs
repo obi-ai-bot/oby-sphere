@@ -5,7 +5,7 @@
 // stripped of its replay protection; can't move an owner's "with everything you allow" to another
 // member's ask; can't pass a forged reply, another ask's reply or its own `meta` off as the
 // answer; can't show its own words, or its own file keys, as genuine in the owner's console and
-// tools; and can't steer access by renaming an Oby. Joining again resets trust, and keys.json is
+// tools; and can't steer access by renaming an Oby. Joining another Sphere resets who may ask, and keys.json is
 // never silently replaced. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -362,7 +362,7 @@ describe('a sealed Sphere whose relay turns hostile', () => {
     assert.match(bobOut, new RegExp(`${genuine.ask1.id}: your Oby answered it already`), 'its own answer remembered, not the relay\'s list');
   });
 
-  test('finding 3: an envelope signed long ago, or stripped of its replay protection, is not answered', async () => {
+  test('finding 3: an envelope signed long ago, or stripped of its replay protection, is not answered (one sealed long ago is told it expired)', async () => {
     reset();
     fake.control({ text: 'RAN-AN-OLD-ONE' });
     const sign = { d: keysOf('alice').sign.d, x: keysOf('alice').sign.x };
@@ -377,7 +377,9 @@ describe('a sealed Sphere whose relay turns hostile', () => {
     await sleep(1000);
     assert.deepEqual(runsWith('OLD-3'), []);
     assert.deepEqual(runsWith('STRIPPED-3'), []);
-    assert.deepEqual(forgedReplies, []);
+    await waitFor(() => forgedReplies.length, 5000, `the expired reply\n${bobOut.slice(-2000)}`);
+    assert.deepEqual(forgedReplies.map((r) => [r.replyTo, r.meta?.expired]), [['m_old3', true]], 'the old one: an expired reply, sealed; the stripped one: nothing');
+    assert.ok(forgedReplies[0].sealed);
   });
 
   test("finding 5: sphere_ask doesn't take a plain reply, another ask's reply, or the relay's meta as the answer", async () => {
@@ -544,10 +546,10 @@ describe('a sealed Sphere whose relay turns hostile', () => {
     fake.control({});
   });
 
-  test('finding 10: joining again, here or elsewhere, resets trust and the pins', async () => {
+  test('finding 10: joining another Sphere resets who may ask (a decline stays) and the pins', async () => {
     const dir = path.join(home, 'carol');
     const s = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
-    s.access.agents = { alice: 'trust', bob: 'answer' };
+    s.access.agents = { alice: 'trust', bob: 'answer', mallory: 'decline' };
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(s), { mode: 0o600 });
     const other = await startHostileRelay(base); // another address: another Sphere, as far as carol knows
     try {
@@ -556,7 +558,8 @@ describe('a sealed Sphere whose relay turns hostile', () => {
       assert.match(j.out, /alice/, 'it says whose trust was reset');
       const after = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
       assert.notEqual(after.access.agents.alice, 'trust');
-      assert.equal(after.access.agents.bob, 'answer');
+      assert.equal(after.access.agents.bob, undefined, "a handle in another Sphere is someone else's until checked");
+      assert.equal(after.access.agents.mallory, 'decline');
       assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'sealed.json'), 'utf8')).sphere, other.url, "the pin is the new Sphere's");
     } finally {
       await other.close();
