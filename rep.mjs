@@ -229,6 +229,9 @@ const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['mi
 const EFFORT_LABEL = { minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
 const ACCESS = ['decline', 'approve', 'answer', 'trust'];
 const ACCESS_DEFAULT = 'approve'; // Obys you haven't listed: Ask me first, unless the file says otherwise
+// asks passed on from another ask (hops): never trust; Ask me first, unless the file says otherwise
+const HOPS = ['decline', 'approve', 'answer'];
+const HOPS_DEFAULT = 'approve';
 const TIME_LIMIT_DEFAULT = 10; // minutes, when a route sets none
 const TIME_LIMIT_MAX = 120;
 const ABOUT_MAX = 500; // characters in what a rule is about
@@ -269,7 +272,7 @@ const REP_INSTANCE = randomBytes(6).toString('hex');
 // why a declined ask was declined: the asker sees these words, nothing more
 const DECLINE = {
   access: "it doesn't take asks from you",
-  topic: "it doesn't take asks on this topic",
+  topic: "its owner's settings don't allow this", // the same words as other settings: a topic isn't told apart
   files: "it doesn't take asks with files",
   hops: "it doesn't take asks passed on from another ask",
   limit: 'it has reached its limit for today',
@@ -983,7 +986,9 @@ async function localApi(req, res, url, p) {
       const inst = (i) => (isMap(i) && INSTRUMENT_NAME.test(String(i.name)) ? { name: i.name, kind: i.kind === 'command' ? 'command' : 'prompt' } : null);
       // stuck: your Oby tried, and handed it to you (sphere_ask_owner): its note, and what it needs
       const stuckOf = (x) => (isMap(x) && typeof x.note === 'string' ? { note: cleanLine(x.note, 400), need: HANDOFF_NEEDS.includes(x.need) ? x.need : 'access' } : null);
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck }) => ({ id, askId, from, channel, ts, text, files, reason, risky: risky && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}) });
+      // depth: passed on by from for someone else (a hop), who can't be named: neither everything you allow nor always answer
+      const hopOf = (d) => (Number.isInteger(d) && d > 0 ? d : 0);
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth }) => ({ id, askId, from, channel, ts, text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}) });
       // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
@@ -1002,15 +1007,15 @@ async function localApi(req, res, url, p) {
       const who = from ? `Asks from ${from}` : 'Asks from anyone not listed';
       // the same checks as a real ask, in the same order (the day's limits read, not counted)
       const g = gate(s, { from, text: b.text, files: b.hasFiles ? 1 : 0, depth: b.hop ? 1 : 0 });
-      const over = g.decline ? null : limitReached(readUsage(p), s, from);
-      const declined = g.decline || (over ? 'limit' : null);
+      const over = g.decline && g.decline !== 'topic' ? null : limitReached(readUsage(p), s, from); // a topic is checked after the limits
+      const declined = (g.decline !== 'topic' && g.decline) || (over ? 'limit' : null) || g.decline || null;
       if (declined) {
         const limitWords = { agent: `${from || 'This Oby'} has used up its asks for today (your limit per Oby).`, day: 'Your Oby has given all its answers for today (your limit for all Obys together).' }[over];
         const why = { access: `${who} are declined.`, topic: 'Asks on this topic are declined.', files: 'Asks with files are declined.', hops: 'Asks passed on from another ask are declined.', limit: limitWords }[declined];
         return sendJson(res, 200, { rule: null, name: null, use: null, how: null, fellBack: null, note: `${why} No rule is tried, and no runtime runs.`, answerable: false, declined });
       }
       const r = await chooseRoute(p, s, { text: b.text, from, hasFiles: !!b.hasFiles, hop: !!b.hop, channel: slug(b.channel || 'general') || 'general' }, { trusted: !!g.trusted });
-      const pre = g.approve ? `${who} wait for you first. ` : g.untrusted === 'hop' ? `Passed on from another ask, so it's answered as any Oby's ask (no risky reach). ` : '';
+      const pre = g.approve ? (b.hop ? `${from ? `Asks ${from} passes on` : 'Asks passed on'} from another ask wait for you first. ` : `${who} wait for you first. `) : g.untrusted === 'hop' ? `Passed on from another ask, so it's answered as any Oby's ask (no risky reach). ` : '';
       return sendJson(res, 200, { rule: r.rule, name: r.name, use: r.use, how: r.how, fellBack: r.fellBack, note: pre + r.note, answerable: !r.decline && !r.unusable, declined: r.decline || null });
     }
     const pm = route.match(/^\/local\/pending\/(w_[0-9a-f]{12})$/);
@@ -2411,6 +2416,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
 
       // trust goes with the agent first seen under a handle, not with what the relay calls it now
       const who = agentsById.has(msg.from) ? sec.identity(from) : { ok: false, why: "it isn't listed in the Sphere" };
+      // passed on from another ask: for someone the Oby passing it on can't name for sure, so never
+      // with everything you allow, whatever is clicked (a held one keeps no such approval either)
+      const hop = (msg.depth || 0) > 0;
 
       // your settings decide, in this order, before anything reaches a model; and again when the
       // ask's turn to run comes, so a change you make while it waits applies to it
@@ -2424,16 +2432,19 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         }
         const use = instrumentUseOf(p, opened.text, s); // instruments: a use of one of yours, read again at every check
         const g = instrumentGate(gate(s, { from: asker, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok }), use);
-        return g.decline ? { decline: g.decline } : { s, g, who, use };
+        return g.decline ? { decline: g.decline, s } : { s, g, who, use };
       };
       let c = check();
-      if (c.decline) return decline(c.decline);
+      // a topic you decline is told in the same words as other settings, and only after the ask is
+      // counted: guessing your topics one ask at a time uses up the asker's asks for the day
+      if (c.decline && (c.decline !== 'topic' || held || refound)) return decline(c.decline);
       if (!held && !refound) {
         const over = takeAsk(p, c.s, asker); // a held ask, or one taken up again, was counted when it came
         if (over) return decline(over);
+        if (c.decline) return decline(c.decline);
       }
       // the risky reach: for an Oby you trust, or when you let this ask answer with everything you allow
-      let ownerSaid = held?.approved || null; // 'answer' or 'trust', once you decided this ask (kept while it's held)
+      let ownerSaid = hop && held?.approved === 'trust' ? 'answer' : held?.approved || null; // 'answer' or 'trust', once you decided this ask (kept while it's held)
       for (;;) {
         // it waited for you while your Oby was stopped, past the time it waits: declined, as if it had lapsed here
         if ((c.g.approve || approveAll) && !ownerSaid && lapsed) {
@@ -2441,7 +2452,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           return decline('timeout');
         }
         if ((c.g.approve || approveAll) && !ownerSaid) {
-          const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use);
+          const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', riskyReach(c.s) && c.use?.inst.kind !== 'command' && !hop, c.use);
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
           if (d.decision === 'timeout') return decline('timeout');
@@ -2458,7 +2469,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
               log(yellow(`  couldn't add ${asker} to Who can ask: `) + printable(e.message));
             }
           }
-          ownerSaid = d.decision === 'trust' ? 'trust' : 'answer';
+          ownerSaid = d.decision === 'trust' && !hop ? 'trust' : 'answer';
           log(dim(`  you let your Oby answer${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
         }
         ranHere = true;
@@ -2468,7 +2479,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         if (again.handoff) {
           // your Oby handed it to you: you answer it, let it try again (once more, without handing it
           // back), or decline; no decision in time and the asker reads that you didn't answer
-          const d = await ownerDecides(msg, from, opened, 'stuck', riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { stuck: { note: again.handoff.note, need: again.handoff.need } });
+          const d = await ownerDecides(msg, from, opened, 'stuck', riskyReach(c.s) && c.use?.inst.kind !== 'command' && !hop, c.use, { stuck: { note: again.handoff.note, need: again.handoff.need } });
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
           if (d.decision === 'timeout') {
@@ -2483,7 +2494,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
             log(green('→ sent your answer'));
             return;
           }
-          ownerSaid = d.decision === 'trust' ? 'trust' : ownerSaid || 'answer';
+          ownerSaid = d.decision === 'trust' && !hop ? 'trust' : ownerSaid || 'answer';
           log(dim(`  you let your Oby try again${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
           continue;
         }
@@ -2522,6 +2533,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         text: opened.text,
         files: opened.files.map((f) => ({ name: safeName(f.name), size: Number(f.size) || 0 })),
         reason: why,
+        ...(msg.depth > 0 ? { depth: Math.min(Math.floor(msg.depth), 99) } : {}), // passed on by from, for someone it can't name: never everything you allow
         ...(use ? { instrument: { name: use.name, kind: use.inst.kind } } : {}), // instruments
         ...(stuck ? { stuck, title: `Your Oby needs you for @${slug(from.name)}'s ask` } : {}),
       },
@@ -2530,6 +2542,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const wait = waitMs >= 2 * 3600e3 ? `${Math.round(waitMs / 3600e3)} h` : waitMs >= 120e3 ? `${Math.round(waitMs / 60e3)} min` : `${Math.round(waitMs / 1000)} s`;
     log(yellow('  ⏸ waiting for you') + dim(` · your console's Waiting for you${terminal ? ', or here' : ''} · ${away?.by === 'owner' ? `you're away: it waits for your return, up to ${wait}` : `declined if no answer in ${wait}`}`));
     const asker = slug(from.name);
+    if (msg.depth > 0) log(dim(`  passed on by ${asker} for someone else: who asked first can't be known, so never with everything you allow`));
     // the asker sees that it waits for you, and until when (an older relay has no place for it: 404)
     const until = new Date(Math.min(Date.parse(w.expiresAt), Date.now() + 7 * 864e5 - 60e3)).toISOString();
     const told = api.post(`/api/messages/${msg.id}/waiting`, { for: 'owner', until }).catch(() => {});
@@ -2541,7 +2554,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     // "always answer": offered for an Oby you haven't listed in Who can ask
     let always = false;
     try {
-      always = !stuck && canAlwaysAnswer(settingsNow(), asker);
+      always = !stuck && !(msg.depth > 0) && canAlwaysAnswer(settingsNow(), asker);
     } catch {}
     const ac = new AbortController();
     if (terminal) prompts = prompts.then(() => askInTerminal(w.id, asker, ac.signal, risky, always, stuck)).catch(() => {});
@@ -5953,7 +5966,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   });
 
   // access
-  const a = obj(input.access, 'access', ['default', 'agents', 'acceptFiles', 'sendFiles', 'consultOthers', 'acceptHops', 'declineTopics', 'asksPerAgentPerDay', 'answersPerDay', 'rules'], 'an object');
+  const a = obj(input.access, 'access', ['default', 'agents', 'acceptFiles', 'sendFiles', 'consultOthers', 'acceptHops', 'hops', 'declineTopics', 'asksPerAgentPerDay', 'answersPerDay', 'rules'], 'an object');
   const choice = (v, field) => {
     if (!ACCESS.includes(v)) throw bad(field, `is decline, approve, answer or trust, not ${said(v)}`);
     return v;
@@ -5967,6 +5980,10 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
   }
   if (a.rules !== undefined && a.rules !== null && typeof a.rules !== 'string') throw bad('access.rules', 'is your instructions, in words');
   if (String(a.rules || '').length > 8000) throw bad('access.rules', 'is at most 8,000 characters');
+  // how an accepted hop is taken (never trust). Left out of the file when it's the default (Ask me
+  // first), so an older rep.mjs still reads it; a file from before it gets the default
+  const hops = a.hops ?? HOPS_DEFAULT;
+  if (!HOPS.includes(hops)) throw bad('access.hops', `is decline, approve or answer, not ${said(hops)}${hops === 'trust' ? ': an ask passed on from another ask never gets trust' : ''}`);
   const access = {
     default: a.default === undefined || a.default === null ? ACCESS_DEFAULT : choice(a.default, 'access.default'),
     agents,
@@ -5974,6 +5991,7 @@ function validateSettings(input, { disk = true, mcp = false } = {}) {
     sendFiles: bool(a.sendFiles, 'access.sendFiles', true),
     consultOthers: bool(a.consultOthers, 'access.consultOthers', true),
     acceptHops: bool(a.acceptHops, 'access.acceptHops', true),
+    ...(hops === HOPS_DEFAULT ? {} : { hops }),
     declineTopics: list(a.declineTopics, 'access.declineTopics', { max: 200, each: 80 }),
     asksPerAgentPerDay: amount(a.asksPerAgentPerDay, 'access.asksPerAgentPerDay', { max: 1e5, what: 'a number of asks (0 means no limit)' }),
     answersPerDay: amount(a.answersPerDay, 'access.answersPerDay', { max: 1e5, what: 'a number of answers (0 means no limit)' }),
@@ -6081,31 +6099,47 @@ function withOverrides(s, o = {}) {
   return t;
 }
 
-// ---- before a model: access, topics, files and hops (limits come next, in takeAsk)
+// ---- before a model: who asks, files and hops, then the topic (the limits are counted before a
+// topic decline, in handle: takeAsk)
 function accessFor(s, from) {
   return Object.hasOwn(s.access.agents, from) ? s.access.agents[from] : s.access.default;
 }
+// of two access levels, the one that gives less (ACCESS runs from decline to trust)
+function stricter(x, y) {
+  return ACCESS.indexOf(x) <= ACCESS.indexOf(y) ? x : y;
+}
 // sure: the asker is who its handle says (the id first seen with that handle, and in a sealed
-// Sphere a sealed ask that verifies); trust is for that Oby's own asks only. A relayed ask
-// (depth > 0) carries the words of whoever the trusted Oby is answering, so it gets at most
-// "answer": no risky reach. untrusted says why a trusted handle got less ('hop' or 'identity').
+// Sphere a sealed ask that verifies). An asker that isn't sure gets no more than an Oby you
+// haven't listed (access.default), and never trust: a relay that puts a listed handle on another
+// Oby gets nothing that handle was given. A relayed ask (depth > 0, a hop) carries the words of
+// whoever the Oby passing it on is answering, and who that is can't be known here: it gets the
+// stricter of that Oby's level and access.hops (Ask me first unless you say otherwise), so an Oby
+// you decline, or one that would wait for you, can't get an answer by going through one you answer;
+// and never trust. untrusted says why a trusted handle got less ('hop' or 'identity').
 function gate(s, { from, text, files = 0, depth = 0, sure = true }) {
   const a = s.access;
   const listed = Object.hasOwn(a.agents, from);
-  const level = accessFor(s, from);
+  const own = accessFor(s, from);
+  let level = !sure && listed ? stricter(own, a.default) : own;
   if (level === 'decline') return { decline: 'access' };
-  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
   if (!a.acceptFiles && files > 0) return { decline: 'files' };
-  if (!a.acceptHops && depth > 0) return { decline: 'hops' };
-  if (level === 'approve') return { level, approve: true, why: listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise' };
-  if (level === 'trust' && (depth > 0 || !sure)) return { level: 'answer', trusted: false, untrusted: depth > 0 ? 'hop' : 'identity' };
-  return { level, trusted: level === 'trust', untrusted: null };
+  const hops = a.hops || HOPS_DEFAULT;
+  if (depth > 0 && (!a.acceptHops || hops === 'decline')) return { decline: 'hops' };
+  if (depth > 0) level = stricter(level, hops);
+  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
+  const untrusted = own === 'trust' && level !== 'trust' ? (depth > 0 ? 'hop' : 'identity') : null;
+  if (level === 'approve') {
+    const why = depth > 0 ? `asks ${from} passes on for someone else wait for you` : !sure && listed && own !== 'approve' ? `${from} isn't surely the Oby you listed, so it waits for you` : listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise';
+    return { level, approve: true, why, untrusted };
+  }
+  if (level === 'trust' && !sure) return { level: 'answer', trusted: false, untrusted: 'identity' };
+  return { level, trusted: level === 'trust', untrusted };
 }
 // which of the day's limits this ask would be over: 'agent' (this Oby's asks), 'day' (the answers
 // your Oby gives, all Obys together), or null
 function limitReached(u, s, from) {
   const { asksPerAgentPerDay: perAgent, answersPerDay } = s.access;
-  if (perAgent && (u.asksByAgent[from] || 0) >= perAgent) return 'agent';
+  if (perAgent && (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) >= perAgent) return 'agent';
   if (answersPerDay && u.answers >= answersPerDay) return 'day';
   return null;
 }
@@ -6309,7 +6343,7 @@ function usageDay(d = new Date()) {
 }
 function readUsage(p, day = usageDay()) {
   const u = readJsonFile(path.join(p.dir, 'usage', `${day}.json`), {});
-  const asks = {};
+  const asks = Object.create(null); // by handle: a handle such as constructor is counted like any other
   if (u.asksByAgent && typeof u.asksByAgent === 'object') for (const [k, v] of Object.entries(u.asksByAgent)) if (slug(k) === k && Number.isInteger(v) && v >= 0) asks[k] = v;
   return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0 };
 }
@@ -6346,7 +6380,7 @@ function withUsage(p, fn) {
 function takeAsk(p, s, from) {
   return withUsage(p, (u) => {
     if (limitReached(u, s, from)) return 'limit';
-    u.asksByAgent[from] = (u.asksByAgent[from] || 0) + 1;
+    u.asksByAgent[from] = (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) + 1;
     return null;
   });
 }
@@ -6436,6 +6470,8 @@ function decidePending(p, id, decision) {
   const dir = pendingDir(p);
   const w = readJsonFile(path.join(dir, `${id}.json`), null);
   if (!w || w.id !== id || !Number.isInteger(w.pid) || !processAlive(w.pid)) throw gone();
+  // an ask passed on for someone else: never with everything you allow, and its Oby isn't listed for it
+  if (w.depth > 0 && ['trust', 'always'].includes(decision?.decision)) throw Object.assign(new Error("decision: answer, decline or write (an ask passed on from another ask never gets everything you allow, and doesn't list the Oby that passed it on)"), { status: 400, field: 'decision' });
   try {
     fs.writeFileSync(path.join(dir, `${id}.decision.json`), JSON.stringify({ ...decision, at: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
   } catch (e) {
@@ -6969,7 +7005,7 @@ function settingsSummary(s) {
     'What other Obys may ask',
     `  anyone not listed: ${choice[a.default]}`,
     ...Object.entries(a.agents).map(([h, v]) => `  ${h}: ${choice[v]}`),
-    `  takes files: ${yes(a.acceptFiles)} · sends files: ${yes(a.sendFiles)} · asks other Obys: ${yes(a.consultOthers)} · takes passed-on asks: ${yes(a.acceptHops)}`,
+    `  takes files: ${yes(a.acceptFiles)} · sends files: ${yes(a.sendFiles)} · asks other Obys: ${yes(a.consultOthers)} · takes passed-on asks: ${a.acceptHops ? { approve: 'yes, after you say so', answer: 'yes, as the Oby passing it on gets (never trusted)', decline: 'no' }[a.hops || HOPS_DEFAULT] : 'no'}`,
     `  declines asks about: ${a.declineTopics.length ? a.declineTopics.join(', ') : 'nothing in particular'}`,
     `  limits: ${limits}`,
     `  your rules: ${a.rules ? clip(a.rules, 300) : '(none)'}`,
@@ -9193,7 +9229,8 @@ async function githubAct(p, action, a) {
   // the ask's thread as the representative saw it (who asked, where, sealed or not), never as the relay tells it later
   const e = process.env;
   const cause = e.SPHERE_CAUSE && ID.m.test(e.SPHERE_CAUSE) ? e.SPHERE_CAUSE : null;
-  const thread = { askId: cause, asker: ID.a.test(String(e.SPHERE_GITHUB_ASKER)) ? e.SPHERE_GITHUB_ASKER : null, channel: /^[a-z0-9-]{1,32}$/.test(String(e.SPHERE_CHANNEL)) ? e.SPHERE_CHANNEL : null, sealed: e.SPHERE_GITHUB_SEALED === '1' };
+  // depth: the ask's own (the session's is one more): passed on from another ask, Waiting for you says so
+  const thread = { askId: cause, asker: ID.a.test(String(e.SPHERE_GITHUB_ASKER)) ? e.SPHERE_GITHUB_ASKER : null, channel: /^[a-z0-9-]{1,32}$/.test(String(e.SPHERE_CHANNEL)) ? e.SPHERE_CHANNEL : null, sealed: e.SPHERE_GITHUB_SEALED === '1', depth: Math.max(0, Math.min(99, Math.floor(Number(e.SPHERE_DEPTH) || 1) - 1)) };
   const q = githubQueue(p, { ...req, repPid, ...thread });
   if (!q.ok) return q.why;
   return `This waits for ${owner}: it's in their Waiting for you now, with your text${req.action === 'merge' ? '' : ' as written'}. When they decide, it's carried out on GitHub (or not), and a short reply in this thread says which. In your answer, say plainly that it waits for ${owner}.`;
@@ -9249,6 +9286,7 @@ function githubCleanRequest(r) {
     asker: ID.a.test(String(r?.asker)) ? r.asker : null,
     channel: typeof r?.channel === 'string' && /^[a-z0-9-]{1,32}$/.test(r.channel) ? r.channel : null,
     sealed: r?.sealed === true,
+    depth: Number.isInteger(r?.depth) && r.depth > 0 && r.depth < 100 ? r.depth : 0,
   };
   if (!['review', 'comment', 'merge'].includes(req.action) || !validRepo(req.repo) || !Number.isInteger(req.number) || req.number < 1 || req.number > 1e9) return null;
   if (req.action !== 'review') req.event = null;
@@ -9267,7 +9305,7 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
     // the ask it came from: its thread, its asker, whether it was sealed, as this representative saw
     // them when it took the ask (the request carries them); the relay isn't asked again, so it can't
     // change whose ask Waiting for you names, or whom the reply below is sealed for
-    const { askId, body, asker: askerId, channel, sealed, ...github } = req;
+    const { askId, body, asker: askerId, channel, sealed, depth, ...github } = req;
     if (askerId && !agents().get(askerId)) await refreshAgents().catch(() => {});
     const asker = askerId ? agents().get(askerId) || null : null;
     const thread = askId && channel ? { id: askId, channel, sealed } : null;
@@ -9280,6 +9318,8 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
       text: body,
       files: [],
       reason: 'github',
+      ...(depth > 0 ? { depth } : {}), // passed on by that Oby for someone else
+      askerId, // whose ask: GitHub items wait per asker (GH_WAITING_MAX)
       github,
     });
     const words = githubWords(req);
@@ -9383,6 +9423,7 @@ function githubPendingView(p, w) {
     text,
     files: [],
     reason: 'github',
+    depth: Number.isInteger(w.depth) && w.depth > 0 ? w.depth : 0,
     github: { ...g, url: prUrl(g.repo, g.number), verb: words.verb, button: words.button },
     options: ['act', ...(asComment ? ['comment'] : []), 'decline'],
     signed: s && githubOf(s).signature && g.action !== 'merge' ? githubSignatureLine(p, true) : null,

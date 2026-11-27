@@ -68,7 +68,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
   const settings = (github = {}, over = {}) => ({
     version: 2,
     routing: { default: { runtime: 'claude', model: 'sonnet' } },
-    access: { default: 'answer', agents: { carol: 'trust' }, ...over.access },
+    access: { default: 'answer', agents: { carol: 'trust' }, hops: 'answer', ...over.access },
     machine: { folders: [{ path: payments, write: true }, { path: tools, write: false }], shell: 'full', web: { fetch: false, search: false }, ...over.machine },
     github: { enabled: true, repos: ['acme-labs/*'], ...github },
   });

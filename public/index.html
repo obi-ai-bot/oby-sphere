@@ -3177,7 +3177,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const risky = riskyReach(SET.settings);
     return `<div class="section-head"><h2 class="warn">Waiting for you · ${list.length}</h2><span class="link">${list.some((p) => p.kind === 'github') ? 'Nothing here happens until you say so' : 'Your Oby answers none of these until you say so'}</span></div>` +
       list.map((p) => githubCardHtml(p) || `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">${p.depth > 0 ? `passed on by @${esc(p.from?.name || '?')} for someone else` : `@${esc(p.from?.name || '?')}`} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
         ${p.stuck ? `<div class="stuck-note"><span class="stuck-head">${obyPic(S.me, 16)}${esc(NEED_WORDS[p.stuck.need] || NEED_WORDS.access)}</span><span>${esc(p.stuck.note)}</span></div>` : ''}
@@ -5036,7 +5036,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const what = g.action === 'merge' ? 'merge' : g.action === 'comment' ? 'comment on' : { APPROVE: 'approve', REQUEST_CHANGES: 'request changes on', COMMENT: 'post a review on' }[g.event] || 'act on';
     const pr = [g.title && esc(g.title), g.author && `by @${esc(g.author)}`, g.base && `into ${esc(g.base)}`, g.head && `at <span class="mono">${esc(String(g.head).slice(0, 7))}</span>`, g.action === 'merge' && esc(g.method || 'merge')].filter(Boolean).join(' · ');
     return `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">for @${esc(p.from?.name || '?')}’s ask · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">${p.depth > 0 ? `for an ask @${esc(p.from?.name || '?')} passed on for someone else` : `for @${esc(p.from?.name || '?')}’s ask`} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
         ${pr ? `<div class="gh-pr">${pr}</div>` : ''}
         ${p.text ? `<div class="q">${esc(p.text)}</div>` : g.action === 'review' ? '<div class="gh-quiet">No words: an approval on its own.</div>' : ''}
         ${p.signed ? `<div class="gh-quiet">Signed “${esc(p.signed)}”.</div>` : ''}
