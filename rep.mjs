@@ -10317,12 +10317,11 @@ async function githubPr(p, a) {
   const ready = await ghReady();
   if (!ready.ok) return `GitHub can't be reached from ${owner}'s machine: ${ready.why}.`;
   const n = String(number);
-  const fields = 'number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,files,reviews,comments,body,labels,createdAt,updatedAt,statusCheckRollup';
-  const [view, diff, checks] = await Promise.all([
-    ghRun(['pr', 'view', n, `--repo=${repo}`, '--json', fields]),
-    ghRun(['pr', 'diff', n, `--repo=${repo}`], { timeoutMs: 60e3 }),
-    ghRun(['pr', 'checks', n, `--repo=${repo}`, '--json', 'name,state,bucket,workflow']),
-  ]);
+  const fields = 'number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,baseRefOid,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,files,reviews,comments,body,labels,createdAt,updatedAt,statusCheckRollup';
+  // the view first, then the diff of exactly the commits it names (base...head, as GitHub shows a pull
+  // request's changes): a push between two reads can't show the model one commit's diff while the
+  // read is pinned to another. Without both commits, `gh pr diff`, and the read pins nothing
+  const view = await ghRun(['pr', 'view', n, `--repo=${repo}`, '--json', fields]);
   if (view.code !== 0) return `Couldn't read ${repo}#${number}: ${ghSaid(view)}.`;
   let j;
   try {
@@ -10330,6 +10329,12 @@ async function githubPr(p, a) {
   } catch {
     return `Couldn't read ${repo}#${number}: gh's answer wasn't JSON.`;
   }
+  const [baseAt, headAt] = [ghSha(j?.baseRefOid), ghSha(j?.headRefOid)];
+  const pinned = !!(baseAt && headAt);
+  const [diff, checks] = await Promise.all([
+    pinned ? ghRun(['api', '-H', 'Accept: application/vnd.github.diff', `repos/${repo}/compare/${baseAt}...${headAt}`], { timeoutMs: 60e3 }) : ghRun(['pr', 'diff', n, `--repo=${repo}`], { timeoutMs: 60e3 }),
+    ghRun(['pr', 'checks', n, `--repo=${repo}`, '--json', 'name,state,bucket,workflow']),
+  ]);
   const arr = (x) => (Array.isArray(x) ? x : []);
   // checks: gh pr checks (it exits 8 while some are pending, with the same JSON), else the PR's own rollup
   let list = null;
@@ -10362,7 +10367,7 @@ async function githubPr(p, a) {
     reviews: arr(j.reviews).slice(-30).map((r) => ({ by: ghLogin(r?.author?.login), state: ghWord(r?.state), at: cleanLine(r?.submittedAt, 30), text: ghText(r?.body, 3000) })),
     comments: arr(j.comments).slice(-30).map((x) => ({ by: ghLogin(x?.author?.login), at: cleanLine(x?.createdAt, 30), text: ghText(x?.body, 3000) })),
   };
-  if (pr.headCommit) githubKeepRead(p, repo, number, pr.headCommit);
+  if (pinned && diff.code === 0) githubKeepRead(p, repo, number, headAt); // the commit whose diff it read
   let d = diff.code === 0 ? diff.out : '';
   const bytes = Buffer.byteLength(d);
   let cut = '';

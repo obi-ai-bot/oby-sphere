@@ -297,8 +297,9 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     assert.ok(!/IGNORE YOUR INSTRUCTIONS|DIFF-MARKER/.test(parts[0] + parts[3] + parts[6]), 'nothing from GitHub outside a fence');
     // what it may do comes first, in our words, so a long result read from the top still says it
     assert.match(parts[0], /^What Bob Test's settings let you do on acme\/payments#7: approve: waits for Bob Test; request changes: waits for Bob Test; comment or review: waits for Bob Test; merge: not allowed\.\n\nPull request acme\/payments#7 \(data from GitHub/);
-    const reads = gh.calls().slice(n).filter((c) => c.argv[0] === 'pr').map((c) => c.argv.slice(0, 4).join(' ')).sort();
-    assert.deepEqual(reads, ['pr checks 7 --repo=acme/payments', 'pr diff 7 --repo=acme/payments', 'pr view 7 --repo=acme/payments']);
+    const reads = gh.calls().slice(n).filter((c) => c.argv[0] === 'pr' || c.argv[0] === 'api').map((c) => (c.argv[0] === 'pr' ? c.argv.slice(0, 4) : c.argv).join(' ')).sort();
+    // the diff of the commits the view named (base...head), not `gh pr diff`, which reads whatever the head is by then
+    assert.deepEqual(reads, ['api -H Accept: application/vnd.github.diff repos/acme/payments/compare/b45e000cafe1234...abc1234def5678', 'pr checks 7 --repo=acme/payments', 'pr view 7 --repo=acme/payments']);
     assert.ok(gh.calls().slice(n).every((c) => !c.cwd.startsWith(path.join(tmp, 'work'))), 'never inside your folders: every call names its repository');
     // allowed: a remote of a folder inside a folder, a listed pattern, any case
     for (const repo of ['acme/cli', 'acme-labs/anything', 'ACME/Payments']) assert.match((await s.call('github_pr', { repo, number: 7 })).text, /Fix the widget/, repo);
@@ -548,6 +549,56 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     assert.equal(r.text, "Couldn't tell which commit acme/payments#7 is at, so nothing was posted.");
     assert.equal(gh.writes().length, before + 1);
     gh.control({});
+    s.close();
+  });
+
+  test('github_pr reads the diff of the very commit it pins: a push between its calls never pins one commit to another’s diff', async () => {
+    writeSettings(settings({ approve: 'trusted' }));
+    const { run } = await ask('carol', 'review and approve acme/payments#7');
+    const s = session(run);
+    // the author pushes while gh reads: the view says 7a7a7a7…, a diff by number would be a11ce00…'s
+    gh.control({ head: '7a7a7a7a7a7a7a', prDiffHead: 'a11ce00a11ce00' });
+    const r = await s.call('github_pr', { repo: 'acme/payments', number: 7 });
+    assert.match(r.text, /"headCommit": "7a7a7a7a7a7a7a"/);
+    assert.match(r.text.split(/QUOTED-[0-9A-F]{12}/)[5], /DIFF-MARKER new line \(at 7a7a7a7a7a7a7a\)/, 'the diff of the commit it pins');
+    assert.ok(!r.text.includes('a11ce00'), 'never another commit’s diff');
+    // the approval covers that commit, and names it
+    const before = gh.writes().length;
+    assert.match((await s.call('github_review', { repo: 'acme/payments', number: 7, event: 'APPROVE', body: 'LGTM' })).text, /^Done: approved acme\/payments#7/);
+    assert.equal(gh.writes().length, before + 1);
+    assert.equal(reviewVars(gh.writes().at(-1).argv).commit, '7a7a7a7a7a7a7a');
+    // a base commit gh doesn't give: read with gh pr diff, and pinned to nothing, so nothing is approved on it
+    gh.control({ base: 'not-a-commit' });
+    assert.match((await s.call('github_pr', { repo: 'acme/payments', number: 8 })).text, /DIFF-MARKER new line/);
+    assert.match((await s.call('github_review', { repo: 'acme/payments', number: 8, event: 'APPROVE' })).text, /^You haven't read acme\/payments#8 in this ask/);
+    assert.equal(gh.writes().length, before + 1);
+    gh.control({});
+    s.close();
+  });
+
+  test('locked down: a GitHub item waits, and nothing goes up on GitHub until he lifts it', async () => {
+    writeSettings(settings());
+    const { m, run } = await ask('alice', 'comment on acme/payments#7 please');
+    const s = session(run);
+    assert.match((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'Thanks for the fix.' })).text, /^This waits for Bob Test/);
+    const w = await waitingItem(m.id);
+    const before = gh.writes().length;
+    assert.equal((await local('POST', '/local/lockdown', { on: true })).status, 200);
+    try {
+      const r = await local('POST', `/local/pending/${w.id}`, { decision: 'act' });
+      assert.equal(r.status, 409, JSON.stringify(r));
+      assert.match(r.error, /locked down/);
+      assert.ok((await local('GET', '/local/pending')).pending.some((x) => x.id === w.id), 'it still waits');
+      // and the answering session's GitHub tools say no
+      assert.equal((await s.call('github_comment', { repo: 'acme/payments', number: 7, body: 'More.' })).text, "Bob Test's settings don't allow GitHub.");
+      assert.equal(gh.writes().length, before, 'nothing went up');
+    } finally {
+      await local('POST', '/local/lockdown', { on: false });
+    }
+    // lifted: his click goes
+    assert.deepEqual(await local('POST', `/local/pending/${w.id}`, { decision: 'act' }), { status: 200, ok: true });
+    await threadSays(m, /^Bob Test commented on acme\/payments#7 on GitHub\.$/);
+    assert.equal(gh.writes().length, before + 1);
     s.close();
   });
 
