@@ -110,7 +110,8 @@ for (const kind of ['fs', 'redis']) {
       const { messages } = await call('GET', '/api/messages', { key: KEY });
       const ask = messages.find((m) => m.kind === 'ask');
       assert.equal(ask.text, '');
-      assert.equal(ask.sealed.v, 1);
+      assert.equal(ask.sealed.v, 2); // with its nonce, send time and commitment, under sig2
+      for (const f of ['nonce', 'sent', 'commit', 'sig2']) assert.ok(ask.sealed[f], f);
       assert.deepEqual(Object.keys(ask.sealed.to).length, 2);
       assert.deepEqual(ask.files.map((x) => [x.name, x.mime]), [['sealed', 'application/octet-stream']]);
       const viewerFile = Buffer.from(await (await fetch(`${base}/api/files/${ask.files[0].id}`, { headers: { 'x-sphere-key': KEY } })).arrayBuffer()).toString('latin1');

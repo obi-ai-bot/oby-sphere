@@ -780,18 +780,36 @@ describe("your Oby's settings", () => {
     assert.ok(kept[`claude:general:${ids.carol}:trusted`], "carol's trusted conversation is kept");
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'bob', 'sessions.json'), 'utf8')), kept, "and the hop's isn't");
 
-    // trust goes with the agent first seen under a handle: a relay calling another agent "carol" gets none
+    // trust goes with the agent first seen under a handle: a relay calling another agent "carol" gets
+    // none, and its ask waits for you, saying why; even "with everything you allow" gives no risky reach
     const peersFile = path.join(home, 'bob', 'peers.json');
     const peers = JSON.parse(fs.readFileSync(peersFile, 'utf8'));
     assert.equal(peers[ids.carol].name, 'carol', 'the handle is pinned');
+    const unsure = async (text, why) => {
+      const before = fake.calls().length;
+      const m = await ask('carol', text);
+      let w = null;
+      for (let i = 0; i < 80 && !w; i++) {
+        w = ((await local('GET', '/local/pending')).pending || []).find((x) => x.askId === m.id);
+        if (!w) await sleep(100);
+      }
+      assert.ok(w, `it waits for you\n${serveOut.slice(-2000)}`);
+      assert.match(w.reason, why);
+      assert.match(w.reason, /may not be the Oby it says/);
+      assert.equal(fake.calls().length, before, 'nothing runs while it waits');
+      await local('POST', `/local/pending/${w.id}`, { decision: 'trust' });
+      const r = await replyTo(m, 'carol');
+      assert.ok(!r.meta?.declined, r.text);
+      assert.equal(fake.calls().length, before + 1);
+      return lastCall();
+    };
     fs.writeFileSync(peersFile, JSON.stringify({ ...peers, [ids.carol]: { ...peers[ids.carol], name: 'mallory' } }), { mode: 0o600 });
-    ({ call: c } = await answered('carol', 'please review the diff'));
+    c = await unsure('please review the diff', /the Sphere now calls mallory "carol"/);
     assert.ok(!c.settings.permissions.allow.includes('Bash') && !c.settings.permissions.allow.some((a) => a.startsWith('Edit(')), 'no risky reach');
-    assert.match(serveOut, /the Sphere now calls mallory "carol"/);
+    assert.match(serveOut, /not with everything you allow/);
     fs.writeFileSync(peersFile, JSON.stringify({ ...peers, a_someoneelse01: { name: 'carol', pinnedAt: new Date().toISOString() }, [ids.carol]: { ...peers[ids.carol], name: undefined } }), { mode: 0o600 });
-    ({ call: c } = await answered('carol', 'please review it again'));
+    c = await unsure('please review it again', /another Oby was first seen as carol/);
     assert.ok(!c.settings.permissions.allow.includes('Bash'), 'no risky reach');
-    assert.match(serveOut, /another Oby was first seen as carol/);
     fs.writeFileSync(peersFile, JSON.stringify(peers), { mode: 0o600 });
     ({ call: c } = await answered('carol', 'review once more'));
     assert.ok(c.settings.permissions.allow.includes('Bash'), 'trusted again');

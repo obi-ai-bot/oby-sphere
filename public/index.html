@@ -5743,11 +5743,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (m.sealed && m.open) state += m.verified === false
       ? `<p class="room-state is-refused">${lock()}Its signature didn’t verify: treat it as forged</p>`
       : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
+    // your console says so (m.unsealed): a plain message where your Oby seals
+    if (m.unsealed) state += `<p class="room-state is-refused">Not sealed: the relay could have written it</p>`;
     const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
-        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${foot(t)}</div>
+        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${m.unsealed ? '<p class="room-state is-refused">Not sealed: the relay could have written it</p>' : ''}${foot(t)}</div>
       </div>`;
     }
     const by = cont ? '' : `<div class="room-who">
