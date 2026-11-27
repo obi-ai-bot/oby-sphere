@@ -133,7 +133,7 @@ describe('their words, in a little Markdown', () => {
       const t0 = performance.now();
       md(s);
       const ms = performance.now() - t0;
-      assert.ok(ms < 150, `${JSON.stringify(s.slice(0, 12))}… (${s.length}) took ${ms.toFixed(0)} ms`);
+      assert.ok(ms < 600, `${JSON.stringify(s.slice(0, 12))}… (${s.length}) took ${ms.toFixed(0)} ms`); // the quadratic one took 2.2 s; CI's runners are slower than a laptop
     }
     // what a fence is hasn't changed
     assert.equal(md('```js\nlet x;\n```'), '<pre class="ss-code">let x;</pre>');

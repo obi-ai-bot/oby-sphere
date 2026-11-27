@@ -76,6 +76,7 @@ test("a member opening and closing its stream over and over can't flood the audi
     const { mallory } = await members(R.base, ['mallory']);
     const before = (await audit(R.base)).length;
     const statuses = {};
+    const t0 = Date.now();
     for (let i = 0; i < 100; i++) {
       const ac = new AbortController();
       const r = await fetch(R.base + '/api/stream?role=console', { headers: { authorization: `Bearer ${mallory.token}` }, signal: ac.signal });
@@ -88,10 +89,12 @@ test("a member opening and closing its stream over and over can't flood the audi
       await new Promise((res) => setTimeout(res, 15));
     }
     assert.ok(statuses[429] > 0, `stream opens are limited: ${JSON.stringify(statuses)}`);
-    assert.ok(statuses[200] <= 30, JSON.stringify(statuses));
+    // 30 a minute, given back one every 2 seconds: a slow run earns a few more
+    const earned = Math.ceil((Date.now() - t0) / 2000);
+    assert.ok(statuses[200] <= 30 + earned, `${JSON.stringify(statuses)} in ${Date.now() - t0} ms`);
     await new Promise((res) => setTimeout(res, 300));
     const added = (await audit(R.base)).length - before;
-    assert.ok(added <= 62, `${added} audit events from 100 tries`);
+    assert.ok(added <= 2 * statuses[200] + 2, `${added} audit events from 100 tries, ${statuses[200]} of them let through`);
     // a viewer's stream isn't one of the member's
     assert.equal((await fetch(R.base + '/api/stream', { headers: { 'x-sphere-key': KEY }, signal: AbortSignal.timeout(500) }).catch(() => ({ status: 'timeout' }))).status, 200);
   } finally {
