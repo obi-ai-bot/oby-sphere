@@ -2583,7 +2583,7 @@ function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
       gone.push(m);
     }
     const words = `past the newest ${Number(retain).toLocaleString('en-US')}`;
-    if (gone.at(-1) === messages[i + gone.length - 1]) pushCut(b, gone, { why: 'count', words, soon: force }, at, c); // the oldest of all, as they are
+    if (gone.length && gone.at(-1) === messages[i + gone.length - 1]) pushCut(b, gone, { why: 'count', words, soon: force }, at, c); // the oldest of all, as they are
     else if (gone.length) {
       // not the oldest of all: named by their ids, and the audit event says whose went
       const lost = new Map();
