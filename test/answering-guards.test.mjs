@@ -11,7 +11,7 @@
 // never asks into a private channel someone outside it. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -350,8 +350,45 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     // braces that expand to paths: in the settings file (a comma would split the command line's list)
     assert.ok(!allowed('git diff {/etc/hosts,x}'), 'braces');
     assert.ok(argvDeny.every((r) => !r.includes('{')), 'no rule split on the command line');
+    // what the shell rewrites before git sees it: quotes or a backslash splitting "..", a tab before a path
+    for (const cmd of ["git diff README.md .''./.''./.zshrc", "git diff README.md ''/home/bob/.zshrc", 'git diff README.md .\\./.\\./.zshrc', 'git diff README.md\t/home/bob/.zshrc', 'git diff README.md .?/.?/.zshrc', 'git diff README.md <(cat ../.zshrc)'])
+      assert.ok(!allowed(cmd), `denied: ${cmd}`);
     // revisions and paths inside stay
-    for (const cmd of ['git diff', 'git diff HEAD~1', 'git diff main..feature -- src/a.js', 'git diff --stat main...HEAD', 'git diff HEAD@{1} -- docs', 'git log -p -- src', 'ls src']) assert.ok(allowed(cmd), `allowed: ${cmd}`);
+    for (const cmd of ['git diff', 'git diff HEAD~1', 'git diff HEAD^ HEAD', 'git diff main..feature -- src/a.js', 'git diff --stat main...HEAD', 'git diff origin/main -- docs/guide.md', 'git log -p -- src', 'ls src']) assert.ok(allowed(cmd), `allowed: ${cmd}`);
+    // and with a real shell and git: no command the rules let through prints a file outside the folder,
+    // however it's spelled (implicit no-index: two paths, one outside the repository)
+    const fakeHome = path.join(tmp, 'git-home');
+    const repo = path.join(fakeHome, 'Development', 'payments');
+    fs.mkdirSync(path.join(repo, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(fakeHome, '.zshrc'), 'export SECRET=OUTSIDE-MARKER-7731\n');
+    fs.writeFileSync(path.join(repo, 'README.md'), 'hello\n');
+    fs.writeFileSync(path.join(repo, 'sub', 'a.txt'), 'inside\n');
+    const genv = { PATH: process.env.PATH, HOME: fakeHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(fakeHome, 'no-gitconfig') };
+    spawnSync('git', ['init', '-q'], { cwd: repo, env: genv });
+    spawnSync('git', ['-c', 'user.email=a@example.invalid', '-c', 'user.name=Alice Test', 'commit', '-qm', 'x', '--allow-empty'], { cwd: repo, env: genv });
+    const H = fakeHome;
+    const spellings = ['../../.zshrc', `${H}/.zshrc`, '~/.zshrc', '"$HOME/.zshrc"', '${HOME}/.zshrc', '$(echo ../../.zshrc)', '`echo ../../.zshrc`', ".''./.''./.zshrc", `''${H}/.zshrc`, '.\\./.\\./.zshrc', '.""./"".""/.zshrc', '.?/.?/.zshrc', '.*/.*/.zshrc', '[.][.]/[.][.]/.zshrc', '.{.,}/.{.,}/.zshrc', '~+/../../.zshrc', 'sub/../../../.zshrc', './../../.zshrc', '"../../.zshrc"', "'../../.zshrc'", '<(cat ../../.zshrc)', 'x=../../.zshrc'];
+    // and words made of the pieces such spellings use, a few hundred of them (the same each run)
+    const pieces = ['..', '.', '/', 'sub', 'a.txt', '.zshrc', '*', '~', "'", '"', '\\', 'README.md', '-', '=', '+', 'x'];
+    let seed = 7731; // mulberry32
+    const rnd = (n) => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) % n;
+    };
+    for (let i = 0; i < 400; i++) spellings.push(Array.from({ length: 1 + rnd(6) }, () => pieces[rnd(pieces.length)]).join(''));
+    const cmds = spellings.flatMap((x) => [`git diff README.md ${x}`, `git diff ${x} README.md`, `git diff -- README.md ${x}`, `git diff README.md\t${x}`, `git diff --stat --patch README.md ${x}`]);
+    const shells = ['/bin/bash', '/bin/zsh'].filter((sh) => fs.existsSync(sh));
+    const let_through = cmds.filter((cmd) => allowed(cmd));
+    assert.ok(let_through.length > 50, `some are let through (paths inside the folder): ${let_through.length}`);
+    for (const cmd of let_through) {
+      for (const sh of shells) {
+        const r = spawnSync(sh, ['-c', cmd], { cwd: repo, env: genv, encoding: 'utf8', timeout: 10000 });
+        assert.ok(!String(r.stdout).includes('OUTSIDE-MARKER-7731'), `${sh} printed a file outside the folder: ${JSON.stringify(cmd)}`);
+      }
+    }
+    assert.ok(allowed('git diff README.md sub/a.txt'), 'two paths inside the folder stay');
     // the sandbox: transcripts, histories, other runtimes' sessions, a deployed Sphere's keys, ~/Library
     const denyRead = run.settings.sandbox.filesystem.denyRead;
     for (const h of ['.claude/projects', '.claude/history.jsonl', '.codex', '.cursor', '.local/share/obysphere', '.zsh_history', '.bash_history', '.zsh_sessions', 'Library']) assert.ok(denyRead.includes(path.join(os.homedir(), h)), `~/${h}`);

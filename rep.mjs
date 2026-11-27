@@ -274,21 +274,28 @@ const READ_ONLY_COMMANDS = ['ls', 'cat', 'head', 'tail', 'wc', 'rg', 'grep', 'fi
 // flags that would make those commands run a program, write a file or read outside the folders
 const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)', ...gitDiffPathDeny()];
 // git diff with two paths, one outside its repository (or outside any repository), compares them as two
-// files, wherever they are: --no-index without the flag. So it never names a path that can leave the
-// folders: an absolute one (quoted too), one in a home folder (~), a variable or a command's output ($,
-// backquotes), braces that expand to paths ({a,b}: GIT_DIFF_BRACES), or .. as a folder. Revisions (HEAD~1, main..feature,
-// @{1}) and paths inside the folders stay. A deny list of the usual forms, as for git push.
+// files, wherever they are: --no-index without the flag. These rules are matched against the command as
+// written, before the shell rewrites it, so they don't list spellings of "outside" (quotes or a
+// backslash can split any of them: .''./ is ../). They keep git diff's words to ones the shell takes
+// as written: none of the characters it rewrites a word with (quotes, a backslash, $, backquotes,
+// braces, the globs ? and [, ( < > for substitutions, !), and no word, or part after a slash or =,
+// that starts with /, ~ or a dot. Every path left is then plain, relative and under the folder (a
+// glob like * never matches . or ..), while revisions stay: HEAD~1, HEAD^, main..feature, origin/main.
 function gitDiffPathDeny() {
-  const lead = ['/', "'/", '"/', '~', "'~", '"~', '..', "'..", '"..'];
+  const anywhere = ["'", '"', '$', '`', '?', '[', '(', '<', '>', '!'];
+  const starts = ['/', '~', '.', '='];
   return [
-    ...lead.flatMap((x) => [`Bash(git diff ${x}*)`, `Bash(git diff * ${x}*)`]),
-    'Bash(git diff *../*)', 'Bash(git diff */..)', 'Bash(git diff */.. *)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)',
-    'Bash(git diff *$*)', 'Bash(git diff *`*)',
+    ...anywhere.map((c) => `Bash(git diff *${c}*)`),
+    // a backslash: matched as itself, whether or not the matcher reads \ as an escape
+    'Bash(git diff *\\*)', 'Bash(git diff *\\\\*)',
+    ...starts.flatMap((c) => [`Bash(git diff ${c}*)`, `Bash(git diff * ${c}*)`]),
+    'Bash(git diff */.*)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)', 'Bash(git diff *=.*)', 'Bash(git diff *:~*)',
   ];
 }
-// braces that expand to paths ({/etc/hosts,x}) hold a comma, which --disallowedTools would split: in the
-// settings file only, beside the allow rules it guards (they're never on the command line either)
-const GIT_DIFF_BRACES = 'Bash(git diff *{*,*}*)';
+// in the settings file only, beside the allow rules they guard (never on the command line): braces
+// that expand to paths ({/etc/hosts,x}, .{.,}), which --disallowedTools could split at a comma, and a
+// tab where a space would be (a word after it starting with / ~ or a dot, as above)
+const GIT_DIFF_FILE_ONLY = ['Bash(git diff *{*)', 'Bash(git diff *}*)', 'Bash(git diff *\t*)'];
 // places in your home folder the read-only shell's sandbox never reads, besides the secrets: what holds
 // other conversations and your own words (Claude Code's transcripts and prompt history, Codex's and
 // Cursor's sessions, shell histories), a deployed Sphere's keys, and macOS's Library (mail, messages,
@@ -3519,7 +3526,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
       // which keeps secrets unreadable even to `grep -r` and blocks writes and the network
       allow.push(...READ_ONLY_COMMANDS.map((c) => `Bash(${c}:*)`));
       deny.push(...SHELL_READ_DENY);
-      fileOnly.push(GIT_DIFF_BRACES);
+      fileOnly.push(...GIT_DIFF_FILE_ONLY);
       const home = os.homedir();
       sandbox = {
         enabled: true,
