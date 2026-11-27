@@ -1898,15 +1898,25 @@ function edKey(x) {
 }
 
 // Checks a sealed envelope's shape and sizes, that its readers exist (and include
-// everyone the message must reach), and its signature by the sender's sign key.
+// everyone the message must reach), and its signature by the sender's sign key. v1, or v2: v1's
+// fields and signature (`sig`, which older representatives check), and the sender's nonce, send
+// time and commitment to the content key, under a second signature (`sig2`). Both are kept until
+// every member's rep.mjs sends v2.
 function checkSeal(me, sealed, m, required) {
   const bad = (why) => err(400, 'bad_envelope', `That sealed message is malformed: ${why}.`);
-  if (!sealed || typeof sealed !== 'object' || sealed.v !== 1) throw bad('v must be 1');
+  if (!sealed || typeof sealed !== 'object' || (sealed.v !== 1 && sealed.v !== 2)) throw bad('v must be 1 or 2');
+  const v2 = sealed.v === 2;
   if (!me.keys?.sign) throw err(400, 'bad_envelope', 'Publish your keys first (POST /api/me {keys}): update rep.mjs.');
   if (!b64Len(sealed.epk, 32)) throw bad('epk');
   if (!b64Len(sealed.iv, 12) || !b64Len(sealed.tag, 16)) throw bad('iv or tag');
   if (!b64Max(sealed.ct, 1024 * 1024)) throw bad('ct missing or too large');
   if (!b64Len(sealed.sig, 64)) throw bad('sig');
+  if (v2) {
+    if (!b64Len(sealed.nonce, 16)) throw bad('nonce');
+    if (typeof sealed.sent !== 'string' || sealed.sent.length > 40 || !Number.isFinite(Date.parse(sealed.sent))) throw bad('sent');
+    if (!b64Len(sealed.commit, 32)) throw bad('commit');
+    if (!b64Len(sealed.sig2, 64)) throw bad('sig2');
+  }
   const to = sealed.to;
   if (!to || typeof to !== 'object' || Array.isArray(to)) throw bad('to');
   const readers = Object.keys(to);
@@ -1922,30 +1932,30 @@ function checkSeal(me, sealed, m, required) {
     clean[id] = { iv: w.iv, ct: w.ct, tag: w.tag };
   }
   for (const id of required) if (id && !clean[id]) throw bad(`${S.agents[id]?.name ?? id} must be a reader`);
-  const digest = createHash('sha256')
-    .update(
-      canonical({
-        v: 1,
-        from: me.id,
-        channel: m.channel,
-        to: [...m.to].sort(),
-        replyTo: m.replyTo ?? null,
-        cause: m.cause ?? null,
-        depth: m.depth,
-        epk: sealed.epk,
-        iv: sealed.iv,
-        ct: sealed.ct,
-        tag: sealed.tag,
-        readers: [...readers].sort(),
-      }),
-    )
-    .digest();
-  let ok = false;
-  try {
-    ok = crypto.verify(null, digest, edKey(me.keys.sign), Buffer.from(sealed.sig, 'base64url'));
-  } catch {}
-  if (!ok) throw err(400, 'bad_signature', "That sealed message's signature doesn't match its sender's key: it was changed or forged.");
-  return { v: 1, epk: sealed.epk, iv: sealed.iv, ct: sealed.ct, tag: sealed.tag, to: { ...clean }, sig: sealed.sig };
+  const fields = {
+    from: me.id,
+    channel: m.channel,
+    to: [...m.to].sort(),
+    replyTo: m.replyTo ?? null,
+    cause: m.cause ?? null,
+    depth: m.depth,
+    epk: sealed.epk,
+    iv: sealed.iv,
+    ct: sealed.ct,
+    tag: sealed.tag,
+    readers: [...readers].sort(),
+  };
+  const signs = (v, sig) => {
+    const signed = v === 2 ? { v, ...fields, nonce: sealed.nonce, sent: sealed.sent, commit: sealed.commit } : { v, ...fields };
+    try {
+      return crypto.verify(null, createHash('sha256').update(canonical(signed)).digest(), edKey(me.keys.sign), Buffer.from(sig, 'base64url'));
+    } catch {
+      return false;
+    }
+  };
+  if (!signs(1, sealed.sig) || (v2 && !signs(2, sealed.sig2))) throw err(400, 'bad_signature', "That sealed message's signature doesn't match its sender's key: it was changed or forged.");
+  const kept = { v: sealed.v, epk: sealed.epk, iv: sealed.iv, ct: sealed.ct, tag: sealed.tag, to: { ...clean }, sig: sealed.sig };
+  return v2 ? { ...kept, nonce: sealed.nonce, sent: sealed.sent, commit: sealed.commit, sig2: sealed.sig2 } : kept;
 }
 
 // ================================================================ messages
