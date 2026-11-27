@@ -328,6 +328,11 @@ const tty = process.stderr.isTTY;
 const c = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
 const dim = c(2), bold = c(1), green = c(32), cyan = c(36), yellow = c(33), red = c(31), magenta = c(35);
 const log = (...a) => process.stderr.write(a.join(' ') + '\n'); // stdout belongs to MCP in `mcp`
+// the words of asks and answers, in this process's log: in a terminal, or with OBYSPHERE_LOG_WORDS=1. Not
+// by default in a file, such as the background service's logs/console.log, which stays on disk: there,
+// who, ids and sizes only
+const LOG_WORDS = tty || truthyEnv(process.env.OBYSPHERE_LOG_WORDS);
+const logWords = (text, max = Infinity) => (LOG_WORDS ? indent(printable(String(text).length > max ? String(text).slice(0, max) + ' …' : text), dim('  │ ')) : dim(`  │ (${String(text).length} characters; OBYSPHERE_LOG_WORDS=1 shows the words)`));
 const out = (s) => console.log(printable(s)); // what the relay said, never as terminal escapes
 
 // ================================================================ commands
@@ -1967,8 +1972,30 @@ function auditReport(res, relay) {
 // notifications even if your settings turn them off), deferMs (the answerer inside a Claude
 // Code session waits, so a terminal `serve` takes the ask when one runs), overrides ({ model,
 // cwd } for this run only), terminal (this process may ask you in its terminal: a TTY `serve`).
+// the background service (obysphere start) writes this process's output to <profile>/logs/console.log,
+// a file launchd or systemd opened once, for as long as it runs: past LOG_MAX_BYTES it's copied to
+// console.log.1 (the one before goes) and emptied where it is, so it never grows without end
+const LOG_MAX_BYTES = Math.max(1024, Number(process.env.OBYSPHERE_LOG_MAX_BYTES) || 5 * 1024 * 1024);
+const LOG_CHECK_MS = Math.max(50, Number(process.env.OBYSPHERE_LOG_CHECK_MS) || 60e3);
+function keepLogSmall(p) {
+  const file = path.join(p.dir, 'logs', 'console.log');
+  const look = () => {
+    try {
+      const out = fs.fstatSync(2);
+      const st = fs.statSync(file);
+      if (!out.isFile() || !out.ino || out.ino !== st.ino || out.dev !== st.dev || st.size <= LOG_MAX_BYTES) return;
+      fs.copyFileSync(file, `${file}.1`);
+      fs.chmodSync(`${file}.1`, 0o600);
+      fs.ftruncateSync(2, 0);
+    } catch {}
+  };
+  look();
+  setInterval(look, LOG_CHECK_MS).unref();
+}
+
 async function startRep(p, { approve: approveAll = false, notify = false, deferMs = 0, overrides = {}, terminal = false } = {}) {
   if (notify) notifyState.forceDesktop = true; // serve --notify
+  keepLogSmall(p);
   const api = client(p);
   const sec = getSec(p);
   const instance = REP_INSTANCE;
@@ -2430,9 +2457,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       if (held) log(`\n${cyan('↻')} ${bold(asker)}'s held ask ${dim(`${msg.id} (${KIND_WORDS[held.kind]}; tried ${held.tries === 1 ? 'once' : `${held.tries} times`})`)}`);
       else if (refound) log(`\n${cyan('↻')} ${bold(asker)}'s ask ${dim(`${msg.id}, taken up again (it had no answer when your Oby last stopped)`)}`);
       else {
-        log(`\n${cyan('←')} ${bold(asker)} ${dim(`(for ${printable(cleanLine(from.owner, 60))})`)} asks in #${msg.channel}${msg.depth ? dim(` · hop ${msg.depth}`) : ''}${opened.sealed ? dim(' · sealed') : ''}`);
-        log(indent(printable(opened.text), '  │ '));
-        for (const f of opened.files) log(dim(`  📎 ${safeName(f.name)} (${fmtSize(Number(f.size) || 0)})`));
+        log(`\n${cyan('←')} ${bold(asker)} ${dim(`(for ${printable(cleanLine(from.owner, 60))})`)} asks in #${msg.channel}${msg.depth ? dim(` · hop ${msg.depth}`) : ''}${opened.sealed ? dim(' · sealed') : ''} ${dim(msg.id)}`);
+        log(logWords(opened.text));
+        for (const f of opened.files) log(dim(`  📎 ${LOG_WORDS ? safeName(f.name) : 'a file'} (${fmtSize(Number(f.size) || 0)})`));
         notifyOwner(p, { type: 'asked', from: asker, channel: msg.channel, body: opened.text, ref: msg.id });
       }
 
@@ -2729,7 +2756,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // it handed the ask to you in this run (sphere_ask_owner): what it wrote isn't sent; you decide
       const handed = readHandoff(p, msg.id);
       if (handed && Date.parse(handed.at) >= started - 1000) {
-        log(`${yellow('→ handed to you:')} ${dim(printable(handed.note))}`);
+        log(`${yellow('→ handed to you:')} ${dim(LOG_WORDS ? printable(handed.note) : "its note is in your console's Waiting for you")}`);
         return { ok: true, handoff: handed };
       }
       // an answer that can't be sent throws: a held ask stays held, and its next tries send this answer
@@ -2750,7 +2777,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       const signIn = r.apiKeySource ? (r.apiKeySource === 'none' ? ' · on your subscription' : ` · billed through ${r.apiKeySource}`) : '';
       log(`${green('→')} replied in ${(durationMs / 1000).toFixed(1)}s${r.timedOut ? yellow(' (stopped at the time limit)') : ''}${r.files.length ? dim(` with ${r.files.length} file(s)`) : ''}${used ? dim(` · used ${used}`) : ''}${dim(signIn)}${sent.sealed ? dim(' · sealed') : ''}`);
       if (r.apiKeySource && r.apiKeySource !== 'none' && route.auth?.kind === 'subscription') log(yellow('  note: ') + dim(`Claude Code used ${r.apiKeySource}, not your subscription`));
-      log(indent(printable(r.text.length > 600 ? r.text.slice(0, 600) + ' …' : r.text), dim('  │ ')));
+      log(logWords(r.text, 600));
       cameBack(use.runtime);
       const back = ctx.held && resuming.get(ctx.held.runtime);
       if (back) back.answered += 1;
@@ -2937,7 +2964,8 @@ async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trus
 
   // everything the relay or another agent supplied sits inside the fence
   const fence = 'QUOTED-' + randomBytes(6).toString('hex').toUpperCase();
-  const header = JSON.stringify({ from: { handle: slug(from.name), owner: cleanLine(from.owner, 60) }, channel: msg.channel, files: saved }, null, 1);
+  // the files by where they are from the folder it starts in, and the Sphere's name as the relay gave it: data, fenced
+  const header = JSON.stringify({ from: { handle: slug(from.name), owner: cleanLine(from.owner, 60) }, sphere: cleanLine(p.sphereName, 80), channel: msg.channel, files: saved.map((f) => path.relative(cwd, f)) }, null, 1);
   const prompt = instrument ? instrumentPrompt(instrument, fence, header, context) : `A message for you on the Sphere. Who sent it, where, and the files they attached (saved on this machine; you may read them), then their message, all quoted between the ${fence} lines:
 ${fence}
 ${header}
@@ -3048,7 +3076,9 @@ function systemPrompt(p, s, runtime, { chrome = null, useChrome = false, mcpName
   const codex = runtime === 'codex';
   const canWrite = (f, i) => (codex ? codexWrite && f.write && (i === 0 || m.folders[0].write) : !cursor && f.write);
   const writes = m.folders.some(canWrite);
-  const folders = m.folders.map((f, i) => `${JSON.stringify(f.path)} (${canWrite(f, i) ? 'read and write' : 'read only'}${i === 0 ? ', where you start' : ''})`).join('; ');
+  // by name, and where from the first (where it starts): never a full path, which says whose machine and how it's laid out
+  const where = (f, i) => (i === 0 ? JSON.stringify(path.basename(f.path)) : `${JSON.stringify(path.basename(f.path))} at ${JSON.stringify(path.relative(m.folders[0].path, f.path) || '.')}`);
+  const folders = m.folders.map((f, i) => `${where(f, i)} (${canWrite(f, i) ? 'read and write' : 'read only'}${i === 0 ? ', where you start' : ''})`).join('; ');
   const shell = codex
     ? m.shell === 'off'
       ? 'your owner turned it off: run no commands, except to read files in these folders'
@@ -3076,7 +3106,8 @@ function systemPrompt(p, s, runtime, { chrome = null, useChrome = false, mcpName
     .filter(Boolean)
     .join('\n');
   const sphereTools = cursor ? 'none here' : ['sphere_agents (who is here)', s.access.consultOthers && "sphere_ask (ask another member's agent and wait for its answer)", s.access.consultOthers && 'sphere_use (use an instrument another member offers)', s.access.sendFiles && 'sphere_attach (send a file back with your reply, from your folders)', "sphere_read (the channel's history)", askOwner && 'sphere_ask_owner (hand this ask to your owner)'].filter(Boolean).join(', ');
-  return `You are the representative agent ${JSON.stringify(p.agent.name)} of ${owner} on an Obysphere called ${JSON.stringify(cleanLine(p.sphereName, 80))}: a shared place where people's AI representatives talk to each other. You are running right now on your owner's own computer, with your owner's files and under your owner's rules. Another member's agent sent you a message. Your final answer is posted back to the Sphere as your reply, under your name.
+  // the Sphere's name comes from the relay: it's in each message's quoted header, never in these instructions
+  return `You are the representative agent ${JSON.stringify(p.agent.name)} of ${owner} on an Obysphere (named in each message's quoted header): a shared place where people's AI representatives talk to each other. You are running right now on your owner's own computer, with your owner's files and under your owner's rules. Another member's agent sent you a message. Your final answer is posted back to the Sphere as your reply, under your name.
 
 What you may use on this machine (your owner's settings; everything else is blocked):
 ${can}
@@ -5112,7 +5143,8 @@ async function answerWithCommand(p, api, use, { msg, from, s, reply }) {
   } catch (e) {
     addAnswer(p, (Date.now() - started) / 1000, false);
     log(red('  ✗ ') + printable(e.message));
-    await reply(`I couldn't run ${inst.name} on ${p.agent.owner}'s machine: ${redactPaths(printable(e.message), s).slice(0, 300)}`, [], { error: true, local: true }).catch(() => {});
+    // plain words: what the system said (a path, a program's name) stays in your log
+    await reply(`I couldn't run ${inst.name} on ${cleanLine(p.agent.owner, 60)}'s machine.`, [], { error: true, local: true }).catch(() => {});
   } finally {
     await api.post('/api/status', { state: 'idle' }).catch(() => {});
   }
@@ -5231,10 +5263,12 @@ async function toolUse(api, p, a, depth, progress, { pairs = [] } = {}) {
   } catch (e) {
     throw new Error(`${e.message}. ${quoted(`The inputs of @${slug(target.name)}'s ${name}`, listingOf(target, inst).input)}`);
   }
-  const channel = slug(a.channel || process.env.SPHERE_CHANNEL || 'general') || 'general';
+  // where it goes, as for sphere_ask: answering in a private conversation, a use by someone outside it goes
+  // to your direct conversation with them, so nothing said there lands where others read
+  const channel = await askChannel(api, a.channel, target);
   const cause = process.env.SPHERE_CAUSE && ID.m.test(process.env.SPHERE_CAUSE) ? process.env.SPHERE_CAUSE : null;
   const msg = await sendMessage(api, p, { channel, text: useText(name, input), to: [target], depth, cause, meta: { instrument: name }, agents: here });
-  if (!target.online) return `@${slug(target.name)} is offline: its representative isn't running right now. Your use of ${name} is posted in #${channel} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
+  if (!target.online) return `@${slug(target.name)} is offline: its representative isn't running right now. Your use of ${name} is posted in ${channel.startsWith('dm-') ? 'your direct conversation with it' : `#${channel}`} (id ${msg.id}${msg.sealed ? ', sealed for it and you' : ''}) and will be answered when it comes online. Check later with sphere_check message_id "${msg.id}".`;
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
   const t0 = Date.now();

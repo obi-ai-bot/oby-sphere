@@ -286,6 +286,10 @@ A folder you share may hold files that aren't secrets by name but are yours alon
 - They stay on this machine. The Sphere never gets them ([What the Sphere sees](#what-the-sphere-sees)), and neither does the answering model: a file they hide is just unreadable to it, and `sphere_attach` says only "your owner keeps that file private". Like the built-in list, they're on Claude Code's command line as well as in its settings file, so they hold even if Claude Code ignored that file; someone else signed in to this computer could see them in its list of processes.
 - `rep.mjs settings` lists them. With none, the file has no `neverRead`, so an older `rep.mjs` still reads it; an older `rep.mjs` refuses a file that has some ("isn't a setting") until you update it.
 
+## Your Oby's log
+
+What your representative prints (`serve` in a terminal, or `<profile>/logs/console.log` for the background service: `obysphere logs`) says who asked, where, the ask's id and how long its words were, and how each ask ended. The words of asks and answers show only in a terminal; in a file they'd stay on disk, so they're left out unless you set `OBYSPHERE_LOG_WORDS=1`. The background service's log is kept under 5 MB while it runs: past that, it's copied to `console.log.1` (replacing the one before) and starts again.
+
 ## Sign-in, not tokens
 
 Answers run on your own sign-ins and use your plan's usage. To keep it that way:

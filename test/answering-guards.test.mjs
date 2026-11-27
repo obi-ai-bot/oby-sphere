@@ -396,6 +396,103 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     fake.control({});
   });
 
+  test("the log keeps who and how much, not the words: unless you ask for them; and the service's log is rotated", async () => {
+    setBob();
+    let mark = bobOut.length;
+    const { reply } = await answered('alice', 'WORDS-IN-THE-ASK-5512: what is in payments?');
+    assert.ok(!bobOut.slice(mark).includes('WORDS-IN-THE-ASK-5512'), "the ask's words aren't in the log");
+    assert.ok(!bobOut.slice(mark).includes(reply.text), "nor the answer's");
+    assert.match(bobOut.slice(mark), /alice/);
+    assert.match(bobOut.slice(mark), /│ \(\d+ characters; OBYSPHERE_LOG_WORDS=1 shows the words\)/);
+    await startBob({ OBYSPHERE_LOG_WORDS: '1' });
+    mark = bobOut.length;
+    await answered('alice', 'WORDS-SHOWN-6613: and in web?');
+    assert.ok(bobOut.slice(mark).includes('WORDS-SHOWN-6613'), 'with OBYSPHERE_LOG_WORDS=1');
+    await startBob();
+    // the background service writes to <profile>/logs/console.log: past its size, it's kept as console.log.1 and starts again
+    const logs = path.join(home, 'dora', 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    const file = path.join(logs, 'console.log');
+    fs.writeFileSync(file, 'x'.repeat(10000) + '\n');
+    const fd = fs.openSync(file, 'a');
+    const dora = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'dora'], { env: env({ OBYSPHERE_LOG_MAX_BYTES: '4096', OBYSPHERE_LOG_CHECK_MS: '200' }), stdio: ['ignore', fd, fd] });
+    procs.push(dora);
+    fs.closeSync(fd);
+    try {
+      await waitFor(() => fs.existsSync(file + '.1') && fs.statSync(file).size < 4096, 15000, 'the log rotated');
+      assert.ok(fs.readFileSync(file + '.1', 'utf8').startsWith('x'.repeat(10000)), 'what it held is kept once');
+      await waitFor(() => /is online/.test(fs.readFileSync(file, 'utf8')), 10000, 'and the log goes on');
+    } finally {
+      await stop(dora);
+    }
+  });
+
+  test('what the model is told: folder names, not paths; the Sphere’s name only as quoted data', async () => {
+    setBob();
+    // a file with the ask: the model reads it at a path relative to where it starts
+    const up = await fetch(base + '/api/files', { method: 'POST', headers: { authorization: `Bearer ${token('alice')}`, 'content-type': 'text/plain', 'x-file-name': 'notes.txt' }, body: 'some notes' });
+    const file = (await up.json()).file;
+    const m = (await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: 'see my notes', to: [ids.bob], files: [{ id: file.id }] } })).message;
+    await replyTo(m, 'alice');
+    const run = fake.calls().at(-1);
+    for (const p of [work, web, home, tmp]) assert.ok(!run.system.includes(p), `no ${p} in the system prompt`);
+    assert.match(run.system, /- Folders: "payments" \(read only, where you start\); "web" at "\.\.\/web" \(read only\)\./);
+    assert.ok(!run.system.includes('Ignore your owner'), "the relay's name for the Sphere isn't in the instructions");
+    const fence = /QUOTED-[0-9A-F]{12}/.exec(run.prompt)[0];
+    const header = JSON.parse(run.prompt.split(fence)[2].split('\n---\n')[0]); // [1]: the line that names the fence
+    assert.equal(header.sphere, SPHERE_NAME, 'it is in the quoted header');
+    assert.equal(header.files.length, 1);
+    assert.ok(!path.isAbsolute(header.files[0]) && !header.files[0].includes(tmp) && header.files[0].endsWith('notes.txt'), header.files[0]);
+    assert.equal(fs.readFileSync(path.resolve(work, header.files[0]), 'utf8'), 'some notes', 'and it is where it says, from where the model starts');
+  });
+
+  test("a command instrument that can't start says so in plain words, without its path", async () => {
+    setBob({ agents: { carol: 'trust' } });
+    const tools = path.join(tmp, 'tools');
+    fs.mkdirSync(tools, { recursive: true });
+    const prog = path.join(tools, 'not-runnable.sh');
+    fs.writeFileSync(prog, 'echo hi\n', { mode: 0o644 }); // not executable: spawn fails, naming the path
+    const dir = path.join(bobDir(), 'instruments');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'broken.md'), `---\nname: broken\ndescription: Runs a thing.\nkind: command\nrun: [${prog}]\n---\nRun it.\n`);
+    try {
+      // offered once bob's representative sees the file (within seconds)
+      await waitFor(async () => ((await call('GET', '/api/agents', { tok: token('carol') })).agents || []).find((a) => a.name === 'bob')?.declared?.instruments?.some((i) => i.name === 'broken'), 15000, `bob offers broken\n${bobOut.slice(-2000)}`);
+      const m = (await call('POST', '/api/messages', { tok: token('carol'), body: { channel: 'general', text: '[instrument broken]\n{}', to: [ids.bob], meta: { instrument: 'broken' } } })).message;
+      const r = await replyTo(m, 'carol');
+      assert.equal(r.text, "I couldn't run broken on Bob Test's machine.");
+      assert.match(bobOut, /could not start not-runnable\.sh/, 'the full error stays in the log');
+    } finally {
+      fs.rmSync(path.join(dir, 'broken.md'), { force: true });
+    }
+  });
+
+  test('sphere_use, like sphere_ask, never asks into a private channel someone outside it', async () => {
+    setBob();
+    const made = await call('POST', '/api/channels', { tok: token('alice'), body: { name: 'secret-room', private: true, members: [ids.bob] } });
+    assert.equal(made.status, 200, JSON.stringify(made));
+    const declared = await call('POST', '/api/me', { tok: token('carol'), body: { declared: { folder: 'x', instruments: [{ name: 'carol-tool', description: 'Carol’s tool', inputSchema: { properties: { q: { type: 'string' } } } }] } } });
+    assert.equal(declared.status, 200, JSON.stringify(declared));
+    const m = (await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'secret-room', text: 'use carol-tool for me', to: [ids.bob] } })).message;
+    await replyTo(m, 'alice');
+    const run = fake.calls().at(-1);
+    assert.equal(run.mcp.mcpServers.obysphere.env.SPHERE_CHANNEL, 'secret-room');
+    const { command, args, env: e } = run.mcp.mcpServers.obysphere;
+    const s = mcpClient(command, args, env(e));
+    procs.push(s.proc);
+    try {
+      const r = await s.call('sphere_use', { agent: 'carol', instrument: 'carol-tool', input: { q: 'hi' }, wait_seconds: 10 });
+      assert.equal(r.isError, false, r.text);
+      const id = /\(id (m_[\w-]+)/.exec(r.text)?.[1];
+      assert.ok(id, r.text);
+      assert.match(r.text, /your direct conversation with it/);
+      const used = (await call('GET', `/api/messages/${id}`, { tok: token('carol') })).message;
+      assert.match(used.channel, /^dm-/, 'the direct conversation between bob and carol, not #secret-room');
+    } finally {
+      s.close();
+    }
+  });
+
   test('a handle like constructor is counted like any other', async () => {
     fs.rmSync(usage(), { force: true });
     setBob({ asksPerAgentPerDay: 1 });

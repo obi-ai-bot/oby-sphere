@@ -231,7 +231,7 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     const n = await waitFor(() => notes().find((x) => x.type === 'waiting' && x.title === "Your Oby needs you for @alice's ask"), 8000, 'the notification');
     assert.equal(n.body, NOTE);
     assert.match(n.link, /#page=you$/, 'a click opens Waiting for you');
-    assert.match(bobOut, /→ handed to you: Wants the pull requests waiting on their review/);
+    assert.match(bobOut, /→ handed to you: its note is in your console's Waiting for you/, 'its words stay out of the log');
     // Claude Code's start of the day hears it too
     const hook = JSON.parse((await rep(['inbox', '--hook', '--profile', 'bob'])).out || '{}');
     assert.match(JSON.stringify(hook), /1 ask waits for you/);
