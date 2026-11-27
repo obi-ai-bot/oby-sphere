@@ -198,7 +198,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere status`, `logs [-f]`, `open` | Whether it's running, and whether a newer Oby is out; its log; your console in the browser. |
 | `obysphere profiles use <name>` | The profile commands and the Claude Code plugin use when you have several and don't say (`--clear` forgets it). `--profile` and `OBYSPHERE_PROFILE` still come first. |
 | `obysphere profiles`, `doctor`, `version` | Your profiles; a check of your setup that compares your Oby's version with the Sphere's and says what to update; the version. |
-| `obysphere update [--check] [--channel stable\|main] [--rollback]` | Update your Oby: download, verify against the release's `SHA256SUMS`, switch, and restart the running services. The previous version is kept for `--rollback`. |
+| `obysphere update [--check] [--channel stable\|main] [--rollback] [--allow-downgrade]` | Update your Oby: download from GitHub, verify against the release's `SHA256SUMS`, switch, and restart the running services. The previous version is kept for `--rollback`. A release older than yours is refused unless you add `--allow-downgrade`. |
 | `obysphere server start` | Run a Sphere on this machine. |
 | `obysphere server deploy vercel --project <name> [--scope <team>]` | Deploy a Sphere to Vercel ([above](#vercel)). |
 | `obysphere server update [<name>]`, `server status` | Redeploy a recorded Sphere; check one. |

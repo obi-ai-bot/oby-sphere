@@ -1,7 +1,8 @@
 // Fakes for the obysphere CLI's tests: no network beyond this machine, no real Vercel.
 //   startFakeGitHub()   the releases API and the downloads, on 127.0.0.1: set `release` to
 //                       { tag, assets: { name: bytes } } (or null for "no release yet"), `main` to
-//                       a tarball; `requests` lists every path asked for
+//                       a tarball; `requests` lists every path asked for; `hook(url, req, res)`,
+//                       when set, answers first (a redirect, an endless body) and returns true
 //   buildApp(dir, v)    a tarball of this app (the files an install needs), with package.json at
 //                       version v, made with the system's tar
 //   makeFakeVercel(dir) a `vercel` on PATH that records each call (argv, folder, the files in it,
@@ -16,10 +17,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function startFakeGitHub() {
-  const gh = { release: null, main: null, requests: [] };
+  const gh = { release: null, main: null, requests: [], hook: null };
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     gh.requests.push(u.pathname);
+    if (gh.hook?.(u, req, res)) return;
     const send = (status, body, type = 'application/octet-stream') => {
       res.writeHead(status, { 'content-type': type });
       res.end(body);

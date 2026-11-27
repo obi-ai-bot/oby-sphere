@@ -10,30 +10,44 @@
 # It puts the app in ~/.local/share/obysphere/<version>/ (OBYSPHERE_APP_HOME), points
 # `current` at it, and adds ~/.local/bin/obysphere (OBYSPHERE_BIN_DIR). It never creates
 # ~/.obysphere: your profiles appear when you join. Needs Node 22 or later.
+#
+# Everything happens in main, run on the script's last line: a download cut short runs nothing.
 set -eu
-
-REPO="obi-ai-bot/oby-sphere"
-APP_HOME="${OBYSPHERE_APP_HOME:-$HOME/.local/share/obysphere}"
-BIN_DIR="${OBYSPHERE_BIN_DIR:-$HOME/.local/bin}"
-RELEASES_API="${OBYSPHERE_RELEASES_API:-https://api.github.com/repos/$REPO}"
-if [ -n "${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
-  DOWNLOAD_BASE="$OBYSPHERE_DOWNLOAD_BASE"
-  MAIN_TARBALL="$DOWNLOAD_BASE/archive/refs/heads/main.tar.gz"
-else
-  DOWNLOAD_BASE="https://github.com/$REPO"
-  MAIN_TARBALL="https://codeload.github.com/$REPO/tar.gz/refs/heads/main"
-fi
 
 say() { printf '%s\n' "$*"; }
 fail() { printf 'obysphere install: %s\n' "$*" >&2; exit 1; }
 
-# the code comes from GitHub over https (plain http only on this machine, for tests)
-for u in "$RELEASES_API" "$DOWNLOAD_BASE"; do
-  case "$u" in
-    https://*|http://127.0.0.1:*|http://127.0.0.1/*|http://localhost:*|http://localhost/*) ;;
-    *) fail "refusing to download from $u: https only" ;;
+main() {
+REPO="obi-ai-bot/oby-sphere"
+APP_HOME="${OBYSPHERE_APP_HOME:-$HOME/.local/share/obysphere}"
+BIN_DIR="${OBYSPHERE_BIN_DIR:-$HOME/.local/bin}"
+RELEASES_API="https://api.github.com/repos/$REPO"
+DOWNLOAD_BASE="https://github.com/$REPO"
+MAIN_TARBALL="https://codeload.github.com/$REPO/tar.gz/refs/heads/main"
+
+# The code comes from GitHub over https. For tests only, with OBYSPHERE_TEST=1,
+# OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE send it to a server on this machine (plain
+# http), both of them, and nowhere else; without it they're refused, wherever they were set.
+if [ -n "${OBYSPHERE_RELEASES_API:-}${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
+  case "${OBYSPHERE_TEST:-}" in
+    1|true|yes|on) ;;
+    *) fail "OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE are for tests only (with OBYSPHERE_TEST=1, and a server on this machine), so nothing was installed. Unset them, and the app comes from GitHub." ;;
   esac
-done
+  RELEASES_API="${OBYSPHERE_RELEASES_API:-$RELEASES_API}"
+  if [ -n "${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
+    DOWNLOAD_BASE="$OBYSPHERE_DOWNLOAD_BASE"
+    MAIN_TARBALL="$DOWNLOAD_BASE/archive/refs/heads/main.tar.gz"
+  fi
+  for u in "$RELEASES_API" "$DOWNLOAD_BASE"; do
+    case "$u" in
+      http://127.0.0.1:*|http://localhost:*) ;;
+      *) fail "refusing to download from $u: the app comes from GitHub only" ;;
+    esac
+  done
+  testing=1
+else
+  testing=0
+fi
 
 channel=stable
 while [ $# -gt 0 ]; do
@@ -65,11 +79,18 @@ if [ "$node_major" -lt 22 ]; then
   Install a newer one from https://nodejs.org (or: brew upgrade node, or nvm install 22), then run this again."
 fi
 
-# ---- tools: a downloader, a SHA-256, tar
+# ---- tools: a downloader (https only, redirects too), a SHA-256, tar
 if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL --proto '=https,http' --proto-redir '=https' -o "$2" "$1"; }
+  if [ "$testing" = 1 ]; then protos='=https,http'; else protos='=https'; fi
+  fetch() { curl -fsSL --proto "$protos" --proto-redir '=https' -o "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
-  fetch() { wget -q -O "$2" "$1"; }
+  if [ "$testing" = 1 ]; then
+    fetch() { wget -q --max-redirect=5 -O "$2" "$1"; }
+  elif wget --help 2>&1 | grep -q -e '--https-only'; then
+    fetch() { wget -q --https-only --max-redirect=5 -O "$2" "$1"; }
+  else
+    fail "this needs curl, or a wget that has --https-only (yours doesn't, so it could follow a redirect to plain http). Install curl, then run this again."
+  fi
 else
   fail "this needs curl or wget to download the Obysphere."
 fi
@@ -161,10 +182,20 @@ umask 077
 printf '{\n  "channel": "%s",\n  "version": "%s"\n}\n' "$channel" "$version" > "$APP_HOME/install.json"
 umask 022
 
-# ---- the obysphere command
+# ---- the obysphere command: ours is a plain file with the mark on its second line (never a
+# link, which could be someone's own); a new one is renamed over it
 mkdir -p "$BIN_DIR"
 shim="$BIN_DIR/obysphere"
-if [ -e "$shim" ] && ! grep -q '# obysphere shim' "$shim" 2>/dev/null; then
+ours=1
+if [ -L "$shim" ]; then
+  ours=0
+elif [ -e "$shim" ]; then
+  case "$(sed -n 2p "$shim" 2>/dev/null)" in
+    '# obysphere shim'*) ;;
+    *) ours=0 ;;
+  esac
+fi
+if [ "$ours" = 0 ]; then
   say "! $shim is there already and isn't ours, so it's left as it is."
   say "  Run the Obysphere with: node --preserve-symlinks-main '$APP_HOME/current/obysphere.mjs'"
 else
@@ -198,3 +229,6 @@ say ""
 say "Next: join with the invite link someone sent you, then go online."
 say "  obysphere join \"<invite link>\" --name <handle> --owner \"<Your Name>\" --cwd <the folder your Oby may read>"
 say "  obysphere start"
+}
+
+main "$@"

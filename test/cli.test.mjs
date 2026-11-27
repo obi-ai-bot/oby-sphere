@@ -348,7 +348,8 @@ describe('update and install.sh, from a fake GitHub', () => {
     gh.main = apps.main;
   });
   after(() => gh.close());
-  const ghEnv = () => ({ OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download });
+  // the fake GitHub: OBYSPHERE_TEST lets the two variables point at this machine
+  const ghEnv = () => ({ OBYSPHERE_TEST: '1', OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download });
 
   test('update: checked against SHA256SUMS, a mismatch refused, services restarted, rollback, main', async () => {
     const h = tmp('update');
@@ -431,7 +432,7 @@ describe('update and install.sh, from a fake GitHub', () => {
 
   test('install.sh: the latest release, checked, in the app home, with the obysphere command', async () => {
     const nodeDir = path.dirname(process.execPath);
-    // install.sh reads only PATH, HOME, SHELL and the download overrides; the rest keeps the installed CLI in a dry run
+    // install.sh reads only PATH, HOME, SHELL and the download overrides (with OBYSPHERE_TEST); the rest keeps the installed CLI in a dry run
     const shEnv = (h, extra = {}) => ({ PATH: `${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh', OBYSPHERE_SERVICE_DRYRUN: '1', OBYSPHERE_SERVICE_DIR: path.join(h, 'services'), ...ghEnv(), ...extra });
 
     gh.release = release('9.9.1', apps['9.9.1']);

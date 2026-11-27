@@ -31,6 +31,11 @@ import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+// Windows looks for a program in the folder you're in before PATH (a shared repository, while an
+// answer runs there), unless this says not to. Every program here is started by its full path
+// anyway (programPath); this covers what they start.
+process.env.NoDefaultCurrentDirectoryInExePath = '1';
+
 const { randomBytes, createHash } = crypto;
 const SELF = fileURLToPath(import.meta.url);
 // how a hint names this program: `obysphere` when it runs through the CLI, else `node <path>/rep.mjs`
@@ -424,6 +429,8 @@ async function join() {
   const runtime = RUNTIMES.includes(opt.runtime) ? opt.runtime : 'claude';
 
   const profile = slug(opt.profile || name);
+  // com.obysphere.menubar is the menu bar icon's LaunchAgent, and com.obysphere.<profile> a profile's
+  if (profile === 'menubar') die(`"menubar" is the menu bar icon's name, so a profile can't have it: pass --profile <another name>`);
   const dir = path.join(HOME, profile);
   const again = fs.existsSync(path.join(dir, 'profile.json'));
   if (again && !opt.force) die(`profile "${profile}" already exists in ${dir} (use --profile <other> or --force)`);
@@ -1063,7 +1070,8 @@ async function ui() {
     notifyConsoleUrl(p, link); // notifications link here
     log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(link)}`);
     log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it (also at http://localhost:${port}/)`));
-    if (opt.open && process.platform === 'darwin') spawn('open', [link], { stdio: 'ignore' }).on('error', () => {});
+    const open = opt.open && process.platform === 'darwin' && programPath('open');
+    if (open) spawn(open, [link], { stdio: 'ignore' }).on('error', () => {});
   });
   if (opt.serve) serveWhenReachable(p);
 }
@@ -3513,10 +3521,13 @@ function runCursor(p, use, { cwd, input, resume, timeoutMs, auth }) {
   });
 }
 
-// a child with its input on stdin; at the time limit it's stopped (TERM, then KILL)
+// a child with its input on stdin; at the time limit it's stopped (TERM, then KILL). The program is
+// found on PATH's full folders only: it runs in the owner's folder, which may hold a `claude` of its own.
 function runProcess(bin, args, { cwd, env, timeoutMs = TIME_LIMIT_DEFAULT * MINUTE_MS, stdin = '' }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const exe = programPath(bin);
+    if (!exe) return reject(Object.assign(new Error(`could not start ${path.basename(String(bin))}: spawn ${bin} ENOENT`), { code: 'ENOENT' }));
+    const child = spawn(exe, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     let timedOut = false;
@@ -3562,6 +3573,8 @@ function answeringEnv(runtime = 'claude', auth = null) {
   if (auth?.kind === 'subscription') for (const k of API_KEY_VARS[runtime] || []) delete out[k];
   delete out.CLAUDE_CODE_EFFORT_LEVEL;
   delete out.CLAUDE_EFFORT;
+  // its PATH's full folders only: an empty, `.` or relative entry would find programs in the folder it answers in
+  if (out.PATH !== undefined) out.PATH = fullPath(out.PATH);
   return out;
 }
 
@@ -5086,7 +5099,7 @@ function commandProgram(prog, dir) {
     if (!isFile(abs)) throw settingsError('run[0]', `there's no program at ${abs}`);
     return abs;
   }
-  for (const d of String(process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+  for (const d of String(process.env.PATH || '').split(path.delimiter).filter((x) => path.isAbsolute(x))) {
     const f = path.join(d, prog);
     try {
       if (isFile(f)) {
@@ -7120,7 +7133,9 @@ function claudeHas(p, flag) {
   const bin = p.claudeBin || 'claude';
   if (!claudeFlagCache.has(bin)) {
     try {
-      const r = spawnSync(bin, ['--help'], { env: answeringEnv('claude'), encoding: 'utf8', timeout: 20000 });
+      const exe = programPath(bin);
+      if (!exe) return false;
+      const r = spawnSync(exe, ['--help'], { env: answeringEnv('claude'), encoding: 'utf8', timeout: 20000 });
       const flags = new Set(String(r.stdout || '').match(/--[a-z][a-z0-9-]+/g) || []);
       if (flags.size) claudeFlagCache.set(bin, flags);
       else return false;
@@ -7182,9 +7197,11 @@ async function runtimeStatus(p) {
 function probe(bin, args, { env, deadline, stdin = null, cwd } = {}) {
   return new Promise((resolve) => {
     const ms = Math.max(200, Math.min(15000, deadline - Date.now()));
+    const exe = programPath(bin); // never one in the temp folder it runs in
+    if (!exe) return resolve(null);
     let child;
     try {
-      child = spawn(bin, args, { env, cwd: cwd || os.tmpdir(), stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+      child = spawn(exe, args, { env, cwd: cwd || os.tmpdir(), stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     } catch {
       return resolve(null);
     }
@@ -7295,7 +7312,9 @@ async function claudeModels(p, deadline, auth) {
     const t = setTimeout(() => done(null), Math.max(200, Math.min(15000, deadline - Date.now())));
     try {
       const has = (f) => claudeHas(p, f);
-      child = spawn(bin, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(has('--restricted') ? ['--restricted'] : ['--setting-sources', 'project']), ...(has('--no-session-persistence') ? ['--no-session-persistence'] : [])], {
+      const exe = programPath(bin);
+      if (!exe) return done(null);
+      child = spawn(exe, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(has('--restricted') ? ['--restricted'] : ['--setting-sources', 'project']), ...(has('--no-session-persistence') ? ['--no-session-persistence'] : [])], {
         cwd,
         env: answeringEnv('claude', auth),
         stdio: ['pipe', 'pipe', 'ignore'],
@@ -7517,7 +7536,8 @@ function chromeStatus() {
   const names = process.platform === 'darwin' ? ['Google Chrome'] : ['chrome', 'google-chrome', 'chromium'];
   let running = false;
   try {
-    running = names.some((n) => spawnSync('pgrep', ['-x', n], { timeout: 3000 }).status === 0);
+    const pgrep = programPath('pgrep');
+    running = !!pgrep && names.some((n) => spawnSync(pgrep, ['-x', n], { timeout: 3000 }).status === 0);
   } catch {}
   if (!running) return { available: false, note: "Chrome isn't running: open it so your Oby can use the browser" };
   return { available: true, note: 'Chrome is running with Claude in Chrome set up; your Oby can use it while the extension is connected' };
@@ -8174,7 +8194,7 @@ function desktopNotifyPlain(p, title, body, link, type) {
     let input = null;
     let how = 'shown';
     if (process.platform === 'darwin') {
-      const tn = onPath('terminal-notifier');
+      const tn = programPath('terminal-notifier');
       if (tn) {
         // the words on stdin, not the command line; a click opens your console. One group per
         // kind: a newer one of that kind replaces the last, and never removes another kind (what waits)
@@ -8202,12 +8222,14 @@ function desktopNotifyPlain(p, title, body, link, type) {
       [bin, args] = ['notify-send', ['--app-name=Obysphere', ...(icon ? [`--icon=${icon}`] : []), '--', title, body]];
     }
     let child;
+    const name = path.basename(bin);
+    const exe = programPath(bin);
+    if (!exe) return reject(new Error(`${name} isn't installed`));
     try {
-      child = spawn(bin, args, { stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'], windowsHide: true });
+      child = spawn(exe, args, { stdio: [input === null ? 'ignore' : 'pipe', 'ignore', 'ignore'], windowsHide: true });
     } catch (e) {
       return reject(e);
     }
-    const name = path.basename(bin);
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(`${name} took too long`));
@@ -8236,11 +8258,14 @@ function desktopNotifyPlain(p, title, body, link, type) {
 // and opens a notification's page in your console when you click it. The same app is the menu bar
 // icon (obysphere.mjs starts it with its own LaunchAgent: obysphere menubar). It's rebuilt when
 // NOTIFIER_VERSION changes; `notify app` rebuilds it by hand. Without the tools, osascript as before,
-// and no menu bar icon.
-// OBYSPHERE_NOTIFIER_APP=<path>.app builds it elsewhere (tests): as dev.oby.obysphere.test, and not
-// registered with LaunchServices, so it never stands in for the real one.
+// and no menu bar icon. When it's built, its program's SHA-256 is kept in <profiles>/notifier.json
+// (0600): an app there whose program isn't that one (someone else's, or changed since) is built
+// again before it's opened or the menu bar's LaunchAgent is pointed at it.
+// OBYSPHERE_NOTIFIER_APP=<path>.app builds it elsewhere, for tests only (with OBYSPHERE_TEST=1;
+// without it, it's ignored): as dev.oby.obysphere.test, and not registered with LaunchServices, so
+// it never stands in for the real one.
 const NOTIFIER_VERSION = '2';
-const NOTIFIER_ELSEWHERE = !!process.env.OBYSPHERE_NOTIFIER_APP;
+const NOTIFIER_ELSEWHERE = truthyEnv(process.env.OBYSPHERE_TEST) && !!process.env.OBYSPHERE_NOTIFIER_APP;
 const NOTIFIER_ID = NOTIFIER_ELSEWHERE ? 'dev.oby.obysphere.test' : 'dev.oby.obysphere';
 const NOTIFIER_SWIFT = String.raw`import AppKit
 import UserNotifications
@@ -8569,17 +8594,28 @@ app.setActivationPolicy(.accessory)
 app.run()
 `;
 
-const notifierPath = () => (process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
+const notifierPath = () => (NOTIFIER_ELSEWHERE ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
+const notifierRecord = () => path.join(HOME, 'notifier.json');
+const notifierProgram = (app) => path.join(app, 'Contents', 'MacOS', 'Obysphere');
 // Obysphere's icon (the plugin's), beside this file: Linux's notify-send and the Mac app use it
 function notifierIcon() {
   const f = path.join(path.dirname(SELF), 'plugins', 'obysphere', 'assets', 'icon.png');
   return fs.existsSync(f) ? f : null;
 }
-// the app as this version builds it is there
+// the app as this version builds it is there, and its program is the one built here
 function notifierCurrent(app) {
   try {
     const plist = fs.readFileSync(path.join(app, 'Contents', 'Info.plist'), 'utf8');
-    return plist.includes(`<key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string>`) && fs.statSync(path.join(app, 'Contents', 'MacOS', 'Obysphere')).isFile();
+    const built = readJsonFile(notifierRecord(), {});
+    const program = notifierProgram(app);
+    return (
+      plist.includes(`<key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string>`) &&
+      fs.lstatSync(program).isFile() &&
+      built.app === app &&
+      built.version === NOTIFIER_VERSION &&
+      typeof built.sha256 === 'string' &&
+      createHash('sha256').update(fs.readFileSync(program)).digest('hex') === built.sha256
+    );
   } catch {
     return false;
   }
@@ -8590,8 +8626,10 @@ function runQuiet(bin, args, timeoutMs = 120e3) {
     let out = '';
     let err = '';
     let child;
+    const exe = programPath(bin);
+    if (!exe) return resolve({ code: -1, out, err: `${path.basename(bin)} isn't installed` });
     try {
-      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       return resolve({ code: -1, out, err: e.message });
     }
@@ -8661,10 +8699,12 @@ async function buildNotifier(app) {
     fs.writeFileSync(path.join(built, 'Contents', 'Info.plist'), plist);
     const sign = await runQuiet('codesign', ['--force', '--sign', '-', built], 60e3);
     if (sign.code !== 0) throw fallback(`codesign couldn't sign it: ${cleanLine(sign.err || sign.out, 200)}`);
+    const sha256 = createHash('sha256').update(fs.readFileSync(notifierProgram(built))).digest('hex'); // signed: as it runs
     // swapped in whole: an older one moves aside first, and goes
     const old = fs.existsSync(app) ? path.join(work, 'old.app') : null;
     if (old) fs.renameSync(app, old);
     fs.renameSync(built, app);
+    writeSecret(notifierRecord(), { app, version: NOTIFIER_VERSION, sha256, builtAt: new Date().toISOString() });
     // LaunchServices learns it now, so the first click on a notification finds it
     if (!NOTIFIER_ELSEWHERE) await runQuiet('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', app], 30e3);
     return app;
@@ -8717,16 +8757,44 @@ async function macPost(app, note) {
   }
 }
 
-function onPath(name) {
-  for (const d of String(process.env.PATH || '').split(path.delimiter)) {
-    if (!d) continue;
-    const f = path.join(d, name);
-    try {
-      fs.accessSync(f, fs.constants.X_OK);
-      if (fs.statSync(f).isFile()) return f;
-    } catch {}
+// A program by its name, as a full path from your PATH's full folders: never the folder this runs
+// in (where Windows looks first), nor an empty, `.` or other relative PATH entry, which name a folder
+// relative to wherever a program runs (the owner's shared folder an answer runs in, the temp folder
+// a probe runs in). On Windows, name.com or name.exe, as Windows runs them. A full path is taken as
+// it is, a relative one never. null when it's nowhere. (obysphere.mjs has the same.)
+function programPath(name, { env = process.env, platform = process.platform, exts, isFile = isProgram } = {}) {
+  const win = platform === 'win32';
+  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d) : d.startsWith('/'));
+  const n = String(name || '');
+  if (full(n)) return n;
+  if (!n || /[\\/]/.test(n)) return null;
+  const ends = exts || (win ? (/\.(com|exe)$/i.test(n) ? [''] : ['.com', '.exe']) : ['']);
+  for (const entry of String(env.PATH ?? env.Path ?? '').split(win ? ';' : ':')) {
+    const dir = win ? entry.replace(/^"(.*)"$/, '$1') : entry;
+    if (!full(dir)) continue;
+    for (const e of ends) {
+      const f = (win ? path.win32 : path.posix).join(dir, n + e);
+      if (isFile(f)) return f;
+    }
   }
   return null;
+}
+function isProgram(f) {
+  try {
+    if (!fs.statSync(f).isFile()) return false;
+    if (process.platform !== 'win32') fs.accessSync(f, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// PATH with its full folders only, in their order: an empty, `.` or other relative entry names a
+// folder relative to wherever a program runs. (obysphere.mjs has the same.)
+function fullPath(value, platform = process.platform) {
+  const win = platform === 'win32';
+  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
+  return String(value || '').split(win ? ';' : ':').filter(full).join(win ? ';' : ':');
 }
 
 // ---- the history: notify/recent.jsonl, read by the console (GET /local/notifications),
@@ -9336,6 +9404,7 @@ function ghEnv() {
   const out = {};
   const keep = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|LANGUAGE|TZ|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|ALL_PROXY|XDG_[A-Z_]+|LC_[A-Z_]+|GH_TOKEN|GITHUB_TOKEN|GH_CONFIG_DIR)$/;
   for (const [k, v] of Object.entries(process.env)) if (keep.test(k)) out[k] = v;
+  if (out.PATH !== undefined) out.PATH = fullPath(out.PATH);
   return { ...out, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_SPINNER_DISABLED: '1', NO_COLOR: '1', GH_PAGER: 'cat' };
 }
 function ghRun(args, { timeoutMs = 30e3 } = {}) {
@@ -9352,8 +9421,10 @@ function ghRun(args, { timeoutMs = 30e3 } = {}) {
     let err = '';
     let size = 0;
     const t = setTimeout(() => child?.kill('SIGKILL'), timeoutMs);
+    const gh = programPath('gh'); // never one in the temp folder it runs in
+    if (!gh) return finish({ code: null, out: '', err: "gh isn't installed", missing: true });
     try {
-      child = spawn('gh', args, { env: ghEnv(), cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(gh, args, { env: ghEnv(), cwd: os.tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       return finish({ code: null, out: '', err: e.message, missing: e.code === 'ENOENT' });
     }

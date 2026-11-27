@@ -166,7 +166,8 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     fs.mkdirSync(path.join(h, 'app'), { recursive: true });
     fs.writeFileSync(path.join(h, 'app', 'update-check.json'), JSON.stringify({ latest: '99.0.0', checkedAt: new Date().toISOString() }));
     m = await model(env);
-    assert.deepEqual(find(m.items, 'Update to 99.0.0'), { kind: 'run', title: 'Update to 99.0.0', args: ['update'], busy: 'Updating to 99.0.0…' });
+    // the release it names: the stable channel, whichever one was installed
+    assert.deepEqual(find(m.items, 'Update to 99.0.0'), { kind: 'run', title: 'Update to 99.0.0', args: ['update', '--channel', 'stable'], busy: 'Updating to 99.0.0…' });
     assert.match(m.icon.tip, /99\.0\.0 is out/);
   } finally {
     consoleServer.close();
