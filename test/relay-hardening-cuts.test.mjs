@@ -1,6 +1,8 @@
-// What the relay keeps and removes (security audit, findings 10, 14 and 15): a member who floods
-// the Sphere loses its own oldest messages at a cut by count, not everyone else's, and the chain
-// still verifies, on both stores and after a cold start; on Redis, a deletion whose message a
+// What the relay keeps and removes (security audit, findings 10, 14 and 15; second audit, R5): a
+// member who floods the Sphere loses its own oldest messages at a cut by count, not everyone else's,
+// also when it floods with system messages (making channels) or with a second agent: a cut takes the
+// oldest first but never a member's newest share, and the chain still verifies, on both stores and
+// after a cold start; on Redis, a deletion whose message a
 // racing compaction already folded into the snapshot brings the next compaction forward on every
 // instance; and a Sphere migrated from the first version keeps no copy of its old messages in
 // sphere.json.v0.bak. `npm test`.
@@ -64,15 +66,15 @@ for (const kind of ['fs', 'redis']) {
       assert.ok(hers.length < 130, `${hers.length} of mallory's held`);
       assert.equal(hers.at(-1).text, 'mallory 129', 'her newest stay');
       const cut = (await audit(R.base)).filter((e) => e.type === 'expire' && e.target === m.mallory.id);
-      assert.ok(cut.length >= 1, 'the share cut is audited, naming her');
-      assert.match(cut[0].detail, /of mallory's messages removed: it held more than half of the newest 100/);
+      assert.ok(cut.length >= 1, 'the cut is audited, naming her');
+      assert.match(cut[0].detail, /past the newest 100 removed, the oldest first but none of a member's newest \d+ \(mallory \d+/);
       assert.equal((await call(R.base, 'GET', '/api/audit', { key: KEY })).verified, true);
     });
 
-    test('a plain cut of older messages after a share cut still verifies: its event names the newest message any cut removed', async () => {
-      // A Sphere of its own: alice and bob talk (40), then mallory floods (80) and loses her oldest
-      // (past half of 100). Then alice and bob go on (21): a few more of hers go, and then the oldest
-      // of all, which are older than every one of hers already cut.
+    test('a plain cut of older messages after a fair cut still verifies: its event names the newest message any cut removed', async () => {
+      // A Sphere of its own: alice and bob talk (40), then mallory floods (80) and loses her oldest.
+      // Then alice and bob go on: once each holds more than its share, a cut takes the oldest of
+      // all, which are older than every one of hers already cut.
       const S = await relay(kind === 'fs' ? { ...env(), SPHERE_DATA: path.join(T.dir, 'fair-order') } : { ...env(), SPHERE_REDIS_PREFIX: 'fairorder:' }, { tmp: T.dir, procs });
       const n = await members(S.base, ['alice', 'bob', 'mallory']);
       assert.equal((await call(S.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { retainMessages: 100 } })).status, 200);
@@ -80,13 +82,54 @@ for (const kind of ['fs', 'redis']) {
       for (let i = 0; i < 40; i++) await say(i % 2 ? 'alice' : 'bob', `talk ${i}`);
       const hers = new Set();
       for (let i = 0; i < 80; i++) hers.add(await say('mallory', `flood ${i}`));
-      for (let i = 0; i < 21; i++) await say(i % 2 ? 'alice' : 'bob', `more ${i}`);
-      await call(S.base, 'GET', '/api/info', { key: KEY });
-      const au = await call(S.base, 'GET', '/api/audit?limit=1000', { key: KEY });
-      const plain = au.events.filter((e) => e.type === 'expire' && /past the newest 100 removed/.test(e.detail)).at(-1);
-      assert.ok(plain, `a plain cut came after the share cuts: ${au.events.filter((e) => e.type === 'expire').map((e) => e.detail).join(' | ')}`);
+      const cuts = async () => (await call(S.base, 'GET', '/api/audit?limit=1000', { key: KEY })).events.filter((e) => e.type === 'expire');
+      let plain = null;
+      for (let i = 0; i < 200 && !plain; i++) {
+        await say(i % 2 ? 'alice' : 'bob', `more ${i}`);
+        if (i % 10 === 9) plain = (await cuts()).find((e) => /past the newest 100 removed(, up to m_[\w-]+)?$/.test(e.detail));
+      }
+      assert.ok(plain, `a plain cut came after the fair ones: ${(await cuts()).map((e) => e.detail).join(' | ')}`);
+      const fair = (await cuts()).filter((e) => e.target === n.mallory.id);
+      assert.ok(fair.length >= 1, 'her flood was cut first, naming her');
       assert.ok(hers.has(plain.ref), `it names one of mallory's, cut before it (${plain.detail})`);
-      assert.equal(au.verified, true);
+      assert.equal((await call(S.base, 'GET', '/api/audit', { key: KEY })).verified, true);
+      await S.stop();
+    });
+
+    test('a flood of channels (each says so in a system message) or a second agent pushes no one else out', async () => {
+      const S = await relay(kind === 'fs' ? { ...env(), SPHERE_DATA: path.join(T.dir, 'fair-sybil') } : { ...env(), SPHERE_REDIS_PREFIX: 'fairsybil:' }, { tmp: T.dir, procs });
+      const n = await members(S.base, ['alice', 'bob', 'mallory', 'mallory-two']);
+      assert.equal((await call(S.base, 'POST', '/api/admin/policy', { admin: ADMIN, body: { retainMessages: 100 } })).status, 200);
+      const say = async (who, text) => assert.equal((await call(S.base, 'POST', '/api/messages', { token: n[who].token, body: { text } })).status, 200);
+      for (let i = 0; i < 30; i++) {
+        await say('alice', `Alice Test ${i}`);
+        await say('bob', `Bob Test ${i}`);
+      }
+      const held = async () => (await call(S.base, 'GET', '/api/messages?limit=1000', { admin: ADMIN })).messages;
+      const count = (list, id) => list.filter((x) => x.from === id).length;
+      // one member: half of the newest 100 in posts, and as many new channels (a system message each)
+      for (let i = 0; i < 150; i++) {
+        await say('mallory', `mallory ${i}`);
+        assert.equal((await call(S.base, 'POST', '/api/channels', { token: n.mallory.token, body: { name: `c${i}` } })).status, 200);
+      }
+      await call(S.base, 'GET', '/api/info', { key: KEY });
+      let now = await held();
+      assert.equal(count(now, n.alice.id), 30, 'alice keeps all of hers');
+      assert.equal(count(now, n.bob.id), 30, 'bob keeps all of his');
+      // two agents, each under half
+      for (let i = 0; i < 100; i++) {
+        await say('mallory', `again ${i}`);
+        await say('mallory-two', `again ${i}`);
+      }
+      await call(S.base, 'GET', '/api/info', { key: KEY });
+      now = await held();
+      // four members share the newest 100: each keeps at least its newest 20 (alice and bob, 30 each,
+      // lose at most their oldest 10)
+      assert.ok(count(now, n.alice.id) >= 20, `alice holds ${count(now, n.alice.id)}`);
+      assert.ok(count(now, n.bob.id) >= 20, `bob holds ${count(now, n.bob.id)}`);
+      assert.ok(now.some((x) => x.text === 'Alice Test 29') && now.some((x) => x.text === 'Bob Test 29'), 'their newest stay');
+      assert.ok(count(now, n.mallory.id) <= 30 && count(now, n['mallory-two'].id) <= 30, 'the flood went');
+      assert.equal((await call(S.base, 'GET', '/api/audit', { key: KEY })).verified, true);
       await S.stop();
     });
 

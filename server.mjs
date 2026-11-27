@@ -2447,7 +2447,7 @@ function dropMessages(gone) {
 // expire operation and its audit event. A cut by time or count removes a prefix of what's held
 // (named by its newest, `upto`); a share cut, one member's own oldest (`who`, by their `ids`).
 // `c`: what this commit's cuts took so far (messages, files, and the newest message any cut removed).
-function pushCut(b, list, { why, words, who = null, soon = false }, at, c) {
+function pushCut(b, list, { why, words, who = null, soon = false, byIds = false, what: said = null }, at, c) {
   for (const m of list) c.gone.add(m);
   const ids = new Set(list.map((m) => m.id));
   const files = Object.values(S.files).filter((f) => f.messageId && !c.taken.has(f.id) && (ids.has(f.messageId) || !byId.has(f.messageId))).map((f) => f.id);
@@ -2459,10 +2459,29 @@ function pushCut(b, list, { why, words, who = null, soon = false }, at, c) {
   const ref = own ? (c.ref = newerRef(c.ref, own)) : null;
   const n = list.length;
   const k = files.length;
-  const what = why === 'share' ? `${n.toLocaleString('en-US')} of ${S.agents[who]?.name ?? 'the system'}'s messages removed: it held ${words}` : `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed`;
-  b.audit('expire', { ref, target: why === 'share' ? who : null, detail: `${what}${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
-  if (why === 'share') b.push({ t: 'expire', why, ids: [...ids], who, upto: null, at, files });
+  const what = said ?? (why === 'share' ? `${n.toLocaleString('en-US')} of ${S.agents[who]?.name ?? 'the system'}'s messages removed: it held ${words}` : `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed`);
+  b.audit('expire', { ref, target: who, detail: `${what}${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
+  if (why === 'share' || byIds) b.push({ t: 'expire', why, ids: [...ids], who, upto: null, at, files, ...(soon ? { soon: true } : {}) });
   else b.push({ t: 'expire', why, upto: list[n - 1].id, at, files, ...(soon ? { soon: true } : {}) });
+}
+
+// Fair cuts: the most messages each member may keep for all of them to fit in `retain`, the newest
+// first (a member holding fewer keeps them all). counts: how many each member holds
+function fairLevel(counts, retain) {
+  let lo = 0;
+  let hi = 0;
+  for (const n of counts) if (n > hi) hi = n;
+  const fits = (l) => {
+    let sum = 0;
+    for (const n of counts) sum += Math.min(n, l);
+    return sum <= retain;
+  };
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 // the newer of two messages by their own audit event (either may be null)
@@ -2476,8 +2495,10 @@ function newerRef(a, b) {
 // once, down to exactly retainMessages; exact: down to exactly retainMessages (before a
 // compaction). policy: the policy the cut is for (a change not applied yet).
 //
-// Fair cuts. A cut by count first takes, from any member holding more than half of the messages
-// kept, its own oldest; then the oldest of all. And a member whose held messages pass its share of
+// Fair cuts. A cut by count takes the oldest first, but never a member's newest `level` messages:
+// the most each member may keep for all of them to fit in retainMessages (one holding fewer keeps
+// them all). System messages keep no one's place, so making channels pushes no one out; a second
+// agent is one more member sharing the level. And a member whose held messages pass its share of
 // bytes (policy.maxAgentBytes, apart from its files) loses its own oldest until they fit. So no
 // member empties everyone else's history, or the relay's memory, by posting.
 function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
@@ -2494,25 +2515,29 @@ function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
   const retain = policy.retainMessages;
   const over = messages.length - i - retain;
   if (over > 0 && (force || exact || over > cutSlack(retain))) {
-    let left = over;
-    const half = Math.floor(retain / 2);
-    const per = new Map();
-    for (let j = i; j < messages.length; j++) per.set(messages[j].from ?? '', (per.get(messages[j].from ?? '') || 0) + 1);
-    // the oldest of all, unless that would take messages of a member who holds no more than half:
-    // then the members past half lose their own oldest first. (An admin who keeps fewer messages
-    // keeps the newest, whoever wrote them.)
-    const big = new Set([...per].filter(([, n]) => n > half).map(([who]) => who));
-    const fair = !force && big.size > 0 && messages.slice(i, i + over).some((m) => m.from && !big.has(m.from));
-    for (const [who, n] of fair ? per : []) {
-      if (left <= 0 || n <= half) continue;
-      const mine = [];
-      for (let j = i; j < messages.length && mine.length < Math.min(n - half, left); j++) if ((messages[j].from ?? '') === who) mine.push(messages[j]);
-      pushCut(b, mine, { why: 'share', who: who || null, words: `more than half of the newest ${Number(retain).toLocaleString('en-US')}` }, at, c);
-      left -= mine.length;
+    const left = new Map(); // member id -> how many it still holds
+    for (let j = i; j < messages.length; j++) if (messages[j].from) left.set(messages[j].from, (left.get(messages[j].from) || 0) + 1);
+    // an admin who keeps fewer messages keeps the newest, whoever wrote them: no level
+    const level = force ? 0 : fairLevel([...left.values()], retain);
+    const gone = [];
+    for (let j = i; j < messages.length && gone.length < over; j++) {
+      const m = messages[j];
+      if (m.from && left.get(m.from) <= level) continue;
+      if (m.from) left.set(m.from, left.get(m.from) - 1);
+      gone.push(m);
     }
-    const rest = [];
-    for (let j = i; j < messages.length && rest.length < left; j++) if (!c.gone.has(messages[j])) rest.push(messages[j]);
-    if (rest.length) pushCut(b, rest, { why: 'count', words: `past the newest ${Number(retain).toLocaleString('en-US')}`, soon: force }, at, c);
+    const words = `past the newest ${Number(retain).toLocaleString('en-US')}`;
+    if (gone.at(-1) === messages[i + gone.length - 1]) pushCut(b, gone, { why: 'count', words, soon: force }, at, c); // the oldest of all, as they are
+    else if (gone.length) {
+      // not the oldest of all: named by their ids, and the audit event says whose went
+      const lost = new Map();
+      for (const m of gone) lost.set(m.from ?? '', (lost.get(m.from ?? '') || 0) + 1);
+      const most = [...lost].sort((x, y) => y[1] - x[1]);
+      const who = most.find(([id]) => id)?.[0] ?? null;
+      const whose = most.slice(0, 4).map(([id, n]) => `${id ? (S.agents[id]?.name ?? '?') : 'system'} ${n}`).join(', ') + (most.length > 4 ? ', …' : '');
+      const what = `${gone.length.toLocaleString('en-US')} messages ${words} removed, the oldest first but none of a member's newest ${level.toLocaleString('en-US')} (${whose})`;
+      pushCut(b, gone, { why: 'count', words, who, byIds: true, what }, at, c);
+    }
   }
   const cap = policy.maxAgentBytes;
   for (const [who, held] of heldBytes) {
