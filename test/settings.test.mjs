@@ -1148,6 +1148,7 @@ describe('a decline on a sealed Sphere', () => {
     const f = path.join(home, 'bob', 'settings.json');
     const s = JSON.parse(fs.readFileSync(f, 'utf8'));
     s.access.declineTopics = ['quarterly numbers'];
+    s.access.default = 'answer'; // an Oby bob answers: its topic is declined (one that waits for him would wait)
     fs.writeFileSync(f, JSON.stringify(s), { mode: 0o600 });
     const serve = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env(), stdio: 'ignore' });
     procs.push(serve);

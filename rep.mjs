@@ -313,6 +313,7 @@ const DECLINE = {
   files: "it doesn't take asks with files",
   hops: "it doesn't take asks passed on from another ask",
   limit: 'it has reached its limit for today',
+  crowded: 'too many asks already wait for its owner',
   owner: 'its owner declined it',
   timeout: 'no answer from its owner',
   settings: "its owner's settings need fixing",
@@ -1253,7 +1254,7 @@ async function localApi(req, res, url, p) {
       // depth: passed on by from for someone else (a hop), who can't be named; unsure: who asks didn't check
       // against the Oby first seen under that handle. Either way: neither everything you allow nor always answer
       const hopOf = (d) => (Number.isInteger(d) && d > 0 ? d : 0);
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth, unsure }) => ({ id, askId, from, channel, ts, text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth, unsure }) => ({ id, askId, from, channel, ts, text: typeof text === 'string' && text.length > PENDING_TEXT_MAX + 100 ? pendingWords(text) : text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
       // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
@@ -2779,10 +2780,15 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           return { decline: 'settings' };
         }
         const use = instrumentUseOf(p, opened.text, s); // instruments: a use of one of yours, read again at every check
-        const g = instrumentGate(gate(s, { from: gateFrom, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok }), use);
+        let g = gate(s, { from: gateFrom, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok });
+        // a topic you decline, on an ask that waits for you anyway (serve --approve, an asker that isn't
+        // sure): it waits like the rest, as gate has it for Ask me first, so the asker can't tell it apart
+        const topic = g.decline === 'topic' && (approveAll || !who.ok);
+        if (topic) g = { level: 'approve', approve: true, why: 'every ask waits for you (serve --approve), and this one is on a topic you decline' };
+        g = instrumentGate(g, use);
         if (g.decline) return { decline: g.decline, s };
         // not sure who it is: it waits for you, saying why, and never gets the risky reach
-        if (!who.ok) return { s, g: { ...g, level: 'approve', approve: true, trusted: false, untrusted: 'identity', why: `⚠ ${who.why}: it may not be the Oby it says` }, who, use };
+        if (!who.ok) return { s, g: { ...g, level: 'approve', approve: true, trusted: false, untrusted: 'identity', why: `⚠ ${who.why}: it may not be the Oby it says${topic ? ' (on a topic you decline)' : ''}` }, who, use };
         return { s, g, who, use };
       };
       let c = check();
@@ -2790,7 +2796,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // counted: guessing your topics one ask at a time uses up the asker's asks for the day
       if (c.decline && (c.decline !== 'topic' || held || refound)) return decline(c.decline);
       if (!held && !refound) {
-        const over = takeAsk(p, c.s, gateFrom || `?${msg.from}`); // a held ask, or one taken up again, was counted when it came
+        const over = takeAsk(p, c.s, gateFrom || `?${msg.from}`, { topic: c.decline === 'topic' }); // a held ask, or one taken up again, was counted when it came
         if (over) return decline(over);
         if (c.decline) return decline(c.decline);
       }
@@ -2820,6 +2826,11 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           return decline('timeout');
         }
         if ((c.g.approve || approveAll) && !ownerSaid) {
+          // at most PENDING_PER_ASKER of one Oby's asks wait for you at once, and PENDING_ALL in all
+          if (pendingCrowded(p, msg.from)) {
+            log(yellow('  too many asks wait for you: ') + dim(`at most ${PENDING_PER_ASKER} of one Oby's, ${PENDING_ALL} in all`));
+            return decline('crowded');
+          }
           const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', who.ok && !hop && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { unsure: who.ok ? null : who.why });
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
@@ -2906,7 +2917,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         ...(unsure ? { unsure: cleanLine(unsure, 200) } : {}), // not sure who asks: no everything-you-allow, no always
         channel: msg.channel,
         ts: msg.ts,
-        text: opened.text,
+        text: pendingWords(opened.text), // what Waiting for you shows: a sealed ask can be long
         files: opened.files.map((f) => ({ name: safeName(f.name), size: Number(f.size) || 0 })),
         reason: why,
         ...(msg.depth > 0 ? { depth: Math.min(Math.floor(msg.depth), 99) } : {}), // passed on by from, for someone it can't name: never everything you allow
@@ -7147,23 +7158,32 @@ function gate(s, { from, text, files = 0, depth = 0, sure = true }) {
   const hops = a.hops || HOPS_DEFAULT;
   if (depth > 0 && (!a.acceptHops || hops === 'decline')) return { decline: 'hops' };
   if (depth > 0) level = stricter(level, hops);
-  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
+  // a topic you decline, for an ask that waits for you, waits like any other (you see why): an asker
+  // who waits for you can't tell your topics from the rest. Otherwise it's declined (and counted: takeAsk)
+  const topic = a.declineTopics.length > 0 && wordsIn(text, a.declineTopics);
   const untrusted = own === 'trust' && level !== 'trust' ? (depth > 0 ? 'hop' : 'identity') : null;
   if (level === 'approve') {
     const why = depth > 0 ? `asks ${from} passes on for someone else wait for you` : !sure && listed && own !== 'approve' ? `${from} isn't surely the Oby you listed, so it waits for you` : listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise';
-    return { level, approve: true, why, untrusted };
+    return { level, approve: true, why: topic ? `${why} (on a topic you decline)` : why, untrusted };
   }
+  if (topic) return { decline: 'topic' };
   if (level === 'trust' && !sure) return { level: 'answer', trusted: false, untrusted: 'identity' };
   return { level, trusted: level === 'trust', untrusted };
 }
 // which of the day's limits this ask would be over: 'agent' (this Oby's asks), 'day' (the answers
 // your Oby gives, all Obys together), or null
+// from: a handle, or ?<id> for an asker whose identity isn't sure. Past TOPIC_GUESSES topic declines
+// in a day, an Oby's asks are declined until tomorrow, whatever your limits: your topics can't be read
+// out one guess at a time
 function limitReached(u, s, from) {
   const { asksPerAgentPerDay: perAgent, answersPerDay } = s.access;
-  if (perAgent && (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) >= perAgent) return 'agent';
+  const n = (m) => (Object.hasOwn(m, from) ? m[from] : 0);
+  if (perAgent && n(u.asksByAgent) >= perAgent) return 'agent';
+  if (n(u.topicsByAgent) >= TOPIC_GUESSES) return 'agent';
   if (answersPerDay && u.answers >= answersPerDay) return 'day';
   return null;
 }
+const TOPIC_GUESSES = 3;
 
 // a word or phrase where a word starts, ignoring case: "review" finds reviews, not preview
 function wordsIn(text, words) {
@@ -7364,12 +7384,19 @@ function usageDay(d = new Date()) {
 }
 function readUsage(p, day = usageDay()) {
   const u = readJsonFile(path.join(p.dir, 'usage', `${day}.json`), {});
-  const asks = Object.create(null); // by handle: a handle such as constructor is counted like any other
-  if (u.asksByAgent && typeof u.asksByAgent === 'object') for (const [k, v] of Object.entries(u.asksByAgent)) if (slug(k) === k && Number.isInteger(v) && v >= 0) asks[k] = v;
+  // by handle (a handle such as constructor is counted like any other), or ?<id> for an asker whose
+  // identity isn't sure; asks and topic declines
+  const byAsker = (m) => {
+    const out = Object.create(null);
+    if (m && typeof m === 'object') for (const [k, v] of Object.entries(m)) if ((slug(k) === k || (k[0] === '?' && ID.a.test(k.slice(1)))) && Number.isInteger(v) && v >= 0) out[k] = v;
+    return out;
+  };
+  const asks = byAsker(u.asksByAgent);
+  const topics = byAsker(u.topicsByAgent);
   // asks handed to you (sphere_ask_owner) per asker's id, counted when handed: ending one gives none back
   const handed = Object.create(null);
   if (u.handoffsByAsker && typeof u.handoffsByAsker === 'object') for (const [k, v] of Object.entries(u.handoffsByAsker)) if (ID.a.test(k) && Number.isInteger(v) && v >= 0) handed[k] = v;
-  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
+  return { day, asksByAgent: asks, topicsByAgent: topics, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
 }
 function withUsage(p, fn) {
   const dir = path.join(p.dir, 'usage');
@@ -7401,10 +7428,12 @@ function withUsage(p, fn) {
 }
 // counts the ask, or says 'limit' when this Oby's asks or the day's answers (all Obys) are used up
 // (the asker hears the same words either way: never which limit, nor its number)
-function takeAsk(p, s, from) {
+// topic: it's declined for its topic (counted apart too: TOPIC_GUESSES)
+function takeAsk(p, s, from, { topic = false } = {}) {
   return withUsage(p, (u) => {
     if (limitReached(u, s, from)) return 'limit';
     u.asksByAgent[from] = (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) + 1;
+    if (topic) u.topicsByAgent[from] = (Object.hasOwn(u.topicsByAgent, from) ? u.topicsByAgent[from] : 0) + 1;
     return null;
   });
 }
@@ -7484,6 +7513,19 @@ function pendingEntries(p) {
 }
 function listPending(p) {
   return pendingEntries(p).filter((w) => !w.decided && Date.parse(w.expiresAt) > Date.now());
+}
+// asks that wait for you: at most PENDING_PER_ASKER of one Oby's at once, PENDING_ALL in all (GitHub
+// items count apart: GH_WAITING_MAX); what's kept of each, the first PENDING_TEXT_MAX characters
+const PENDING_PER_ASKER = 20;
+const PENDING_ALL = 100;
+const PENDING_TEXT_MAX = 20000;
+function pendingCrowded(p, fromId) {
+  const asks = listPending(p).filter((w) => w.kind !== 'github');
+  return asks.length >= PENDING_ALL || asks.filter((w) => w.fromId === fromId).length >= PENDING_PER_ASKER;
+}
+function pendingWords(text) {
+  const t = String(text ?? '');
+  return t.length > PENDING_TEXT_MAX ? `${t.slice(0, PENDING_TEXT_MAX)}\n… (cut: ${(t.length - PENDING_TEXT_MAX).toLocaleString('en-US')} more characters)` : t;
 }
 function pendingFor(p, askId) {
   return pendingEntries(p).some((w) => w.askId === askId);
