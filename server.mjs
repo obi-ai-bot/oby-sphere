@@ -59,7 +59,7 @@ const CFG = {
   host: String(args.host ?? env.HOST ?? '0.0.0.0'),
   data: path.resolve(String(args.data ?? env.SPHERE_DATA ?? path.join(HERE, 'data'))),
   store: String(args.store ?? env.SPHERE_STORE ?? (ON_VERCEL ? 'redis' : 'fs')),
-  trustProxy: truthy(args['trust-proxy'] ?? env.SPHERE_TRUST_PROXY ?? (ON_VERCEL ? '1' : '')),
+  trustProxy: proxyHops(args['trust-proxy'] ?? env.SPHERE_TRUST_PROXY ?? (ON_VERCEL ? '1' : '')), // how many proxies in front (0: none trusted)
   sealedDefault: truthy(args.sealed ?? env.SPHERE_SEALED ?? (ON_VERCEL ? '1' : '')),
   name: args.name ?? env.SPHERE_NAME,
   key: args.key ?? env.SPHERE_KEY,
@@ -88,7 +88,7 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
@@ -207,7 +207,7 @@ const authAudited = new Map(); // client -> when its failed attempts were last a
 
 // live, this process only
 const live = new Map(); // agent id -> { rep: Set, client: Set }
-const streams = new Set(); // { res, role, agentId, id, ip, keyHash, admin, planned }
+const streams = new Set(); // { res, role, agentId, id, ip, keyHash, admin, keyAll, planned }
 const waiters = new Map(); // message id -> Set<wake>
 
 const ALL = () => true;
@@ -1841,6 +1841,7 @@ setInterval(() => {
   for (const [k, c] of S.claims) if (t - Date.parse(c.ts) > CLAIM_MS) S.claims.delete(k);
   for (const [k, at] of authAudited) if (t - at > 120000) authAudited.delete(k);
   for (const [k, r] of denyAudited) if (t - r.at > 120000) denyAudited.delete(k);
+  for (const [k, b] of readBuckets) if (t - b.t > 120000) readBuckets.delete(k);
 }, 60000).unref();
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{1,32}$/;
@@ -2551,8 +2552,10 @@ function sees(v, name) {
   if (!closedChannels.has(name)) return true;
   return v.all || (!!v.id && S.channels[name].members.includes(v.id));
 }
+// a stream sees every channel with the admin key (opened with it), or while its member is an admin
+// now: decided at each event, so one made no longer an admin stops seeing closed channels at once
 function streamSees(st, name) {
-  return sees({ id: st.agentId ?? null, all: !!st.all }, name);
+  return sees({ id: st.agentId ?? null, all: !!st.keyAll || (!!st.agentId && isAdmin(S.agents[st.agentId])) }, name);
 }
 // a list (of messages, or anything in a channel) as this viewer may see it
 function visible(v, list, channelOf = (m) => m.channel) {
@@ -2748,8 +2751,9 @@ const RESTART_MS = 2000;
 // The request handler: `node server.mjs` serves it; on Vercel, api/sphere.mjs exports it.
 export async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
-  // Vercel's rewrite passes the original path as ?__path=
-  if (url.searchParams.has('__path')) {
+  // Vercel's rewrite passes the original path as ?__path= (only there: elsewhere the path is the path,
+  // and a query can't send a request to another route than a proxy in front of the relay sees)
+  if (ON_VERCEL && url.searchParams.has('__path')) {
     const p = '/' + String(url.searchParams.get('__path')).replace(/^\/+/, '');
     url.searchParams.delete('__path');
     url.pathname = p;
@@ -2875,6 +2879,7 @@ async function route(req, res, url) {
     me.lastSeen = now();
     countTool(me, req);
   }
+  if (m === 'GET' && !readOk(me, req)) throw err(429, 'rate_limited', 'Too many reads: try again in a moment.');
   if (m === 'GET') await store.freshPresence();
 
   if (m === 'GET' && p === '/api/info') return send(res, 200, { sphere: sphereInfo(), me: me ? publicAgent(me) : null, admin });
@@ -2975,7 +2980,7 @@ async function route(req, res, url) {
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, all: isAdminRequest(req, me), planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
@@ -3241,7 +3246,8 @@ async function route(req, res, url) {
   if (m === 'DELETE' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const id = mm[1];
     const v = viewOf(req, me);
-    const seen = (x) => !!x && sees(v, x.channel) && !hidden(x);
+    // your own message is yours to delete wherever it is: a private channel you were taken out of too
+    const seen = (x) => !!x && (x.from === me.id || sees(v, x.channel)) && !hidden(x);
     const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`, `forbidden:${me.id}`);
     const msg0 = byId.get(id);
     if (!seen(msg0)) throw err(404, 'not_found', 'There is no such message.');
@@ -3397,6 +3403,15 @@ async function route(req, res, url) {
   throw err(404, 'not_found', 'Not found.');
 }
 
+// Reads change nothing, but each one costs the relay work (a page of messages, the audit log): at
+// most LIMITS.readsPerMin a minute per agent and readsPerMinPerIp per client address, counted in
+// this process (no round trip to the store for it; on Redis, per instance). Not audited.
+const readBuckets = new Map();
+function readOk(me, req) {
+  if (me && !take(readBuckets, me.id, LIMITS.readsPerMin)) return false;
+  return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
+}
+
 async function joinRefused(ip) {
   await authFailed({ headers: {}, socket: { remoteAddress: ip } }, 'a join with a wrong key').catch((e) => {
     if (e.status === 429) throw e;
@@ -3496,9 +3511,12 @@ function auditPage(url) {
   return { events: list.filter(Boolean), head: auditHead, verified: verifyChain(), total: auditEvents.length };
 }
 
+// only the instruments the relay knows (and the one representatives add for their owner): a name a
+// caller makes up would be a new counter, kept as long as the process runs
+const TOOL_NAMES = new Set([...INSTRUMENTS.map((i) => i.name), 'sphere_ask_owner']);
 function countTool(me, req) {
   const tool = req.headers['x-sphere-tool'];
-  if (!tool || !/^sphere_[a-z_]{1,32}$/.test(tool)) return;
+  if (!tool || !TOOL_NAMES.has(tool)) return;
   const call = req.headers['x-sphere-call'];
   if (call) {
     const c = String(call).slice(0, 64);
@@ -3563,13 +3581,31 @@ function secretOk(given, hash) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// behind a proxy (Railway, Vercel, Fly) only when told to trust it
+// The client's address, for rate limits and the audit log. Behind a proxy (Railway, Vercel, Fly)
+// only when told to trust it, and then the entry that proxy added: the rightmost in
+// X-Forwarded-For, or with SPHERE_TRUST_PROXY=<n> (n proxies in a row) the n-th from the right.
+// Whatever is left of it came from the client, which can write anything there. An IPv6 address
+// counts by its /64, the block one client is usually given; an IPv4 one written as IPv6, as IPv4.
 function clientIp(req) {
+  let ip = req.socket?.remoteAddress || '?';
   if (CFG.trustProxy) {
-    const f = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    if (f) return f.slice(0, 64);
+    const hops = String(req.headers['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (hops.length) ip = hops[Math.max(0, hops.length - CFG.trustProxy)];
   }
-  return req.socket?.remoteAddress || '?';
+  return addressKey(ip.slice(0, 64));
+}
+function addressKey(ip) {
+  const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1];
+  if (!ip.includes(':')) return ip;
+  const bare = ip.replace(/^\[|\]$/g, '').split('%')[0]; // [::1] and a zone (fe80::1%en0)
+  const [head, tail, more] = bare.split('::');
+  if (more !== undefined) return ip;
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return ip;
+  return groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(':') + '::/64';
 }
 function isHttps(req) {
   if (req.socket?.encrypted) return true;
@@ -3739,6 +3775,12 @@ function fmtBytes(n) {
 function dayKey(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// SPHERE_TRUST_PROXY / --trust-proxy: a number of proxies in a row, or on (one) or off (none)
+function proxyHops(v) {
+  if (/^\d+$/.test(String(v ?? '').trim())) return Math.min(10, Number(String(v).trim()));
+  return truthy(v) ? 1 : 0;
 }
 
 function truthy(v) {
