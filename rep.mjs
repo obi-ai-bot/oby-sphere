@@ -9502,7 +9502,7 @@ const WORDS_KEPT = "Its words aren't here: only Obys your owner lists as Answer 
 // Sphere is inside the fence; your console's address isn't there (it isn't for Claude to open).
 const CHANNEL_SENDER_MAX = 5;
 const CHANNEL_SENDER_MS = 10 * 60e3;
-const CHANNEL_KIND = { waiting: 'something waits for you', asked: 'an Oby asked yours', direct: 'a direct message to you', mention: 'you were mentioned', answered: 'an answer to your ask', failed: "your Oby couldn't answer an ask", paused: "your Oby paused: its runtime can't answer for now", resumed: 'your Oby is back after a pause', test: 'a test notification' };
+const CHANNEL_KIND = { waiting: 'something waits for you', asked: 'an Oby asked yours', direct: 'a direct message to you', mention: 'you were mentioned', answered: 'an answer to your ask', failed: "your Oby couldn't answer an ask", paused: "your Oby paused: its runtime can't answer for now", resumed: 'your Oby is back after a pause', blocked: "an ask made your Oby try what you don't allow", test: 'a test notification' };
 function notifyChannelOn(p) {
   try {
     return notifyOf(loadSettings(p)).claude;
@@ -11365,18 +11365,32 @@ function toolResultText(c) {
 }
 const blockedFile = (p) => path.join(p.dir, 'security', 'blocked.jsonl');
 const BLOCKED_KEEP = 200;
-// one denial in a few words: the tool, and what it was for (a file, a command, an address)
+// one denial in a few words: the tool, and what it was for (kind: a file, a command, an address, a pattern)
 function deniedOf(j) {
   if (!Array.isArray(j?.permission_denials)) return [];
   return j.permission_denials.slice(0, 20).map((d) => {
     const i = isMap(d?.tool_input) ? d.tool_input : {};
-    const what = [i.file_path, i.path, i.command, i.url, i.pattern, i.query].find((v) => typeof v === 'string' && v.trim());
-    return { tool: cleanLine(String(d?.tool_name || 'a tool'), 40), what: what ? cleanLine(what, 120) : '' };
+    const [kind, what] = [['file', i.file_path], ['file', i.path], ['command', i.command], ['url', i.url], ['pattern', i.pattern], ['pattern', i.query]].find(([, v]) => typeof v === 'string' && v.trim()) || [];
+    return { tool: cleanLine(String(d?.tool_name || 'a tool'), 40), what: what ? cleanLine(what, 120) : '', ...(kind ? { kind } : {}) };
   });
+}
+// what a notification says of one: the file it tried; of a command, its program; of an address, its
+// host; of a search, nothing. What an answer tried to send out may be what it read, and a notification
+// can leave this machine (Slack, a phone): the whole of it stays in your log and the check
+function deniedBrief(d) {
+  if (!d.what || d.kind === 'file') return `${d.tool}${d.what ? ` ${d.what}` : ''}`;
+  if (d.kind === 'command') return `${d.tool} ${cleanLine(d.what.trim().split(/\s+/)[0], 40)} …`;
+  if (d.kind === 'url') {
+    try {
+      return `${d.tool} ${new URL(d.what).host}`;
+    } catch {}
+  }
+  return `${d.tool} …`;
 }
 function noteBlocked(p, { msg, from, denied }) {
   const asker = slug(from?.name || '') || 'someone';
-  const entry = { ts: new Date().toISOString(), ask: msg.id, from: asker, channel: msg.channel, denied };
+  const hop = (msg.depth || 0) > 0; // passed on by from for someone else, who can't be named
+  const entry = { ts: new Date().toISOString(), ask: msg.id, from: asker, channel: msg.channel, ...(hop ? { hop: true } : {}), denied: denied.map(({ tool, what }) => ({ tool, what })) };
   try {
     fs.mkdirSync(path.dirname(blockedFile(p)), { recursive: true, mode: 0o700 });
     const kept = readBlocked(p, Infinity).slice(-(BLOCKED_KEEP - 1));
@@ -11385,8 +11399,8 @@ function noteBlocked(p, { msg, from, denied }) {
     fs.renameSync(tmp, blockedFile(p));
   } catch {}
   const words = denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; ');
-  log(`${yellow('  ⚠ blocked:')} ${dim(`${asker}'s ask made your Oby try what your settings don't allow: ${printable(words)}`)}`);
-  notifyOwner(p, { type: 'blocked', from: asker, channel: msg.channel, body: `Blocked: ${words}`, ref: `${msg.id}-blocked`, about: msg.id });
+  log(`${yellow('  ⚠ blocked:')} ${dim(`${asker}'s ${hop ? 'ask, passed on for someone else,' : 'ask'} made your Oby try what your settings don't allow: ${printable(words)}`)}`);
+  notifyOwner(p, { type: 'blocked', from: asker, channel: msg.channel, body: `Blocked${hop ? ` (an ask @${asker} passed on for someone else)` : ''}: ${denied.map(deniedBrief).join('; ')}`, ref: `${msg.id}-blocked`, about: msg.id });
 }
 // the newest last; only what's from the last `days`
 function readBlocked(p, days = 30) {
@@ -11406,7 +11420,7 @@ function readBlocked(p, days = 30) {
       }
     })
     .filter((e) => isMap(e) && typeof e.ts === 'string' && Date.parse(e.ts) >= since && Array.isArray(e.denied))
-    .map((e) => ({ ts: e.ts, ask: ID.m.test(String(e.ask)) ? e.ask : null, from: slug(String(e.from || '')) || 'someone', channel: slug(String(e.channel || '')) || null, denied: e.denied.filter(isMap).slice(0, 20).map((d) => ({ tool: cleanLine(String(d.tool || ''), 40), what: cleanLine(String(d.what || ''), 120) })) }));
+    .map((e) => ({ ts: e.ts, ask: ID.m.test(String(e.ask)) ? e.ask : null, from: slug(String(e.from || '')) || 'someone', channel: slug(String(e.channel || '')) || null, ...(e.hop === true ? { hop: true } : {}), denied: e.denied.filter(isMap).slice(0, 20).map((d) => ({ tool: cleanLine(String(d.tool || ''), 40), what: cleanLine(String(d.what || ''), 120) })) }));
 }
 
 // ---- secrets in the folders your Oby reads, under names the never-read list doesn't cover
@@ -11561,8 +11575,10 @@ async function securityReport(p, { scan = true } = {}) {
   // what answers tried that your settings blocked
   const blocked = readBlocked(p);
   if (blocked.length) {
-    const by = [...new Set(blocked.map((b) => `@${b.from}`))];
-    add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask, or ${meCmd()} lockdown${profileFlag(p)}`);
+    // an ask passed on for someone else (a hop) is named by the Oby passing it on, who may not be the one trying
+    const by = [...new Set(blocked.map((b) => `@${b.from}${b.hop ? " (passing on someone else's ask)" : ''}`))];
+    const hops = blocked.some((b) => b.hop);
+    add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask${hops ? ', and have asks passed on from another ask wait for you or be declined (access.hops)' : ''}, or ${meCmd()} lockdown${profileFlag(p)}`);
   }
   checks.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level));
   return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned: scanned && { files: scanned.files, cut: scanned.cut } };
