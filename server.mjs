@@ -3245,13 +3245,16 @@ async function route(req, res, url) {
       if (st.role === 'viewer' && st.ip === ip) fromIp++;
       if (st.role === 'viewer') viewers++;
     }
-    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams)
+    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams) {
+      // for the operator: whose streams are open, and for how long (no token, no words)
+      if (me) console.error(`${me.name} has ${mine} streams open, the most a member may: ${[...streams].filter((x) => x.agentId === me.id).map((x) => `${x.role} ${Math.round((Date.now() - x.opened) / 1000)}s`).join(', ')}`);
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
+    }
     // each one a member opens and closes says it's online, or in a session, and back: so many a minute
     if (me && !take(streamOpens, me.id, LIMITS.streamOpensPerMin)) throw err(429, 'rate_limited', 'Too many streams opened: try again in a moment.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, opened: Date.now(), keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
