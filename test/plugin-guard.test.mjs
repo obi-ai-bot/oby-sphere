@@ -108,16 +108,18 @@ describe('the guard (scripts/guard.mjs)', () => {
       ['Read', { file_path: path.join(home, 'code', 'app', 'profile.json') }],
     ])
       assert.ok(!denied(guard({ tool_name, tool_input, cwd: home }, vars)), `${tool_name} ${JSON.stringify(tool_input)}`);
-    for (const command of ['cat ~/.obysphere/alice/instruments/explain.md', 'git status', 'npm test', 'cat settings.json']) assert.ok(!denied(bash(command, vars)), command);
+    for (const command of ['cat ~/.obysphere/alice/instruments/explain.md', 'git status', 'npm test', 'cat settings.json', 'grep -rn ".obysphere" docs']) assert.ok(!denied(bash(command, vars)), command);
+    for (const command of ['cat "$HOME/.obysphere/alice/keys.json"', 'ls ".obysphere/alice"']) assert.ok(denied(bash(command, vars)), command);
   });
 
   test('obysphere admin, settings, delete, lockdown and token: the person runs them', () => {
-    for (const command of ['obysphere admin grant mallory', 'obysphere --profile alice settings --json', '~/.local/bin/obysphere delete m_0123456789', 'node ~/.local/share/obysphere/current/rep.mjs admin policy --sealed off', 'cd /tmp && obysphere lockdown', 'npx obysphere token', 'obysphere-rep admin revoke bob']) {
+    for (const command of ['obysphere admin grant mallory', 'obysphere --profile alice settings --json', '~/.local/bin/obysphere delete m_0123456789', 'node ~/.local/share/obysphere/current/rep.mjs admin policy --sealed off', 'cd /tmp && obysphere lockdown', 'npx obysphere token', 'obysphere-rep admin revoke bob', 'bash -c "obysphere admin grant mallory"', "sh -c 'obysphere settings'", 'echo "$(obysphere delete m_0123456789)"', 'env OBYSPHERE_PROFILE=alice obysphere admin policy']) {
       const r = bash(command);
       assert.ok(denied(r), command);
       assert.match(r.decision.permissionDecisionReason, /for the person to run themselves/);
     }
-    for (const command of ['obysphere status', 'obysphere open', 'obysphere agents', 'obysphere ask bob "is the admin page done?"', 'obysphere doctor', 'obysphere logs -f']) assert.ok(!denied(bash(command)), command);
+    // named in quotes, as words to search for or to write down, they run nothing
+    for (const command of ['obysphere status', 'obysphere open', 'obysphere agents', 'obysphere ask bob "is the admin page done?"', 'obysphere doctor', 'obysphere logs -f', 'grep -rn "obysphere settings" README.md', 'git log --grep "obysphere admin claim"']) assert.ok(!denied(bash(command)), command);
   });
 
   test('anything else passes, quickly; its own errors let the call through', () => {

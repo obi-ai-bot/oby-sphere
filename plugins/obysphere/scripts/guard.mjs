@@ -68,13 +68,19 @@ export function judge(input) {
   for (const s of texts) {
     const x = s.slice(0, MAX_IN);
     if (CONSOLE.some((re) => re.test(x))) return "that reaches your Oby's console, where its approvals and settings are";
-    const c = COMMANDS.exec(x);
+    // words in quotes are an argument (grep "obysphere settings", a commit message), unless a shell,
+    // eval, xargs or a command substitution runs them
+    const run = /(?:^|[\s;&|(`])(?:sh|bash|zsh|dash|ksh|fish|eval|xargs|en[v])\b|\$\(|`/.test(x) ? x : x.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''");
+    const c = COMMANDS.exec(run);
     if (c) return `\`obysphere ${c[1].toLowerCase()}\` is for the person to run themselves`;
   }
   if (tool === 'Bash') {
     // a profiles folder named in a command: by name, by its variable, or by the folder OBYSPHERE_HOME names
     const cmd = slash(String(t.command ?? '').slice(0, MAX_IN));
-    const refs = [...cmd.matchAll(/(?:\$\{?OBYSPHERE_HOME\}?|\.obysphere[^\s'"`;|&)/]*)((?:\/[^\s'"`;|&)]*)?)/g)].map((m) => m[1].replace(/^\/+/, ''));
+    // (".obysphere" alone, in quotes, is a word to search for, not a folder)
+    const refs = [...cmd.matchAll(/(["']?)(?:\$\{?OBYSPHERE_HOME\}?|\.obysphere[^\s'"`;|&)/]*)((?:\/[^\s'"`;|&)]*)?)(["']?)/g)]
+      .filter((m) => !(m[1] && m[1] === m[3] && !m[2] && m[0].includes('.obysphere')))
+      .map((m) => m[2].replace(/^\/+/, ''));
     if (PROFILES) for (const at of cmd.split(slash(path.resolve(PROFILES))).slice(1)) refs.push((/^[^\s'"`;|&)]*/.exec(at)?.[0] || '').replace(/^\/+/, ''));
     if (refs.some((r) => !OPEN.test(r))) return "that touches your Oby's own files (its token, keys, settings and the decisions that wait for the person)";
   }
