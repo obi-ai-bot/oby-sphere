@@ -793,7 +793,7 @@ function fsStore() {
           }
         }
         fs.writeFileSync(MSGS, legacy.map((m) => JSON.stringify(m)).join('\n') + (legacy.length ? '\n' : ''), { mode: 0o600 });
-        console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl (the old file is sphere.json.v0.bak)`);
+        console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl`);
       }
 
       readLog(MSGS, (line) => {
@@ -844,6 +844,13 @@ function fsStore() {
       for (const f of oldFiles) appendLog({ f }); // file records now live in the log
       snapDirty = true;
       saveNow(); // keys as hashes only, no file records
+      // the first version's file, kept while its messages moved to the log: they're there now, and
+      // sphere.json no longer holds them, so the copy goes (it would keep words a deletion or a cut
+      // removed). A copy an older relay left behind goes too
+      if (fs.existsSync(SNAP + '.v0.bak')) {
+        fs.rmSync(SNAP + '.v0.bak', { force: true });
+        console.log('  removed sphere.json.v0.bak: its messages are in messages.jsonl');
+      }
       if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact(); // past retainMessages: the first cut, at start (init)
       setInterval(() => snapDirty && saveNow(), 15000).unref();
       setInterval(() => {
@@ -1051,6 +1058,11 @@ function redisStore() {
     // a deletion whose message was still in the tail: a compaction that read it before it was
     // overwritten, and swapped in after, would keep its words (see watchFolds)
     if (op.t === 'delete' && !op.soon && msgAt.get(op.id) >= base) folding.set(pos, msgAt.get(op.id));
+    // one whose message, or a record of its files, is already in the snapshot: a compaction its
+    // instance hadn't seen got there first, so its overwrite was skipped and the snapshot may keep
+    // the words. Every instance brings the next compaction forward, not only that one (it may be
+    // gone before it compacts)
+    if (op.t === 'delete' && !op.soon && (msgAt.get(op.id) < base || [].concat(op.files || []).some((id) => (fileAt.get(id) || []).some((p) => p < base)))) forceAt = Math.max(forceAt, pos + 1);
     if (op.t === 'expire') {
       for (const id of msgAt.keys()) if (!byId.has(id)) msgAt.delete(id);
       for (const id of fileAt.keys()) if (!Object.hasOwn(S.files, id)) fileAt.delete(id);

@@ -1,15 +1,35 @@
-// What the relay keeps and removes (security audit, finding 10): a member who floods the Sphere
-// loses its own oldest messages at a cut by count, not everyone else's, and the chain still
-// verifies, on both stores and after a cold start. `npm test`.
+// What the relay keeps and removes (security audit, findings 10, 14 and 15): a member who floods
+// the Sphere loses its own oldest messages at a cut by count, not everyone else's, and the chain
+// still verifies, on both stores and after a cold start; on Redis, a deletion whose message a
+// racing compaction already folded into the snapshot brings the next compaction forward on every
+// instance; and a Sphere migrated from the first version keeps no copy of its old messages in
+// sphere.json.v0.bak. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { startFakeUpstash } from './fake-upstash.mjs';
 import { KEY, ADMIN, relay, call, audit, tempDir, members, until } from './relay-hardening-helpers.mjs';
 
 let T;
 before(() => (T = tempDir('hardening-cuts')));
 after(() => T.remove());
+const sha = (x) => createHash('sha256').update(x).digest('hex');
+
+// every file in a folder, as text
+function folderText(dir) {
+  let all = '';
+  const walk = (d) => {
+    for (const f of fs.readdirSync(d)) {
+      const p = path.join(d, f);
+      if (fs.statSync(p).isDirectory()) walk(p);
+      else all += fs.readFileSync(p).toString('latin1') + '\n';
+    }
+  };
+  walk(dir);
+  return all;
+}
 
 for (const kind of ['fs', 'redis']) {
   describe(`a flood and the cut by count on the ${kind} store`, () => {
@@ -91,3 +111,77 @@ for (const kind of ['fs', 'redis']) {
     });
   });
 }
+
+test("on Redis, a deletion a racing compaction got ahead of brings the next compaction forward on every instance", async () => {
+  const procs = new Set();
+  const fake = await startFakeUpstash();
+  const prefix = 'race:';
+  const env = { SPHERE_STORE: 'redis', UPSTASH_REDIS_REST_URL: fake.url, UPSTASH_REDIS_REST_TOKEN: fake.token, SPHERE_REDIS_PREFIX: prefix, SPHERE_COMPACT_WAIT_MS: '0' };
+  const stored = () => [...fake.kv].filter(([k, e]) => k.startsWith(prefix) && !e.exp).map(([, e]) => (Array.isArray(e.v) ? e.v.join('\n') : String(e.v))).join('\n');
+  const snapList = () => {
+    const ptr = fake.kv.get(prefix + 'snap');
+    return ptr ? fake.kv.get(prefix + 'snap:' + JSON.parse(ptr.v).id)?.v.join('\n') || '' : '';
+  };
+  try {
+    // a compaction folds the message into the snapshot
+    const A = await relay({ ...env, SPHERE_COMPACT_EVERY: '5' }, { tmp: T.dir, procs });
+    const { alice } = await members(A.base, ['alice']);
+    const msg = (await call(A.base, 'POST', '/api/messages', { token: alice.token, body: { text: 'the HERON-77 plan' } })).message;
+    for (let i = 0; i < 20 && !snapList().includes('HERON-77'); i++) await call(A.base, 'POST', '/api/messages', { token: alice.token, body: { text: `more ${i}` } });
+    assert.ok(await until(() => snapList().includes('HERON-77')), 'in the snapshot');
+    await A.stop();
+    // ... and a deletion committed by an instance that hadn't seen that compaction: not marked soon,
+    // its overwrite of the message's entry skipped (the entry was already folded); then that
+    // instance went away before compacting
+    const tail = fake.kv.get(prefix + 'tail');
+    assert.ok(tail, 'the log moved to its tail');
+    tail.v.push(JSON.stringify({ t: 'delete', id: msg.id, by: alice.id, at: new Date().toISOString(), files: [] }));
+    // another instance, with compaction as rare as it gets, picks the deletion up and compacts
+    const B = await relay({ ...env, SPHERE_COMPACT_EVERY: '100000' }, { tmp: T.dir, procs });
+    assert.equal((await call(B.base, 'GET', `/api/messages/${msg.id}`, { admin: ADMIN })).message.deleted?.by, alice.id);
+    assert.ok(await until(() => !stored().includes('HERON-77'), 8000), 'the words left the snapshot');
+    await B.stop();
+  } finally {
+    [...procs].forEach((p) => p.kill());
+    await fake.close();
+  }
+});
+
+describe('a Sphere of the first version, migrated', () => {
+  const procs = new Set();
+  after(() => [...procs].forEach((p) => p.kill()));
+  const tok = 'tok_' + 'k'.repeat(32);
+  const v0 = (dir) => {
+    fs.mkdirSync(path.join(dir, 'files'), { recursive: true });
+    const ts = new Date().toISOString();
+    const agent = { id: 'a_alice', name: 'alice', owner: 'Alice Test', about: '', runtime: 'claude', createdAt: ts, lastSeen: ts, tokenHash: sha(tok) };
+    const old = { id: 'm_oldmole', ts, channel: 'general', from: 'a_alice', kind: 'post', to: [], text: 'the old MOLE-3 note', replyTo: null, cause: null, files: [], depth: 0, meta: {} };
+    fs.writeFileSync(path.join(dir, 'sphere.json'), JSON.stringify({ sphere: { name: 'Old', key: KEY, adminKey: ADMIN, createdAt: ts }, agents: { a_alice: agent }, messages: [old] }), { mode: 0o600 });
+  };
+
+  test('the old file is removed once its messages are in the log; a deleted one leaves no trace in the folder', async () => {
+    const dir = path.join(T.dir, 'v0');
+    v0(dir);
+    const R = await relay({ SPHERE_DATA: dir }, { tmp: T.dir, procs });
+    const got = await call(R.base, 'GET', '/api/messages', { admin: ADMIN });
+    assert.ok(got.messages.some((x) => x.text === 'the old MOLE-3 note'), 'migrated');
+    assert.equal(fs.existsSync(path.join(dir, 'sphere.json.v0.bak')), false, 'no copy of the old file left');
+    assert.equal((await call(R.base, 'DELETE', '/api/messages/m_oldmole', { token: tok })).status, 200);
+    assert.ok(!folderText(dir).includes('MOLE-3'), 'its words are nowhere in the data folder');
+    await R.stop();
+  });
+
+  test('a copy left by an earlier migration is removed at start', async () => {
+    const dir = path.join(T.dir, 'v0-left');
+    v0(dir);
+    fs.copyFileSync(path.join(dir, 'sphere.json'), path.join(T.dir, 'v0-left.json'));
+    let R = await relay({ SPHERE_DATA: dir }, { tmp: T.dir, procs });
+    await R.stop();
+    // as an older relay left it
+    fs.copyFileSync(path.join(T.dir, 'v0-left.json'), path.join(dir, 'sphere.json.v0.bak'));
+    R = await relay({ SPHERE_DATA: dir }, { tmp: T.dir, procs });
+    assert.equal(fs.existsSync(path.join(dir, 'sphere.json.v0.bak')), false);
+    assert.ok((await call(R.base, 'GET', '/api/messages', { admin: ADMIN })).messages.some((x) => x.text === 'the old MOLE-3 note'), 'the messages are still there');
+    await R.stop();
+  });
+});
