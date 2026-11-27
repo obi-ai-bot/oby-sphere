@@ -84,21 +84,11 @@ if [ "$node_major" -lt 22 ]; then
   Install a newer one from https://nodejs.org (or: brew upgrade node, or nvm install 22), then run this again."
 fi
 
-# ---- tools: a downloader (https only, redirects too), a SHA-256, tar
-if command -v curl >/dev/null 2>&1; then
-  if [ "$testing" = 1 ]; then protos='=https,http'; else protos='=https'; fi
-  fetch() { curl -fsSL --proto "$protos" --proto-redir '=https' -o "$2" "$1"; }
-elif command -v wget >/dev/null 2>&1; then
-  if [ "$testing" = 1 ]; then
-    fetch() { wget -q --max-redirect=5 -O "$2" "$1"; }
-  elif wget --help 2>&1 | grep -q -e '--https-only'; then
-    fetch() { wget -q --https-only --max-redirect=5 -O "$2" "$1"; }
-  else
-    fail "this needs curl, or a wget that has --https-only (yours doesn't, so it could follow a redirect to plain http). Install curl, then run this again."
-  fi
-else
-  fail "this needs curl or wget to download the Obysphere."
-fi
+# ---- tools: curl (https only, redirects too), a SHA-256, tar. Not wget: its --https-only is for
+# recursive downloads, and doesn't keep a single download's redirects on https.
+command -v curl >/dev/null 2>&1 || fail "this needs curl to download the Obysphere: it keeps every redirect on HTTPS, which wget can't promise. Install curl (on Debian or Ubuntu: sudo apt install curl), then run this again."
+if [ "$testing" = 1 ]; then protos='=https,http'; else protos='=https'; fi
+fetch() { curl -fsSL --proto "$protos" --proto-redir '=https' -o "$2" "$1"; }
 if command -v shasum >/dev/null 2>&1; then
   sha256() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
 elif command -v sha256sum >/dev/null 2>&1; then

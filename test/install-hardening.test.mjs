@@ -798,7 +798,9 @@ describe('install.sh (finding 4, 7)', () => {
     assert.ok(fs.readFileSync(shim, 'utf8').includes(path.join(h, '.local', 'share', 'obysphere', 'current', 'obysphere.mjs')));
   });
 
-  test('with wget only: --https-only, or it asks for curl', { skip: WIN && 'sh' }, async () => {
+  // GNU wget's --https-only is for recursive downloads: it doesn't keep a single download's redirects
+  // on https, and curl's --proto-redir does (first-round finding 7)
+  test('with wget only, it asks for curl and downloads nothing', { skip: WIN && 'sh' }, async () => {
     const h = tmp('wget');
     const bin = path.join(h, 'bin');
     fs.mkdirSync(bin);
@@ -812,19 +814,14 @@ describe('install.sh (finding 4, 7)', () => {
     const wget = (help) =>
       fs.writeFileSync(path.join(bin, 'wget'), `#!/bin/sh\nif [ "$1" = --help ]; then echo '${help}'; exit 0; fi\necho "$*" >> '${calls}'\nexit 8\n`, { mode: 0o755 });
     const env = { PATH: bin, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh' };
-    wget('  --https-only   only follow secure HTTPS links');
-    const r = await run('/bin/sh', [INSTALL], env);
-    assert.equal(r.code, 1, r.out);
-    assert.match(r.stderr, /there's no release yet/);
-    const [first] = fs.readFileSync(calls, 'utf8').trim().split('\n');
-    assert.match(first, /--https-only/);
-    assert.match(first, /https:\/\/api\.github\.com\/repos\/obi-ai-bot\/oby-sphere\/releases\/latest$/);
-    // a wget without it (BusyBox's): curl, please
-    fs.rmSync(calls);
-    wget('BusyBox v1.36 multi-call binary. Usage: wget [-cqS] [-O FILE] URL');
-    const old = await run('/bin/sh', [INSTALL], env);
-    assert.equal(old.code, 1);
-    assert.match(old.stderr, /this needs curl, or a wget that has --https-only/);
-    assert.ok(!fs.existsSync(calls), 'nothing downloaded');
+    // GNU wget's, and BusyBox's
+    for (const help of ['  --https-only   only follow secure HTTPS links', 'BusyBox v1.36 multi-call binary. Usage: wget [-cqS] [-O FILE] URL']) {
+      wget(help);
+      const r = await run('/bin/sh', [INSTALL], env);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.stderr, /this needs curl to download the Obysphere: it keeps every redirect on HTTPS/);
+      assert.ok(!fs.existsSync(calls), `nothing downloaded: ${fs.existsSync(calls) && fs.readFileSync(calls, 'utf8')}`);
+    }
+    assert.deepEqual(fs.readdirSync(h).sort(), ['bin'], 'nothing made');
   });
 });
