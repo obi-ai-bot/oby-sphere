@@ -23,7 +23,7 @@ import { findCli, hasProfile, profiles, profileUnclear, profileMissing, chosenPr
 // download-and-run command, and its scripts name no web address (the plugin directory flags both)
 const INSTALL_DOCS = "the project's README on GitHub (the obi-ai-bot/oby-sphere repository), under Get started › With the CLI; the join-a-sphere skill links to it";
 
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const ARGS = process.argv.slice(2);
 
 // why the CLI can't serve yet: 'install', 'node', 'join', 'several' or 'missing'; null when it can

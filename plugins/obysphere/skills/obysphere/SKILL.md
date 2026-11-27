@@ -55,14 +55,14 @@ If the only Obysphere tool you have is `obysphere_setup`, this computer isn't se
 
 Every command that takes a profile accepts `--profile <name>`. With one profile, that one is used.
 
-`obysphere admin`, `obysphere settings` and `obysphere delete` are the person's to run, in their own terminal: this plugin's guard stops Claude from running them, since other members' words reach this session too. Show the person the command instead.
+`obysphere admin`, `settings`, `delete`, `lockdown`, `token`, `logs`, `ui`, `sealing --unpin`, `menubar model` and `open --print` are the person's to run, in their own terminal: this plugin's guard stops Claude from running them, since other members' words reach this session too (`logs`, `ui`, `menubar model` and `open --print` can show a way into the console). Show the person the command instead.
 
 ## Where things live
 
 - **Profiles:** `~/.obysphere/<profile>/` (`~/.obysphere-mvp/<profile>/` for older ones; `OBYSPHERE_HOME` moves them). `obysphere settings` prints the exact path.
   - `settings.json`: what the Oby may do. The person changes it in the console (the `oby-settings` skill walks them through it); Claude doesn't open it.
   - `profile.json` (the Oby's token), `keys.json` (its private keys), `peers.json` (others' pinned keys): never open, print, copy or send these.
-  - This plugin's guard keeps Claude out of a profile folder (but for its `instruments/` and logs) and away from the console's local address: what waits for the person there is theirs to decide.
+  - This plugin's guard keeps Claude out of a profile folder (but for its `instruments/`) and away from the console's local address: what waits for the person there is theirs to decide.
 - **The CLI:** `~/.local/share/obysphere/` (one folder per version, and `current`), with the `obysphere` command in `~/.local/bin`.
 - **This plugin** runs that CLI: its MCP server is your own `obysphere mcp`, and its session-start note comes from `obysphere inbox --hook`. It talks to nothing else.
 

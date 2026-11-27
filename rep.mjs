@@ -300,6 +300,12 @@ const SANDBOX_HOME_DENY = [
   '.zsh_history', '.zhistory', '.zsh_sessions', '.bash_history', '.bash_sessions', '.histfile', '.sh_history', '.python_history', '.node_repl_history', '.psql_history', '.mysql_history', '.sqlite_history', '.irb_history', '.rediscli_history', '.lesshst', '.viminfo',
   'Library',
 ];
+// what your own session never sends either (readLocalFiles), but for ~/Library's cloud drives: iCloud
+// Drive (and apps' folders in it), and Dropbox, Google Drive or OneDrive, the person's own files
+const CLOUD_DRIVES = ['Library/Mobile Documents', 'Library/CloudStorage'];
+// macOS and Windows keep a file's name in any letter case: paths compare folded there
+const CASE_BLIND = process.platform === 'darwin' || process.platform === 'win32';
+const caseFold = (s) => (CASE_BLIND ? String(s).toLowerCase() : String(s));
 // folders an Oby may never be given (under your home folder), besides home itself and its Obysphere profiles
 const PRIVATE_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.claude', '.cursor', '.local', '.npm'];
 const APPROVE_WAIT_MS = Math.max(1, Number(process.env.OBYSPHERE_APPROVE_WAIT_SEC) || 3600) * 1000;
@@ -3008,7 +3014,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     // a long wait: told once more, 15 minutes before it lapses (timed from what's left of it: an ask
     // taken up again after a restart has less than the full wait)
     const left = Math.max(0, Date.parse(w.expiresAt) - Date.now()) || waitMs;
-    const soon = left > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id }), left - 15 * MINUTE_MS) : null;
+    const soon = left > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id, sure: !unsure }), left - 15 * MINUTE_MS) : null;
     soon?.unref?.();
     // "always answer": offered for an Oby you haven't listed in Who can ask
     let always = false;
@@ -4387,7 +4393,7 @@ async function mcp() {
   // these descriptions ship with this file: never taken from the relay
   const str = (description) => ({ type: 'string', description });
   const askProps = {
-    agent: str("The agent to ask: its handle (see sphere_agents) or its owner's name."),
+    agent: str("The agent to ask: its handle (see sphere_agents; written with @, as in @bob, only that handle) or its owner's name."),
     message: str('What to ask or tell them. Write for an agent that does not know your context.'),
     channel: str('Channel to post in (default: general, or the current one).'),
     wait_seconds: { type: 'number', description: 'How long to wait for the reply (default 300, max 900).' },
@@ -4717,10 +4723,10 @@ async function toolAgents(api, p) {
       canReceiveSealed: !!a.keys,
       about: cleanLine(a.about, 200),
       instruments: offeredBy(a).length ? offeredBy(a).map((i) => i.name) : undefined, // instruments it offers (sphere_use)
-      ownerLooksLike: alike.get(a.id), // other Obys whose owner's name looks like this one's
+      ownerLooksLike: alike.get(a.id), // other Obys a person could mean by the same name: their owners' names look alike, or one's handle is the other's owner's name
     })),
   );
-  return alike.size ? `${list}\n\nSome owners' names look like another member's (ownerLooksLike): before asking one of them, confirm the handle with your owner.` : list;
+  return alike.size ? `${list}\n\nSome owners' names, or handles, look like another member's owner's name (ownerLooksLike): before asking one of them, confirm the handle with your owner.` : list;
 }
 
 // ---- whether an agent can answer now, in the words askers read (sphere_agents, sphere_ask,
@@ -4791,7 +4797,14 @@ function resolveAgent(agents, p, name) {
     return a;
   };
   const handle = here.filter((a) => slug(a.name) === slug(n) && slug(n) === n.toLowerCase());
-  if (handle.length === 1) return sure(handle[0]);
+  if (handle.length === 1) {
+    // a handle that is also another Oby's owner's name, whole or first ("robert", beside Robert
+    // Test's @bob): the person may mean either, unless it's written as a handle (@robert)
+    const key = nameKey(n);
+    const also = /^\s*@/.test(String(name || '')) ? [] : here.filter((a) => a.id !== handle[0].id && !!key && [nameKey(a.owner), nameKey(a.owner).split(' ')[0]].includes(key));
+    if (!also.length) return sure(handle[0]);
+    throw new Error(`More than one Oby fits ${JSON.stringify(cleanLine(n, 40))}: @${slug(handle[0].name)} by its handle, and ${also.map((a) => `@${slug(a.name)}`).join(', ')} by its owner's name. Ask by handle, written with @, after your owner says which one they mean. ${quoted('Candidates', [handle[0], ...also].map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) })))}`);
+  }
   const list = here.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) }));
   const wanted = cleanLine(n, 60).toLowerCase();
   const pick = here.filter((a) => {
@@ -4804,23 +4817,32 @@ function resolveAgent(agents, p, name) {
 }
 
 // owners' names that look like another member's (the same name, or one that's another's first
-// name, once case, accents, look-alike letters and spacing are set aside): sphere_agents flags
-// them, so a person confirms the handle before an ask goes to one of them
+// name, once case, accents, look-alike letters and spacing are set aside), and handles that look
+// like another member's owner's name ("robert", beside Robert Test's @bob: both are flagged):
+// sphere_agents flags them, so a person confirms the handle before an ask goes to one of them
 function nameKey(s) {
   // Cyrillic and Greek letters that look Latin, and digits and marks that look like letters
   const look = { '\u{430}': 'a', '\u{435}': 'e', '\u{43E}': 'o', '\u{440}': 'p', '\u{441}': 'c', '\u{443}': 'y', '\u{445}': 'x', '\u{456}': 'l', '\u{458}': 'j', '\u{455}': 's', '\u{501}': 'd', '\u{4BB}': 'h', '\u{4CF}': 'l', '\u{3B1}': 'a', '\u{3BF}': 'o', '\u{3C1}': 'p', '\u{3BD}': 'v', '\u{3C4}': 't', '\u{3B9}': 'l', '\u{3BA}': 'k', '0': 'o', '1': 'l', i: 'l', '|': 'l' };
   return [...cleanLine(s, 60).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()].map((c) => look[c] ?? c).join('').replace(/rn/g, 'm').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 function lookalikeOwners(here) {
-  const keys = new Map(here.map((a) => [a.id, { whole: nameKey(a.owner), first: nameKey(a.owner).split(' ')[0] }]));
+  const keys = new Map(here.map((a) => [a.id, { whole: nameKey(a.owner), first: nameKey(a.owner).split(' ')[0], handle: nameKey(slug(a.name)) }]));
   const out = new Map();
+  const flag = (a, b) => {
+    const list = out.get(a.id) || [];
+    if (!list.includes(`@${slug(b.name)}`)) out.set(a.id, [...list, `@${slug(b.name)}`]);
+  };
   for (const a of here)
     for (const b of here) {
       if (a.id === b.id) continue;
       const x = keys.get(a.id);
       const y = keys.get(b.id);
-      if (!x.whole || !y.whole) continue;
-      if (x.whole === y.whole || x.whole === y.first || x.first === y.whole) out.set(a.id, [...(out.get(a.id) || []), `@${slug(b.name)}`]);
+      if (!y.whole) continue;
+      if (x.whole && (x.whole === y.whole || x.whole === y.first || x.first === y.whole)) flag(a, b);
+      if (x.handle && (x.handle === y.whole || x.handle === y.first)) {
+        flag(a, b);
+        flag(b, a);
+      }
     }
   return out;
 }
@@ -4854,15 +4876,20 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   let looked = 0; // when the ask was last read: it may wait for its owner's OK (the relay wakes the long-poll then)
   const strict = !!msg.sealed || sealPinned(p); // a sealed ask, or a sealed Sphere: only a sealed reply that verifies
   let doubted = null; // a reply that isn't one: why, said if no real one comes
+  const passed = new Set(); // replies looked at and not taken: not opened again
   while (Date.now() < deadline) {
     const left = Math.ceil((deadline - Date.now()) / 1000);
     const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(looked ? 25 : 5, Math.max(1, left))}`);
-    for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === msg.id)) {
+    for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === msg.id && !passed.has(x.id))) {
       const o = openFor(p, r, here);
       const doubt = replyDoubt(o, strict);
       if (!doubt) return formatReply(r, target, o, here);
       doubted ||= doubt;
+      passed.add(r.id);
     }
+    // the relay answers at once while the ask has any reply, so one not taken (or another Oby's)
+    // would have this read it again and again: a pause instead, a real reply is seen after it
+    if ((replies || []).length) await new Promise((r) => setTimeout(r, Math.min(ASK_PASS_MS, Math.max(0, deadline - Date.now()))));
     // its owner's settings say "Ask me first": they've been told, so don't keep the asker waiting
     if (Date.now() - looked >= 3000) {
       looked = Date.now();
@@ -4877,6 +4904,8 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   return `No reply from @${slug(target.name)} after ${waitS}s; it is still working on its owner's machine.${doubted ? ` ${doubtWords(target, doubted)}` : ''} ${later}`;
 }
 
+// the pause between reads of an ask's replies while the relay holds only ones not taken
+const ASK_PASS_MS = 2000;
 // why a reply to your ask isn't taken as its Oby's answer, or null: in a sealed Sphere (or to a
 // sealed ask) one that isn't sealed, and anywhere one whose signature doesn't verify
 function replyDoubt(o, strict) {
@@ -5146,7 +5175,7 @@ function toolAttach(a, p) {
 function isSecretPath(p) {
   if (SECRETISH.test(p)) return true;
   if (/[\\/]\.obysphere[^\\/]*[\\/]/i.test(p) && /\.json$/i.test(p)) return true; // any representative's profile, keys or pins
-  return p.startsWith(HOME + path.sep) && (/[\\/](keys|profile|peers|sessions|console|settings)\.json$/i.test(p) || /[\\/]notify[\\/]/i.test(p));
+  return caseFold(p).startsWith(caseFold(HOME + path.sep)) && (/[\\/](keys|profile|peers|sessions|console|settings)\.json$/i.test(p) || /[\\/]notify[\\/]/i.test(p));
 }
 
 // What a reply says about itself (answeredBy, declined, lapsed…): for a sealed one, only what its
@@ -5196,13 +5225,31 @@ function formatReply(r, target, o, agents = []) {
 // words too, so what it sends is checked here, whatever asked for it: only a file itself, never a
 // link (looked at without following it, and opened without following one); never a secret (the
 // deny-list), a file your never-read names hide, Obysphere's own files (any profile, the app),
-// Claude Code's own settings or the system's (/proc, /sys, /dev); and nothing that holds this
-// profile's token or keys. p: the profile (its never-read names, its token and keys).
+// Claude Code's own settings, the private places the answering sandbox keeps out (histories,
+// other assistants' sessions, ~/Library) or the system's (/proc, /sys, /dev); and nothing that
+// holds this profile's token or keys. Paths are compared by the file's real path, and on macOS and
+// Windows in any letter case (~/.CLAUDE is ~/.claude there). p: the profile (its never-read names,
+// its folders, its token and keys).
 function readLocalFiles(list, p) {
   const all = [].concat(list || []);
   if (all.length > 10) throw new Error('At most 10 files at a time.');
   const own = guardedFolders();
   const secrets = p ? ownSecrets(p) : [];
+  let set;
+  const settings = () => {
+    if (set === undefined) {
+      try {
+        set = loadSettings(p);
+      } catch {
+        throw new Error(`Your Oby's settings need fixing (${meCmd()} settings says why): no file is sent until then, since your never-read names can't be read.`);
+      }
+    }
+    return set;
+  };
+  // a private place is refused, but for one of your Oby's folders inside it (yours to share, as in
+  // the sandbox) and the cloud drives macOS keeps in ~/Library (iCloud Drive; Dropbox, Google Drive
+  // and OneDrive in CloudStorage): the person's own files
+  const shared = (x, d) => CLOUD_DRIVES.some((c) => insideFolder(x, path.join(os.homedir(), c))) || (!!p && settings().machine.folders.some((f) => insideFolder(f.path, d.dir) && insideFolder(x, f.path)));
   let hide;
   const files = [];
   for (const f of all) {
@@ -5215,15 +5262,11 @@ function readLocalFiles(list, p) {
       throw new Error(`There's no file at ${full} on this machine.`);
     }
     if (st.isSymbolicLink()) throw new Error(`${shown} is a link: send the file itself, not a link to it.`);
-    let real;
-    try {
-      real = fs.realpathSync(full);
-    } catch {
-      real = full;
-    }
+    // its real path in the letter case the disk keeps (the JavaScript realpath keeps the one given)
+    const real = realOr(full, true);
     for (const x of [full, real]) {
       if (/^\/(proc|sys|dev)(\/|$)/.test(x)) throw new Error(`${shown} is a system file: never sent.`);
-      const where = own.find((d) => insideFolder(x, d.dir));
+      const where = own.find((d) => insideFolder(x, d.dir) && !(d.private && shared(x, d)));
       if (where) throw new Error(`${shown} is one of ${where.what}: never sent.`);
       if (isSecretPath(x)) throw new Error(`${shown} looks like a secret (a key, a credential or an .env file): Obysphere never sends it.`);
     }
@@ -5231,7 +5274,7 @@ function readLocalFiles(list, p) {
     if (p) {
       if (hide === undefined) {
         try {
-          hide = neverReadForms(neverReadOf(loadSettings(p))).regex;
+          hide = neverReadForms(neverReadOf(settings())).regex;
         } catch {
           throw new Error(`Your Oby's settings need fixing (${meCmd()} settings says why): no file is sent until then, since your never-read names can't be read.`);
         }
@@ -5256,20 +5299,24 @@ function readLocalFiles(list, p) {
 }
 
 // the folders nothing is sent from: every place profiles may be (this one and the usual ones), the
-// app, and Claude Code's own settings; each as given and as its real path
+// app, Claude Code's own settings, and the private places the read-only shell's sandbox never reads
+// (SANDBOX_HOME_DENY, with CLAUDE_CONFIG_DIR's transcripts and history); each as given and as its
+// real path
 function guardedFolders() {
   const home = os.homedir();
+  const cfg = process.env.CLAUDE_CONFIG_DIR;
   const named = [
     [[HOME, process.env.OBYSPHERE_HOME, path.join(home, '.obysphere'), path.join(home, '.obysphere-mvp')], "Obysphere's own files (a profile: its token, keys and settings)"],
     [[process.env.OBYSPHERE_APP_HOME, path.join(home, '.local', 'share', 'obysphere')], "Obysphere's own files (the app)"],
-    [[process.env.CLAUDE_CONFIG_DIR, path.join(home, '.claude'), path.join(home, '.claude.json')], "Claude Code's own settings"],
+    [[cfg, path.join(home, '.claude'), path.join(home, '.claude.json')], "Claude Code's own settings"],
+    [[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(cfg ? ['projects', 'history.jsonl'].map((d) => path.join(cfg, d)) : [])], "your private places (shell histories, other assistants' sessions and transcripts, your Library)", true],
   ];
   const out = [];
-  for (const [dirs, what] of named) for (const d of dirs.filter(Boolean)) for (const dir of new Set([path.resolve(d), realOr(path.resolve(d))])) out.push({ dir, what });
+  for (const [dirs, what, priv] of named) for (const d of dirs.filter(Boolean)) for (const dir of new Set([path.resolve(d), realOr(path.resolve(d)), realOr(path.resolve(d), true)])) out.push({ dir, what, ...(priv ? { private: true } : {}) });
   return out;
 }
 function insideFolder(file, dir) {
-  const r = path.relative(dir, file);
+  const r = path.relative(caseFold(dir), caseFold(file));
   return r === '' || (r !== '..' && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r));
 }
 
@@ -7121,9 +7168,10 @@ function folderProblem(abs) {
   return null;
 }
 
-function realOr(f) {
+// native: in the letter case the disk keeps (macOS, Windows), where fs.realpathSync keeps the one given
+function realOr(f, native = false) {
   try {
-    return fs.realpathSync(f);
+    return native ? fs.realpathSync.native(f) : fs.realpathSync(f);
   } catch {
     return path.resolve(f);
   }
@@ -7467,7 +7515,8 @@ function addPending(p, entry, waitMs = APPROVE_WAIT_MS) {
   }
   const w = { id, ...entry, pid: process.pid, instance: REP_INSTANCE, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + waitMs).toISOString() };
   writeSecret(path.join(dir, `${id}.json`), w);
-  notifyOwner(p, { type: 'waiting', from: entry.from?.name, channel: entry.channel, body: entry.stuck?.note ?? entry.text ?? entry.body, title: entry.title, ref: id, about: entry.askId }); // everything that waits for you notifies
+  // everything that waits for you notifies; from an asker that may not be who its handle says, never with its words
+  notifyOwner(p, { type: 'waiting', from: entry.from?.name, channel: entry.channel, body: entry.stuck?.note ?? entry.text ?? entry.body, title: entry.title, ref: id, about: entry.askId, ...(entry.unsure ? { sure: false } : {}) });
   return w;
 }
 function processAlive(pid) {
@@ -9718,7 +9767,7 @@ async function hookProfile(name, deadline) {
   const waitingForYou = listPending(p)
     .filter((w) => reach(slug(w.from?.name)) !== 'none')
     .map((w) => {
-      const words = reach(slug(w.from?.name)) === 'words';
+      const words = reach(slug(w.from?.name)) === 'words' && !w.unsure; // an asker that may not be who its handle says: never its words
       return { from: w.from?.name ? `@${slug(w.from.name)}` : undefined, owner: cleanLine(w.from?.owner, 60) || undefined, channel: w.channel ? `#${slug(w.channel)}` : undefined, at: w.ts || w.createdAt, what: w.title ? cleanLine(w.title, 140) : undefined, ...(words ? { words: printable(w.text ?? w.body ?? '') } : {}), ...(words && isMap(w.stuck) && typeof w.stuck.note === 'string' ? { yourObyNeeds: cleanLine(w.stuck.note, 400) } : {}) };
     });
   const couldntAnswerToday = notifyRecent(p)

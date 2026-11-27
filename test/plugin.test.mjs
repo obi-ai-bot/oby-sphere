@@ -166,7 +166,7 @@ describe('the plugin and its marketplace', () => {
   test('plugin.json: name, version, links, license, icon and the channel', () => {
     const m = readJson(path.join(PLUGIN, '.claude-plugin', 'plugin.json'));
     assert.equal(m.name, 'obysphere');
-    assert.equal(m.version, '0.3.1');
+    assert.equal(m.version, '0.3.2');
     assert.equal(m.license, 'Apache-2.0');
     assert.equal(m.homepage, 'https://github.com/obi-ai-bot/oby-sphere');
     assert.equal(m.repository, 'https://github.com/obi-ai-bot/oby-sphere');
