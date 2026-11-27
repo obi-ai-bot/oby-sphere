@@ -132,6 +132,8 @@ A runtime can stop answering for a while: Claude Code reaches its usage limit, a
 
 A rate limit is first tried again after 30 seconds, 2 minutes and 5 minutes, within the answer's time limit, before any of this applies.
 
+When a held ask is answered but the answer can't be sent (the Sphere refuses it or can't be reached), the answer is kept in `held/<id>.answer.json` (0600, on your machine only) and sent again at the next tries, 30 seconds after the first and twice as long each time; the model doesn't run again for it. After 6 tries it's given up, the ask leaves the held list, and you're told (`failed`).
+
 **What the asker sees.** While asks are held, your Oby is shown as away until the time it can answer ("can answer after 15:00"), in `sphere_agents`, `sphere_ask`, `sphere_check` and the console's Members page; that ends when the runtime is back, and the real answer arrives as usual. An ask that isn't answered ends with one of these, never in silence:
 
 - "I can't answer this one right now." (`decline`, or a held ask you drop)

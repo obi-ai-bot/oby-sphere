@@ -2627,6 +2627,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (c.decline) return void (await decline(c.decline));
     if ((c.g.approve || approveAll) && !ownerSaid) return c;
     const s = c.s;
+    // a held ask whose answer was made but couldn't be sent: that answer goes, nothing runs
+    const kept = held && readHeldAnswer(p, msg.id);
+    if (kept) return sendKept(msg, from, kept, reply, held);
     const trusted = !!c.g.trusted || ownerSaid === 'trust';
     if (c.g.untrusted === 'hop' && !trusted) log(dim("  passed on from another ask: answered as any Oby's ask, without the risky reach"));
     if (c.g.untrusted === 'identity' && !trusted) log(red(`  ⚠ ${slug(from.name)} is an Oby you trust, but ${printable(c.who.why)}: answered as any Oby's ask, without the risky reach`));
@@ -2655,6 +2658,30 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const r = await attempt(ctx, route);
     if (!r.ok) return unable(ctx, r.f);
     if (r.handoff) return { handoff: r.handoff };
+  }
+
+  // the answer kept for a held ask, sent again; { held: true } while it's tried again later, nothing once
+  // it's sent or given up (after SEND_TRIES, the owner told)
+  async function sendKept(msg, from, kept, reply, held) {
+    const tries = kept.sends + 1;
+    try {
+      const sent = await reply(kept.text, kept.files, kept.meta);
+      log(`${green('→')} sent the answer kept for ${slug(from.name)}'s held ask${kept.files.length ? dim(` with ${kept.files.length} file(s)`) : ''}${sent.sealed ? dim(' · sealed') : ''}`);
+      const back = resuming.get(held.runtime);
+      if (back) back.answered += 1;
+      return;
+    } catch (e) {
+      if (tries >= SEND_TRIES) {
+        log(red(`  ✗ couldn't send the answer to ${slug(from.name)}'s held ask ${msg.id} after ${tries} tries: given up `) + dim(`(${printable(e.message)})`));
+        notifyOwner(p, { type: 'failed', from: slug(from.name), channel: msg.channel, body: `Your Oby's answer couldn't be sent to the Sphere after ${tries} tries, so it gave up.`, ref: msg.id });
+        return;
+      }
+      keepHeldAnswer(p, msg.id, { ...kept, files: kept.files }, tries);
+      const until = new Date(Date.now() + RETRY_MS * 2 ** (tries - 1)).toISOString();
+      writeHeld(p, { ...held, until });
+      log(yellow(`  couldn't send the kept answer (try ${tries} of ${SEND_TRIES}): `) + dim(`${printable(e.message)} · tried again at ${localWhen(until, { today: true })}`));
+      return { held: true };
+    }
   }
 
   // One run, with a rate limit tried again (30 s, 2 min, 5 min) while the ask's time limit allows;
@@ -2705,8 +2732,20 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         log(`${yellow('→ handed to you:')} ${dim(printable(handed.note))}`);
         return { ok: true, handoff: handed };
       }
-      // an answer that can't be sent throws: a held ask stays held, and is tried again
-      const sent = await reply(r.text, r.files, { local: true, ...(open ? { runtime: use.runtime, model: r.model, turns: r.turns, tools: r.tools || {} } : {}), durationMs, answeredBy: 'agent' });
+      // an answer that can't be sent throws: a held ask stays held, and its next tries send this answer
+      // (kept in held/), never run the model again
+      const meta = { local: true, ...(open ? { runtime: use.runtime, model: r.model, turns: r.turns, tools: r.tools || {} } : {}), durationMs, answeredBy: 'agent' };
+      let sent;
+      try {
+        sent = await reply(r.text, r.files, meta);
+      } catch (e) {
+        if (ctx.held) {
+          keepHeldAnswer(p, msg.id, { text: r.text, files: r.files, meta });
+          log(yellow("  couldn't send the answer: ") + dim(`${printable(e.message)} (kept: it's sent again, the model doesn't run again)`));
+          cameBack(use.runtime); // the runtime answered: its pause is over
+        }
+        throw e;
+      }
       const used = Object.entries(r.tools || {}).map(([k, v]) => `${k}×${v}`).join(' ');
       const signIn = r.apiKeySource ? (r.apiKeySource === 'none' ? ' · on your subscription' : ` · billed through ${r.apiKeySource}`) : '';
       log(`${green('→')} replied in ${(durationMs / 1000).toFixed(1)}s${r.timedOut ? yellow(' (stopped at the time limit)') : ''}${r.files.length ? dim(` with ${r.files.length} file(s)`) : ''}${used ? dim(` · used ${used}`) : ''}${dim(signIn)}${sent.sealed ? dim(' · sealed') : ''}`);
@@ -3673,7 +3712,25 @@ function writeHeld(p, h) {
   if (ID.m.test(String(h.id))) writeSecret(path.join(heldDir(p), `${h.id}.json`), h);
 }
 function removeHeld(p, id) {
-  if (ID.m.test(String(id))) fs.rmSync(path.join(heldDir(p), `${id}.json`), { force: true });
+  if (!ID.m.test(String(id))) return;
+  fs.rmSync(path.join(heldDir(p), `${id}.json`), { force: true });
+  fs.rmSync(heldAnswerFile(p, id), { force: true });
+}
+// a held ask's answer that couldn't be sent (the relay refused it, or couldn't be reached): kept in
+// held/<id>.answer.json (0600), and its next tries send it again rather than run the model again;
+// given up after SEND_TRIES, a little later each time
+const SEND_TRIES = 6;
+const heldAnswerFile = (p, id) => path.join(heldDir(p), `${id}.answer.json`);
+function keepHeldAnswer(p, id, { text, files = [], meta = {} }, sends = 0) {
+  if (!ID.m.test(String(id))) return;
+  writeSecret(heldAnswerFile(p, id), { id, text: String(text), files: files.slice(0, 10).map((f) => ({ name: f.name, mime: f.mime, data: Buffer.from(f.bytes).toString('base64') })), meta, sends });
+}
+function readHeldAnswer(p, id) {
+  if (!ID.m.test(String(id))) return null;
+  const a = readJsonFile(heldAnswerFile(p, id), null);
+  if (!isMap(a) || a.id !== id || typeof a.text !== 'string' || !Array.isArray(a.files)) return null;
+  const files = a.files.filter((f) => isMap(f) && typeof f.data === 'string').slice(0, 10).map((f) => ({ name: safeName(f.name), mime: safeMime(f.mime), bytes: Buffer.from(f.data, 'base64') }));
+  return { text: a.text, files, meta: isMap(a.meta) ? a.meta : {}, sends: Number.isInteger(a.sends) && a.sends >= 0 ? a.sends : 0 };
 }
 // one process at a time tries, expires or drops a held ask: held/<id>.lock, with its pid. Returns the unlock, or null.
 function lockHeld(p, id) {

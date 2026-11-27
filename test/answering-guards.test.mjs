@@ -359,6 +359,43 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     for (const d of ['.github/**', '.gitattributes']) assert.ok(deny.includes(`Edit(**/${d})`), d);
   });
 
+  test("a held ask whose answer can't be sent sends that answer again, never runs the model again, and gives up after a few tries", async () => {
+    setBob();
+    const heldFile = (id) => path.join(bobDir(), 'held', `${id}.json`);
+    const keptFile = (id) => path.join(bobDir(), 'held', `${id}.answer.json`);
+    // out of usage until a second from now: the ask is held, and tried again then
+    const heldAsk = async (text, answer) => {
+      fake.control({ fail: { claude: 'limit' }, resetInSec: 1 });
+      const before = runs();
+      const m = await ask('alice', text);
+      await waitFor(() => fs.existsSync(heldFile(m.id)), 10000, `${m.id} held\n${bobOut.slice(-2000)}`);
+      // the runtime is back, but the relay refuses what bob posts for now
+      proxy.failReplies = true;
+      fake.control({ text: answer });
+      await waitFor(() => runs() === before + 2, 15000, `the held ask runs again\n${bobOut.slice(-2000)}`);
+      await waitFor(() => fs.existsSync(keptFile(m.id)), 5000, `the answer kept\n${bobOut.slice(-2000)}`);
+      return { m, before };
+    };
+    const { m, before } = await heldAsk('held: what is in payments?', 'HELD-ANSWER-7731');
+    assert.equal(fs.statSync(keptFile(m.id)).mode & 0o777, 0o600);
+    const refused = proxy.refused;
+    await waitFor(() => proxy.refused >= refused + 2, 10000, 'sent again');
+    assert.equal(runs(), before + 2, 'the model never runs again for it');
+    proxy.failReplies = false;
+    const r = await replyTo(m, 'alice');
+    assert.equal(r.text, 'HELD-ANSWER-7731');
+    await waitFor(() => !fs.existsSync(heldFile(m.id)) && !fs.existsSync(keptFile(m.id)), 5000, 'no longer held');
+    assert.equal(runs(), before + 2);
+    // the relay keeps refusing: given up after a few tries, the model run once
+    const two = await heldAsk('held again: and in web?', 'NEVER-SENT-4410');
+    await waitFor(() => !fs.existsSync(heldFile(two.m.id)), 20000, `given up\n${bobOut.slice(-2000)}`);
+    assert.ok(!fs.existsSync(keptFile(two.m.id)), 'the kept answer goes too');
+    assert.equal(runs(), two.before + 2, 'the model ran once more, not at each try');
+    assert.match(bobOut, /couldn't send the answer to alice's held ask m_[\w-]+ after 6 tries: given up/);
+    proxy.failReplies = false;
+    fake.control({});
+  });
+
   test('a handle like constructor is counted like any other', async () => {
     fs.rmSync(usage(), { force: true });
     setBob({ asksPerAgentPerDay: 1 });
