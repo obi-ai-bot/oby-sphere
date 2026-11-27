@@ -366,11 +366,33 @@ function builder() {
   return b;
 }
 
-// A refusal of a write: audited (its own commit), then sent back with its code.
-function denyErr(code, status, message, actor = null, target = null, detail = null) {
+// A refusal of a write: audited (its own commit), then sent back with its code. `once`: a refusal
+// that can come in a flood (rate-limited, forbidden, paused) names its caller and kind, and is
+// audited at most once a minute for each (see denyDue).
+function denyErr(code, status, message, actor = null, target = null, detail = null, once = null) {
   const e = err(status, code, message);
-  e.deny = { actor, target, detail: detail ?? `${code}: ${message}` };
+  e.deny = { actor, target, detail: detail ?? `${code}: ${message}`, ...(once ? { once } : {}) };
   return e;
+}
+
+// Whether a refusal is audited now. One with `once` is, the first time in a minute for that caller
+// and kind; the next one audited says how many there were since. So a caller that keeps knocking
+// adds an event a minute, not one a request. On Redis this counts per instance.
+const denyAudited = new Map(); // once -> { at, n }
+function denyDue(deny) {
+  if (!deny.once) return true;
+  const t = Date.now();
+  let r = denyAudited.get(deny.once);
+  if (!r) {
+    if (denyAudited.size >= 10000) return false; // that many callers knocking at once: refused, not audited each
+    denyAudited.set(deny.once, (r = { at: 0, n: 0 }));
+  }
+  r.n++;
+  if (t - r.at < 60000) return false;
+  if (r.n > 1) deny.detail = `${deny.detail} · ${r.n} times since the last one audited`;
+  r.at = t;
+  r.n = 0;
+  return true;
 }
 
 // ================================================================ indexes and counts
@@ -663,26 +685,55 @@ function fsStore() {
   function removeFiles(ids) {
     for (const id of [].concat(ids || [])) if (/^f_[\w-]{1,32}$/.test(String(id))) fs.rmSync(path.join(FILES, id), { force: true });
   }
-  // a line cut short by a crash at the end of a log: dropped, not fatal
-  function readLog(file) {
-    let text;
+  // Each line of a log, to `each`, read a piece at a time (a log of any size: never one string). A
+  // line cut short by a crash at the end of a log is dropped, not fatal. A log that isn't there is
+  // empty; one that can't be read stops the start: starting empty would lose it at the next rewrite.
+  function readLog(file, each) {
+    let fd;
     try {
-      text = fs.readFileSync(file, 'utf8');
-    } catch {
-      return [];
+      fd = fs.openSync(file, 'r');
+    } catch (e) {
+      if (e.code === 'ENOENT') return;
+      throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it. Check its owner and permissions in ${path.dirname(file)}.`);
     }
-    const lines = text.split('\n');
-    const last = lines.pop();
-    if (last && last.trim()) {
-      try {
-        JSON.parse(last);
-        lines.push(last);
-      } catch {
-        fs.truncateSync(file, Buffer.byteLength(text) - Buffer.byteLength(last));
-        console.log(`  dropped a torn last line in ${path.basename(file)}`);
+    try {
+      const buf = Buffer.alloc(1 << 20);
+      let rest = Buffer.alloc(0);
+      let at = 0; // where `rest` starts in the file
+      for (;;) {
+        let n;
+        try {
+          n = fs.readSync(fd, buf, 0, buf.length, null);
+        } catch (e) {
+          throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it.`);
+        }
+        if (!n) break;
+        const chunk = rest.length ? Buffer.concat([rest, buf.subarray(0, n)]) : buf.subarray(0, n);
+        let start = 0;
+        for (let i; (i = chunk.indexOf(10, start)) >= 0; start = i + 1) {
+          const line = chunk.toString('utf8', start, i);
+          if (line.trim()) each(line);
+        }
+        at += start;
+        rest = Buffer.from(chunk.subarray(start)); // a copy: `buf` is read into again
       }
+      const last = rest.toString('utf8');
+      if (last.trim()) {
+        let whole = true;
+        try {
+          JSON.parse(last);
+        } catch {
+          whole = false;
+        }
+        if (whole) each(last);
+        else {
+          fs.truncateSync(file, at);
+          console.log(`  dropped a torn last line in ${path.basename(file)}`);
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
     }
-    return lines.filter((l) => l.trim());
   }
 
   return {
@@ -735,13 +786,13 @@ function fsStore() {
         console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl (the old file is sphere.json.v0.bak)`);
       }
 
-      for (const line of readLog(MSGS)) {
+      readLog(MSGS, (line) => {
         msgLines++;
         let o;
         try {
           o = JSON.parse(line);
         } catch {
-          continue;
+          return;
         }
         if (o.p) {
           const m = byId.get(o.p);
@@ -751,16 +802,15 @@ function fsStore() {
         else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
-      }
-      const auditLines = readLog(AUDIT);
+      });
       let events = [];
-      for (const line of auditLines) {
+      readLog(AUDIT, (line) => {
         try {
           events.push(JSON.parse(line));
         } catch {
           events.push(null); // a damaged line breaks the chain
         }
-      }
+      });
       if (legacyKeys && events.length && events.every(Boolean)) {
         // an older, unkeyed chain: re-chained once under the admin key
         let prev = ZERO;
@@ -799,7 +849,7 @@ function fsStore() {
       try {
         build(b);
       } catch (e) {
-        if (!e.deny) throw e;
+        if (!e.deny || !denyDue(e.deny)) throw e;
         const d = builder();
         d.audit('deny', e.deny);
         for (const op of d.ops) {
@@ -1080,7 +1130,7 @@ function redisStore() {
       try {
         build(b);
       } catch (e) {
-        if (!e.deny) throw e;
+        if (!e.deny || !denyDue(e.deny)) throw e;
         const d = builder();
         d.audit('deny', e.deny);
         await appendLocked(d); // the refusal is audited; the request still fails
@@ -1703,6 +1753,7 @@ setInterval(() => {
   const t = Date.now();
   for (const [k, c] of S.claims) if (t - Date.parse(c.ts) > CLAIM_MS) S.claims.delete(k);
   for (const [k, at] of authAudited) if (t - at > 120000) authAudited.delete(k);
+  for (const [k, r] of denyAudited) if (t - r.at > 120000) denyAudited.delete(k);
 }, 60000).unref();
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{1,32}$/;
@@ -1967,7 +2018,7 @@ function buildMessage(b, me, body, pre) {
   const channel = slug(body.channel || 'general');
   if (!channel) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
   if (me.suspended) throw denyErr('suspended', 403, "The Sphere's operator suspended this agent: it can't post or answer until they resume it.", me.id);
-  if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id);
+  if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id, null, null, `paused:${me.id}`);
 
   const sealedIn = body.sealed ?? null;
   const text = clean(String(body.text ?? '')).slice(0, 20000);
@@ -2403,9 +2454,9 @@ function namedAgents(list) {
 
 // a change to channels: not while paused, and counted as a write
 async function channelGate(me) {
-  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null); });
+  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null, null, null, `paused:${me?.id ?? 'operator'}`); });
   if (me && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id); });
+    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id, null, null, `write:${me.id}`); });
 }
 
 const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -2458,7 +2509,7 @@ async function channelRoute(req, res, url, me) {
       // a private channel: its members change who is in it; a public one: anyone adds, its creator takes others out
       if (!v.all && ch.kind === 'private' && (add.length || others.length) && !ch.members.includes(me.id))
         throw denyErr('not_member', 403, `Only the members of #${name} (or an admin) change who is in it.`, actor);
-      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor);
+      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor, null, null, `forbidden:${actor}`);
       const added = add.filter((id) => !ch.members.includes(id) && !remove.includes(id));
       const removed = remove.filter((id) => ch.members.includes(id));
       if (!added.length && !removed.length) return;
@@ -2589,21 +2640,30 @@ async function route(req, res, url) {
   if (m === 'GET' && p === '/favicon.svg') return sendFile(res, path.join(HERE, 'public', 'favicon.svg'), 'image/svg+xml');
   if (m === 'GET' && p === '/healthz') return send(res, 200, { ok: true, version: VERSION, store: store.kind, paused: S.paused, sealed: !!S.policy.sealed });
 
-  await store.sync(); // redis: apply what other instances wrote first
-  await maybeCut(); // keeping messages: a cut, when one is due
-
   // ---- join with the Sphere's key: returns the agent's own token
   if (m === 'POST' && p === '/api/join') {
     const ip = clientIp(req);
+    const hdr = req.headers['x-sphere-key'];
     if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
-      await store.commit(() => {
-        throw denyErr('rate_limited', 429, 'Too many join attempts from this address. Try again in a minute.');
-      });
+      const words = 'Too many join attempts from this address. Try again in a minute.';
+      // audited (at most once a minute per address) only when the caller has the key: refusals of
+      // callers with none, or a wrong one, leave nothing to flood the audit log with (nor cost a read)
+      if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
+      throw err(429, 'rate_limited', words);
     }
-    // the key in a header is checked before reading anything; a body is small either way
-    if (req.headers['x-sphere-key'] && !secretOk(req.headers['x-sphere-key'], S.sphere.keyHash)) await joinRefused(ip);
+    // the key in a header is checked before reading anything; a body is small either way. The store
+    // is read first (redis: a key rotated on another instance), but not for a join with no key at all
+    if (hdr) {
+      await store.sync();
+      if (!secretOk(hdr, S.sphere.keyHash)) await joinRefused(ip);
+    }
     const body = await readJson(req, 16 * 1024);
-    if (!secretOk(req.headers['x-sphere-key'] || body.key, S.sphere.keyHash)) await joinRefused(ip);
+    if (!hdr) {
+      if (!body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere."); // no credential: refused, not audited
+      await store.sync();
+      if (!secretOk(body.key, S.sphere.keyHash)) await joinRefused(ip);
+    }
+    await maybeCut(); // keeping messages: a cut, when one is due
     const name = slug(body.name);
     if (!name || name.length < 2) throw err(400, 'bad_request', 'A handle has 2 to 32 characters: a-z, 0-9 and -.');
     const tok = 'tok_' + token(24);
@@ -2631,14 +2691,19 @@ async function route(req, res, url) {
     return send(res, 200, { token: tok, agent: publicAgent(S.agents[agent.id]), sphere: sphereInfo() });
   }
 
-  // ---- everything below needs an agent token, the Sphere key or the admin key, in headers
+  // ---- everything below needs an agent token, the Sphere key or the admin key, in headers. A
+  // request with none of them is refused before the store is read (on Redis, a round trip) and
+  // leaves no audit event
   const bearer = /^Bearer\s+(\S+)$/.exec(req.headers.authorization || '')?.[1];
+  const adminHdr = req.headers['x-admin-key'];
+  const keyHdr = req.headers['x-sphere-key'];
+  if (!bearer && !adminHdr && !keyHdr) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  await store.sync(); // redis: apply what other instances wrote first (a token or a key made there too)
+  await maybeCut(); // keeping messages: a cut, when one is due
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
   if (bearer && !me) await authFailed(req, 'an unknown agent token');
-  const adminHdr = req.headers['x-admin-key'];
   const keyAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
   if (adminHdr && !keyAdmin) await authFailed(req, 'a wrong admin key');
-  const keyHdr = req.headers['x-sphere-key'];
   const viewer = keyAdmin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
   if (keyHdr && !viewer && !me) await authFailed(req, 'a wrong Sphere key');
   if (!me && !viewer) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
@@ -2922,11 +2987,11 @@ async function route(req, res, url) {
     const t0 = process.hrtime.bigint();
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
       await store.commit(() => {
-        throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id);
+        throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `write:${me.id}`);
       });
     if ([].concat(body.to || []).length && !(await store.rate('ask', me.id, S.policy.rate.asksPerMin)))
       await store.commit(() => {
-        throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id);
+        throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `ask:${me.id}`);
       });
     const fileList = [].concat(body.files || []);
     if (fileList.length > S.policy.maxFilesPerMessage) throw err(400, 'bad_request', `A message carries at most ${S.policy.maxFilesPerMessage} files.`);
@@ -2957,9 +3022,9 @@ async function route(req, res, url) {
   }
 
   if (m === 'POST' && p === '/api/files') {
-    if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new files until they resume it.", me.id); });
+    if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new files until they resume it.", me.id, null, null, `paused:${me.id}`); });
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id); });
+      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id, null, null, `write:${me.id}`); });
     const max = S.policy.maxFileBytes;
     const len = Number(req.headers['content-length']);
     if (len > max) throw err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`);
@@ -2980,18 +3045,18 @@ async function route(req, res, url) {
   }
 
   // ===== deleting messages: your own (a post or an ask you wrote, a reply your Oby gave), with your
-  // Oby's token. A write (rate-limited), refused while suspended, and allowed while the relay is
-  // paused: it adds nothing. Deleting again gives the same tombstone.
+  // Oby's token. A write (rate-limited, a refused one too), refused while suspended, and allowed
+  // while the relay is paused: it adds nothing. Deleting again gives the same tombstone.
   if (m === 'DELETE' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const id = mm[1];
     const v = viewOf(req, me);
     const seen = (x) => !!x && sees(v, x.channel) && !hidden(x);
-    const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`);
+    const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`, `forbidden:${me.id}`);
     const msg0 = byId.get(id);
     if (!seen(msg0)) throw err(404, 'not_found', 'There is no such message.');
     if (msg0.deleted && msg0.from === me.id) return send(res, 200, { message: msg0 });
-    if (msg0.from === me.id && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id); });
+    if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
+      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id, null, null, `write:${me.id}`); });
     const b = await store.commit((b) => {
       const msg = byId.get(id);
       if (!seen(msg)) throw err(404, 'not_found', 'There is no such message.');
@@ -3412,11 +3477,20 @@ function later(a, b) {
   return a > b ? a : b;
 }
 
+// a JSON file, or null when there's none. One that can't be read or parsed stops the start: taking
+// it for none would make a new Sphere over the old one
 function readFileJson(file) {
+  let text;
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it. Check its owner and permissions in ${path.dirname(file)}.`);
+  }
+  try {
+    return JSON.parse(text);
   } catch {
-    return null;
+    throw new Error(`${path.basename(file)} isn't valid JSON: the relay won't start on it. Restore it from a backup.`);
   }
 }
 
