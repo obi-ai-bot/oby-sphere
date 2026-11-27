@@ -249,4 +249,266 @@ describe('a sealed Sphere whose relay turns hostile, again', () => {
       await sleep(300);
     }
   });
+
+  test("R58: a declined member's sealed mentions aren't kept in seen/", async () => {
+    s.reset();
+    const seenDir = path.join(s.home, 'bob', 'seen');
+    s.settingsFor('bob', { alice: 'trust', carol: 'decline', mallory: 'decline' }, { access: { default: 'answer' } });
+    // bob's console, its page open: the stream it reads notifies of mentions
+    const port = await freePort();
+    const bobUi = `http://127.0.0.1:${port}`;
+    const c = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'ui', '--profile', 'bob', '--port', String(port)], { env: s.env(), stdio: 'ignore' });
+    s.procs.push(c);
+    const ac = new AbortController();
+    try {
+      await waitFor(async () => {
+        try {
+          return (await fetch(bobUi + '/favicon.svg')).ok && fs.existsSync(path.join(s.home, 'bob', 'console-auth.json'));
+        } catch {
+          return false;
+        }
+      }, 10000, "bob's console");
+      const res = await fetch(`${bobUi}/api/stream`, { headers: consoleAuth(path.join(s.home, 'bob'), bobUi), signal: ac.signal });
+      (async () => {
+        try {
+          for await (const _ of res.body);
+        } catch {}
+      })();
+      await sleep(500);
+      const count = () => (fs.existsSync(seenDir) ? fs.readdirSync(seenDir).length : 0);
+      const at = count();
+      for (let i = 0; i < 4; i++) assert.equal((await s.rep(['post', `@bob R58-MENTION-${i} look at this`, '--profile', 'mallory'])).code, 0);
+      await sleep(1500);
+      assert.equal(count(), at, 'nothing kept for them');
+      // alice's mention notifies bob: kept, so a replay of it isn't another notification
+      assert.equal((await s.rep(['post', '@bob R58-ALICE look at this', '--profile', 'alice'])).code, 0);
+      await waitFor(() => count() > at, 8000, `alice's mention to be kept\n${bob.out.slice(-1500)}`);
+    } finally {
+      ac.abort();
+      await stop(c);
+      s.settingsFor('bob', { alice: 'trust', carol: 'decline' }, { access: { default: 'answer' } });
+    }
+  });
+});
+
+// Replays: v1 envelopes (an older Oby's, a relay that says it takes no other, or one the relay
+// stripped) carry no time, so seen/ keeps them; a refused replay leaves nothing; seen/ that can't
+// be written refuses; an ask sealed too long ago, or ahead of this clock, gets an expired reply.
+describe('replays, after seen/ forgets', () => {
+  let s, bob;
+  const inject = async (ev, data) => {
+    await waitFor(() => s.h.streams() > 0, 5000, 'a stream');
+    s.h.inject(ev, data);
+  };
+  const ageSeen = (days) => {
+    const dir = path.join(s.home, 'bob', 'seen');
+    const t = (Date.now() - days * 864e5) / 1000;
+    for (const f of fs.readdirSync(dir)) fs.utimesSync(path.join(dir, f), t, t);
+  };
+  const asks = {};
+  before(async () => {
+    s = await sealedSphere('replays', { members: ['alice', 'bob', 'carol'] });
+    s.settingsFor('bob', { alice: 'trust', carol: 'trust' });
+    s.withFakeBins('bob');
+    bob = await s.serve('bob');
+  });
+  after(async () => {
+    await s?.close();
+  });
+
+  test('R12: v1 asks (forced by the relay, or stripped) are never run twice, even after seen/ is pruned', async () => {
+    s.reset();
+    const { h, ids, isFrom } = s;
+    // carol's v2 envelope is refused "v must be 1." (her relay pretends to be old: she never sent v2 here);
+    // alice's v2 envelope goes, and the relay strips it to v1 in everything bob reads
+    h.request = async (req, url, body) => {
+      if (req.method === 'POST' && url.pathname === '/api/messages' && isFrom(req, 'carol')) {
+        const b = JSON.parse(body.toString('utf8') || '{}');
+        if (b.sealed?.v === 2) return { status: 400, json: { error: 'That sealed message is malformed: v must be 1.', code: 'bad_envelope' } };
+      }
+      return s.serveForged(req, url, body);
+    };
+    const strip = (m) => (m && m.from === ids.alice && m.sealed?.v === 2 ? { ...m, sealed: asV1(m.sealed) } : m);
+    h.event = (ev, data) => (ev === 'message' ? strip(data) : undefined);
+    h.json = (url, j, req) => {
+      if (!isFrom(req, 'bob')) return undefined;
+      const o = { ...j };
+      if (Array.isArray(j.messages)) o.messages = j.messages.map(strip);
+      if (j.message) o.message = strip(j.message);
+      if (Array.isArray(j.replies)) o.replies = j.replies.map(strip);
+      return o;
+    };
+    s.fake.control({ text: 'DEPLOYED-ONCE' });
+    const a = await s.rep(['ask', 'bob', 'DEPLOY-A run ./deploy.sh production', '--profile', 'alice', '--wait', '45']);
+    assert.ok(a.out.includes('DEPLOYED-ONCE'), `${a.out}\n${bob.out.slice(-2000)}`);
+    const c = await s.rep(['ask', 'bob', 'DEPLOY-C rotate the database password', '--profile', 'carol', '--wait', '45']);
+    assert.ok(c.out.includes('DEPLOYED-ONCE'), `${c.out}\n${bob.out.slice(-2000)}`);
+    const { messages } = await s.call('GET', '/api/messages', { tok: s.profile('alice').token });
+    asks.a = messages.find((m) => m.kind === 'ask' && m.from === ids.alice && m.sealed?.v === 2);
+    asks.c = messages.find((m) => m.kind === 'ask' && m.from === ids.carol);
+    assert.equal(asks.c.sealed.v, 1, "carol's went as v1");
+    assert.equal(s.runsWith('DEPLOY-A').length, 1);
+    assert.equal(s.runsWith('DEPLOY-C').length, 1);
+    // nine days and more pass; bob starts again; the relay replays both, under new ids and their own
+    await stop(bob.proc);
+    ageSeen(10);
+    bob = await s.serve('bob');
+    await sleep(500);
+    const now = () => new Date().toISOString();
+    for (const [id, m] of [
+      ['m_replayA0001', { ...asks.a, sealed: asV1(asks.a.sealed) }],
+      ['m_replayC0001', asks.c],
+      [asks.a.id, { ...asks.a, sealed: asV1(asks.a.sealed) }],
+      [asks.c.id, asks.c],
+    ]) {
+      const r = s.forge({ ...m, id, ts: now() });
+      await inject('message', r);
+    }
+    await waitFor(() => ['m_replayA0001', 'm_replayC0001'].every((id) => bob.out.includes(id)), 8000, `bob to see the replays\n${bob.out.slice(-2000)}`);
+    await sleep(2000);
+    assert.equal(s.runsWith('DEPLOY-A').length, 1, `alice's ask ran once\n${bob.out.slice(-3000)}`);
+    assert.equal(s.runsWith('DEPLOY-C').length, 1, `carol's ask ran once\n${bob.out.slice(-3000)}`);
+    assert.deepEqual(s.forgedReplies, [], 'nothing sent to a replay');
+  });
+
+  test('R12: once the relay took a v2 envelope from alice, "v must be 1." is refused, not a fallback to v1', async () => {
+    s.reset();
+    const { h, isFrom } = s;
+    h.request = async (req, url, body) => {
+      if (req.method === 'POST' && url.pathname === '/api/messages' && isFrom(req, 'alice')) {
+        const b = JSON.parse(body.toString('utf8') || '{}');
+        if (b.sealed?.v === 2) return { status: 400, json: { error: 'That sealed message is malformed: v must be 1.', code: 'bad_envelope' } };
+      }
+      return s.serveForged(req, url, body);
+    };
+    const before = h.posts.length;
+    const r = await s.rep(['post', 'R12-DOWNGRADED', '--profile', 'alice']);
+    assert.notEqual(r.code, 0, r.out);
+    assert.match(r.out, /replay/i, r.out);
+    assert.ok(!h.posts.slice(before).some((b) => b.sealed?.v === 1), 'no v1 envelope sent');
+  });
+
+  test('R38: a refused replay leaves nothing in seen/, and seen/ that cannot be written refuses', async () => {
+    s.reset();
+    const dir = path.join(s.home, 'bob', 'seen');
+    const at = fs.readdirSync(dir).length;
+    for (let i = 0; i < 30; i++) await inject('message', s.forge({ ...asks.c, id: `m_many${String(i).padStart(5, '0')}`, ts: new Date().toISOString() }));
+    await waitFor(() => bob.out.includes('m_many00029'), 8000, `bob to see them\n${bob.out.slice(-1500)}`);
+    await sleep(800);
+    assert.equal(fs.readdirSync(dir).length, at, 'no file for a refused replay');
+    assert.equal(s.runsWith('DEPLOY-C').length, 1);
+    // seen/ can't be written: a new ask isn't answered (fail closed), and the owner is told
+    if (process.getuid?.() === 0) return; // root writes anyway
+    s.fake.control({ text: 'RAN-UNRECORDED' });
+    fs.chmodSync(dir, 0o500);
+    try {
+      const a = await s.rep(['ask', 'bob', 'R38-UNRECORDED anything?', '--profile', 'alice', '--wait', '8']);
+      assert.ok(!a.out.includes('RAN-UNRECORDED'), a.out);
+      assert.deepEqual(s.runsWith('R38-UNRECORDED'), []);
+      assert.match(bob.out, /not answering[^\n]*(couldn't|can't) (be )?(record|kept|keep)/i, bob.out.slice(-1500));
+    } finally {
+      fs.chmodSync(dir, 0o700);
+    }
+  });
+
+  test('R65: an ask sealed too long ago, or ahead of this clock, gets an expired reply once, and never runs', async () => {
+    s.reset();
+    const { ids } = s;
+    const keys = s.keysOf('alice');
+    const sign = { d: keys.sign.d, x: keys.sign.x };
+    const agents = (await s.call('GET', '/api/agents', { tok: s.profile('alice').token })).agents;
+    const readers = { [ids.alice]: keys.seal.x, [ids.bob]: agents.find((a) => a.id === ids.bob).keys.seal };
+    const m = { from: ids.alice, channel: 'general', to: [ids.bob], replyTo: null, cause: null, depth: 0 };
+    const ask = (id, text, sent) => s.forge({ id, ts: new Date().toISOString(), channel: 'general', from: ids.alice, kind: 'ask', to: [ids.bob], text: '', replyTo: null, cause: null, files: [], depth: 0, meta: {}, sealed: envelope({ readers, inner: { text, files: [] }, sign, m, v: 2, sent }) });
+    s.fake.control({ text: 'RAN-A-STALE-ONE' });
+    s.forgedReplies.length = 0;
+    const old = ask('m_stale00001', 'STALE-65 from ten days ago', new Date(Date.now() - 10 * 864e5).toISOString());
+    const ahead = ask('m_ahead00001', 'AHEAD-65 from the future', new Date(Date.now() + 3600e3).toISOString());
+    await inject('message', old);
+    await inject('message', ahead);
+    await waitFor(() => s.forgedReplies.length >= 2, 10000, `two expired replies\n${bob.out.slice(-2000)}`);
+    // the old one again under another id: seen before, nothing more
+    await inject('message', s.forge({ ...old, id: 'm_stale00002', ts: new Date().toISOString() }));
+    await waitFor(() => bob.out.includes('m_stale00002'), 8000, 'bob to see it');
+    await sleep(800);
+    assert.deepEqual(s.runsWith('STALE-65'), []);
+    assert.deepEqual(s.runsWith('AHEAD-65'), []);
+    assert.deepEqual(s.forgedReplies.map((r) => r.replyTo).sort(), ['m_ahead00001', 'm_stale00001']);
+    for (const r of s.forgedReplies) {
+      assert.equal(r.meta?.expired, true);
+      assert.ok(r.sealed, 'sealed for alice');
+    }
+    assert.match(bob.out, /clock/);
+  });
+});
+
+// keys.json for a profile from before keys were made at join: processes that start together make
+// one set of keys, the one in keys.json
+describe('keys.json, made by several processes at once', () => {
+  let srv, tmp;
+  const posted = [];
+  const N = 6;
+  let waiting = [];
+  before(async () => {
+    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sphere-keys-race-')));
+    srv = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (d) => (body += d));
+      req.on('end', () => {
+        const send = (code, j) => {
+          res.writeHead(code, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(j));
+        };
+        if (req.method === 'GET' && req.url.startsWith('/api/info')) {
+          // held until every process asked: they go on together
+          waiting.push(() => send(200, { sphere: { name: 'Race', version: '9.9.9', policy: { sealed: true } }, me: { id: 'a_racer0001', name: 'alice', keys: null }, admin: false }));
+          if (waiting.length >= N) {
+            const w = waiting;
+            waiting = [];
+            for (const f of w) f();
+          }
+          return;
+        }
+        if (req.method === 'POST' && req.url === '/api/me') {
+          try {
+            posted.push(JSON.parse(body).keys);
+          } catch {}
+          return send(200, { agent: {} });
+        }
+        return send(500, { error: 'not here', code: 'test' });
+      });
+    });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  });
+  after(async () => {
+    await new Promise((r) => srv.close(r));
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  test('R39: every process ends with the keys in keys.json', async () => {
+    const port = srv.address().port;
+    for (let round = 0; round < 3; round++) {
+      posted.length = 0;
+      const home = path.join(tmp, `r${round}`, 'reps');
+      const dir = path.join(home, 'alice');
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify({ profile: 'alice', sphere: `http://127.0.0.1:${port}`, sphereName: 'Race', token: 't'.repeat(40), agent: { id: 'a_racer0001', name: 'alice', owner: 'Alice Test' }, cwd: tmp, runtime: 'claude' }), { mode: 0o600 });
+      const env = { ...process.env, HOME: path.join(tmp, 'home'), OBYSPHERE_HOME: home, OBYSPHERE_APP_HOME: path.join(tmp, 'app'), OBYSPHERE_NO_UPDATE_CHECK: '1', CLAUDE_CONFIG_DIR: path.join(tmp, 'cfg') };
+      await Promise.all(
+        Array.from(
+          { length: N },
+          () =>
+            new Promise((resolve) => {
+              const c = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'ask', 'bob', 'hi', '--profile', 'alice'], { env, stdio: 'ignore' });
+              const t = setTimeout(() => c.kill(), 20000);
+              c.on('close', () => (clearTimeout(t), resolve()));
+            }),
+        ),
+      );
+      const file = JSON.parse(fs.readFileSync(path.join(dir, 'keys.json'), 'utf8'));
+      assert.ok(posted.length > 0, 'they published keys');
+      for (const k of posted) assert.deepEqual(k, { seal: file.seal.x, sign: file.sign.x }, `round ${round}: a process published keys that aren't in keys.json`);
+      assert.deepEqual(fs.readdirSync(dir).filter((n) => /keys/.test(n)), ['keys.json'], 'no temp file left');
+    }
+  });
 });
