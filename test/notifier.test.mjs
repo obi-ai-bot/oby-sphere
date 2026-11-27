@@ -44,7 +44,7 @@ test('notify app builds Obysphere.app: one id, its name and icon, no Dock icon, 
     const program = path.join(app, 'Contents', 'MacOS', 'Obysphere');
     const record = path.join(tmp, 'home', 'notifier.json');
     const built = JSON.parse(fs.readFileSync(record, 'utf8'));
-    assert.deepEqual({ app: built.app, version: built.version, sha256: built.sha256 }, { app, version: '2', sha256: createHash('sha256').update(fs.readFileSync(program)).digest('hex') });
+    assert.deepEqual({ app: built.app, version: built.version, sha256: built.sha256 }, { app, version: '3', sha256: createHash('sha256').update(fs.readFileSync(program)).digest('hex') });
     assert.equal(fs.statSync(record).mode & 0o777, 0o600);
     // built again: swapped in whole
     const again = await rep(['notify', 'app'], { OBYSPHERE_HOME: path.join(tmp, 'home'), OBYSPHERE_TEST: '1', OBYSPHERE_NOTIFIER_APP: app });
@@ -85,7 +85,7 @@ test('notify app elsewhere than macOS says so', { skip: mac }, async () => {
 test('the app has a menu bar mode: an icon of the Oby face, the menu from obysphere menubar model', async () => {
   const src = fs.readFileSync(path.join(ROOT, 'rep.mjs'), 'utf8');
   const swift = src.slice(src.indexOf('const NOTIFIER_SWIFT'), src.indexOf('const notifierPath'));
-  assert.match(src, /const NOTIFIER_VERSION = '2';/, 'a new version: every Mac builds it again');
+  assert.match(src, /const NOTIFIER_VERSION = '3';/, 'a new version: every Mac builds it again');
   assert.match(swift, /argv\.contains\("--menu"\)/);
   assert.match(swift, /NSStatusBar\.system\.statusItem/);
   assert.match(swift, /run\(\["menubar", "model"\]/);
@@ -94,4 +94,8 @@ test('the app has a menu bar mode: an icon of the Oby face, the menu from obysph
   assert.match(swift, /u\.scheme == "http"/);
   assert.match(swift, /p\.arguments = \["--preserve-symlinks-main", cli\] \+ args/);
   assert.doesNotMatch(swift, /\/bin\/(ba|z)?sh/, 'no shell');
+  // a page it opens signed in: the link a command prints (it works once), never a secret it holds
+  assert.match(swift, /args\.append\("--print"\)/, 'a notification: rep.mjs open --print');
+  assert.match(swift, /#selector\(openSigned\(_:\)\)/, 'the menu: obysphere open --print');
+  assert.doesNotMatch(swift, /auth=|console-auth/, 'no secret, and no reading the file that holds it');
 });

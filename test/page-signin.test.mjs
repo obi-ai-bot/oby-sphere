@@ -1,9 +1,12 @@
-// Your console signs in only with its link, and keys never stay in the address bar (sec/console).
-// The console's link carries its secret in the fragment (#auth=…): the page trades it once for the
-// console's cookie, takes it out of the address and loads again; without it, the page says how to
-// open it. The Sphere's own page keeps the join key from an invite link in this browser, out of the
-// address, ignores an #admin= link, and never stores the admin key. The whole page runs in a
-// sandbox with a stand-in browser. `npm test`.
+// Your console signs in only with a link that works once, and keys never stay in the address bar
+// (sec/console, sec2/console). The link carries a code in its fragment (#code=…): the page takes
+// it out of the address, trades it once for the console's secret (POST /console-signin), keeps
+// that in this tab's sessionStorage (its own origin, port included: never a cookie, which reaches
+// every port of a host) and sends it in x-obysphere-auth on every call, the live stream and
+// downloads included. A reload in the same tab stays signed in; a new tab needs a new link. The
+// Sphere's own page keeps the join key from an invite link in this browser, out of the address,
+// ignores an #admin= link, and never stores the admin key. The whole page runs in a sandbox with a
+// stand-in browser. `npm test`.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -11,18 +14,19 @@ import { SCRIPT, fnSource } from './accessibility-helpers.mjs';
 
 // the whole page, in a stand-in browser: what it fetched, what it put in the address bar and in
 // storage, and what it drew in #root
-function runPage({ hash = '', data, fetch: answer = () => new Promise(() => {}) } = {}) {
+function runPage({ hash = '', data, fetch: answer = () => new Promise(() => {}), session: kept = [] } = {}) {
   const calls = [];
+  const errors = [];
   const replaced = [];
   const local = new Map();
-  const session = new Map([['obysphere.admin', 'admin-key-from-before']]);
+  const session = new Map([['obysphere.admin', 'admin-key-from-before'], ...kept]);
   let reloads = 0;
-  const root = { innerHTML: '' };
+  const root = { innerHTML: '', append() {} };
   const any = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => '' : k === 'then' ? undefined : any), apply: () => any, construct: () => any, set: () => true });
   const location = { hash, pathname: '/', search: '', origin: 'http://bob.localhost:5000', reload: () => { reloads++; } };
   const storage = (m) => ({ getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) });
   const ctx = {
-    console: { error() {}, log() {}, warn() {} },
+    console: { error: (...a) => errors.push(a.map(String).join(' ')), log() {}, warn() {} },
     location,
     history: { replaceState: (s, t, u) => { replaced.push(u); location.hash = u.includes('#') ? u.slice(u.indexOf('#')) : ''; } },
     localStorage: storage(local),
@@ -37,44 +41,86 @@ function runPage({ hash = '', data, fetch: answer = () => new Promise(() => {}) 
   ctx.fetch = (url, opts = {}) => { calls.push({ url: String(url), opts }); return answer(String(url), opts); };
   vm.createContext(ctx);
   vm.runInContext(SCRIPT, ctx);
-  return { calls, replaced, local, session, root, reloads: () => reloads };
+  return { calls, errors, replaced, local, session, root, reloads: () => reloads };
 }
 const tick = () => new Promise((r) => setImmediate(r));
 
-describe('your console signs in with its link only', () => {
-  test('a link’s #auth=… is traded once for the cookie, taken out of the address, and the page loads again', async () => {
-    const ok = { ok: true, status: 204, headers: { get: () => null } };
-    const p = runPage({ hash: '#auth=SECRET-FROM-THE-LINK&page=you', data: { signin: true }, fetch: () => Promise.resolve(ok) });
-    assert.deepEqual(p.replaced, ['/#page=you'], 'the secret leaves the address bar at once');
-    assert.equal(p.calls.length, 1);
-    assert.equal(p.calls[0].url, '/local/auth');
+const json = (status, body, auth = false) => ({ ok: status < 300, status, headers: { get: (h) => (auth && h === 'www-authenticate' ? 'Obysphere-Console' : null) }, json: async () => body });
+const ME = { name: 'bob', owner: 'Bob Test', sphere: 'http://127.0.0.1:9', sphereName: 'S' };
+// the console's answers, as boot reads them
+const API = { '/local/me': ME, '/api/info': { sphere: { name: 'S', policy: {} }, me: null, admin: false }, '/api/agents': { agents: [] }, '/api/channels': { channels: [] }, '/api/messages?limit=500': { messages: [] } };
+const answers = (more = {}) => (url) => Promise.resolve(json(200, { ...API, ...more }[url] ?? {}));
+const KEY = 'obysphere.console';
+
+describe('your console signs in with a link that works once', () => {
+  test('a link’s #code=… leaves the address, is traded once for the secret, kept in this tab, and sent in a header on every call (R19)', async () => {
+    const p = runPage({
+      hash: '#code=CODE-FROM-THE-LINK&page=you',
+      data: {},
+      fetch: answers({ '/console-signin': { secret: 'THE-SECRET' } }),
+    });
+    assert.deepEqual(p.replaced, ['/#page=you'], 'the code leaves the address bar at once');
+    assert.equal(p.calls[0].url, '/console-signin');
     assert.equal(p.calls[0].opts.method, 'POST');
-    assert.equal(p.calls[0].opts.headers['x-obysphere-auth'], 'SECRET-FROM-THE-LINK');
-    for (let i = 0; i < 5; i++) await tick();
-    assert.equal(p.reloads(), 1, 'then the page loads again, signed in');
-    assert.ok(![...p.local.values(), ...p.session.values()].some((v) => v.includes('SECRET')), 'never kept in storage');
+    assert.deepEqual(JSON.parse(p.calls[0].opts.body), { code: 'CODE-FROM-THE-LINK' });
+    assert.equal(p.calls[0].opts.credentials, 'omit', 'no cookie goes with it');
+    for (let i = 0; i < 10; i++) await tick();
+    assert.equal(p.session.get(KEY), 'THE-SECRET', 'kept in this tab: a reload stays signed in');
+    assert.ok(![...p.local.values()].some((v) => v.includes('SECRET')), 'never in localStorage, which other tabs share');
+    assert.equal(p.reloads(), 0);
+    const after = p.calls.slice(1);
+    assert.equal(after[0].url, '/local/me', 'who you are, from the console');
+    assert.ok(after.some((c) => c.url.startsWith('/api/')), 'then the page loads');
+    for (const c of after) {
+      assert.equal(c.opts.headers?.['x-obysphere-auth'], 'THE-SECRET', `${c.url}: the secret, in the header`);
+      assert.equal(c.opts.credentials, 'omit', `${c.url}: no cookie`);
+    }
+    assert.deepEqual(p.errors, [], 'the page loads all the way (boot runs after the whole script)');
   });
 
-  test('a link from before the console last started: it says so', async () => {
-    const no = { ok: false, status: 401, headers: { get: () => 'Obysphere-Console' } };
-    const p = runPage({ hash: '#auth=OLD', data: { signin: true }, fetch: () => Promise.resolve(no) });
-    for (let i = 0; i < 5; i++) await tick();
+  test('a reload in the same tab: the secret from this tab, no link needed', async () => {
+    const p = runPage({ data: {}, session: [[KEY, 'KEPT-SECRET']], fetch: answers() });
+    for (let i = 0; i < 10; i++) await tick();
+    assert.equal(p.calls[0].url, '/local/me');
+    assert.ok(p.calls.length > 1);
+    assert.ok(p.calls.every((c) => c.opts.headers?.['x-obysphere-auth'] === 'KEPT-SECRET'));
+    assert.deepEqual(p.errors, []);
+  });
+
+  test('a link that was already used, or is from before your console last started: it says so', async () => {
+    const p = runPage({ hash: '#code=OLD', data: {}, fetch: () => Promise.resolve(json(401, { error: 'This link was already used.', code: 'console_auth' }, true)) });
+    for (let i = 0; i < 10; i++) await tick();
     assert.equal(p.reloads(), 0, 'no loop');
-    assert.match(p.root.innerHTML, /from before your console last started/);
+    assert.match(p.root.innerHTML, /That link doesn’t open your console any more/);
+    assert.match(p.root.innerHTML, /obysphere open/);
+    assert.ok(!p.session.has(KEY));
+  });
+
+  test('the console started again since: the secret this tab kept is dropped, and the page asks for a new link', async () => {
+    const p = runPage({ data: {}, session: [[KEY, 'OLD-SECRET']], fetch: () => Promise.resolve(json(401, { code: 'console_auth' }, true)) });
+    for (let i = 0; i < 10; i++) await tick();
+    assert.ok(!p.session.has(KEY), 'dropped');
+    assert.match(p.root.innerHTML, /Open your console/);
   });
 
   test('without its link: how to open it, and nothing asked of the API', () => {
-    const p = runPage({ data: { signin: true } });
+    const p = runPage({ data: {} });
     assert.match(p.root.innerHTML, /Open your console/);
     assert.match(p.root.innerHTML, /obysphere open/);
     assert.deepEqual(p.calls, []);
   });
 
-  test('already signed in: a stale #auth= leaves the address, and is never sent', () => {
-    const p = runPage({ hash: '#auth=OLD&mode=conversation&c=general', data: { name: 'bob', owner: 'Bob Test', sphere: 'http://127.0.0.1:9', sphereName: 'S' } });
+  test('an old #auth= link leaves the address, and is never sent', () => {
+    const p = runPage({ hash: '#auth=OLD&mode=conversation&c=general', data: {} });
     assert.deepEqual(p.replaced, ['/#mode=conversation&c=general']);
-    assert.ok(p.calls.length > 0 && p.calls.every((c) => c.url !== '/local/auth' && !JSON.stringify(c.opts).includes('OLD')));
-    assert.ok(p.calls.every((c) => c.opts.headers?.['x-obysphere-console'] === '1'), 'the page’s header, with the cookie');
+    assert.deepEqual(p.calls, [], 'nothing sent: it no longer signs in');
+    assert.match(p.root.innerHTML, /Open your console/);
+  });
+
+  test('downloads and peeks go through fetch with the header, in your console too: never a plain link that needs a cookie', () => {
+    assert.ok(!/dl && !CONSOLE/.test(SCRIPT), 'the console no longer leaves a download to the browser');
+    assert.ok(!/x-obysphere-console/.test(SCRIPT), 'no cookie-era header');
+    assert.ok(!/'\/local\/auth'/.test(SCRIPT), 'no trade for a cookie');
   });
 });
 

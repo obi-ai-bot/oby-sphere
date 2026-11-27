@@ -1,7 +1,8 @@
 // The console's secret (rep.mjs ui), for tests. Each console makes a new one when it starts and
 // keeps it in its profile (console-auth.json, 0600, one entry per port). A program of this user's
-// reads it there and sends it in the x-obysphere-auth header, as the menu bar does; a browser
-// gets it once in a link's fragment (#auth=…) and trades it for a cookie.
+// reads it there and sends it in the x-obysphere-auth header, as the menu bar does; a browser's
+// page trades a code that works once (#code=…, from POST /local/open-code) for it, keeps it in its
+// tab and sends it in the same header. No cookie.
 import fs from 'node:fs';
 import path from 'node:path';
 

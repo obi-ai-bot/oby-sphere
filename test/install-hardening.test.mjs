@@ -432,9 +432,11 @@ describe('the service files and the menu bar app (finding 2, 3, 5)', () => {
   });
 
   // an app with the right Info.plist and a program, as one someone else made would have
+  // the app's version as this rep.mjs builds it (a new one makes every Mac build it again)
+  const NOTIFIER_VERSION = /const NOTIFIER_VERSION = '(\d+)';/.exec(fs.readFileSync(path.join(ROOT, 'rep.mjs'), 'utf8'))[1];
   const fakeApp = (app) => {
     fs.mkdirSync(path.join(app, 'Contents', 'MacOS'), { recursive: true });
-    fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), '<plist><dict><key>CFBundleVersion</key><string>2</string></dict></plist>');
+    fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), `<plist><dict><key>CFBundleVersion</key><string>${NOTIFIER_VERSION}</string></dict></plist>`);
     fs.writeFileSync(path.join(app, 'Contents', 'MacOS', 'Obysphere'), '#!/bin/sh\necho evil\n', { mode: 0o755 });
     return path.join(app, 'Contents', 'MacOS', 'Obysphere');
   };
@@ -463,7 +465,7 @@ describe('the service files and the menu bar app (finding 2, 3, 5)', () => {
     const app = path.join(h, 'Applications', 'Obysphere.app');
     const bin = fakeApp(app);
     // as built here: its program's hash, kept beside the profiles (0600)
-    fs.writeFileSync(path.join(profiles, 'notifier.json'), JSON.stringify({ app, version: '2', sha256: sha256(fs.readFileSync(bin)) }), { mode: 0o600 });
+    fs.writeFileSync(path.join(profiles, 'notifier.json'), JSON.stringify({ app, version: NOTIFIER_VERSION, sha256: sha256(fs.readFileSync(bin)) }), { mode: 0o600 });
     // no Xcode tools on PATH: were the check to fail, nothing could be built (or registered with macOS)
     const empty = path.join(h, 'no-tools');
     fs.mkdirSync(empty);

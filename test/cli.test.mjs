@@ -690,7 +690,12 @@ describe('status, open and the version check, against a local relay', () => {
 
     const open = await cli(['open'], env);
     assert.equal(open.code, 0, open.out);
-    assert.deepEqual(dryrun(h).at(-1), { cmd: 'open', args: [`http://alice.localhost:${port}/#auth=${consoleSecret(path.join(profiles, 'alice'), port)}`] }, 'signed in: the secret in the fragment');
+    // signed in: a code that works once, on osascript's stdin (never the secret, nor a command line)
+    const opened = dryrun(h).at(-1);
+    assert.equal(opened.cmd, 'osascript');
+    assert.deepEqual(opened.args, []);
+    assert.match(opened.input, new RegExp(`^open location "http://alice\\.localhost:${port}/#code=[A-Za-z0-9_-]{43}"\n$`));
+    assert.ok(!JSON.stringify(opened).includes(consoleSecret(path.join(profiles, 'alice'), port)));
 
     // restart doesn't put a service on the port a console in a terminal holds (it would only fail to listen)
     const again = await cli(['restart'], env);

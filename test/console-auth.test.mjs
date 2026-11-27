@@ -1,11 +1,13 @@
-// Your console is yours alone (sec/console). `rep.mjs ui` makes a new secret each time it
-// starts and keeps it in the profile (console-auth.json, 0600). Every /local/* and /api/* call
-// needs it: a program of this user's sends it in x-obysphere-auth, and a browser gets it once in
-// a link's fragment (#auth=…) and trades it for an HttpOnly, SameSite=Strict cookie. Other
-// local users, containers and pages never get in on a constant header. The console also listens
-// on ::1 beside 127.0.0.1, so nothing else can take its address, and proves who it is to
-// `obysphere` with the secret, not its favicon. A real relay, real consoles, no model, no network
-// beyond this machine. `npm test`.
+// Your console is yours alone (sec/console, sec2/console). `rep.mjs ui` makes a new secret each
+// time it starts and keeps it in the profile (console-auth.json, 0600). Every /local/* and /api/*
+// call needs it in x-obysphere-auth: a program of this user's reads it there, and a browser's page
+// gets it by trading a code that works once, minted for a program that has the secret (#code=…,
+// from obysphere open), and keeps it in its tab (sessionStorage). No cookie carries it: cookies
+// reach every port of a host. It's never in a log, a command line, the menu bar's model or a
+// notification. Other local users, containers and pages never get in on a constant header. The
+// console also listens on ::1 beside 127.0.0.1, so nothing else can take its address, and proves
+// who it is to `obysphere` with the secret, not its favicon. Its proxy never hands the page a
+// token. A real relay, real consoles, no model, no network beyond this machine. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -130,6 +132,13 @@ describe('your console: only you get in', () => {
       assert.equal((await req(port, { method: 'POST', path: '/local/pending/w_0123456789ab', headers: h, body: { decision: 'answer' } })).status, 401, 'a decision');
       assert.equal((await req(port, { method: 'POST', path: '/api/messages', headers: h, body: { channel: 'general', text: 'posted as Bob by someone else' } })).status, 401, 'posting as you');
       assert.equal((await req(port, { path: '/local/a-route-added-later', headers: h })).status, 401, 'every /local route, known or not');
+      assert.equal((await req(port, { method: 'POST', path: '/local/open-code', headers: h, body: {} })).status, 401, 'no sign-in code without the secret');
+    }
+    // the secret in a cookie is no credential (cookies reach every port of a host: R19)
+    const secret = consoleSecret(bobDir(), port);
+    for (const cookie of [`obysphere-console-${port}=${secret}`, `x=${secret}`]) {
+      assert.equal((await req(port, { path: '/api/messages?limit=5', headers: page({ cookie }) })).status, 401, cookie);
+      assert.equal((await req(port, { path: '/local/invite', headers: page({ cookie, 'x-obysphere-console': '1' }) })).status, 401, cookie);
     }
     assert.equal(settingsText(), before, 'your settings are as they were');
     assert.equal((await relayMessages()).length, posted, 'nothing was posted');
@@ -148,44 +157,86 @@ describe('your console: only you get in', () => {
     assert.ok(msgs.body.includes('a note only members read'));
     // the Host checks still hold, secret or not (DNS rebinding)
     assert.equal((await req(port, { path: '/local/invite', headers: { host: `evil.example:${port}`, [AUTH_HEADER]: secret } })).status, 421);
-    // the console prints the link with it, for you to open (and the second browser)
-    assert.ok(uiOut.includes(`http://bob.localhost:${port}/#auth=${secret}`), uiOut);
+    // who it is, for the page once it's signed in
+    const me = await req(port, { path: '/local/me', headers: page({ [AUTH_HEADER]: secret }) });
+    assert.equal(me.status, 200, me.body);
+    assert.deepEqual(me.json, { name: 'bob', owner: 'Bob Test', sphere: base, sphereName: 'Auth Sphere' });
   });
 
-  test('a browser: #auth=… traded once for a cookie, HttpOnly and SameSite=Strict', async () => {
+  test("what it prints when it isn't in a terminal (a service's log) holds no secret and no sign-in code (R25, R46, R61)", async () => {
     const secret = consoleSecret(bobDir(), port);
-    // the page without the cookie: it can sign in, and holds nothing of yours
-    const bare = await req(port, { headers: { host: host() } });
-    assert.equal(bare.status, 200);
-    assert.match(bare.body, /window\.OBYSPHERE_CONSOLE=\{"signin":true\}/);
-    assert.ok(!bare.body.includes('Bob Test') && !bare.body.includes(base), 'no owner or Sphere before you sign in');
-    // a wrong secret gets nothing
-    const wrong = await req(port, { method: 'POST', path: '/local/auth', headers: page({ [AUTH_HEADER]: 'x'.repeat(43) }) });
+    assert.ok(uiOut.includes(`http://bob.localhost:${port}/`), uiOut);
+    assert.ok(!uiOut.includes(secret), 'never the secret');
+    assert.ok(!/#(auth|code)=/.test(uiOut), uiOut);
+    assert.ok(!uiOut.includes(`localhost:${port}/#`), uiOut);
+    assert.match(uiOut, /rep\.mjs open/, 'it says how to sign a browser in');
+  });
+
+  test('a browser: a code that works once, traded for the secret, which the page keeps in its tab; never a cookie (R19)', async () => {
+    const secret = consoleSecret(bobDir(), port);
+    // the page holds nothing of yours, however it's asked for: it signs in by itself
+    for (const h of [{ host: host() }, { host: host(), [AUTH_HEADER]: secret }, { host: host(), cookie: `obysphere-console-${port}=${secret}` }]) {
+      const bare = await req(port, { headers: h });
+      assert.equal(bare.status, 200);
+      assert.match(bare.body, /window\.OBYSPHERE_CONSOLE=\{\}/);
+      assert.ok(!bare.body.includes('Bob Test') && !bare.body.includes(base) && !bare.body.includes(secret), 'no owner, Sphere or secret in the page');
+      assert.equal(bare.headers['set-cookie'], undefined);
+    }
+    // the old trade for a cookie is gone
+    const old = await req(port, { method: 'POST', path: '/local/auth', headers: page({ [AUTH_HEADER]: secret }) });
+    assert.equal(old.status, 410, old.body);
+    assert.equal(old.headers['set-cookie'], undefined, 'no cookie');
+    // a program with the secret asks for a code (obysphere open, the menu bar, a notification)
+    const minted = await req(port, { method: 'POST', path: '/local/open-code', headers: { [AUTH_HEADER]: secret }, body: {} });
+    assert.equal(minted.status, 200, minted.body);
+    const { code } = minted.json;
+    assert.match(code, /^[A-Za-z0-9_-]{43}$/, '256 random bits');
+    assert.notEqual(code, secret);
+    assert.ok(Date.parse(minted.json.expiresAt) > Date.now() && Date.parse(minted.json.expiresAt) <= Date.now() + 5 * 60e3 + 1000, 'a few minutes at most');
+    const signin = (c, extra = {}) => req(port, { method: 'POST', path: '/console-signin', headers: page(extra), body: { code: c } });
+    // only from this console's own page
+    assert.equal((await signin(code, { 'sec-fetch-site': 'cross-site' })).status, 403);
+    assert.equal((await signin(code, { origin: 'http://evil.example' })).status, 403);
+    assert.equal((await req(port, { method: 'POST', path: '/console-signin', headers: { host: `evil.example:${port}` }, body: { code } })).status, 421);
+    // a code it never made: nothing, and nothing changes
+    const wrong = await signin('y'.repeat(43));
     assert.equal(wrong.status, 401);
-    assert.equal(wrong.headers['set-cookie'], undefined);
-    // the trade
-    const ok = await req(port, { method: 'POST', path: '/local/auth', headers: page({ [AUTH_HEADER]: secret }) });
-    assert.equal(ok.status, 204, ok.body);
-    const set = String(ok.headers['set-cookie']);
-    const [pair, ...attrs] = set.split(';').map((s) => s.trim());
-    assert.equal(pair, `obysphere-console-${port}=${secret}`);
-    assert.deepEqual(new Set(attrs.map((a) => a.toLowerCase())), new Set(['path=/', 'httponly', 'samesite=strict']), set);
-    const cookie = pair;
-    // with it: the page is yours, and so is the API
-    const signed = await req(port, { headers: { host: host(), cookie } });
-    assert.match(signed.body, /window\.OBYSPHERE_CONSOLE=\{"name":"bob","owner":"Bob Test"/);
-    assert.equal((await req(port, { path: '/local/invite', headers: page({ cookie, 'x-obysphere-console': '1' }) })).status, 200);
-    assert.equal((await req(port, { path: '/api/messages?limit=5', headers: page({ cookie }) })).status, 200, 'a GET, as a download link sends it');
-    // a write needs the page's header too, and every call its own origin
-    assert.equal((await req(port, { method: 'POST', path: '/api/messages', headers: page({ cookie }), body: { channel: 'general', text: 'no header' } })).status, 403);
-    assert.equal((await req(port, { path: '/local/invite', headers: page({ cookie }) })).status, 403, '/local needs the header on GETs too');
-    assert.equal((await req(port, { path: '/local/invite', headers: page({ cookie, 'x-obysphere-console': '1', 'sec-fetch-site': 'cross-site' }) })).status, 403);
-    assert.equal((await req(port, { path: '/api/messages', headers: page({ cookie, 'sec-fetch-site': 'same-site' }) })).status, 403, "another profile's console");
-    assert.equal((await req(port, { method: 'POST', path: '/api/messages', headers: page({ cookie, 'x-obysphere-console': '1', origin: 'http://evil.example' }), body: { channel: 'general', text: 'x' } })).status, 403);
-    const sent = await req(port, { method: 'POST', path: '/api/messages', headers: page({ cookie, 'x-obysphere-console': '1' }), body: { channel: 'general', text: 'from the page, signed in' } });
-    assert.equal(sent.status, 200, sent.body);
-    // a cookie from another console, or another start, opens nothing
-    assert.equal((await req(port, { path: '/api/messages', headers: page({ cookie: `obysphere-console-${port}=${'y'.repeat(43)}` }) })).status, 401);
+    assert.equal(wrong.json.code, 'console_auth');
+    assert.equal(consoleSecret(bobDir(), port), secret);
+    // the trade: the secret, once, and no cookie
+    const ok = await signin(code);
+    assert.equal(ok.status, 200, ok.body);
+    assert.deepEqual(ok.json, { secret });
+    assert.equal(ok.headers['set-cookie'], undefined);
+    assert.equal(ok.headers['cache-control'], 'no-store');
+    // with it, the page calls the API in the header
+    assert.equal((await req(port, { path: '/local/invite', headers: page({ [AUTH_HEADER]: ok.json.secret }) })).status, 200);
+    // the same code again: someone else used it, or it was used twice. Nothing for the second, and
+    // the console makes a new secret, so whoever used it first is signed out too
+    const again = await signin(code);
+    assert.equal(again.status, 401, again.body);
+    assert.match(again.json.error, /already used/);
+    const now = consoleSecret(bobDir(), port);
+    assert.notEqual(now, secret, 'a new secret');
+    assert.equal((await req(port, { path: '/local/invite', headers: { [AUTH_HEADER]: secret } })).status, 401, 'the old one opens nothing');
+    assert.equal((await req(port, { path: '/local/invite', headers: { [AUTH_HEADER]: now } })).status, 200);
+    // a bad body
+    assert.equal((await req(port, { method: 'POST', path: '/console-signin', headers: page(), body: 'not json' })).status, 401);
+    assert.equal((await req(port, { method: 'GET', path: '/console-signin', headers: page() })).status, 405);
+  });
+
+  test("the console's proxy never hands the page a token: a new one goes through /local/token alone (R54)", async () => {
+    const secret = consoleSecret(bobDir(), port);
+    const before = token('bob');
+    assert.equal((await req(port, { method: 'POST', path: '/api/me/token', headers: page({ [AUTH_HEADER]: secret }), body: {} })).status, 403);
+    for (const p of ['/api/me/token', '/api/me/token/', '/api//me/token', '/API/me/token', '/api/ME/token', '/api/join', '/api/me/token?__path=/api/me/token', '/api/info?__path=/api/me/token']) {
+      const r = await req(port, { method: 'POST', path: p, headers: page({ [AUTH_HEADER]: secret }), body: {} });
+      assert.ok(!/tok_/.test(r.body), `${p}: ${r.body}`);
+      if (!p.startsWith('/api/info')) assert.ok([403, 404].includes(r.status), `${p}: ${r.status} ${r.body}`); // refused, or not the console's to pass on
+    }
+    assert.equal(token('bob'), before, 'the profile keeps its token');
+    const still = await fetch(`${base}/api/info`, { headers: { authorization: `Bearer ${before}` } });
+    assert.equal(still.status, 200, 'and the relay still takes it: it was never replaced');
   });
 
   test('the console proves it is yours: a challenge answered with the secret, at both its addresses', async () => {
@@ -202,14 +253,16 @@ describe('your console: only you get in', () => {
     assert.equal(six.json?.proof, proofOf(secret, nonce), 'the same console on ::1');
   });
 
-  test('a new secret at each start: the old one, and its cookie, no longer open it', async () => {
+  test('a new secret at each start: the old one, and its codes, no longer open it', async () => {
     const old = consoleSecret(bobDir(), port);
+    const { code } = (await req(port, { method: 'POST', path: '/local/open-code', headers: { [AUTH_HEADER]: old }, body: {} })).json;
     await stopAll([ui]);
     await startConsole();
     const now = consoleSecret(bobDir(), port);
     assert.notEqual(now, old);
     assert.equal((await req(port, { path: '/local/invite', headers: { [AUTH_HEADER]: old } })).status, 401);
-    assert.equal((await req(port, { path: '/api/messages', headers: page({ cookie: `obysphere-console-${port}=${old}` }) })).status, 401);
+    assert.equal((await req(port, { method: 'POST', path: '/console-signin', headers: page(), body: { code } })).status, 401, 'a code from before');
+    assert.equal(consoleSecret(bobDir(), port), now, 'and that changes nothing');
     assert.equal((await req(port, { path: '/local/invite', headers: { [AUTH_HEADER]: now } })).status, 200);
   });
 
@@ -263,7 +316,16 @@ describe('your console: only you get in', () => {
       }
     });
 
-    test('obysphere open: your console, signed in, from one command', async () => {
+    // a sign-in link's code, traded as the page trades it: the secret, once
+    const redeem = async (link) => {
+      const code = new URLSearchParams(new URL(link).hash.slice(1)).get('code');
+      assert.match(String(code), /^[A-Za-z0-9_-]{43}$/, link);
+      const r = await req(port, { method: 'POST', path: '/console-signin', headers: page(), body: { code } });
+      assert.equal(r.status, 200, r.body);
+      return r.json.secret;
+    };
+
+    test('obysphere open: your console, signed in, from one command; the link goes to no command line (R24, R66)', async () => {
       servicePort(port);
       const secret = consoleSecret(bobDir(), port);
       const st = await cli(['status', '--json', '--profile', 'bob']);
@@ -271,22 +333,147 @@ describe('your console: only you get in', () => {
       assert.equal(row.running, true, st.out);
       assert.equal(row.console, `http://bob.localhost:${port}/`, 'status never prints the secret');
       assert.ok(!st.out.includes(secret));
-      // macOS: open hands the link to the browser (LaunchServices; not left on a command line)
+      // macOS: osascript gets the link on its stdin; its command line, which any user of the Mac
+      // can read with ps, holds nothing. The link holds a code that works once, not the secret.
       let r = await cli(['open', '--profile', 'bob'], { OBYSPHERE_SERVICE_PLATFORM: 'darwin' });
       assert.equal(r.code, 0, r.out);
-      assert.deepEqual(dry().at(-1), { cmd: 'open', args: [`http://bob.localhost:${port}/#auth=${secret}`] });
-      assert.ok(!r.out.includes(secret), 'what it prints holds no secret');
+      let last = dry().at(-1);
+      assert.equal(last.cmd, 'osascript');
+      assert.deepEqual(last.args, []);
+      const m = /^open location "(http:\/\/bob\.localhost:\d+\/#code=[A-Za-z0-9_-]{43})"\n$/.exec(last.input);
+      assert.ok(m, last.input);
+      assert.ok(!JSON.stringify(last).includes(secret), 'never the secret');
+      assert.ok(!r.out.includes(secret) && !r.out.includes('#code='), 'what it prints holds neither');
+      assert.equal(await redeem(m[1]), secret, 'the code signs the browser in');
+      // a page of it, printed for a program that opens it itself (the menu bar, a notification)
+      r = await cli(['open', '--profile', 'bob', '--page', 'you', '--print']);
+      assert.equal(r.code, 0, r.out);
+      const printed = r.out.trim();
+      assert.match(printed, new RegExp(`^http://bob\\.localhost:${port}/#code=[A-Za-z0-9_-]{43}&page=you$`));
+      assert.equal(await redeem(printed), secret);
+      assert.equal((await cli(['open', '--profile', 'bob', '--page', 'x&code=1', '--print'])).code, 1, 'a page by its name only');
       // Linux: a browser started by xdg-open keeps its arguments, which other users can read, so
       // it opens a page in your profile (0600) that goes on to the link
-      r = await cli(['open', '--profile', 'bob'], { OBYSPHERE_SERVICE_PLATFORM: 'linux' });
+      r = await cli(['open', '--profile', 'bob'], { OBYSPHERE_SERVICE_PLATFORM: 'linux', HOME: path.join(tmp, 'no-snap-home') });
       assert.equal(r.code, 0, r.out);
-      const last = dry().at(-1);
+      last = dry().at(-1);
       assert.equal(last.cmd, 'xdg-open');
       assert.ok(!JSON.stringify(last).includes(secret), JSON.stringify(last));
-      const file = last.args[0].replace(/^file:\/\//, '');
+      let file = last.args[0];
       assert.ok(file.startsWith(bobDir()), file);
       assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-      assert.ok(fs.readFileSync(file, 'utf8').includes(`http://bob.localhost:${port}/#auth=${secret}`));
+      let text = fs.readFileSync(file, 'utf8');
+      assert.ok(!text.includes(secret), 'the page holds a code, not the secret');
+      assert.equal(await redeem(/url=([^"]+)"/.exec(text)[1].replace(/&#38;/g, '&')), secret);
+      // a snap browser (Ubuntu's Firefox) reads no hidden folder of your home: the page goes in
+      // that snap's own folder
+      const fakeHome = path.join(tmp, 'snap-home');
+      const snapDir = path.join(fakeHome, 'snap', 'firefox', 'common');
+      fs.mkdirSync(snapDir, { recursive: true });
+      const bin = path.join(tmp, 'xdg-bin');
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(path.join(bin, 'xdg-mime'), '#!/bin/sh\n[ "$*" = "query default text/html" ] && echo firefox_firefox.desktop\n', { mode: 0o755 });
+      r = await cli(['open', '--profile', 'bob'], { OBYSPHERE_SERVICE_PLATFORM: 'linux', HOME: fakeHome, PATH: `${bin}:${process.env.PATH}` });
+      assert.equal(r.code, 0, r.out);
+      file = dry().at(-1).args[0];
+      assert.equal(path.dirname(file), snapDir, file);
+      assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+      text = fs.readFileSync(file, 'utf8');
+      assert.ok(!text.includes(secret));
+      assert.equal(await redeem(/url=([^"]+)"/.exec(text)[1].replace(/&#38;/g, '&')), secret);
+      // Windows: no cmd /c start, which reads a link's & as its own
+      r = await cli(['open', '--profile', 'bob', '--page', 'you'], { OBYSPHERE_SERVICE_PLATFORM: 'win32' });
+      assert.equal(r.code, 0, r.out);
+      last = dry().at(-1);
+      assert.equal(last.cmd, 'rundll32');
+      assert.equal(last.args[0], 'url.dll,FileProtocolHandler');
+      assert.ok(!JSON.stringify(last).includes(secret));
+      assert.equal(await redeem(last.args[1]), secret);
+    });
+
+    test('obysphere logs and menubar model never print the secret; the menu opens pages through obysphere open (R25, R44, R46)', async () => {
+      servicePort(port);
+      const secret = consoleSecret(bobDir(), port);
+      // a log from before, with a signed-in link in it
+      const logs = path.join(bobDir(), 'logs');
+      fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(path.join(logs, 'console.log'), `● your console for bob: http://bob.localhost:${port}/#auth=${secret}\n  Also at http://localhost:${port}/#auth=${secret}\nan ordinary line\n`, { mode: 0o600 });
+      const lg = await cli(['logs', '--profile', 'bob', '-n', '100']);
+      assert.equal(lg.code, 0, lg.out);
+      assert.ok(!lg.out.includes(secret), lg.out);
+      assert.match(lg.out, /http:\/\/bob\.localhost:\d+\/#auth=…/);
+      assert.match(lg.out, /an ordinary line/);
+      // the menu bar's model
+      fs.mkdirSync(path.join(tmp, 'services'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, 'services', 'com.obysphere.bob.plist'), '<plist/>');
+      const md = await cli(['menubar', 'model'], { OBYSPHERE_SERVICE_PLATFORM: 'darwin' });
+      assert.equal(md.code, 0, md.out);
+      assert.ok(!md.out.includes(secret), 'no secret in the model');
+      assert.ok(!/#(auth|code)=/.test(md.out), md.out);
+      const items = (list) => list.flatMap((i) => [i, ...items(i.items || [])]);
+      const opens = items(JSON.parse(md.out).items).filter((i) => i.kind === 'open');
+      assert.ok(opens.length >= 2, md.out);
+      for (const o of opens) {
+        assert.equal(o.args[0], 'open');
+        assert.deepEqual(o.args.slice(1, 3), ['--profile', 'bob']);
+        assert.equal(o.args.at(-1), '--print', 'obysphere prints a link that works once, and the app opens it');
+        assert.ok(o.url.startsWith(`http://bob.localhost:${port}/`), 'the page itself, for an app from before');
+      }
+      // what the app runs for "Open console" gives a link that signs the browser in
+      const open = opens.find((o) => o.title === 'Open console');
+      const r = await cli(open.args);
+      assert.equal(r.code, 0, r.out);
+      assert.equal(await redeem(r.out.trim()), secret);
+    });
+
+    test('rep.mjs open: a link that works once, for a notification or a terminal; a desktop notification carries no secret', async () => {
+      const secret = consoleSecret(bobDir(), port);
+      const r = await rep(['open', '--profile', 'bob', '--page', 'mode=conversation&c=general', '--print']);
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out.trim(), new RegExp(`^http://bob\\.localhost:${port}/#code=[A-Za-z0-9_-]{43}&mode=conversation&c=general$`));
+      assert.equal(await redeem(r.out.trim()), secret);
+      assert.equal((await rep(['open', '--profile', 'bob', '--page', 'auth=x', '--print'])).code, 1, 'only a page of the console');
+      if (process.platform !== 'darwin') return;
+      // macOS: the note the app gets (in a file only you can read) has the page and how to sign a
+      // browser in when it's clicked (rep.mjs open --print), never the secret
+      const app = path.join(tmp, 'apps', 'Obysphere.app');
+      const program = path.join(app, 'Contents', 'MacOS', 'Obysphere');
+      fs.mkdirSync(path.dirname(program), { recursive: true });
+      fs.writeFileSync(program, 'not run');
+      const src = fs.readFileSync(path.join(ROOT, 'rep.mjs'), 'utf8');
+      const version = /const NOTIFIER_VERSION = '(\d+)';/.exec(src)[1];
+      fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), `<key>CFBundleVersion</key><string>${version}</string>`);
+      fs.writeFileSync(path.join(home, 'notifier.json'), JSON.stringify({ app, version, sha256: crypto.createHash('sha256').update(fs.readFileSync(program)).digest('hex') }));
+      const bin = path.join(tmp, 'open-bin');
+      const notes = path.join(tmp, 'notes.jsonl');
+      fs.mkdirSync(bin, { recursive: true });
+      // the app, as `open -n -g <app> --args --note <file>` starts it: here, it keeps the note
+      fs.writeFileSync(path.join(bin, 'open'), `#!${process.execPath}\nconst fs = require('fs');\nconst a = process.argv.slice(2);\nconst f = a[a.indexOf('--note') + 1];\nfs.appendFileSync(${JSON.stringify(notes)}, JSON.stringify({ args: a, note: JSON.parse(fs.readFileSync(f, 'utf8')) }) + '\\n');\nfs.rmSync(f);\nfs.writeFileSync(f + '.done', 'ok');\n`, { mode: 0o755 });
+      const e = env({ OBYSPHERE_TEST: '1', OBYSPHERE_NOTIFIER_APP: app, PATH: bin });
+      delete e.NODE_TEST_CONTEXT;
+      delete e.OBYSPHERE_NOTIFY_LOG;
+      const sent = await new Promise((resolve) => {
+        const c = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'notify', 'test', '--via', 'desktop', '--profile', 'bob'], { env: e });
+        let out = '';
+        c.stdout.on('data', (d) => (out += d));
+        c.stderr.on('data', (d) => (out += d));
+        c.on('close', (code) => resolve({ code, out }));
+      });
+      assert.equal(sent.code, 0, sent.out);
+      const [{ note }] = fs.readFileSync(notes, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      assert.ok(!JSON.stringify(note).includes(secret), JSON.stringify(note));
+      assert.ok(!/#(auth|code)=/.test(JSON.stringify(note)), JSON.stringify(note));
+      assert.equal(note.url, `http://bob.localhost:${port}/`);
+      assert.deepEqual({ node: note.node, cli: note.cli, home: note.home, profile: note.profile }, { node: process.execPath, cli: path.join(ROOT, 'rep.mjs'), home, profile: 'bob' });
+      // a click: the app runs rep.mjs open --print, as the note says, and opens what it prints
+      const click = await new Promise((resolve) => {
+        const c = spawn(note.node, ['--preserve-symlinks-main', note.cli, 'open', '--profile', note.profile, ...(note.page ? ['--page', note.page] : []), '--print'], { env: { PATH: '/usr/bin:/bin', OBYSPHERE_HOME: note.home } });
+        let out = '';
+        c.stdout.on('data', (d) => (out += d));
+        c.on('close', (code) => resolve({ code, out }));
+      });
+      assert.equal(click.code, 0, click.out);
+      assert.equal(await redeem(click.out.trim()), secret);
     });
   });
 });
