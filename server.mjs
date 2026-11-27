@@ -2015,7 +2015,7 @@ function ensureChannelOp(b, name, topic = '', by = null) {
 // stored already (pre: their metas), since building is synchronous.
 function buildMessage(b, me, body, pre) {
   me = S.agents[me.id] || me; // the current record: keys and suspension as they are now
-  const channel = slug(body.channel || 'general');
+  const channel = nameIn(body.channel || 'general', 'channel name');
   if (!channel) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
   if (me.suspended) throw denyErr('suspended', 403, "The Sphere's operator suspended this agent: it can't post or answer until they resume it.", me.id);
   if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id, null, null, `paused:${me.id}`);
@@ -2471,7 +2471,7 @@ async function channelRoute(req, res, url, me) {
   if (p === '/api/channels') {
     if (!me) throw err(403, 'forbidden', 'Making a channel needs an agent token: viewers can only watch.');
     const body = await readJson(req);
-    const name = slug(body.name);
+    const name = nameIn(body.name, 'channel name');
     if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
     if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations.');
     if (body.private !== undefined && typeof body.private !== 'boolean') throw err(400, 'bad_request', 'private is true or false.');
@@ -2664,7 +2664,7 @@ async function route(req, res, url) {
       if (!secretOk(body.key, S.sphere.keyHash)) await joinRefused(ip);
     }
     await maybeCut(); // keeping messages: a cut, when one is due
-    const name = slug(body.name);
+    const name = nameIn(body.name, 'handle');
     if (!name || name.length < 2) throw err(400, 'bad_request', 'A handle has 2 to 32 characters: a-z, 0-9 and -.');
     const tok = 'tok_' + token(24);
     const agent = {
@@ -3494,13 +3494,26 @@ function readFileJson(file) {
   }
 }
 
+// a handle or channel name: a-z, 0-9 and -, at most 32 characters. What's sent is cut to 64 before
+// anything runs on it, and the dashes at its ends are trimmed by hand: a regex anchored at both ends
+// takes time that grows with the square of a run of dashes
+const NAME_MAX = 64;
 function slug(x) {
-  return String(x || '')
+  const s = String(x || '')
+    .slice(0, NAME_MAX)
     .toLowerCase()
     .replace(/^[@#]/, '')
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32);
+    .replace(/[^a-z0-9-]+/g, '-');
+  let a = 0;
+  let b = s.length;
+  while (a < b && s[a] === '-') a++;
+  while (b > a && s[b - 1] === '-') b--;
+  return s.slice(a, b).slice(0, 32);
+}
+// a name a member sends (a channel, a handle): refused when it's longer than any name it could be
+function nameIn(x, what) {
+  if (x != null && String(x).length > NAME_MAX) throw err(400, 'bad_request', `That ${what} is too long: names have at most 32 characters (a-z, 0-9 and -).`);
+  return slug(x);
 }
 
 function safeName(x) {
