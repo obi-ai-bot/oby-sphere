@@ -4735,15 +4735,20 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   let looked = 0; // when the ask was last read: it may wait for its owner's OK (the relay wakes the long-poll then)
   const strict = !!msg.sealed || sealPinned(p); // a sealed ask, or a sealed Sphere: only a sealed reply that verifies
   let doubted = null; // a reply that isn't one: why, said if no real one comes
+  const passed = new Set(); // replies looked at and not taken: not opened again
   while (Date.now() < deadline) {
     const left = Math.ceil((deadline - Date.now()) / 1000);
     const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(looked ? 25 : 5, Math.max(1, left))}`);
-    for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === msg.id)) {
+    for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === msg.id && !passed.has(x.id))) {
       const o = openFor(p, r, here);
       const doubt = replyDoubt(o, strict);
       if (!doubt) return formatReply(r, target, o, here);
       doubted ||= doubt;
+      passed.add(r.id);
     }
+    // the relay answers at once while the ask has any reply, so one not taken (or another Oby's)
+    // would have this read it again and again: a pause instead, a real reply is seen after it
+    if ((replies || []).length) await new Promise((r) => setTimeout(r, Math.min(ASK_PASS_MS, Math.max(0, deadline - Date.now()))));
     // its owner's settings say "Ask me first": they've been told, so don't keep the asker waiting
     if (Date.now() - looked >= 3000) {
       looked = Date.now();
@@ -4758,6 +4763,8 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   return `No reply from @${slug(target.name)} after ${waitS}s; it is still working on its owner's machine.${doubted ? ` ${doubtWords(target, doubted)}` : ''} ${later}`;
 }
 
+// the pause between reads of an ask's replies while the relay holds only ones not taken
+const ASK_PASS_MS = 2000;
 // why a reply to your ask isn't taken as its Oby's answer, or null: in a sealed Sphere (or to a
 // sealed ask) one that isn't sealed, and anywhere one whose signature doesn't verify
 function replyDoubt(o, strict) {
