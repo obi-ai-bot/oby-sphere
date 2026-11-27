@@ -6,7 +6,10 @@
 // every redirect checked), no test variable written into a service file, the menu bar's app only
 // as it was built here, a shim that isn't ours left alone, the `menubar` profile name kept for the
 // icon, no downgrade unless asked, a download cut at its limit, the menu bar's polling kept small,
-// install.sh safe to pipe, and a slug that costs no time. `npm test`.
+// install.sh safe to pipe, and a slug that costs no time. The second audit's (R45, R62, R63): on
+// Windows, what runtimes, command instruments and gh start is never from the folder they run in;
+// install.sh's test server is this machine, with no other host behind it; no line break in a
+// service file's values; and install.sh downloads with curl only. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -140,6 +143,21 @@ function fnFrom(file, name) {
   return new Function('path', 'fs', 'process', `${src.slice(at, end + 2)}\nreturn ${name};`)(path, fs, process);
 }
 
+// rep.mjs's answeringEnv and ghEnv, with what they use, run as if on another system: `process` is
+// { platform, env }, its keys as that system keeps them (Windows: Path, SystemRoot, windir)
+function childEnvs(platform, env) {
+  const src = fs.readFileSync(REP, 'utf8');
+  const fn = (name) => {
+    const at = src.indexOf(`\nfunction ${name}(`);
+    return at < 0 ? '' : src.slice(at, src.indexOf('\n}\n', at) + 2);
+  };
+  const constant = (name) => src.split('\n').find((l) => l.startsWith(`const ${name} =`)) || '';
+  const code = [constant('API_KEY_VARS'), constant('WINDOWS_ENV'), ...['truthyEnv', 'fullPath', 'childEnv', 'answeringEnv', 'ghEnv'].map(fn)].join('\n');
+  return new Function('process', `${code}\nreturn { answeringEnv, ghEnv };`)({ platform, env });
+}
+// a variable by its name in any case, as Windows reads it
+const varOf = (env, name) => Object.entries(env).find(([k]) => k.toUpperCase() === name.toUpperCase())?.[1];
+
 describe('programs by their full path, never from the folder a command runs in (finding 1, 3)', () => {
   test('Windows: a claude.exe in the working folder or a relative PATH entry is never the one run', () => {
     for (const file of [CLI, REP]) {
@@ -181,6 +199,9 @@ describe('programs by their full path, never from the folder a command runs in (
       assert.equal(fullPath('/usr/bin::.:node_modules/.bin:/opt/x/bin:', 'darwin'), '/usr/bin:/opt/x/bin', file);
       assert.equal(fullPath('.:bin:', 'linux'), '');
       assert.equal(fullPath('C:\\Windows\\System32;.;bin;;D:rel;\\rooted;"C:\\Program Files\\Git\\cmd"', 'win32'), 'C:\\Windows\\System32;"C:\\Program Files\\Git\\cmd"');
+      // an entry with a line break or another control character, which would start a line of its own in a service file (R63)
+      assert.equal(fullPath('/usr/bin:/opt/tools\nExecStartPre=/bin/echo injected\nX=:/opt/a\tb:/opt/c\u007f:/bin', 'linux'), '/usr/bin:/bin', file);
+      assert.equal(fullPath('C:\\Tools\r\nX=1;C:\\Windows', 'win32'), 'C:\\Windows');
     }
   });
 
@@ -191,6 +212,58 @@ describe('programs by their full path, never from the folder a command runs in (
       assert.ok(set > 0, `${path.basename(file)} sets NoDefaultCurrentDirectoryInExePath`);
       assert.ok(set < src.search(/\bspawn(Sync)?\(/), 'before anything is spawned');
     }
+  });
+
+  test("Windows: runtimes, command instruments and gh get PATH's full folders, Windows' own variables and NoDefaultCurrentDirectoryInExePath (R45)", () => {
+    // as Windows keeps them, and as Object.entries(process.env) gives them there: Path, SystemRoot, windir
+    const env = {
+      Path: '.;bin;;C:\\Windows\\system32;C:\\Windows;"C:\\Program Files\\Git\\cmd";C:\\Users\\alice\\AppData\\Roaming\\npm',
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      ComSpec: 'C:\\Windows\\system32\\cmd.exe',
+      USERPROFILE: 'C:\\Users\\alice',
+      APPDATA: 'C:\\Users\\alice\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\alice\\AppData\\Local',
+      ProgramData: 'C:\\ProgramData',
+      TEMP: 'C:\\Users\\alice\\AppData\\Local\\Temp',
+      TMP: 'C:\\Users\\alice\\AppData\\Local\\Temp',
+      NoDefaultCurrentDirectoryInExePath: '1',
+      Anthropic_Api_Key: 'sk-ant-in-any-case',
+      GH_CONFIG_DIR: 'C:\\Users\\alice\\AppData\\Roaming\\GitHub CLI',
+      Gh_Token: 'ghp_in_any_case',
+      // never: the Oby's own, a Sphere's key, Node's options, the effort override, in whatever case
+      OBYSPHERE_HOME: 'C:\\Users\\alice\\.obysphere',
+      Sphere_Admin_Key: 'admin-key-in-any-case',
+      Node_Options: '--require evil.js',
+      Claude_Code_Effort_Level: 'max',
+    };
+    const { answeringEnv, ghEnv } = childEnvs('win32', env);
+    const runs = { claude: answeringEnv('claude'), 'claude (subscription)': answeringEnv('claude', { kind: 'subscription' }), codex: answeringEnv('codex'), cursor: answeringEnv('cursor'), 'a command instrument': answeringEnv('command'), gh: ghEnv() };
+    for (const [what, out] of Object.entries(runs)) {
+      // PATH, as one name, with its full folders only: the folder it runs in never through `.`, `bin` or an empty entry
+      assert.equal(out.PATH, 'C:\\Windows\\system32;C:\\Windows;"C:\\Program Files\\Git\\cmd";C:\\Users\\alice\\AppData\\Roaming\\npm', `${what}: ${JSON.stringify(out)}`);
+      assert.deepEqual(Object.keys(out).filter((k) => k.toUpperCase() === 'PATH'), ['PATH'], `${what}: no Path beside PATH`);
+      // what it starts by name (git, rg, node) is never one in the folder it runs in, which Windows looks in first
+      assert.equal(varOf(out, 'NoDefaultCurrentDirectoryInExePath'), '1', `${what} keeps NoDefaultCurrentDirectoryInExePath`);
+      // Windows' own: without SystemRoot nothing can use the network; the user's folders hold the sign-ins
+      for (const k of ['SystemRoot', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP']) assert.equal(varOf(out, k), env[k], `${what} keeps ${k}`);
+      for (const k of ['OBYSPHERE_HOME', 'SPHERE_ADMIN_KEY', 'NODE_OPTIONS', 'CLAUDE_CODE_EFFORT_LEVEL']) assert.equal(varOf(out, k), undefined, `${what} never gets ${k}`);
+    }
+    // a runtime's own variables in any case, and taken away in any case when it's signed in with a subscription
+    assert.equal(varOf(runs.claude, 'ANTHROPIC_API_KEY'), 'sk-ant-in-any-case');
+    assert.equal(varOf(runs['claude (subscription)'], 'ANTHROPIC_API_KEY'), undefined, 'per-token billing stays out');
+    assert.equal(varOf(runs.codex, 'ANTHROPIC_API_KEY'), undefined);
+    assert.equal(varOf(runs.gh, 'GH_TOKEN'), 'ghp_in_any_case');
+    assert.equal(varOf(runs.gh, 'GH_CONFIG_DIR'), env.GH_CONFIG_DIR);
+    assert.equal(runs.gh.GH_PROMPT_DISABLED, '1');
+    // macOS and Linux as they were: names as they are (Path isn't PATH there), and no Windows variable
+    const posix = childEnvs('darwin', { PATH: '/usr/bin:.:bin::/opt/homebrew/bin', Path: 'C:\\Tools', SystemRoot: 'C:\\Windows', HOME: '/Users/alice', ANTHROPIC_API_KEY: 'sk-ant', Anthropic_Api_Key: 'sk-other', OBYSPHERE_HOME: '/x' });
+    for (const out of [posix.answeringEnv('claude'), posix.ghEnv()]) {
+      assert.equal(out.PATH, '/usr/bin:/opt/homebrew/bin');
+      for (const k of ['Path', 'SystemRoot', 'NoDefaultCurrentDirectoryInExePath', 'Anthropic_Api_Key', 'OBYSPHERE_HOME']) assert.ok(!(k in out), `no ${k} on macOS: ${JSON.stringify(out)}`);
+    }
+    assert.equal(posix.answeringEnv('claude').ANTHROPIC_API_KEY, 'sk-ant');
   });
 
   test('update unpacks with the tar on PATH, never one in the folder it runs in or in a relative PATH entry', { skip: WIN && 'shell scripts as programs' }, async () => {
@@ -418,6 +491,50 @@ describe('the service files and the menu bar app (finding 2, 3, 5)', () => {
     assert.ok(unit.includes(`Environment="PATH=${NODE_DIR}:/usr/bin"`), unit);
   });
 
+  test('a line break never adds a line to a service file: a PATH entry with one is dropped, any other value refused (R63)', { skip: WIN && 'folder names with a line break' }, async () => {
+    const injected = 'ExecStartPre=/bin/echo injected';
+    // a profile with its console's port chosen already, so none is tried
+    const port = await freePort();
+    const profileIn = (profiles) => fs.writeFileSync(path.join(fakeProfile(profiles, 'alice'), 'service.json'), JSON.stringify({ port }), { mode: 0o600 });
+    // a PATH entry that is a full path, with lines after it: systemd would read each as a directive
+    const h = tmp('svc-newline');
+    profileIn(path.join(h, 'profiles'));
+    const PATH = `${NODE_DIR}:/usr/bin:/opt/tools\n${injected}\nX=`;
+    let r = await cli(['start'], envFor(h, { PATH, OBYSPHERE_SERVICE_PLATFORM: 'linux' }));
+    assert.equal(r.code, 0, r.out);
+    const unit = fs.readFileSync(path.join(h, 'services', 'obysphere-alice.service'), 'utf8');
+    assert.ok(!unit.includes(injected), unit);
+    assert.ok(unit.includes(`Environment="PATH=${NODE_DIR}:/usr/bin"\n`), unit);
+    // anything else the service file holds: refused, and nothing written
+    const profilesWithBreak = path.join(tmp('svc-newline-home'), `profiles\n${injected}`);
+    profileIn(profilesWithBreak);
+    for (const [what, extra] of [
+      ['OBYSPHERE_DOWNLOADS', { OBYSPHERE_DOWNLOADS: `/tmp/downloads\n${injected}` }],
+      ['OBYSPHERE_APP_HOME', { OBYSPHERE_APP_HOME: `/tmp/app\n${injected}` }],
+      ['the profiles folder', { OBYSPHERE_HOME: profilesWithBreak }],
+    ]) {
+      for (const platform of ['linux', 'darwin', 'win32']) {
+        const d = tmp('svc-newline-refused');
+        if (!extra.OBYSPHERE_HOME) profileIn(path.join(d, 'profiles'));
+        r = await cli(['start'], envFor(d, { ...extra, OBYSPHERE_SERVICE_PLATFORM: platform }));
+        assert.equal(r.code, 1, `${what} on ${platform}: ${r.out}`);
+        assert.match(r.stderr, /has a line break or another control character, so it can't go in a service file/, `${what} on ${platform}`);
+        const written = fs.existsSync(path.join(d, 'services')) ? fs.readdirSync(path.join(d, 'services')).filter((f) => f !== 'dryrun.jsonl') : [];
+        assert.deepEqual(written, [], `${what} on ${platform}: no service file`);
+      }
+    }
+    // the menu bar's agent too: no icon, rather than an agent written with it
+    const m = tmp('svc-newline-menubar');
+    profileIn(path.join(m, 'profiles'));
+    assert.equal((await cli(['start'], envFor(m, { OBYSPHERE_SERVICE_PLATFORM: 'darwin' }))).code, 0);
+    const agent = path.join(m, 'services', 'com.obysphere.menubar.plist');
+    fs.rmSync(agent);
+    r = await cli(['menubar', 'on'], envFor(m, { OBYSPHERE_SERVICE_PLATFORM: 'darwin', OBYSPHERE_DOWNLOADS: `/tmp/downloads\n${injected}` }));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.stdout, /No menu bar icon: OBYSPHERE_DOWNLOADS has a line break or another control character/);
+    assert.ok(!fs.existsSync(agent), 'no agent written');
+  });
+
   test("OBYSPHERE_NOTIFIER_APP is the menu bar's app only in test mode", async () => {
     const h = tmp('evil-app');
     fakeProfile(path.join(h, 'profiles'), 'alice');
@@ -627,6 +744,40 @@ describe('install.sh (finding 4, 7)', () => {
     assert.deepEqual(fs.readdirSync(h), []);
   });
 
+  test("the test server is this machine, with no other host behind its name: a user name, a query or a fragment is refused (R62)", { skip: WIN && 'sh' }, async () => {
+    gh.release = release('9.9.1', app91);
+    gh.requests.length = 0;
+    const h = tmp('sh-userinfo');
+    const { host } = new URL(gh.api);
+    // curl reads what comes before the @ as a user name and password, and goes to the host after it
+    // (here the fake GitHub on this machine; it could be anywhere)
+    const urls = [
+      [`http://localhost:x@${host}/api`, `http://localhost:x@${host}/dl`],
+      [`http://127.0.0.1:x@${host}/api`, gh.download],
+      [gh.api, `http://localhost:1@${host}/dl`],
+      [`${gh.api}?@elsewhere`, gh.download],
+      [gh.api, `${gh.download}#@elsewhere`],
+      [`http://localhost:${new URL(gh.api).port}\\@elsewhere/api`, gh.download],
+      [`http://localhost:/api`, gh.download],
+    ];
+    for (const [api, dl] of urls) {
+      const r = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: api, OBYSPHERE_DOWNLOAD_BASE: dl }));
+      assert.equal(r.code, 1, `${api} ${dl}: ${r.out}`);
+      assert.match(r.stderr, /refusing to download from \S+: the app comes from GitHub only/, `${api} ${dl}`);
+    }
+    assert.deepEqual(gh.requests, [], 'nothing was asked for');
+    assert.deepEqual(fs.readdirSync(h), [], 'nothing was made');
+    // a plain one still works, by name or address
+    const ok = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: `http://localhost:${new URL(gh.api).port}/api` }));
+    assert.equal(ok.code, 0, ok.out);
+    assert.equal(linkOf(path.join(h, '.local', 'share', 'obysphere', 'current')), '9.9.1');
+    // obysphere update reads the host as curl does, and asks nothing either
+    gh.requests.length = 0;
+    const up = await cli(['update', '--check'], envFor(tmp('update-userinfo'), { OBYSPHERE_RELEASES_API: `http://localhost:x@${host}/api`, OBYSPHERE_DOWNLOAD_BASE: `http://localhost:x@${host}/dl` }));
+    assert.equal(up.code, 1, up.out);
+    assert.deepEqual(gh.requests, []);
+  });
+
   test("install.sh leaves a link or a file that isn't ours alone, and replaces its own", { skip: WIN && 'sh' }, async () => {
     gh.release = release('9.9.1', app91);
     const h = tmp('sh-shim');
@@ -647,7 +798,9 @@ describe('install.sh (finding 4, 7)', () => {
     assert.ok(fs.readFileSync(shim, 'utf8').includes(path.join(h, '.local', 'share', 'obysphere', 'current', 'obysphere.mjs')));
   });
 
-  test('with wget only: --https-only, or it asks for curl', { skip: WIN && 'sh' }, async () => {
+  // GNU wget's --https-only is for recursive downloads: it doesn't keep a single download's redirects
+  // on https, and curl's --proto-redir does (first-round finding 7)
+  test('with wget only, it asks for curl and downloads nothing', { skip: WIN && 'sh' }, async () => {
     const h = tmp('wget');
     const bin = path.join(h, 'bin');
     fs.mkdirSync(bin);
@@ -661,19 +814,14 @@ describe('install.sh (finding 4, 7)', () => {
     const wget = (help) =>
       fs.writeFileSync(path.join(bin, 'wget'), `#!/bin/sh\nif [ "$1" = --help ]; then echo '${help}'; exit 0; fi\necho "$*" >> '${calls}'\nexit 8\n`, { mode: 0o755 });
     const env = { PATH: bin, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh' };
-    wget('  --https-only   only follow secure HTTPS links');
-    const r = await run('/bin/sh', [INSTALL], env);
-    assert.equal(r.code, 1, r.out);
-    assert.match(r.stderr, /there's no release yet/);
-    const [first] = fs.readFileSync(calls, 'utf8').trim().split('\n');
-    assert.match(first, /--https-only/);
-    assert.match(first, /https:\/\/api\.github\.com\/repos\/obi-ai-bot\/oby-sphere\/releases\/latest$/);
-    // a wget without it (BusyBox's): curl, please
-    fs.rmSync(calls);
-    wget('BusyBox v1.36 multi-call binary. Usage: wget [-cqS] [-O FILE] URL');
-    const old = await run('/bin/sh', [INSTALL], env);
-    assert.equal(old.code, 1);
-    assert.match(old.stderr, /this needs curl, or a wget that has --https-only/);
-    assert.ok(!fs.existsSync(calls), 'nothing downloaded');
+    // GNU wget's, and BusyBox's
+    for (const help of ['  --https-only   only follow secure HTTPS links', 'BusyBox v1.36 multi-call binary. Usage: wget [-cqS] [-O FILE] URL']) {
+      wget(help);
+      const r = await run('/bin/sh', [INSTALL], env);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.stderr, /this needs curl to download the Obysphere: it keeps every redirect on HTTPS/);
+      assert.ok(!fs.existsSync(calls), `nothing downloaded: ${fs.existsSync(calls) && fs.readFileSync(calls, 'utf8')}`);
+    }
+    assert.deepEqual(fs.readdirSync(h).sort(), ['bin'], 'nothing made');
   });
 });

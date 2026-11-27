@@ -33,7 +33,8 @@ import { fileURLToPath } from 'node:url';
 
 // Windows looks for a program in the folder you're in before PATH (a shared repository, while an
 // answer runs there), unless this says not to. Every program here is started by its full path
-// anyway (programPath); this covers what they start.
+// anyway (programPath); this covers what they start, and childEnv gives it to the runtimes, command
+// instruments and gh, which start with an environment of their own.
 process.env.NoDefaultCurrentDirectoryInExePath = '1';
 
 const { randomBytes, createHash } = crypto;
@@ -3674,24 +3675,42 @@ function runProcess(bin, args, { cwd, env, timeoutMs = TIME_LIMIT_DEFAULT * MINU
 // runtime's API-key variables stay out, so an answer can't switch to per-token billing.
 function answeringEnv(runtime = 'claude', auth = null) {
   const e = process.env;
-  const out = {};
   const base = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|LANGUAGE|TERM|TZ|COLORTERM|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|ALL_PROXY|XDG_[A-Z_]+|LC_[A-Z_]+)$/;
   const own = {
-    claude: /^(ANTHROPIC_[A-Z_]+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX|CLAUDE_CODE_USE_FOUNDRY|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_MAX_OUTPUT_TOKENS)$/,
+    claude: /^(ANTHROPIC_[A-Z_]+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX|CLAUDE_CODE_USE_FOUNDRY|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_MAX_OUTPUT_TOKENS|CLAUDE_CODE_GIT_BASH_PATH)$/,
     codex: /^(CODEX_HOME|OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN)$/,
     cursor: /^(CURSOR_API_KEY|CURSOR_CONFIG_DIR)$/,
   }[runtime] || /^$/;
-  for (const [k, v] of Object.entries(e)) if (base.test(k) || own.test(k)) out[k] = v;
-  if (runtime === 'claude') {
-    if (truthyEnv(e.CLAUDE_CODE_USE_BEDROCK)) for (const [k, v] of Object.entries(e)) if (/^AWS_[A-Z_]+$/.test(k)) out[k] = v;
-    if (truthyEnv(e.CLAUDE_CODE_USE_VERTEX)) for (const [k, v] of Object.entries(e)) if (/^(GOOGLE_[A-Z_]+|CLOUD_ML_REGION|VERTEX_[A-Z_]+|GCLOUD_[A-Z_]+)$/.test(k)) out[k] = v;
-    if (e.CLAUDE_CODE_DESKTOP_APP_VERSION) delete out.ANTHROPIC_BASE_URL; // the desktop app's own proxy, not the owner's
-  }
+  const cloud = [];
+  if (runtime === 'claude' && truthyEnv(e.CLAUDE_CODE_USE_BEDROCK)) cloud.push(/^AWS_[A-Z_]+$/);
+  if (runtime === 'claude' && truthyEnv(e.CLAUDE_CODE_USE_VERTEX)) cloud.push(/^(GOOGLE_[A-Z_]+|CLOUD_ML_REGION|VERTEX_[A-Z_]+|GCLOUD_[A-Z_]+)$/);
+  const out = childEnv((k) => base.test(k) || own.test(k) || cloud.some((r) => r.test(k)));
+  if (runtime === 'claude' && e.CLAUDE_CODE_DESKTOP_APP_VERSION) delete out.ANTHROPIC_BASE_URL; // the desktop app's own proxy, not the owner's
   if (auth?.kind === 'subscription') for (const k of API_KEY_VARS[runtime] || []) delete out[k];
   delete out.CLAUDE_CODE_EFFORT_LEVEL;
   delete out.CLAUDE_EFFORT;
-  // its PATH's full folders only: an empty, `.` or relative entry would find programs in the folder it answers in
+  return out;
+}
+
+// Windows' own variables, which a program there needs: without SystemRoot nothing can use the
+// network; ComSpec and PATHEXT say how to run a command; the user's folders hold the sign-ins
+const WINDOWS_ENV = /^(SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|PATHEXT|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMW6432|COMMONPROGRAMFILES|COMMONPROGRAMFILES\(X86\)|COMMONPROGRAMW6432|USERNAME|USERDOMAIN|COMPUTERNAME|OS|PROCESSOR_ARCHITECTURE|NUMBER_OF_PROCESSORS)$/;
+
+// A program's environment (a runtime's, a command instrument's, gh's): this process's variables
+// whose names `keep` takes. Its PATH's full folders only: an empty, `.` or relative entry would find
+// programs in the folder it runs in. On Windows a name is the same in any case, and is kept as it
+// was set (Path, SystemRoot, windir), so names are read and given in capitals, with Windows' own;
+// and NoDefaultCurrentDirectoryInExePath goes with them, so what the program starts by name (git,
+// rg, node) is never one in the folder it runs in (the owner's shared folder), where Windows looks first.
+function childEnv(keep) {
+  const win = process.platform === 'win32';
+  const out = {};
+  for (const [name, v] of Object.entries(process.env)) {
+    const k = win ? name.toUpperCase() : name;
+    if (keep(k) || (win && WINDOWS_ENV.test(k))) out[k] = v;
+  }
   if (out.PATH !== undefined) out.PATH = fullPath(out.PATH);
+  if (win) out.NoDefaultCurrentDirectoryInExePath = '1';
   return out;
 }
 
@@ -9105,10 +9124,11 @@ function isProgram(f) {
 }
 
 // PATH with its full folders only, in their order: an empty, `.` or other relative entry names a
-// folder relative to wherever a program runs. (obysphere.mjs has the same.)
+// folder relative to wherever a program runs, and one with a line break or another control
+// character would start a line of its own in a service file. (obysphere.mjs has the same.)
 function fullPath(value, platform = process.platform) {
   const win = platform === 'win32';
-  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
+  const full = (d) => !/[\u0000-\u001f\u007f]/.test(d) && (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
   return String(value || '').split(win ? ';' : ':').filter(full).join(win ? ';' : ':');
 }
 
@@ -9786,11 +9806,8 @@ function githubRepoAllowed(s, repo) {
 
 // ---- gh: an argv array, no shell, no prompts, outside any repository (every call names --repo=)
 function ghEnv() {
-  const out = {};
   const keep = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|LANGUAGE|TZ|SSL_CERT_FILE|SSL_CERT_DIR|NODE_EXTRA_CA_CERTS|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|ALL_PROXY|XDG_[A-Z_]+|LC_[A-Z_]+|GH_TOKEN|GITHUB_TOKEN|GH_CONFIG_DIR)$/;
-  for (const [k, v] of Object.entries(process.env)) if (keep.test(k)) out[k] = v;
-  if (out.PATH !== undefined) out.PATH = fullPath(out.PATH);
-  return { ...out, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_SPINNER_DISABLED: '1', NO_COLOR: '1', GH_PAGER: 'cat' };
+  return { ...childEnv((k) => keep.test(k)), GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_SPINNER_DISABLED: '1', NO_COLOR: '1', GH_PAGER: 'cat' };
 }
 function ghRun(args, { timeoutMs = 30e3 } = {}) {
   return new Promise((resolve) => {

@@ -404,14 +404,24 @@ function serviceEnv() {
   return env;
 }
 function serviceSpec(name, port, app = appForService()) {
-  return {
+  return oneLineEach({
     profile: name,
     label: label(name),
     args: [stableNode(), '--preserve-symlinks-main', path.join(app, 'rep.mjs'), 'ui', '--serve', '--profile', name, '--port', String(port)],
     env: serviceEnv(),
     cwd: path.join(HOME, name),
     log: logFile(name),
-  };
+  });
+}
+// A service file puts each value on a line (systemd reads every line as a directive of its own), so
+// one with a line break or another control character is refused, never written. PATH has none:
+// fullPath drops such an entry.
+function oneLineEach(s) {
+  const bad = (v) => /[\u0000-\u001f\u007f]/.test(v);
+  const why = "has a line break or another control character, so it can't go in a service file, where it would start a line of its own: change it, then try again.";
+  for (const [k, v] of Object.entries(s.env)) if (bad(k) || bad(v)) throw new Error(`${JSON.stringify(k).slice(1, -1)} ${why}`);
+  for (const v of [...s.args, s.cwd, s.log]) if (bad(v)) throw new Error(`${JSON.stringify(v)} ${why}`);
+  return s;
 }
 
 function plist(s) {
@@ -651,20 +661,27 @@ const menubarWanted = () => PLATFORM === 'darwin' && readJson(menuPrefs(), {}).o
 const menuApp = () => (TEST && process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
 
 function menuSpec(app) {
-  return {
+  return oneLineEach({
     menu: true,
     label: MENU_LABEL,
     args: [path.join(menuApp(), 'Contents', 'MacOS', 'Obysphere'), '--menu', '--node', stableNode(), '--cli', path.join(app, 'obysphere.mjs')],
     env: serviceEnv(),
     cwd: HOME,
     log: path.join(HOME, 'menubar.log'),
-  };
+  });
 }
 
 // the app built (when it's older than this version's) and its agent written and started (when
 // either changed, or force). Never fails start: without the Xcode command line tools, no icon.
 async function ensureMenubar({ app = appForService(), force = false } = {}) {
   if (!menubarWanted()) return false;
+  let s;
+  try {
+    s = menuSpec(app);
+  } catch (e) {
+    say(dim(`  No menu bar icon: ${clean(e.message, 300)}`));
+    return false;
+  }
   let built = false;
   if (!DRY) {
     const r = spawnSync(stableNode(), ['--preserve-symlinks-main', path.join(app, 'rep.mjs'), 'notify', 'app', '--if-needed', '--json'], {
@@ -683,7 +700,6 @@ async function ensureMenubar({ app = appForService(), force = false } = {}) {
     }
     built = !!j.built;
   }
-  const s = menuSpec(app);
   const file = menuFile();
   const text = plist(s);
   let same = false;
@@ -2237,10 +2253,11 @@ function isProgram(f) {
 }
 
 // PATH with its full folders only, in their order: an empty, `.` or other relative entry names a
-// folder relative to wherever a program runs. (rep.mjs has the same.)
+// folder relative to wherever a program runs, and one with a line break or another control
+// character would start a line of its own in a service file. (rep.mjs has the same.)
 function fullPath(value, platform = process.platform) {
   const win = platform === 'win32';
-  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
+  const full = (d) => !/[\u0000-\u001f\u007f]/.test(d) && (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
   return String(value || '').split(win ? ';' : ':').filter(full).join(win ? ';' : ':');
 }
 
