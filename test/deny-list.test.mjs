@@ -101,6 +101,12 @@ const SAMPLES = [
   ['/home/sam/.cargo/credentials.toml', SECRET],
   ['/home/sam/.gem/credentials', SECRET],
   ['/home/sam/.codex/auth.json', SECRET], // Codex's sign-in token
+  // a deployed Sphere's keys (obysphere server deploy), wherever the file is
+  ['/home/sam/.local/share/obysphere/servers/acme-sphere.keys', SECRET],
+  ['/home/sam/.local/share/obysphere/servers/notes.txt', SECRET], // the folder hides all of it
+  ['/home/sam/backup/acme-sphere.keys', SECRET],
+  ['/home/sam/.local/share/obysphere/0.3.0/rep.mjs', READABLE], // the app itself isn't a secret
+  ['/home/sam/app/src/keys.json.md', READABLE],
   ['C:\\Users\\sam\\.codex\\auth.json', SECRET],
   // clouds and clusters
   ['/home/sam/.aws/credentials', SECRET],

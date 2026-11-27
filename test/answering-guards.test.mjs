@@ -325,6 +325,40 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     fs.rmSync(usage(), { force: true });
   });
 
+  test("shell: read: git diff can't name a file outside the folders, the sandbox hides home's private places, and a writable folder never gets what steers later runs", async () => {
+    // Claude Code's Bash rules as a matcher: `prefix:*` (the command starts with it) or `*` for any run of characters
+    const re = (rule) => {
+      const m = /^Bash\((.*)\)$/.exec(rule);
+      if (!m) return null;
+      const esc = (x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+      return m[1].endsWith(':*') ? new RegExp(`^${esc(m[1].slice(0, -2))}(\\s|$)`) : new RegExp(`^${m[1].split('*').map(esc).join('[\\s\\S]*')}$`);
+    };
+    setBob({ agents: { carol: 'trust' } }, { machine: { folders: [{ path: work, write: false }, { path: web, write: true }], shell: 'read', web: { fetch: false, search: false }, browser: 'off', mcp: [] } });
+    const { run } = await answered('carol', 'what changed lately?');
+    const { allow, deny } = run.settings.permissions;
+    const argvDeny = run.argv[run.argv.indexOf('--disallowedTools') + 1].split(',');
+    const allowed = (cmd, list = deny) => allow.map(re).some((r) => r?.test(cmd)) && !list.map(re).some((r) => r?.test(cmd));
+    // implicit no-index: two paths, one outside the repository, read like any two files
+    const outside = ['git diff /dev/null ../../../../.zsh_history', `git diff README.md ${os.homedir()}/.zsh_history`, 'git diff x ~/.claude/projects/a.jsonl', 'git diff x "$HOME/.bash_history"', "git diff x '/etc/hosts'", 'git diff -- /etc/hosts x', 'git diff x ..', 'git diff .. x', 'git diff x sub/../../y', 'git diff x `echo /etc/hosts`'];
+    for (const cmd of outside) {
+      assert.ok(!allowed(cmd), `denied: ${cmd}`);
+      assert.ok(!allowed(cmd, argvDeny), `denied on the command line too: ${cmd}`);
+    }
+    // braces that expand to paths: in the settings file (a comma would split the command line's list)
+    assert.ok(!allowed('git diff {/etc/hosts,x}'), 'braces');
+    assert.ok(argvDeny.every((r) => !r.includes('{')), 'no rule split on the command line');
+    // revisions and paths inside stay
+    for (const cmd of ['git diff', 'git diff HEAD~1', 'git diff main..feature -- src/a.js', 'git diff --stat main...HEAD', 'git diff HEAD@{1} -- docs', 'git log -p -- src', 'ls src']) assert.ok(allowed(cmd), `allowed: ${cmd}`);
+    // the sandbox: transcripts, histories, other runtimes' sessions, a deployed Sphere's keys, ~/Library
+    const denyRead = run.settings.sandbox.filesystem.denyRead;
+    for (const h of ['.claude/projects', '.claude/history.jsonl', '.codex', '.cursor', '.local/share/obysphere', '.zsh_history', '.bash_history', '.zsh_sessions', 'Library']) assert.ok(denyRead.includes(path.join(os.homedir(), h)), `~/${h}`);
+    assert.ok(denyRead.includes('**/*.keys') && denyRead.includes('**/.local/share/obysphere/servers/**'), "a deployed Sphere's keys, anywhere");
+    assert.ok(deny.includes('Read(**/*.keys)'));
+    // a writable folder (trusted carol): the files that steer later runs are never written
+    for (const f of ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'AGENTS.override.md', '.cursorrules']) assert.ok(deny.includes(`Edit(**/${f})`), f);
+    for (const d of ['.github/**', '.gitattributes']) assert.ok(deny.includes(`Edit(**/${d})`), d);
+  });
+
   test('a handle like constructor is counted like any other', async () => {
     fs.rmSync(usage(), { force: true });
     setBob({ asksPerAgentPerDay: 1 });

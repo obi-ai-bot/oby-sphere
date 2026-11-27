@@ -73,6 +73,8 @@ const SECRET_FILES = [
   '.yarnrc.yml', '_netrc', '.gitcookies', '.dockercfg', '.config/gh/', '.composer/auth.json', '.config/composer/auth.json', '.m2/settings*.xml', '.gradle/gradle.properties',
   // the answering runtimes' own sign-ins (Claude Code's is *credential*.json)
   '.codex/auth.json',
+  // a deployed Sphere's keys (obysphere server deploy: ~/.local/share/obysphere/servers/<project>.keys)
+  '*.keys', '.local/share/obysphere/servers/',
   // clouds and clusters
   '.azure/', '.config/gcloud/', '.boto', '.s3cfg', '*accessKeys.csv', 'rootkey.csv',
   '*service-account*.json', '*service_account*.json', '*serviceAccount*.json',
@@ -89,6 +91,7 @@ const SECRET_HOME = [
   '.azure', '.config/gcloud', '.password-store', '.boto', '.s3cfg', '.dockercfg', '.gitcookies', '.yarnrc.yml', '.vault-token', '.terraformrc',
   '.terraform.d/credentials.tfrc.json', '.cargo/credentials', '.cargo/credentials.toml', '.gem/credentials', '.composer/auth.json', '.config/composer/auth.json',
   '.m2/settings.xml', '.m2/settings-security.xml', '.gradle/gradle.properties', '.pgpass', '.my.cnf', '.mylogin.cnf', '.codex/auth.json',
+  '.local/share/obysphere/servers',
 ];
 // the three forms of a list of such names (also of your own, machine.neverRead: the never-read section)
 function denyListForms(names) {
@@ -117,6 +120,9 @@ const SECRETISH = SECRET_LISTS.regex; // the deny-list table above
 const EDIT_DENY = [
   'Edit(**/.env*)', 'Edit(**/*.pem)', 'Edit(**/*.key)', 'Edit(**/.ssh/**)', 'Edit(**/.git/**)', 'Edit(**/.claude/**)', 'Edit(**/.mcp.json)', 'Edit(**/.cursor/**)',
   'Edit(**/.vscode/**)', 'Edit(**/.idea/**)', 'Edit(**/.husky/**)', 'Edit(**/.npmrc)', 'Edit(**/.obysphere*/**)',
+  // the instructions each runtime loads from a folder (Claude Code's CLAUDE.md, Codex's AGENTS.md, Cursor's
+  // rules), CI workflows, and git's attributes (filters, diff drivers): written once, they steer every run after
+  'Edit(**/CLAUDE.md)', 'Edit(**/CLAUDE.local.md)', 'Edit(**/AGENTS.md)', 'Edit(**/AGENTS.override.md)', 'Edit(**/.cursorrules)', 'Edit(**/.github/**)', 'Edit(**/.gitattributes)',
 ];
 // the same secrets for the shell's sandbox (shell: read), where they hold for every command, `grep -r` included
 const SECRET_GLOBS = SECRET_LISTS.globs; // the deny-list table above
@@ -261,7 +267,33 @@ const STOPPED = '(I stopped here: this answer reached the time limit my owner se
 const CLAUDE_TOO_OLD = "this Claude Code is too old to answer safely (it can't keep settings files and their hooks out): update it with claude update";
 const READ_ONLY_COMMANDS = ['ls', 'cat', 'head', 'tail', 'wc', 'rg', 'grep', 'find', 'git log', 'git show', 'git diff', 'git status', 'git blame'];
 // flags that would make those commands run a program, write a file or read outside the folders
-const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)'];
+const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)', ...gitDiffPathDeny()];
+// git diff with two paths, one outside its repository (or outside any repository), compares them as two
+// files, wherever they are: --no-index without the flag. So it never names a path that can leave the
+// folders: an absolute one (quoted too), one in a home folder (~), a variable or a command's output ($,
+// backquotes), braces that expand to paths ({a,b}: GIT_DIFF_BRACES), or .. as a folder. Revisions (HEAD~1, main..feature,
+// @{1}) and paths inside the folders stay. A deny list of the usual forms, as for git push.
+function gitDiffPathDeny() {
+  const lead = ['/', "'/", '"/', '~', "'~", '"~', '..', "'..", '"..'];
+  return [
+    ...lead.flatMap((x) => [`Bash(git diff ${x}*)`, `Bash(git diff * ${x}*)`]),
+    'Bash(git diff *../*)', 'Bash(git diff */..)', 'Bash(git diff */.. *)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)',
+    'Bash(git diff *$*)', 'Bash(git diff *`*)',
+  ];
+}
+// braces that expand to paths ({/etc/hosts,x}) hold a comma, which --disallowedTools would split: in the
+// settings file only, beside the allow rules it guards (they're never on the command line either)
+const GIT_DIFF_BRACES = 'Bash(git diff *{*,*}*)';
+// places in your home folder the read-only shell's sandbox never reads, besides the secrets: what holds
+// other conversations and your own words (Claude Code's transcripts and prompt history, Codex's and
+// Cursor's sessions, shell histories), a deployed Sphere's keys, and macOS's Library (mail, messages,
+// browsers' data). Not one that holds one of your folders. Never ~/.config whole: git reads its config there.
+const SANDBOX_HOME_DENY = [
+  '.claude/projects', '.claude/history.jsonl', '.claude/todos', '.claude/file-history', '.claude/session-env', '.claude/plans', '.claude/debug',
+  '.codex', '.cursor', '.local/share/obysphere', '.local/share/fish',
+  '.zsh_history', '.zhistory', '.zsh_sessions', '.bash_history', '.bash_sessions', '.histfile', '.sh_history', '.python_history', '.node_repl_history', '.psql_history', '.mysql_history', '.sqlite_history', '.irb_history', '.rediscli_history', '.lesshst', '.viminfo',
+  'Library',
+];
 // folders an Oby may never be given (under your home folder), besides home itself and its Obysphere profiles
 const PRIVATE_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.claude', '.cursor', '.local', '.npm'];
 const APPROVE_WAIT_MS = Math.max(1, Number(process.env.OBYSPHERE_APPROVE_WAIT_SEC) || 3600) * 1000;
@@ -3054,6 +3086,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
       // which keeps secrets unreadable even to `grep -r` and blocks writes and the network
       allow.push(...READ_ONLY_COMMANDS.map((c) => `Bash(${c}:*)`));
       deny.push(...SHELL_READ_DENY);
+      fileOnly.push(GIT_DIFF_BRACES);
       const home = os.homedir();
       sandbox = {
         enabled: true,
@@ -3061,7 +3094,14 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
         allowUnsandboxedCommands: false,
         autoAllowBashIfSandboxed: false,
         filesystem: {
-          denyRead: [...SECRET_GLOBS, ...never.globs, HOME, ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d))],
+          denyRead: [
+            ...SECRET_GLOBS,
+            ...never.globs,
+            HOME,
+            ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d)),
+            // and the private places, unless one of your folders is inside one (then it's yours to share)
+            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].filter((d) => !m.folders.some((f) => f.path === d || f.path.startsWith(d + path.sep))),
+          ],
           denyWrite: m.folders.map((f) => f.path),
         },
         network: { allowedDomains: [] },
