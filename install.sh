@@ -38,11 +38,16 @@ if [ -n "${OBYSPHERE_RELEASES_API:-}${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
     DOWNLOAD_BASE="$OBYSPHERE_DOWNLOAD_BASE"
     MAIN_TARBALL="$DOWNLOAD_BASE/archive/refs/heads/main.tar.gz"
   fi
+  # http://127.0.0.1:<port> or http://localhost:<port>, then a plain path: nothing curl would read as
+  # a user name before another host (http://localhost:x@elsewhere), nor a query or a fragment
   for u in "$RELEASES_API" "$DOWNLOAD_BASE"; do
     case "$u" in
-      http://127.0.0.1:*|http://localhost:*) ;;
-      *) fail "refusing to download from $u: the app comes from GitHub only" ;;
+      http://127.0.0.1:*) rest="${u#http://127.0.0.1:}" ;;
+      http://localhost:*) rest="${u#http://localhost:}" ;;
+      *) rest="" ;;
     esac
+    case "${rest%%/*}" in ''|*[!0-9]*) fail "refusing to download from $u: the app comes from GitHub only" ;; esac
+    case "$rest" in *[!0-9A-Za-z./_~-]*) fail "refusing to download from $u: the app comes from GitHub only" ;; esac
   done
   testing=1
 else

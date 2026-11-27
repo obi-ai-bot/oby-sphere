@@ -697,6 +697,40 @@ describe('install.sh (finding 4, 7)', () => {
     assert.deepEqual(fs.readdirSync(h), []);
   });
 
+  test("the test server is this machine, with no other host behind its name: a user name, a query or a fragment is refused (R62)", { skip: WIN && 'sh' }, async () => {
+    gh.release = release('9.9.1', app91);
+    gh.requests.length = 0;
+    const h = tmp('sh-userinfo');
+    const { host } = new URL(gh.api);
+    // curl reads what comes before the @ as a user name and password, and goes to the host after it
+    // (here the fake GitHub on this machine; it could be anywhere)
+    const urls = [
+      [`http://localhost:x@${host}/api`, `http://localhost:x@${host}/dl`],
+      [`http://127.0.0.1:x@${host}/api`, gh.download],
+      [gh.api, `http://localhost:1@${host}/dl`],
+      [`${gh.api}?@elsewhere`, gh.download],
+      [gh.api, `${gh.download}#@elsewhere`],
+      [`http://localhost:${new URL(gh.api).port}\\@elsewhere/api`, gh.download],
+      [`http://localhost:/api`, gh.download],
+    ];
+    for (const [api, dl] of urls) {
+      const r = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: api, OBYSPHERE_DOWNLOAD_BASE: dl }));
+      assert.equal(r.code, 1, `${api} ${dl}: ${r.out}`);
+      assert.match(r.stderr, /refusing to download from \S+: the app comes from GitHub only/, `${api} ${dl}`);
+    }
+    assert.deepEqual(gh.requests, [], 'nothing was asked for');
+    assert.deepEqual(fs.readdirSync(h), [], 'nothing was made');
+    // a plain one still works, by name or address
+    const ok = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: `http://localhost:${new URL(gh.api).port}/api` }));
+    assert.equal(ok.code, 0, ok.out);
+    assert.equal(linkOf(path.join(h, '.local', 'share', 'obysphere', 'current')), '9.9.1');
+    // obysphere update reads the host as curl does, and asks nothing either
+    gh.requests.length = 0;
+    const up = await cli(['update', '--check'], envFor(tmp('update-userinfo'), { OBYSPHERE_RELEASES_API: `http://localhost:x@${host}/api`, OBYSPHERE_DOWNLOAD_BASE: `http://localhost:x@${host}/dl` }));
+    assert.equal(up.code, 1, up.out);
+    assert.deepEqual(gh.requests, []);
+  });
+
   test("install.sh leaves a link or a file that isn't ours alone, and replaces its own", { skip: WIN && 'sh' }, async () => {
     gh.release = release('9.9.1', app91);
     const h = tmp('sh-shim');
