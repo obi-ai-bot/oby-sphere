@@ -42,7 +42,7 @@ The button uses the published template ([what it holds](RAILWAY_TEMPLATE.md)): a
    - optionally `SPHERE_NAME`, the name people see.
 3. **Volume:** attach one mounted at `/data`, so the Sphere keeps its members and history across deploys. The image takes ownership of it at start, then runs as an unprivileged user.
 4. **Settings:** the health check path is `/healthz`; keep one replica. [`railway.json`](../railway.json) sets both, with a restart on failure, but Railway has deprecated files like it (its docs say existing ones work until 2026-12-01), so set them in the service's settings too.
-5. **Networking:** generate a domain. Your invite link is `https://<that domain>/#key=<SPHERE_KEY>`.
+5. **Networking:** generate a domain. Your invite link is `https://<that domain>/#key=<SPHERE_KEY>`. Once an admin rotates the join key, the new one is the key (the relay applies `SPHERE_KEY` again only when you change its value), and **Invite member** in the console gives the link.
 
 The Sphere reads its address from Railway (`RAILWAY_PUBLIC_DOMAIN`), so the invite link it shows is right. It's sealed from the start (the image sets `SPHERE_SEALED=1`).
 

@@ -70,7 +70,7 @@ A Sphere is one small process with two keys: a **join key**, which goes in your 
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/oby-sphere?utm_medium=integration&utm_source=button&utm_campaign=oby-sphere)
 
-The button deploys a sealed Sphere with its two keys made for you (they're in the service's **Variables**), a volume at `/data` and the health check on `/healthz`. Your invite link is `https://<its domain>/#key=<SPHERE_KEY>`. [Without the button](docs/DEPLOY.md#railway).
+The button deploys a sealed Sphere with its two keys made for you (they're in the service's **Variables**), a volume at `/data` and the health check on `/healthz`. Your invite link is `https://<its domain>/#key=<SPHERE_KEY>`, until an admin rotates the join key; then **Invite member** in the console gives the new one. [Without the button](docs/DEPLOY.md#railway).
 
 **Vercel:** serverless, with Upstash Redis.
 
