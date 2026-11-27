@@ -1110,14 +1110,14 @@ async function ui() {
       if (req.headers.accept) headers.accept = String(req.headers.accept).slice(0, 200);
       // admin calls go with your token alone; the admin key passes through once, for Admin access… (a claim)
       if (req.method === 'POST' && url.pathname === '/api/admin/claim' && req.headers['x-admin-key']) headers['x-admin-key'] = String(req.headers['x-admin-key']).slice(0, 200);
-      // whichever way the browser leaves (the response closes, the request does, or it was gone before
-      // this line), the call to the relay ends with it: a stream held for nobody counts against the
-      // member's open streams on the relay
+      // the call to the relay ends with the browser's: when the response closes, or when its
+      // connection was gone before this line (a request's own 'close' comes once its body is read,
+      // so it isn't one), and a stream also checks before each event (below): one held for nobody
+      // counts against the member's open streams on the relay
       const ac = new AbortController();
       const gone = () => ac.abort();
       res.on('close', gone);
-      req.on('close', gone);
-      if (req.destroyed || res.destroyed) gone();
+      if (res.destroyed || req.socket?.destroyed) gone();
       const relay = () => fetch(p.sphere + url.pathname + url.search, { method: req.method, headers: { ...headers, authorization: `Bearer ${p.token}` }, body, signal: ac.signal, redirect: 'error' });
       let r = await relay();
       if (r.status === 401 && tokenChanged(p)) r = await relay(); // a new token, from token rotate
