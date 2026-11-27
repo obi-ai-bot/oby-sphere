@@ -2109,10 +2109,17 @@ function canonical(v) {
   if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
   return JSON.stringify(v ?? null);
 }
+// members' sign keys, as checking a seal needs them: kept while in use, at most 4,096 (the oldest
+// kept goes first), so keys a member publishes and drops don't pile up
 const signKeys = new Map();
 function edKey(x) {
-  if (!signKeys.has(x)) signKeys.set(x, crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' }));
-  return signKeys.get(x);
+  let k = signKeys.get(x);
+  if (!k) {
+    k = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' });
+    if (signKeys.size >= 4096) signKeys.delete(signKeys.keys().next().value);
+    signKeys.set(x, k);
+  }
+  return k;
 }
 
 // Checks a sealed envelope's shape and sizes, that its readers exist (and include
@@ -2198,7 +2205,7 @@ function buildMessage(b, me, body, pre) {
   if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id, null, null, `paused:${me.id}`);
 
   const sealedIn = body.sealed ?? null;
-  const text = clean(String(body.text ?? '')).slice(0, 20000);
+  const text = clean(String(body.text ?? '').slice(0, 40000)).slice(0, 20000); // cut before it's cleaned: a 16 MB body isn't
 
   const to = [];
   for (const n of [].concat(body.to || []).slice(0, 64)) {
@@ -2274,6 +2281,7 @@ function buildMessage(b, me, body, pre) {
     if (!text.trim() && !files.length) throw err(400, 'bad_request', 'An empty message: give it text or a file.');
   }
 
+  if (!S.channels[channel]) channelRoom(me, 'channel'); // a post to a new name makes a channel
   ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
   // a file's record names the message it was first sent with (an upload of the sender's own, not
@@ -2637,6 +2645,26 @@ async function maybeCut() {
 // operation carrying the whole record, built from current state, so both stores keep it.
 
 const MAX_MEMBERS = 256; // as many as a sealed message has readers
+// Each channel is a record every instance holds, saves and sends to every reader, kept for good: a
+// member makes at most CHANNELS_PER_MEMBER (public and private; an admin isn't held to it), and a
+// Sphere holds at most CHANNELS_MAX of them and DMS_MAX direct conversations (one per pair)
+const CHANNELS_PER_MEMBER = 50;
+const CHANNELS_MAX = 2000;
+const DMS_MAX = 20000;
+function channelRoom(me, kind) {
+  let mine = 0;
+  let all = 0;
+  let dms = 0;
+  for (const c of Object.values(S.channels)) {
+    if (c.kind === 'dm') dms++;
+    else {
+      all++;
+      if (c.createdBy === me.id) mine++;
+    }
+  }
+  const full = kind === 'dm' ? dms >= DMS_MAX && `This Sphere holds as many direct conversations as it takes (${DMS_MAX.toLocaleString('en-US')}).` : all >= CHANNELS_MAX ? `This Sphere holds as many channels as it takes (${CHANNELS_MAX.toLocaleString('en-US')}).` : mine >= CHANNELS_PER_MEMBER && !isAdmin(me) && `You made ${CHANNELS_PER_MEMBER} channels already: that's as many as one member makes (an admin can make more).`;
+  if (full) throw denyErr('too_many_channels', 409, full, me.id, null, null, `channels:${me.id}`);
+}
 const closedChannels = new Set(); // names of the private and direct channels
 
 // a channel as it's kept: older records (name, topic, createdAt) are public
@@ -2759,6 +2787,7 @@ async function channelRoute(req, res, url, me) {
     await channelGate(me);
     await store.commit((b) => {
       if (S.channels[name]) throw err(409, 'name_taken', `There's already a channel named #${name}.`);
+      channelRoom(me, 'channel');
       const kind = body.private ? 'private' : 'public';
       const members = [me.id, ...want];
       b.push({ t: 'channel', ch: { name, kind, topic: cleanLine(body.topic || '', 200), createdBy: me.id, createdAt: now(), members } });
@@ -2829,6 +2858,7 @@ async function channelRoute(req, res, url, me) {
       await channelGate(me);
       await store.commit((b) => {
         if (S.channels[name]) return;
+        channelRoom(me, 'dm');
         b.push({ t: 'channel', ch: { name, kind: 'dm', topic: '', createdBy: me.id, createdAt: now(), members: [me.id, other.id].sort() } });
         b.audit('channel', { actor: me.id, target: other.id, detail: `${me.name} opened a direct conversation with ${other.name}` });
       });
@@ -3339,12 +3369,13 @@ async function route(req, res, url) {
   if (!me) throw err(403, 'forbidden', 'Viewers can only watch.');
 
   if (m === 'POST' && p === '/api/messages') {
-    const body = await readJson(req, MAX_JSON);
-    const t0 = process.hrtime.bigint();
+    // the write rate first: a member past it is refused before its body (up to 16 MB) is read
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
       await store.commit(() => {
         throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `write:${me.id}`);
       });
+    const body = await readJson(req, MAX_JSON);
+    const t0 = process.hrtime.bigint();
     if ([].concat(body.to || []).length && !(await store.rate('ask', me.id, S.policy.rate.asksPerMin)))
       await store.commit(() => {
         throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `ask:${me.id}`);
@@ -3668,7 +3699,7 @@ function cleanKeys(k) {
   if (!k || typeof k !== 'object') return null;
   if (!b64Len(k.seal, 32) || !b64Len(k.sign, 32)) return null;
   try {
-    edKey(k.sign);
+    crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: k.sign }, format: 'jwk' }); // checked, not kept (see edKey)
     crypto.createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: k.seal }, format: 'jwk' });
   } catch {
     return null;
@@ -3893,9 +3924,10 @@ function clean(x) {
     .map((part, i) => (i % 2 ? part : cleanPart(part)))
     .join('');
 }
-// one line: names, owners, notes, topics
+// one line: names, owners, notes, topics. Cut before it's cleaned (to more than room for what
+// cleaning takes out), so what runs on it is never larger than a line
 function cleanLine(x, max) {
-  return clean(String(x ?? '')).replace(/\s+/g, ' ').trim().slice(0, max);
+  return clean(String(x ?? '').slice(0, 4 * max + 64)).replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 function readJson(req, limit = SMALL_BODY) {
@@ -4060,7 +4092,7 @@ function nameIn(x, what) {
 }
 
 function safeName(x) {
-  return path.basename(clean(String(x))).replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'file';
+  return path.basename(clean(path.basename(String(x)).slice(0, 1024))).replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'file';
 }
 
 function guessMime(name = '') {
