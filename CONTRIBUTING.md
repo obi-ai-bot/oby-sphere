@@ -35,6 +35,10 @@ npm test        # both stores, sealing, the Vercel entry (no Claude or network n
 
 Say what changed and why, and how you checked it. For anything touching security (sealing, keys, the console proxy, what the answering session may do), say what an attacker could do before and after.
 
+### Installing and updating, in tests
+
+The tests point `obysphere update`, `install.sh` and the notifier app at fakes on your machine: `OBYSPHERE_RELEASES_API` and `OBYSPHERE_DOWNLOAD_BASE` at a fake GitHub on `127.0.0.1`, `OBYSPHERE_NOTIFIER_APP` at an app in a temp folder. They count only with `OBYSPHERE_TEST=1`, and the release variables only for a server on this machine; without it, `update` and `install.sh` refuse them and the notifier variable is ignored, so a repository's settings or a CI job can't send your update elsewhere. None of them is ever written into a service file. `test/install-hardening.test.mjs` checks it all, with the rest of what keeps installing and updating safe.
+
 ### The background service on Windows
 
 `test/windows-service.test.mjs` checks `obysphere start` on Windows from any system: `OBYSPHERE_SERVICE_PLATFORM=win32`, which only tests set, makes the CLI write a scheduled task, and a fake `schtasks` first on PATH (`test/fake-schtasks.mjs`) records its arguments and runs the task as Windows would, `wscript.exe` included. `npm test` runs it with everything else. CI also runs it alone on Windows, where `OBYSPHERE_TEST_REAL_SCHTASKS=1` adds a task to the runner's real Task Scheduler and deletes it again; on your own Windows machine, leave that unset unless you want the same.
