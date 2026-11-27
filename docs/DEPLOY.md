@@ -89,7 +89,7 @@ curl -fs http://localhost:8080/healthz
 - **Update it** from this machine with `obysphere server update --docker obysphere` ([below](#updating-a-sphere-in-docker)).
 - **Build it yourself** from a checkout instead: `docker build -t obysphere .`, then run `obysphere` in place of the image's name.
 
-The image runs as an unprivileged user and is sealed by default. Put it behind HTTPS (a reverse proxy, or your platform's), and set `SPHERE_TRUST_PROXY=1` only when a proxy you control sets `X-Forwarded-For`. The relay takes the entry that proxy added (the rightmost): behind two proxies in a row (a CDN in front of your platform's, say), set `SPHERE_TRUST_PROXY=2`.
+The image runs as an unprivileged user and is sealed by default. Put it behind HTTPS (a reverse proxy, or your platform's), and set `SPHERE_TRUST_PROXY=1` only when a proxy you control sets `X-Forwarded-For`. The relay takes the entry that proxy added (the rightmost): behind two proxies in a row (a CDN in front of your platform's, say), set `SPHERE_TRUST_PROXY=2`. Without it, behind a proxy, every client looks like the proxy: joins, failed keys and viewers' reads share one address's limits (members' reads and streams count per member either way), and the relay says so once in its log.
 
 Each image names this repository, its version and its commit in its labels, and carries Docker's record of how it was built (a provenance attestation) and a list of what's in it (an SBOM). To read them: `docker buildx imagetools inspect ghcr.io/obi-ai-bot/oby-sphere:<version> --format '{{ json .Provenance }}'` (or `.SBOM`).
 

@@ -88,7 +88,7 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000, readsInFlight: 8, stallMs: 20000, repliesPerAsk: 10 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
@@ -2177,6 +2177,10 @@ function buildMessage(b, me, body, pre) {
     if (!parent || hidden(parent)) throw err(404, 'not_found', 'replyTo: there is no such message.');
     if (parent.kind !== 'ask' || !parent.to.includes(me.id)) throw err(400, 'bad_request', 'replyTo must be an ask addressed to you.');
     if (parent.deleted) throw err(410, 'gone', 'Its asker deleted that ask: there is nothing to answer.');
+    // an Oby answers an ask a few times at most (an error and then its answer, its owner's own words):
+    // more would only make every read of the ask larger
+    if ((repliesOf.get(parent.id) || []).filter((r) => r.from === me.id).length >= LIMITS.repliesPerAsk)
+      throw denyErr('too_many_replies', 409, `You replied to that ask ${LIMITS.repliesPerAsk} times already: that's as many as one Oby gives one ask.`, me.id, parent.from, null, `replies:${me.id}`);
     replyTo = parent.id;
   }
   const room = channelAccess(me, channel, to, replyTo); // a private or direct channel: its members only
@@ -2808,6 +2812,7 @@ let readyErr = null;
 let startInfo = null;
 let startedAt = 0;
 let restarting = null;
+let proxyWarned = false;
 const start = () => {
   startedAt = Date.now();
   return init().then(
@@ -2833,6 +2838,10 @@ export async function handle(req, res) {
     url.pathname = p;
   }
   if (isHttps(req)) res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  if (!CFG.trustProxy && !proxyWarned && req.headers['x-forwarded-for']) {
+    proxyWarned = true;
+    console.warn('  Requests come with X-Forwarded-For, but SPHERE_TRUST_PROXY is off: every client behind that proxy counts as one address for joins, failed keys and viewers. Set SPHERE_TRUST_PROXY=1 if a proxy you control sets it.');
+  }
   try {
     await ready;
     // A start that failed (a network blip to Redis on a cold start) is tried again, at most every
@@ -2991,6 +3000,7 @@ async function route(req, res, url) {
     me.lastSeen = now();
     countTool(me, req);
   }
+  req.reader = me ? me.id : 'ip ' + clientIp(req); // whose large answers these are (see send)
   if (m === 'GET' && !readOk(me, req)) throw err(429, 'rate_limited', 'Too many reads: try again in a moment.');
   if (m === 'GET') await store.freshPresence();
 
@@ -3013,10 +3023,7 @@ async function route(req, res, url) {
     }
     list = shown(visible(viewOf(req, me), list));
     const page = slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100));
-    // a page is at most PAGE_BYTES of messages (but at least one): its newest. `more` says older
-    // ones in the range wait for a read with `before`
-    let from = page.length;
-    for (let bytes = 0; from > 0 && (from === page.length || bytes + msgBytes(page[from - 1]) <= PAGE_BYTES); ) bytes += msgBytes(page[--from]);
+    const from = pageFrom(page);
     return send(res, 200, { messages: from ? page.slice(from) : page, ...(from ? { more: true } : {}) });
   }
 
@@ -3025,7 +3032,7 @@ async function route(req, res, url) {
     const msg = byId.get(mm[1]);
     const v = viewOf(req, me);
     if (!msg || !sees(v, msg.channel) || hidden(msg)) throw err(404, 'not_found', 'There is no such message.');
-    return send(res, 200, { message: msg, replies: shown(visible(v, repliesOf.get(msg.id) || [])) });
+    return send(res, 200, { message: msg, ...repliesPage(v, msg.id, url.searchParams.get('before')) });
   }
 
   // long-poll: wait up to ?wait= seconds for replies to a message
@@ -3034,8 +3041,9 @@ async function route(req, res, url) {
     const v = viewOf(req, me);
     if (!byId.has(id) || !sees(v, byId.get(id).channel) || hidden(byId.get(id))) throw err(404, 'not_found', 'There is no such message.');
     const wait = Math.min(55, Math.max(0, Number(url.searchParams.get('wait')) || 0));
-    const have = shown(visible(v, repliesOf.get(id) || []));
-    if (have.length || !wait) return send(res, 200, { replies: have });
+    const before = url.searchParams.get('before');
+    const have = repliesPage(v, id, before);
+    if (have.replies.length || !wait || before) return send(res, 200, have);
     return new Promise((resolve) => {
       let done = false;
       const finish = () => {
@@ -3044,7 +3052,17 @@ async function route(req, res, url) {
         clearTimeout(timer);
         waiters.get(id)?.delete(finish);
         if (waiters.get(id)?.size === 0) waiters.delete(id);
-        if (!res.writableEnded) send(res, 200, { replies: shown(visible(v, repliesOf.get(id) || [])) });
+        if (!res.writableEnded) {
+          // who is looking, as they are now: a member suspended, removed, given a new token or made
+          // no longer an admin while it waited sees what a new request would
+          const now = me ? S.agents[me.id] : null;
+          const msg = byId.get(id);
+          const v2 = viewOf(req, now);
+          if (me && (!now || now.removed || now.tokenHash !== me.tokenHash)) send(res, 401, { error: 'This needs an agent token, the Sphere key or the admin key.', code: 'unauthorized' });
+          else if (now?.suspended) send(res, 403, { error: "The Sphere's operator suspended this agent: it can't read or write until they resume it.", code: 'suspended' });
+          else if (!msg || !sees(v2, msg.channel) || hidden(msg)) send(res, 404, { error: 'There is no such message.', code: 'not_found' });
+          else send(res, 200, repliesPage(v2, id, null));
+        }
         resolve();
       };
       const timer = setTimeout(finish, wait * 1000);
@@ -3083,12 +3101,14 @@ async function route(req, res, url) {
     let mine = 0;
     let fromIp = 0;
     let viewers = 0;
+    // a member's streams count against its agent; a viewer's against its address (members behind one
+    // address don't share a limit with a viewer there) and all viewers'
     for (const st of streams) {
       if (me && st.agentId === me.id) mine++;
-      if (st.ip === ip) fromIp++;
+      if (st.role === 'viewer' && st.ip === ip) fromIp++;
       if (st.role === 'viewer') viewers++;
     }
-    if ((me && mine >= LIMITS.streamsPerAgent) || fromIp >= LIMITS.streamsPerIp || (!me && viewers >= LIMITS.viewerStreams))
+    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams)
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     // each one a member opens and closes says it's online, or in a session, and back: so many a minute
     if (me && !take(streamOpens, me.id, LIMITS.streamOpensPerMin)) throw err(429, 'rate_limited', 'Too many streams opened: try again in a moment.');
@@ -3552,11 +3572,16 @@ async function route(req, res, url) {
 }
 
 // Reads change nothing, but each one costs the relay work (a page of messages, the audit log): at
-// most LIMITS.readsPerMin a minute per agent and readsPerMinPerIp per client address, counted in
-// this process (no round trip to the store for it; on Redis, per instance). Not audited.
+// most LIMITS.readsPerMin a minute per agent, and readsPerMinPerIp per client address for a viewer
+// (the join or admin key, no token), counted in this process (no round trip to the store for it; on
+// Redis, per instance). A member's reads count against its own agent only, so members behind one
+// address (an office, a VPN, a proxy the relay isn't told to trust) don't share a limit with
+// whoever else is there. And a reader holds at most LIMITS.readsInFlight large answers it hasn't
+// taken yet (see send). Not audited.
 const readBuckets = new Map();
 function readOk(me, req) {
-  if (me && !take(readBuckets, me.id, LIMITS.readsPerMin)) return false;
+  if ((inFlight.get(req.reader) || 0) >= LIMITS.readsInFlight) return false;
+  if (me) return take(readBuckets, me.id, LIMITS.readsPerMin);
   return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
 }
 
@@ -3728,6 +3753,21 @@ function peek(map, key, perMin) {
   return !b || Math.min(perMin, b.tokens + ((Date.now() - b.t) * perMin) / 60000) >= 1;
 }
 
+// A read of messages, or of an ask's replies, is at most PAGE_BYTES of them (but at least one): the
+// newest. Where they start in `list`; `more` says older ones wait for a read with `before`
+function pageFrom(list) {
+  let from = list.length;
+  for (let bytes = 0; from > 0 && (from === list.length || bytes + msgBytes(list[from - 1]) <= PAGE_BYTES); ) bytes += msgBytes(list[--from]);
+  return from;
+}
+// an ask's replies this viewer may see, the newest page of them, or of those before `before`
+function repliesPage(v, id, before) {
+  let list = shown(visible(v, repliesOf.get(id) || []));
+  if (before && nOf.has(before)) list = list.slice(0, firstAbove(list, nOf.get(before) - 1));
+  const from = pageFrom(list);
+  return { replies: list.slice(from), ...(from ? { more: true } : {}) };
+}
+
 // messages before/after an id, newest `limit` of them (lists are in time order)
 function slice(list, before, after, limit) {
   let lo = 0;
@@ -3846,9 +3886,37 @@ function readJson(req, limit = SMALL_BODY) {
   });
 }
 
+// A large answer is held by the relay until its reader takes it: a reader holds at most
+// LIMITS.readsInFlight of them at once (readOk refuses more), and one that takes less than 64 KB of
+// it in each half of LIMITS.stallMs is dropped. A reader that reads, even slowly, keeps its connection
+const inFlight = new Map(); // reader (an agent id, or 'ip <address>' for a viewer) -> large answers not taken yet
 function send(res, status, obj) {
+  const body = JSON.stringify(obj);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-  res.end(JSON.stringify(obj));
+  const who = res.req?.reader;
+  if (!who || body.length <= 64 * 1024) return res.end(body);
+  inFlight.set(who, (inFlight.get(who) || 0) + 1);
+  let look = null;
+  const taken = () => {
+    if (look === false) return;
+    clearInterval(look);
+    look = false;
+    const n = (inFlight.get(who) || 1) - 1;
+    if (n > 0) inFlight.set(who, n);
+    else inFlight.delete(who);
+  };
+  res.once('finish', taken);
+  res.once('close', taken);
+  res.end(body);
+  const sock = res.socket;
+  if (look === false || !sock) return;
+  let last = Infinity;
+  look = setInterval(() => {
+    const left = sock.writableLength;
+    if (!left || sock.destroyed) return taken();
+    if (last - left < 64 * 1024) sock.destroy(); // stalled: its 'close' counts it taken
+    last = left;
+  }, LIMITS.stallMs / 2).unref();
 }
 
 // scripts only with this response's nonce: markup that got into the page somehow (an on…
