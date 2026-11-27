@@ -730,7 +730,7 @@ describe('status, open and the version check, against a local relay', () => {
       fs.mkdirSync(app2);
       const p2 = await freePort();
       const ui = spawn(process.execPath, [REP, 'ui', '--profile', 'alice', '--port', String(p2)], {
-        env: { ...env, OBYSPHERE_APP_HOME: app2, OBYSPHERE_NO_UPDATE_CHECK: '', OBYSPHERE_RELEASES_API: gh.api },
+        env: { ...env, OBYSPHERE_APP_HOME: app2, OBYSPHERE_NO_UPDATE_CHECK: '', OBYSPHERE_TEST: '1', OBYSPHERE_RELEASES_API: gh.api },
         stdio: 'ignore',
       });
       procs.push(ui);

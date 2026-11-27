@@ -1768,8 +1768,9 @@ async function auditExport() {
   // to the terminal or a pipe: when what reads it stops (`| head`), so does the export, quietly
   if (toStdout)
     process.stdout.on('error', (e) => {
-      if (e.code !== 'EPIPE') log(red('error: ') + printable(e.message));
-      process.exit(e.code === 'EPIPE' ? 0 : 1);
+      const gone = e.code === 'EPIPE' || e.code === 'ENOTCONN' || e.code === 'ECONNRESET'; // macOS can say ENOTCONN
+      if (!gone) log(red('error: ') + printable(e.message));
+      process.exit(gone ? 0 : 1);
     });
   const p = loadProfile();
   const api = client(p);
@@ -10483,8 +10484,14 @@ function readJsonFile(f, dflt) {
 function split(s) {
   return String(s).split(/[,\s]+/).filter(Boolean);
 }
+// cut first (a name is 32 characters), then trimmed of its dashes in one pass: a long run of
+// dashes made the old /^-+|-+$/ take seconds
 function slug(s) {
-  return String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+  const t = String(s || '').slice(0, 256).toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-');
+  let [a, b] = [0, t.length];
+  while (a < b && t[a] === '-') a++;
+  while (b > a && t[b - 1] === '-') b--;
+  return t.slice(a, b).slice(0, 32);
 }
 // a plain file name: no folders, no leading dots, nothing but safe characters
 function safeName(s) {
@@ -10583,9 +10590,13 @@ function localVersion() {
 }
 async function checkLatestVersion(appHome, file) {
   try {
-    const api = String(process.env.OBYSPHERE_RELEASES_API || 'https://api.github.com/repos/obi-ai-bot/oby-sphere').replace(/\/+$/, '');
+    // OBYSPHERE_RELEASES_API is for tests only: with OBYSPHERE_TEST=1, and a server on this machine
+    // (set without the flag, it's refused and nothing is asked, as obysphere's update refuses)
+    if (process.env.OBYSPHERE_RELEASES_API && !truthyEnv(process.env.OBYSPHERE_TEST)) return;
+    const test = process.env.OBYSPHERE_RELEASES_API;
+    const api = String(test || 'https://api.github.com/repos/obi-ai-bot/oby-sphere').replace(/\/+$/, '');
     const u = new URL(api + '/releases/latest');
-    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopback(u.hostname))) return;
+    if (test ? !isLoopback(u.hostname) || !/^https?:$/.test(u.protocol) : u.protocol !== 'https:' || u.hostname !== 'api.github.com') return;
     const r = await fetch(u, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'obysphere' }, signal: AbortSignal.timeout(10e3) });
     if (!r.ok && r.status !== 404) return; // try again at the next look
     const tag = r.ok ? String((await r.json().catch(() => ({}))).tag_name || '') : '';
