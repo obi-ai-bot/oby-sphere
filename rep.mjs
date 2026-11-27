@@ -6392,7 +6392,10 @@ function readUsage(p, day = usageDay()) {
   const u = readJsonFile(path.join(p.dir, 'usage', `${day}.json`), {});
   const asks = Object.create(null); // by handle: a handle such as constructor is counted like any other
   if (u.asksByAgent && typeof u.asksByAgent === 'object') for (const [k, v] of Object.entries(u.asksByAgent)) if (slug(k) === k && Number.isInteger(v) && v >= 0) asks[k] = v;
-  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0 };
+  // asks handed to you (sphere_ask_owner) per asker's id, counted when handed: ending one gives none back
+  const handed = Object.create(null);
+  if (u.handoffsByAsker && typeof u.handoffsByAsker === 'object') for (const [k, v] of Object.entries(u.handoffsByAsker)) if (ID.a.test(k) && Number.isInteger(v) && v >= 0) handed[k] = v;
+  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
 }
 function withUsage(p, fn) {
   const dir = path.join(p.dir, 'usage');
@@ -9080,6 +9083,15 @@ function toolAskOwner(p, a) {
   if (readHandoff(p, askId)) return `You already handed this ask to ${owner}. Answer with what you have, and say plainly what's missing.`;
   const open = handoffs(p).filter((h) => h.asker === asker);
   if (open.length >= HANDOFF_MAX) return `${owner} already has ${open.length} of this asker's asks to look at today. Answer with what you have, and say plainly what's missing.`;
+  // the day's count (usage/<day>.json), which an ask ending doesn't lower: the notes go with their asks
+  const who = ID.a.test(asker) ? asker : 'a_unknown';
+  const over = withUsage(p, (u) => {
+    const n = Object.hasOwn(u.handoffsByAsker, who) ? u.handoffsByAsker[who] : 0;
+    if (n >= HANDOFF_MAX) return true;
+    u.handoffsByAsker[who] = n + 1;
+    return false;
+  });
+  if (over) return `${owner} was already handed ${HANDOFF_MAX} of this asker's asks today. Answer with what you have, and say plainly what's missing.`;
   fs.mkdirSync(handoffDir(p), { recursive: true, mode: 0o700 });
   writeSecret(path.join(handoffDir(p), `${askId}.json`), { askId, asker, note, need: a?.need || 'access', at: new Date().toISOString() });
   return `Done: ${owner} is told, and can answer it themselves, change what you may reach and let you try again, or decline. Stop now, and end with one short line: it isn't sent, and the asker sees the ask waits for ${owner}.`;
