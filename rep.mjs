@@ -275,21 +275,28 @@ const READ_ONLY_COMMANDS = ['ls', 'cat', 'head', 'tail', 'wc', 'rg', 'grep', 'fi
 // flags that would make those commands run a program, write a file or read outside the folders
 const SHELL_READ_DENY = ['Bash(rg *--pre*)', 'Bash(rg *--hostname-bin*)', 'Bash(find *-exec*)', 'Bash(find *-ok*)', 'Bash(find *-delete*)', 'Bash(find *-fprint*)', 'Bash(find *-fls*)', 'Bash(git *--output*)', 'Bash(git *--ext-diff*)', 'Bash(git *--no-index*)', 'Bash(git *--contents*)', ...gitDiffPathDeny()];
 // git diff with two paths, one outside its repository (or outside any repository), compares them as two
-// files, wherever they are: --no-index without the flag. So it never names a path that can leave the
-// folders: an absolute one (quoted too), one in a home folder (~), a variable or a command's output ($,
-// backquotes), braces that expand to paths ({a,b}: GIT_DIFF_BRACES), or .. as a folder. Revisions (HEAD~1, main..feature,
-// @{1}) and paths inside the folders stay. A deny list of the usual forms, as for git push.
+// files, wherever they are: --no-index without the flag. These rules are matched against the command as
+// written, before the shell rewrites it, so they don't list spellings of "outside" (quotes or a
+// backslash can split any of them: .''./ is ../). They keep git diff's words to ones the shell takes
+// as written: none of the characters it rewrites a word with (quotes, a backslash, $, backquotes,
+// braces, the globs ? and [, ( < > for substitutions, !), and no word, or part after a slash or =,
+// that starts with /, ~ or a dot. Every path left is then plain, relative and under the folder (a
+// glob like * never matches . or ..), while revisions stay: HEAD~1, HEAD^, main..feature, origin/main.
 function gitDiffPathDeny() {
-  const lead = ['/', "'/", '"/', '~', "'~", '"~', '..', "'..", '"..'];
+  const anywhere = ["'", '"', '$', '`', '?', '[', '(', '<', '>', '!'];
+  const starts = ['/', '~', '.', '='];
   return [
-    ...lead.flatMap((x) => [`Bash(git diff ${x}*)`, `Bash(git diff * ${x}*)`]),
-    'Bash(git diff *../*)', 'Bash(git diff */..)', 'Bash(git diff */.. *)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)',
-    'Bash(git diff *$*)', 'Bash(git diff *`*)',
+    ...anywhere.map((c) => `Bash(git diff *${c}*)`),
+    // a backslash: matched as itself, whether or not the matcher reads \ as an escape
+    'Bash(git diff *\\*)', 'Bash(git diff *\\\\*)',
+    ...starts.flatMap((c) => [`Bash(git diff ${c}*)`, `Bash(git diff * ${c}*)`]),
+    'Bash(git diff */.*)', 'Bash(git diff *=/*)', 'Bash(git diff *=~*)', 'Bash(git diff *=.*)', 'Bash(git diff *:~*)',
   ];
 }
-// braces that expand to paths ({/etc/hosts,x}) hold a comma, which --disallowedTools would split: in the
-// settings file only, beside the allow rules it guards (they're never on the command line either)
-const GIT_DIFF_BRACES = 'Bash(git diff *{*,*}*)';
+// in the settings file only, beside the allow rules they guard (never on the command line): braces
+// that expand to paths ({/etc/hosts,x}, .{.,}), which --disallowedTools could split at a comma, and a
+// tab where a space would be (a word after it starting with / ~ or a dot, as above)
+const GIT_DIFF_FILE_ONLY = ['Bash(git diff *{*)', 'Bash(git diff *}*)', 'Bash(git diff *\t*)'];
 // places in your home folder the read-only shell's sandbox never reads, besides the secrets: what holds
 // other conversations and your own words (Claude Code's transcripts and prompt history, Codex's and
 // Cursor's sessions, shell histories), a deployed Sphere's keys, and macOS's Library (mail, messages,
@@ -320,6 +327,7 @@ const DECLINE = {
   files: "it doesn't take asks with files",
   hops: "it doesn't take asks passed on from another ask",
   limit: 'it has reached its limit for today',
+  crowded: 'too many asks already wait for its owner',
   owner: 'its owner declined it',
   timeout: 'no answer from its owner',
   settings: "its owner's settings need fixing",
@@ -1385,7 +1393,7 @@ async function localApi(req, res, url, p) {
     if (route === '/local/lockdown' && m === 'POST') {
       const b = await json();
       if (typeof b.on !== 'boolean') return sendJson(res, 400, { error: 'on: true or false', field: 'on' });
-      setLockdown(p, b.on, typeof b.why === 'string' ? b.why : '');
+      setLockdown(p, b.on, typeof b.why === 'string' ? b.why : '', 'your console');
       return sendJson(res, 200, { lockdown: readLockdown(p) });
     }
     if (route === '/local/token' && m === 'POST') {
@@ -1414,7 +1422,7 @@ async function localApi(req, res, url, p) {
       // depth: passed on by from for someone else (a hop), who can't be named; unsure: who asks didn't check
       // against the Oby first seen under that handle. Either way: neither everything you allow nor always answer
       const hopOf = (d) => (Number.isInteger(d) && d > 0 ? d : 0);
-      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth, unsure }) => ({ id, askId, from, channel, ts, text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
+      const ask = ({ id, askId, from, channel, ts, text, files, reason, instrument, stuck, depth, unsure }) => ({ id, askId, from, channel, ts, text: typeof text === 'string' && text.length > PENDING_TEXT_MAX + 100 ? pendingWords(text) : text, files, reason, depth: hopOf(depth), risky: risky && !hopOf(depth) && !unsure && inst(instrument)?.kind !== 'command', always: !stuckOf(stuck) && !hopOf(depth) && !unsure && !!s && canAlwaysAnswer(s, slug(from?.name || '')), ...(inst(instrument) ? { instrument: inst(instrument) } : {}), ...(stuckOf(stuck) ? { stuck: stuckOf(stuck) } : {}), ...(typeof unsure === 'string' && unsure ? { unsure: cleanLine(unsure, 200) } : {}) });
       // withdrawn: asks their askers deleted while they waited (deleted messages), for a few minutes
       return sendJson(res, 200, { pending: listPending(p).map((w) => githubPendingView(p, w) || ask(w)), withdrawn: listWithdrawn(p) });
     }
@@ -1428,7 +1436,8 @@ async function localApi(req, res, url, p) {
       if (b.from !== undefined && b.from !== null && (typeof b.from !== 'string' || (b.from && !slug(b.from)))) return sendJson(res, 400, { error: "from: an Oby's handle", field: 'from' });
       for (const k of ['hasFiles', 'hop']) if (b[k] !== undefined && b[k] !== null && typeof b[k] !== 'boolean') return sendJson(res, 400, { error: `${k}: true or false`, field: k });
       if (b.channel !== undefined && b.channel !== null && typeof b.channel !== 'string') return sendJson(res, 400, { error: 'channel: a channel name', field: 'channel' });
-      const s = loadSettings(p);
+      const s = lockdownOverlay(p, loadSettings(p)); // locked down: as an ask would be decided now
+      const locked = readLockdown(p) ? 'Locked down: every ask waits for you, and Claude Code answers with nothing but your folders. ' : '';
       const from = slug(b.from || '');
       const who = from ? `Asks from ${from}` : 'Asks from anyone not listed';
       // the same checks as a real ask, in the same order (the day's limits read, not counted)
@@ -1438,11 +1447,11 @@ async function localApi(req, res, url, p) {
       if (declined) {
         const limitWords = { agent: `${from || 'This Oby'} has used up its asks for today (your limit per Oby).`, day: 'Your Oby has given all its answers for today (your limit for all Obys together).' }[over];
         const why = { access: `${who} are declined.`, topic: 'Asks on this topic are declined.', files: 'Asks with files are declined.', hops: 'Asks passed on from another ask are declined.', limit: limitWords }[declined];
-        return sendJson(res, 200, { rule: null, name: null, use: null, how: null, fellBack: null, note: `${why} No rule is tried, and no runtime runs.`, answerable: false, declined });
+        return sendJson(res, 200, { rule: null, name: null, use: null, how: null, fellBack: null, note: `${locked}${why} No rule is tried, and no runtime runs.`, answerable: false, declined });
       }
       const r = await chooseRoute(p, s, { text: b.text, from, hasFiles: !!b.hasFiles, hop: !!b.hop, channel: slug(b.channel || 'general') || 'general' }, { trusted: !!g.trusted });
       const pre = g.approve ? (b.hop ? `${from ? `Asks ${from} passes on` : 'Asks passed on'} from another ask wait for you first. ` : `${who} wait for you first. `) : g.untrusted === 'hop' ? `Passed on from another ask, so it's answered as any Oby's ask (no risky reach). ` : '';
-      return sendJson(res, 200, { rule: r.rule, name: r.name, use: r.use, how: r.how, fellBack: r.fellBack, note: pre + r.note, answerable: !r.decline && !r.unusable, declined: r.decline || null });
+      return sendJson(res, 200, { rule: r.rule, name: r.name, use: r.use, how: r.how, fellBack: r.fellBack, note: locked + pre + r.note, answerable: !r.decline && !r.unusable, declined: r.decline || null });
     }
     const pm = route.match(/^\/local\/pending\/(w_[0-9a-f]{12})$/);
     if (pm && m === 'POST') {
@@ -1772,7 +1781,7 @@ async function adminFetch(p, method, url, body, headers = {}) {
   const data = await r.json().catch(() => ({}));
   if (r.ok) return data && typeof data === 'object' ? data : {};
   if (r.status === 401 && headers['x-admin-key']) throw new Error("That isn't this Sphere's admin key.");
-  if (r.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
+  if (r.status === 401) throw new Error(tokenGoneWords(p));
   if (r.status === 403 && data?.code === 'forbidden' && !headers['x-admin-key'])
     throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: ${meCmd()} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
   throw Object.assign(new Error(relayError(data, r.status)), { code: /^[a-z_]{1,32}$/.test(String(data?.code || '')) ? data.code : null });
@@ -2431,6 +2440,38 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       log(yellow("  couldn't update what the Sphere shows about you: ") + printable(e.message));
     }
   }, 2000).unref();
+  // lockdown, as it changes: the answers running when it begins are stopped (they'd send what they
+  // made with what you allowed before), and the Sphere is told what your Oby offers now. Both of its
+  // files removed without a lift (security/lockdown-lifted.json): put back from what this process saw
+  const running = new Set(); // { stop, started } of each answer running in this process
+  let lockSeen = readLockdown(p);
+  setInterval(() => {
+    const l = readLockdown(p);
+    const was = lockSeen;
+    if (!l && was) {
+      const lifted = lockdownLifted(p);
+      if (!lifted || Date.parse(lifted.at) < Date.parse(was.at)) {
+        const kept = { at: was.at, why: was.why, restored: new Date().toISOString() };
+        try {
+          writeSecret(lockdownCopy(p), kept);
+          writeSecret(lockdownFile(p), kept);
+        } catch {}
+        lockdownKept(p, kept, 'removed');
+        lockSeen = kept;
+        return;
+      }
+      log(green('  ● ') + dim(`lockdown lifted${lifted.by ? ` from ${lifted.by}` : ''}: your settings apply again`));
+    }
+    lockSeen = l;
+    const fresh = !!l && (!was || l.at !== was.at); // locked down now (again, if it was lifted and set in between)
+    if (!fresh && !!l === !!was) return;
+    if (fresh) {
+      const stopped = [...running].filter((r) => r.started <= Date.parse(l.at));
+      for (const r of stopped) r.stop();
+      log(yellow('  ⏸ locked down: ') + dim(`${LOCKDOWN_WORDS}${stopped.length ? `; the answer${stopped.length === 1 ? '' : 's'} running ${stopped.length === 1 ? 'was' : 'were'} stopped, and ${stopped.length === 1 ? 'waits' : 'wait'} for you` : ''}`));
+    }
+    declare().catch((e) => log(yellow("  couldn't update what the Sphere shows about you: ") + printable(e.message)));
+  }, LOCK_WATCH_MS).unref();
   watchInstruments(p, declare); // instruments: a file added, changed or removed is offered (or not) within seconds
   await refreshAgents();
   await sphereSealed(api, p);
@@ -2915,10 +2956,15 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
           return { decline: 'settings' };
         }
         const use = instrumentUseOf(p, opened.text, s); // instruments: a use of one of yours, read again at every check
-        const g = instrumentGate(gate(s, { from: gateFrom, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok }), use);
+        let g = gate(s, { from: gateFrom, text: opened.text, files: opened.files.length, depth: msg.depth || 0, sure: who.ok });
+        // a topic you decline, on an ask that waits for you anyway (serve --approve, an asker that isn't
+        // sure): it waits like the rest, as gate has it for Ask me first, so the asker can't tell it apart
+        const topic = g.decline === 'topic' && (approveAll || !who.ok);
+        if (topic) g = { level: 'approve', approve: true, why: 'every ask waits for you (serve --approve), and this one is on a topic you decline' };
+        g = instrumentGate(g, use);
         if (g.decline) return { decline: g.decline, s };
         // not sure who it is: it waits for you, saying why, and never gets the risky reach
-        if (!who.ok) return { s, g: { ...g, level: 'approve', approve: true, trusted: false, untrusted: 'identity', why: `⚠ ${who.why}: it may not be the Oby it says` }, who, use };
+        if (!who.ok) return { s, g: { ...g, level: 'approve', approve: true, trusted: false, untrusted: 'identity', why: `⚠ ${who.why}: it may not be the Oby it says${topic ? ' (on a topic you decline)' : ''}` }, who, use };
         return { s, g, who, use };
       };
       let c = check();
@@ -2926,7 +2972,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // counted: guessing your topics one ask at a time uses up the asker's asks for the day
       if (c.decline && (c.decline !== 'topic' || held || refound)) return decline(c.decline);
       if (!held && !refound) {
-        const over = takeAsk(p, c.s, gateFrom || `?${msg.from}`); // a held ask, or one taken up again, was counted when it came
+        const over = takeAsk(p, c.s, gateFrom || `?${msg.from}`, { topic: c.decline === 'topic' }); // a held ask, or one taken up again, was counted when it came
         if (over) return decline(over);
         if (c.decline) return decline(c.decline);
       }
@@ -2934,22 +2980,33 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // A decision kept with a held ask counts only for the ask it was given for: the same sender, the same
       // words; and a passed-on ask never gets everything you allow
       let ownerSaid = held?.approved && held.fromId === msg.from && held.env === envHash(msg) ? held.approved : null; // 'answer' or 'trust'
+      let saidAt = ownerSaid ? held.approvedAt : null; // when you decided (lockdown: one from before it began counts no more)
       if (hop && ownerSaid === 'trust') ownerSaid = 'answer';
       if (held?.approved && !ownerSaid) log(yellow(`  ${msg.id}: your earlier decision isn't applied (it can't be matched to this ask): it waits for you again`));
       const trustOk = (d) => {
         if (d !== 'trust') return false;
         if (hop) return void log(yellow('  not with everything you allow: it was passed on from another ask')), false;
+        if (readLockdown(p)) return void log(yellow("  not with everything you allow: you're locked down")), false;
         if (who.ok) return true;
         log(yellow(`  not with everything you allow: ${printable(who.why)}`));
         return false;
       };
       for (;;) {
+        if (ownerSaid && decidedBeforeLockdown(p, saidAt)) {
+          log(yellow(`  ${msg.id}: you decided before lockdown began, so it waits for you again`));
+          ownerSaid = saidAt = null;
+        }
         // it waited for you while your Oby was stopped, past the time it waits: declined, as if it had lapsed here
         if ((c.g.approve || approveAll) && !ownerSaid && lapsed) {
           await api.post(`/api/messages/${msg.id}/waiting`, { for: null }).catch(() => {}); // the stopped process said it waits: no more
           return decline('timeout');
         }
         if ((c.g.approve || approveAll) && !ownerSaid) {
+          // at most PENDING_PER_ASKER of one Oby's asks wait for you at once, and PENDING_ALL in all
+          if (pendingCrowded(p, msg.from)) {
+            log(yellow('  too many asks wait for you: ') + dim(`at most ${PENDING_PER_ASKER} of one Oby's, ${PENDING_ALL} in all`));
+            return decline('crowded');
+          }
           const d = await ownerDecides(msg, from, opened, c.g.why || 'every ask waits for you (serve --approve)', who.ok && !hop && riskyReach(c.s) && c.use?.inst.kind !== 'command', c.use, { unsure: who.ok ? null : who.why });
           if (d.decision === 'withdrawn' || deletedHere.has(msg.id)) return void ((settled = true), log(dim(`  ${asker} took this ask back: not answered`))); // deleted messages
           if (d.decision === 'decline') return decline('owner');
@@ -2968,10 +3025,11 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
             }
           }
           ownerSaid = trustOk(d.decision) ? 'trust' : 'answer';
+          saidAt = new Date().toISOString();
           log(dim(`  you let your Oby answer${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
         }
         ranHere = true;
-        const again = await oneAtATime(() => runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held, claimedAs));
+        const again = await oneAtATime(() => runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held, claimedAs, saidAt));
         if (again?.held) return; // it waits in held/ for its runtime
         if (!again) return void (settled = true);
         if (again.handoff) {
@@ -2993,6 +3051,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
             return;
           }
           ownerSaid = trustOk(d.decision) ? 'trust' : ownerSaid || 'answer';
+          saidAt = new Date().toISOString();
           log(dim(`  you let your Oby try again${ownerSaid === 'trust' ? ', with everything you allow' : ''}`));
           continue;
         }
@@ -3034,7 +3093,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         ...(unsure ? { unsure: cleanLine(unsure, 200) } : {}), // not sure who asks: no everything-you-allow, no always
         channel: msg.channel,
         ts: msg.ts,
-        text: opened.text,
+        text: pendingWords(opened.text), // what Waiting for you shows: a sealed ask can be long
         files: opened.files.map((f) => ({ name: safeName(f.name), size: Number(f.size) || 0 })),
         reason: why,
         ...(msg.depth > 0 ? { depth: Math.min(Math.floor(msg.depth), 99) } : {}), // passed on by from, for someone it can't name: never everything you allow
@@ -3090,21 +3149,36 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
 
   // returns the check's result when the ask now waits for you (your settings changed while it
   // waited in line), { held: true } when it waits for its runtime in held/, else nothing
-  async function runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held = null, claimedAs = instance) {
+  async function runAndReply(msg, opened, from, reply, decline, check, ownerSaid, held = null, claimedAs = instance, saidAt = null) {
     if (deletedHere.has(msg.id)) return void log(dim(`  ${msg.id}: its asker deleted it while it waited its turn: not answered`)); // deleted messages
+    // your decision from before lockdown began counts for nothing now: it waits for you again
+    if (ownerSaid && decidedBeforeLockdown(p, saidAt)) ownerSaid = null;
     const c = check();
     if (c.decline) return void (await decline(c.decline));
+    // a held ask whose answer was made but couldn't be sent: that answer goes, nothing runs. Once your
+    // settings changed since it was made (lockdown included), it's dropped: the ask is answered again,
+    // or waits for you, under your settings as they are now
+    let kept = held && readHeldAnswer(p, msg.id);
+    if (kept && kept.settings !== settingsStamp(c.s)) {
+      fs.rmSync(heldAnswerFile(p, msg.id), { force: true });
+      log(yellow('  kept answer dropped: ') + dim(readLockdown(p) ? "you're locked down, and it was made with what you allowed before" : 'your settings changed since it was made'));
+      kept = null;
+    }
     if ((c.g.approve || approveAll) && !ownerSaid) return c;
     const s = c.s;
-    // a held ask whose answer was made but couldn't be sent: that answer goes, nothing runs
-    const kept = held && readHeldAnswer(p, msg.id);
     if (kept) return sendKept(msg, from, kept, reply, held);
-    const trusted = !!c.g.trusted || ownerSaid === 'trust';
+    // the ask stopped by lockdown: asked again, under lockdown (it waits for you)
+    const again = async () => {
+      const c2 = check();
+      if (c2.decline) return void (await decline(c2.decline));
+      return c2;
+    };
+    const trusted = (!!c.g.trusted || ownerSaid === 'trust') && !readLockdown(p);
     if (c.g.untrusted === 'hop' && !trusted) log(dim("  passed on from another ask: answered as any Oby's ask, without the risky reach"));
     if (c.g.untrusted === 'identity' && !trusted) log(red(`  ⚠ ${slug(from.name)} is an Oby you trust, but ${printable(c.who.why)}: answered as any Oby's ask, without the risky reach`));
     // asks may have queued while another ran: the day's answers are checked again
     if (!answersLeft(p, s)) return void (await decline('limit'));
-    if (c.use?.inst.kind === 'command') return void (await answerWithCommand(p, api, c.use, { msg, from, s, reply })); // instruments
+    if (c.use?.inst.kind === 'command') return (await answerWithCommand(p, api, c.use, { msg, from, s, reply }))?.relocked ? again() : undefined; // instruments
     // its turn came after the asker's deadline: not started
     if (pastDeadline(msg)) {
       await reply(`This ask's deadline passed before @${p.agent.name}'s Oby could start on it.`, [], { expired: true, local: true });
@@ -3114,18 +3188,23 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const route = await chooseRoute(p, s, { from: asker, text: c.use ? useRouteText(c.use) : opened.text, hasFiles: opened.files.length > 0, hop: (msg.depth || 0) > 0, channel: msg.channel }, { trusted });
     if (route.fellBack || route.decline || route.unusable) log(yellow('  route: ') + dim(route.note));
     if (route.decline) return decline(route.decline);
-    const ctx = { msg, opened, from, reply, s, trusted, askerTrusted: !!c.g.trusted, use: c.use, held, ownerSaid, claimedAs, timeLimitMin: route.use.timeLimitMin };
+    const ctx = { msg, opened, from, reply, s, trusted, askerTrusted: !!c.g.trusted, use: c.use, held, ownerSaid, saidAt, claimedAs, timeLimitMin: route.use.timeLimitMin };
     if (route.unusable) {
       // not installed: it won't pass on its own; signed out: a pause, like a run that failed signed out
       const u = route.unusable;
       const f = { runtime: u.runtime, kind: u.why === 'cooling' ? u.kind : u.why === 'not-signed-in' ? 'auth' : 'missing', until: u.until || null, words: `${RUNTIME_LABEL[u.runtime]} ${WHY_WORDS[u.why]} on this machine.` };
       if (u.why === 'not-signed-in') cooled(f);
-      return unable(ctx, f);
+      const un = await unable(ctx, f);
+      return un?.relocked ? again() : un;
     }
     // an effort the model can't take isn't passed to Claude Code (it would ignore it), or said in the log
     if (route.use.runtime === 'claude' && route.use.effort && !(await claudeTakesEffort(p, route.use, route.auth))) route.use = { ...route.use, effort: null };
     const r = await attempt(ctx, route);
-    if (!r.ok) return unable(ctx, r.f);
+    if (r.relocked) return again();
+    if (!r.ok) {
+      const un = await unable(ctx, r.f);
+      return un?.relocked ? again() : un;
+    }
     if (r.handoff) return { handoff: r.handoff };
   }
 
@@ -3166,22 +3245,33 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     log(magenta('  ⟳ ') + dim(`running ${label}${use.effort ? ` · effort ${use.effort}` : ''} · up to ${use.timeLimitMin} min${route.rule !== null ? ` (rule ${route.rule + 1}${route.name ? ` ${JSON.stringify(route.name)}` : ''}, ${route.how})` : ''}${trusted ? ' · trusted' : ''} locally in ${s.machine.folders[0].path} …`));
     const started = Date.now();
     const limitMs = (use.timeLimitMin || TIME_LIMIT_DEFAULT) * MINUTE_MS;
+    // lockdown stops it (watched in startRep): what it made with what you allowed before isn't sent
+    const ac = new AbortController();
+    const run = { started, stop: () => ac.abort() };
+    running.add(run);
+    const relocked = () => {
+      if (!lockedSince(p, started)) return false;
+      log(yellow('  ⏸ lockdown: ') + dim(`the answer to ${slug(from.name)}'s ask was stopped, and nothing it made was sent: it waits for you`));
+      return true;
+    };
     try {
       let r;
       try {
         for (let i = 0; ; i++) {
           try {
             // a try after a rate limit gets what's left of the time limit, so the ask never runs past it
-            r = await runLocal(p, s, route, msg, opened, from, agentsById, api, { trusted, askerTrusted: ctx.askerTrusted, instrument: ctx.use, timeLeftMs: limitMs - (Date.now() - started) });
+            r = await runLocal(p, s, route, msg, opened, from, agentsById, api, { trusted, askerTrusted: ctx.askerTrusted, instrument: ctx.use, timeLeftMs: limitMs - (Date.now() - started), signal: ac.signal });
             break;
           } catch (e) {
             const wait = RATE_WAITS[i];
-            if (failureOf(e).kind !== 'rate' || wait === undefined || Date.now() - started + wait >= limitMs) throw e;
+            if (failureOf(e).kind !== 'rate' || wait === undefined || Date.now() - started + wait >= limitMs || ac.signal.aborted) throw e;
             log(yellow('  rate-limited: ') + dim(`${RUNTIME_LABEL[use.runtime]} is busy; trying again in ${wait >= 60e3 ? `${Math.round(wait / 60e3)} min` : `${Math.round(wait / 1000) || 1} s`}`));
             await new Promise((res) => setTimeout(res, wait));
           }
         }
       } catch (e) {
+        if (e.denied?.length) noteBlocked(p, { msg, from: ctx.from, denied: e.denied }); // what it tried before it failed
+        if (relocked()) return { ok: true, relocked: true };
         addAnswer(p, (Date.now() - started) / 1000, false);
         const f = { runtime: use.runtime, ...failureOf(e), words: printable(e.message) };
         log(red('  ✗ ') + printable(e.message) + (f.kind !== 'other' ? dim(` (${KIND_WORDS[f.kind]})`) : ''));
@@ -3193,9 +3283,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         }
         return { ok: false, f };
       }
+      if (r.denied?.length) noteBlocked(p, { msg, from: ctx.from, denied: r.denied }); // it tried what your settings block
+      if (relocked()) return { ok: true, relocked: true };
       const durationMs = Date.now() - started;
       addAnswer(p, durationMs / 1000);
-      if (r.denied?.length) noteBlocked(p, { msg, from: ctx.from, denied: r.denied }); // it tried what your settings block
       // it handed the ask to you in this run (sphere_ask_owner): what it wrote isn't sent; you decide
       const handed = readHandoff(p, msg.id);
       if (handed && Date.parse(handed.at) >= started - 1000) {
@@ -3210,7 +3301,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         sent = await reply(r.text, r.files, meta);
       } catch (e) {
         if (ctx.held) {
-          keepHeldAnswer(p, msg.id, { text: r.text, files: r.files, meta });
+          keepHeldAnswer(p, msg.id, { text: r.text, files: r.files, meta, settings: settingsStamp(s) });
           log(yellow("  couldn't send the answer: ") + dim(`${printable(e.message)} (kept: it's sent again, the model doesn't run again)`));
           cameBack(use.runtime); // the runtime answered: its pause is over
         }
@@ -3226,6 +3317,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       if (back) back.answered += 1;
       return { ok: true };
     } finally {
+      running.delete(run);
       await api.post('/api/status', { state: 'idle' }).catch(() => {});
     }
   }
@@ -3240,6 +3332,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     if (av.whenUnable === 'other' && av.otherRuntime && av.otherRuntime !== f.runtime && !ctx.instead) {
       const done = await answerInstead(ctx, f, av.otherRuntime);
       if (done?.handoff) return { handoff: done.handoff };
+      if (done?.relocked) return done; // lockdown began while it ran: it waits for you
       if (done) return;
     } else if (av.whenUnable === 'hold' && passes) return holdAsk(ctx, f);
     // a pause is told once, when it starts; any other failure, for each ask it ends
@@ -3265,7 +3358,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const use = d.runtime === other ? { ...d, timeLimitMin: ctx.timeLimitMin } : { runtime: other, model: null, effort: null, timeLimitMin: ctx.timeLimitMin };
     log(dim(`  ${RUNTIME_LABEL[f.runtime]} can't answer (${KIND_WORDS[f.kind]}): ${RUNTIME_LABEL[other]} answers instead`));
     const r = await attempt({ ...ctx, instead: true }, { rule: null, name: null, use, how: 'default', auth: ready.auth });
-    return r.handoff ? r : r.ok;
+    return r.handoff || r.relocked ? r : r.ok;
   }
 
   // availability "hold": the ask waits in held/ (a restart keeps it) and is tried again at its
@@ -3287,7 +3380,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       instance: ctx.claimedAs || instance, // the claim it holds on the relay: whoever tries it again claims as that
       fromId: msg.from, // who sent it, and its words: your decision counts only for this ask
       env: envHash(msg),
-      ...(ctx.ownerSaid ? { approved: ctx.ownerSaid } : {}),
+      ...(ctx.ownerSaid ? { approved: ctx.ownerSaid, approvedAt: ctx.saidAt || new Date().toISOString() } : {}),
       ...(pastDeadline({ neededBy: msg.neededBy }) || !Number.isFinite(Date.parse(msg.neededBy)) ? {} : { neededBy: msg.neededBy }), // its deadline reply comes on time, not at the next try
     };
     writeHeld(p, h);
@@ -3343,7 +3436,7 @@ function sweepAsks(p) {
 // trusted: the asker is an Oby you trust, or you let this ask answer with everything you
 // allow; otherwise the risky reach is taken away first (effectiveSettings).
 // timeLeftMs: a try after a rate limit gets what's left of the ask's time limit, not a new one
-async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trusted = false, askerTrusted = false, instrument = null, timeLeftMs = null } = {}) {
+async function runLocal(p, s0, route, msg, opened, from, agentsById, api, { trusted = false, askerTrusted = false, instrument = null, timeLeftMs = null, signal = null } = {}) {
   const s = effectiveSettings(s0, trusted);
   const use = route.use;
   const runtime = use.runtime;
@@ -3459,14 +3552,14 @@ Write your reply.`;
 
   try {
     let run;
-    if (runtime === 'cursor') run = (resume) => runCursor(p, use, { cwd, input: withInstructions(resume), resume, timeoutMs, auth: route.auth });
+    if (runtime === 'cursor') run = (resume) => runCursor(p, use, { cwd, input: withInstructions(resume), resume, timeoutMs, auth: route.auth, signal });
     else if (runtime === 'codex') {
       const web = s.machine.web.search || s.machine.web.fetch;
       const addDirs = codexWrite ? s.machine.folders.slice(1).filter((f) => f.write).map((f) => f.path) : [];
       const e = await codexEffort(p, use, route.auth);
       if (e.lowered) log(yellow('  Codex: ') + dim(`${use.model} doesn't take ${(EFFORT_LABEL[use.effort] || use.effort).toLowerCase()} effort, so it uses ${(EFFORT_LABEL[e.effort] || e.effort).toLowerCase()}`));
       const codexUse = { ...use, effort: e.effort };
-      run = (resume) => runCodex(p, codexUse, { cwd, sandbox: codexWrite ? 'workspace-write' : 'read-only', addDirs, web, mcpServer: obysphere, input: withInstructions(resume), resume, timeoutMs, auth: route.auth });
+      run = (resume) => runCodex(p, codexUse, { cwd, sandbox: codexWrite ? 'workspace-write' : 'read-only', addDirs, web, mcpServer: obysphere, input: withInstructions(resume), resume, timeoutMs, auth: route.auth, signal });
     } else {
       const systemFile = path.join(work, 'system.txt');
       fs.writeFileSync(systemFile, system, { mode: 0o600 });
@@ -3476,14 +3569,14 @@ Write your reply.`;
       const settingsPath = path.join(work, 'claude-settings.json');
       fs.writeFileSync(settingsPath, JSON.stringify(perms.file, null, 1), { mode: 0o600 });
       const addDirs = [...s.machine.folders.slice(1).map((f) => f.path), inbox, outbox];
-      run = (resume) => runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, settingsFile: settingsPath, deny: perms.deny, tools: perms.tools, chrome: useChrome, timeoutMs, auth: route.auth });
+      run = (resume) => runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, settingsFile: settingsPath, deny: perms.deny, tools: perms.tools, chrome: useChrome, timeoutMs, auth: route.auth, signal });
     }
     let r;
     try {
       r = await run(prev);
     } catch (e) {
       // out of usage, rate-limited or signed out isn't the saved conversation's fault: a fresh one fails the same
-      if (!prev || failureOf(e).kind !== 'other') throw e;
+      if (!prev || failureOf(e).kind !== 'other' || signal?.aborted) throw e;
       r = await run(null); // the saved conversation is gone: start fresh
     }
     if (!hop && r.sessionId && /^[\w-]{1,80}$/.test(r.sessionId)) {
@@ -3498,7 +3591,7 @@ Write your reply.`;
     }
 
     const files = [];
-    if (s.access.sendFiles) {
+    if (s.access.sendFiles && !signal?.aborted) {
       for (const n of fs.readdirSync(outbox).slice(0, 10)) {
         const fp = path.join(outbox, n);
         const st = fs.lstatSync(fp);
@@ -3602,7 +3695,7 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
       // which keeps secrets unreadable even to `grep -r` and blocks writes and the network
       allow.push(...READ_ONLY_COMMANDS.map((c) => `Bash(${c}:*)`));
       deny.push(...SHELL_READ_DENY);
-      fileOnly.push(GIT_DIFF_BRACES);
+      fileOnly.push(...GIT_DIFF_FILE_ONLY);
       const home = os.homedir();
       sandbox = {
         enabled: true,
@@ -3615,8 +3708,8 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
             ...never.globs,
             HOME,
             ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d)),
-            // and the private places, unless one of your folders is inside one (then it's yours to share)
-            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].filter((d) => !m.folders.some((f) => f.path === d || f.path.startsWith(d + path.sep))),
+            // and the private places; one that holds one of your folders, all of it but the way down to it
+            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].flatMap((d) => denyAround(d, m.folders)),
           ],
           denyWrite: m.folders.map((f) => f.path),
         },
@@ -3642,7 +3735,22 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
   return { file, deny, tools };
 }
 
-function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, settingsFile, deny, tools, chrome, timeoutMs, auth }) {
+// a private place the sandbox keeps out: all of it, or, when one of your folders is inside it, all of
+// it but the way down to your folders (iCloud Drive is in ~/Library: Mail and Messages beside it stay out)
+function denyAround(d, folders) {
+  const inside = folders.filter((f) => f.path === d || f.path.startsWith(d + path.sep));
+  if (!inside.length) return [d];
+  if (inside.some((f) => f.path === d)) return []; // your folder is that place: yours to share
+  let names = [];
+  try {
+    names = fs.readdirSync(d);
+  } catch {
+    return [];
+  }
+  return names.flatMap((n) => denyAround(path.join(d, n), inside));
+}
+
+function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, settingsFile, deny, tools, chrome, timeoutMs, auth, signal = null }) {
   const has = (f) => claudeHas(p, f);
   // your own Claude Code settings and the folder's (allow rules, hooks that run commands, extra
   // folders) stay out of an answer: restricted mode, which an older Claude Code doesn't have
@@ -3666,7 +3774,7 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
     '--output-format', 'stream-json',
     '--verbose',
   ];
-  return runProcess(p.claudeBin || 'claude', args, { cwd, env: answeringEnv('claude', auth), timeoutMs, stdin: prompt }).then(({ out, err, code, timedOut }) => {
+  return runProcess(p.claudeBin || 'claude', args, { cwd, env: answeringEnv('claude', auth), timeoutMs, stdin: prompt, signal }).then(({ out, err, code, timedOut, stopped }) => {
     // one JSON event a line: count the tools it used (names only: paths and
     // inputs stay on this machine), and keep the final result
     let j = null;
@@ -3675,6 +3783,11 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
     let sessionId = null;
     let said = '';
     const used = {};
+    // what it tried that your settings refused, as it happened: a tool_use, then its error tool_result
+    // saying so. The final result lists them too (permission_denials), but a run stopped at its time
+    // limit, by lockdown or by an error has no result, and its tries are still told
+    const tried = new Map();
+    const refused = [];
     for (const line of out.split('\n')) {
       if (!line.trim()) continue;
       let e;
@@ -3695,19 +3808,24 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
           if (c.type !== 'tool_use' || !c.name) continue;
           const n = String(c.name).replace(/^mcp__obysphere__/, '').slice(0, 64);
           if (/^[\w.-]+$/.test(n)) used[n] = (used[n] || 0) + 1;
+          if (typeof c.id === 'string' && tried.size < 1000) tried.set(c.id, { tool_name: c.name, tool_input: c.input });
         }
       }
+      if (e.type === 'user' && Array.isArray(e.message?.content))
+        for (const c of e.message.content) if (c?.type === 'tool_result' && c.is_error === true && tried.has(c.tool_use_id) && REFUSED_WORDS.test(toolResultText(c.content)) && refused.length < 20) refused.push(tried.get(c.tool_use_id));
       if (e.type === 'result') j = e;
     }
-    // stopped at the time limit: what it had, and why it stopped
-    if (timedOut && !j) return { text: `${said ? said + '\n\n' : ''}${STOPPED}`, sessionId, model: model || use.model || null, tools: used, apiKeySource, timedOut: true };
+    // the result's list when it has one, else what the stream showed
+    const denied = deniedOf({ permission_denials: Array.isArray(j?.permission_denials) ? j.permission_denials : refused });
+    // stopped at the time limit (or by lockdown): what it had, and why it stopped
+    if ((timedOut || stopped) && !j) return { text: `${said ? said + '\n\n' : ''}${STOPPED}`, sessionId, model: model || use.model || null, tools: used, apiKeySource, timedOut: true, stopped, denied };
     // a failure is the exit code and is_error, never stderr (which has notes on good runs too)
     if (!j) {
       const words = (err || out || `claude exited with ${code}`).trim();
-      if (/sandbox/i.test(words) && /unavailable|refusing|not available/i.test(words)) throw new Error("shell: read needs Claude Code's sandbox, which isn't available on this machine (set the shell to off or full)");
-      throw runFailed('claude', words.slice(-400), code, (err || '').slice(-4000)); // stderr only: stdout is the model's and its tools' own words
+      if (/sandbox/i.test(words) && /unavailable|refusing|not available/i.test(words)) throw Object.assign(new Error("shell: read needs Claude Code's sandbox, which isn't available on this machine (set the shell to off or full)"), { denied });
+      throw Object.assign(runFailed('claude', words.slice(-400), code, (err || '').slice(-4000)), { denied }); // stderr only: stdout is the model's and its tools' own words
     }
-    if (j.is_error || (code !== 0 && code !== null)) throw runFailed('claude', String(j.result || j.subtype || `claude exited with ${code}`).slice(0, 400), code, String(j.result || j.subtype || ''));
+    if (j.is_error || (code !== 0 && code !== null)) throw Object.assign(runFailed('claude', String(j.result || j.subtype || `claude exited with ${code}`).slice(0, 400), code, String(j.result || j.subtype || '')), { denied });
     return {
       text: String(j.result || '').trim() || '(no answer)',
       sessionId: j.session_id || sessionId,
@@ -3715,7 +3833,8 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
       model: Object.keys(j.modelUsage || {})[0] || model || use.model || null,
       tools: used,
       apiKeySource,
-      denied: deniedOf(j), // what it tried that your settings blocked (security: blocked attempts)
+      stopped,
+      denied, // what it tried that your settings blocked (security: blocked attempts)
     };
   });
 }
@@ -3723,7 +3842,7 @@ function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, 
 // Codex: `codex exec --json`, the prompt (our instructions inside it) on stdin; its sandbox
 // keeps the folders' writes and the network; the Sphere's tools through -c mcp_servers.
 // Nothing private on the command line: paths and the Sphere server's settings only.
-function runCodex(p, use, { cwd, sandbox, addDirs, web, mcpServer, input, resume, timeoutMs, auth }) {
+function runCodex(p, use, { cwd, sandbox, addDirs, web, mcpServer, input, resume, timeoutMs, auth, signal = null }) {
   const args = [
     'exec', '--json', '--skip-git-repo-check', '--ignore-user-config', '--ignore-rules', '--color', 'never',
     '-C', cwd,
@@ -3739,7 +3858,7 @@ function runCodex(p, use, { cwd, sandbox, addDirs, web, mcpServer, input, resume
     ...(resume ? ['resume', resume] : []),
     '-',
   ];
-  return runProcess(p.codexBin || 'codex', args, { cwd, env: answeringEnv('codex', auth), timeoutMs, stdin: input }).then(({ out, err, code, timedOut }) => {
+  return runProcess(p.codexBin || 'codex', args, { cwd, env: answeringEnv('codex', auth), timeoutMs, stdin: input, signal }).then(({ out, err, code, timedOut, stopped }) => {
     let thread = null;
     let said = '';
     let failed = null;
@@ -3769,7 +3888,7 @@ function runCodex(p, use, { cwd, sandbox, addDirs, web, mcpServer, input, resume
       if (e.type === 'turn.failed') failed = cleanLine(e.error?.message || 'the turn failed', 400);
       if (e.type === 'error' && e.message) lastError = cleanLine(e.message, 400);
     }
-    if (timedOut) return { text: `${said ? said + '\n\n' : ''}${STOPPED}`, sessionId: thread, model: use.model || null, tools: used, timedOut: true };
+    if (timedOut || stopped) return { text: `${said ? said + '\n\n' : ''}${STOPPED}`, sessionId: thread, model: use.model || null, tools: used, timedOut: true, stopped };
     if (failed || code !== 0) {
       const tail = (err || out || `codex exited with ${code}`).trim();
       throw runFailed('codex', failed || lastError || tail.slice(-400), code, [failed, lastError].filter(Boolean).join('\n') || (err || '').slice(-4000)); // its error events, or stderr: never stdout's other lines
@@ -3790,14 +3909,14 @@ function toml(v) {
 
 // Cursor: ask mode in its folder, the prompt (our instructions inside it) on stdin.
 // Never --force, --yolo, --approve-mcps or --api-key.
-function runCursor(p, use, { cwd, input, resume, timeoutMs, auth }) {
+function runCursor(p, use, { cwd, input, resume, timeoutMs, auth, signal = null }) {
   const args = ['-p', '--output-format', 'json', '--mode', 'ask', '--trust', '--workspace', cwd, ...(use.model ? ['--model', use.model] : []), ...(resume ? ['--resume', resume] : [])];
-  return runProcess(p.cursorBin || 'cursor-agent', args, { cwd, env: answeringEnv('cursor', auth), timeoutMs, stdin: input }).then(({ out, err, code, timedOut }) => {
+  return runProcess(p.cursorBin || 'cursor-agent', args, { cwd, env: answeringEnv('cursor', auth), timeoutMs, stdin: input, signal }).then(({ out, err, code, timedOut, stopped }) => {
     let j = null;
     try {
       j = JSON.parse(out.trim().split('\n').pop());
     } catch {}
-    if (timedOut) return { text: `${j?.result ? String(j.result).trim() + '\n\n' : ''}${STOPPED}`, sessionId: j?.session_id || null, model: use.model || null, timedOut: true };
+    if (timedOut || stopped) return { text: `${j?.result ? String(j.result).trim() + '\n\n' : ''}${STOPPED}`, sessionId: j?.session_id || null, model: use.model || null, timedOut: true, stopped };
     if (code !== 0 || !j || j.is_error || typeof j.result !== 'string') {
       const words = String((j?.is_error && j.result) || err || out || `cursor-agent exited with ${code}`);
       throw runFailed('cursor', cleanLine(words, 400), code, String((j?.is_error && j.result) || err || '').slice(-4000)); // its error result, or stderr
@@ -3808,7 +3927,8 @@ function runCursor(p, use, { cwd, input, resume, timeoutMs, auth }) {
 
 // a child with its input on stdin; at the time limit it's stopped (TERM, then KILL). The program is
 // found on PATH's full folders only: it runs in the owner's folder, which may hold a `claude` of its own.
-function runProcess(bin, args, { cwd, env, timeoutMs = TIME_LIMIT_DEFAULT * MINUTE_MS, stdin = '' }) {
+// signal: stops it as the time limit does (lockdown), and says so (stopped)
+function runProcess(bin, args, { cwd, env, timeoutMs = TIME_LIMIT_DEFAULT * MINUTE_MS, stdin = '', signal = null }) {
   return new Promise((resolve, reject) => {
     const exe = programPath(bin);
     if (!exe) return reject(Object.assign(new Error(`could not start ${path.basename(String(bin))}: spawn ${bin} ENOENT`), { code: 'ENOENT' }));
@@ -3816,19 +3936,30 @@ function runProcess(bin, args, { cwd, env, timeoutMs = TIME_LIMIT_DEFAULT * MINU
     let out = '';
     let err = '';
     let timedOut = false;
+    let stopped = false;
     let kill = null;
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', (e) => reject(new Error(`could not start ${path.basename(String(bin))}: ${e.message}`)));
+    const end = () => {
+      child.kill('SIGTERM');
+      kill ||= setTimeout(() => child.kill('SIGKILL'), 5000);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      kill = setTimeout(() => child.kill('SIGKILL'), 5000);
+      end();
     }, timeoutMs);
+    const onStop = () => {
+      stopped = true;
+      end();
+    };
+    if (signal?.aborted) onStop();
+    else signal?.addEventListener('abort', onStop, { once: true });
     child.on('close', (code) => {
       clearTimeout(timer);
       clearTimeout(kill);
-      resolve({ out, err, code, timedOut });
+      signal?.removeEventListener('abort', onStop);
+      resolve({ out, err, code, timedOut, stopped });
     });
     child.stdin.on('error', () => {});
     child.stdin.end(stdin ?? '');
@@ -4175,6 +4306,7 @@ function readHeld(p, id) {
     runtime: h.runtime,
     instance: /^[0-9a-f]{12}$/.test(String(h.instance)) ? h.instance : null,
     approved: ['answer', 'trust'].includes(h.approved) ? h.approved : null,
+    approvedAt: time(h.approvedAt) ? h.approvedAt : null, // when you decided (older entries: unknown, so before any lockdown)
     fromId: ID.a.test(String(h.fromId)) ? h.fromId : null, // who sent it, and its words' hash (envHash): older entries have neither
     env: /^[0-9a-f]{64}$/.test(String(h.env)) ? h.env : null,
     neededBy: time(h.neededBy) ? h.neededBy : null,
@@ -4227,16 +4359,22 @@ function removeHeld(p, id) {
 // given up after SEND_TRIES, a little later each time
 const SEND_TRIES = 6;
 const heldAnswerFile = (p, id) => path.join(heldDir(p), `${id}.answer.json`);
-function keepHeldAnswer(p, id, { text, files = [], meta = {} }, sends = 0) {
+// settings: settingsStamp of the settings it was made under (an answer kept from before they changed isn't sent)
+function keepHeldAnswer(p, id, { text, files = [], meta = {}, settings = null }, sends = 0) {
   if (!ID.m.test(String(id))) return;
-  writeSecret(heldAnswerFile(p, id), { id, text: String(text), files: files.slice(0, 10).map((f) => ({ name: f.name, mime: f.mime, data: Buffer.from(f.bytes).toString('base64') })), meta, sends });
+  writeSecret(heldAnswerFile(p, id), { id, text: String(text), files: files.slice(0, 10).map((f) => ({ name: f.name, mime: f.mime, data: Buffer.from(f.bytes).toString('base64') })), meta, sends, settings });
 }
 function readHeldAnswer(p, id) {
   if (!ID.m.test(String(id))) return null;
   const a = readJsonFile(heldAnswerFile(p, id), null);
   if (!isMap(a) || a.id !== id || typeof a.text !== 'string' || !Array.isArray(a.files)) return null;
   const files = a.files.filter((f) => isMap(f) && typeof f.data === 'string').slice(0, 10).map((f) => ({ name: safeName(f.name), mime: safeMime(f.mime), bytes: Buffer.from(f.data, 'base64') }));
-  return { text: a.text, files, meta: isMap(a.meta) ? a.meta : {}, sends: Number.isInteger(a.sends) && a.sends >= 0 ? a.sends : 0 };
+  return { text: a.text, files, meta: isMap(a.meta) ? a.meta : {}, sends: Number.isInteger(a.sends) && a.sends >= 0 ? a.sends : 0, settings: typeof a.settings === 'string' ? a.settings : null };
+}
+// what an answer was made under: who may ask what, what it may reach, and which runtime answers
+// (lockdown laid over them counts), as a short hash
+function settingsStamp(s) {
+  return createHash('sha256').update(JSON.stringify({ access: s?.access, machine: s?.machine, routing: s?.routing, github: s?.github ?? null })).digest('hex').slice(0, 16);
 }
 // one process at a time tries, expires or drops a held ask: held/<id>.lock, with its pid. Returns the unlock, or null.
 function lockHeld(p, id) {
@@ -4548,6 +4686,10 @@ async function mcp() {
       if (method === 'tools/call') {
         const t = tools.find((x) => x.name === params.name);
         if (!t) return write({ jsonrpc: '2.0', id, error: { code: -32602, message: `unknown tool ${String(params.name).slice(0, 64)}` } });
+        // while answering: lockdown, checked at each call (it may begin while the answer runs), asks no
+        // other Oby and sends no file back, whatever this session was started with
+        if (sessionMode && ['sphere_ask', 'sphere_use', 'sphere_attach'].includes(t.name) && readLockdown(p))
+          return write({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `${cleanLine(p.agent.owner, 60)}'s Oby is locked down: it asks no other Oby and sends no files until they lift it.` }], isError: true } });
         const token = params._meta?.progressToken;
         let n = 0;
         const progress = (message) => host.going(id) && token !== undefined && write({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: token, progress: ++n, message: printable(message) } }); // MCP protocol: throws once cancelled, which ends the tool's wait
@@ -5909,6 +6051,11 @@ async function answerWithCommand(p, api, use, { msg, from, s, reply }) {
     log(magenta('  ⟳ ') + dim(`running your instrument ${inst.name}: ${[path.basename(inst.program), ...inst.args.map((a) => path.basename(a))].join(' ')} in ${cwd}, up to ${inst.timeLimitSec} s …`));
     const stdin = JSON.stringify({ instrument: inst.name, input: use.input, from: { handle: slug(from.name), owner: cleanLine(from.owner, 60) }, channel: msg.channel, ask: msg.id });
     const r = await runCommand(inst.program, inst.args, { cwd, env: answeringEnv('command'), timeoutMs: inst.timeLimitSec * 1000, stdin });
+    // lockdown began while it ran: what it printed isn't sent, and the use waits for you
+    if (lockedSince(p, started)) {
+      log(yellow('  ⏸ lockdown: ') + dim(`what ${inst.name} printed wasn't sent: the use waits for you`));
+      return { relocked: true };
+    }
     const durationMs = Date.now() - started;
     addAnswer(p, durationMs / 1000);
     let text = redactPaths(printable(r.out), s).trim() || '(it printed nothing)';
@@ -7415,23 +7562,32 @@ function gate(s, { from, text, files = 0, depth = 0, sure = true }) {
   const hops = a.hops || HOPS_DEFAULT;
   if (depth > 0 && (!a.acceptHops || hops === 'decline')) return { decline: 'hops' };
   if (depth > 0) level = stricter(level, hops);
-  if (a.declineTopics.length && wordsIn(text, a.declineTopics)) return { decline: 'topic' };
+  // a topic you decline, for an ask that waits for you, waits like any other (you see why): an asker
+  // who waits for you can't tell your topics from the rest. Otherwise it's declined (and counted: takeAsk)
+  const topic = a.declineTopics.length > 0 && wordsIn(text, a.declineTopics);
   const untrusted = own === 'trust' && level !== 'trust' ? (depth > 0 ? 'hop' : 'identity') : null;
   if (level === 'approve') {
     const why = depth > 0 ? `asks ${from} passes on for someone else wait for you` : !sure && listed && own !== 'approve' ? `${from} isn't surely the Oby you listed, so it waits for you` : listed ? `asks from ${from} wait for you` : 'asks wait for you unless you set otherwise';
-    return { level, approve: true, why, untrusted };
+    return { level, approve: true, why: topic ? `${why} (on a topic you decline)` : why, untrusted };
   }
+  if (topic) return { decline: 'topic' };
   if (level === 'trust' && !sure) return { level: 'answer', trusted: false, untrusted: 'identity' };
   return { level, trusted: level === 'trust', untrusted };
 }
 // which of the day's limits this ask would be over: 'agent' (this Oby's asks), 'day' (the answers
 // your Oby gives, all Obys together), or null
+// from: a handle, or ?<id> for an asker whose identity isn't sure. Past TOPIC_GUESSES topic declines
+// in a day, an Oby's asks are declined until tomorrow, whatever your limits: your topics can't be read
+// out one guess at a time
 function limitReached(u, s, from) {
   const { asksPerAgentPerDay: perAgent, answersPerDay } = s.access;
-  if (perAgent && (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) >= perAgent) return 'agent';
+  const n = (m) => (Object.hasOwn(m, from) ? m[from] : 0);
+  if (perAgent && n(u.asksByAgent) >= perAgent) return 'agent';
+  if (n(u.topicsByAgent) >= TOPIC_GUESSES) return 'agent';
   if (answersPerDay && u.answers >= answersPerDay) return 'day';
   return null;
 }
+const TOPIC_GUESSES = 3;
 
 // a word or phrase where a word starts, ignoring case: "review" finds reviews, not preview
 function wordsIn(text, words) {
@@ -7632,12 +7788,19 @@ function usageDay(d = new Date()) {
 }
 function readUsage(p, day = usageDay()) {
   const u = readJsonFile(path.join(p.dir, 'usage', `${day}.json`), {});
-  const asks = Object.create(null); // by handle: a handle such as constructor is counted like any other
-  if (u.asksByAgent && typeof u.asksByAgent === 'object') for (const [k, v] of Object.entries(u.asksByAgent)) if (slug(k) === k && Number.isInteger(v) && v >= 0) asks[k] = v;
+  // by handle (a handle such as constructor is counted like any other), or ?<id> for an asker whose
+  // identity isn't sure; asks and topic declines
+  const byAsker = (m) => {
+    const out = Object.create(null);
+    if (m && typeof m === 'object') for (const [k, v] of Object.entries(m)) if ((slug(k) === k || (k[0] === '?' && ID.a.test(k.slice(1)))) && Number.isInteger(v) && v >= 0) out[k] = v;
+    return out;
+  };
+  const asks = byAsker(u.asksByAgent);
+  const topics = byAsker(u.topicsByAgent);
   // asks handed to you (sphere_ask_owner) per asker's id, counted when handed: ending one gives none back
   const handed = Object.create(null);
   if (u.handoffsByAsker && typeof u.handoffsByAsker === 'object') for (const [k, v] of Object.entries(u.handoffsByAsker)) if (ID.a.test(k) && Number.isInteger(v) && v >= 0) handed[k] = v;
-  return { day, asksByAgent: asks, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
+  return { day, asksByAgent: asks, topicsByAgent: topics, answers: Number.isInteger(u.answers) && u.answers >= 0 ? u.answers : 0, seconds: Number.isFinite(u.seconds) && u.seconds >= 0 ? u.seconds : 0, handoffsByAsker: handed };
 }
 function withUsage(p, fn) {
   const dir = path.join(p.dir, 'usage');
@@ -7669,10 +7832,12 @@ function withUsage(p, fn) {
 }
 // counts the ask, or says 'limit' when this Oby's asks or the day's answers (all Obys) are used up
 // (the asker hears the same words either way: never which limit, nor its number)
-function takeAsk(p, s, from) {
+// topic: it's declined for its topic (counted apart too: TOPIC_GUESSES)
+function takeAsk(p, s, from, { topic = false } = {}) {
   return withUsage(p, (u) => {
     if (limitReached(u, s, from)) return 'limit';
     u.asksByAgent[from] = (Object.hasOwn(u.asksByAgent, from) ? u.asksByAgent[from] : 0) + 1;
+    if (topic) u.topicsByAgent[from] = (Object.hasOwn(u.topicsByAgent, from) ? u.topicsByAgent[from] : 0) + 1;
     return null;
   });
 }
@@ -7754,6 +7919,19 @@ function pendingEntries(p) {
 function listPending(p) {
   return pendingEntries(p).filter((w) => !w.decided && Date.parse(w.expiresAt) > Date.now());
 }
+// asks that wait for you: at most PENDING_PER_ASKER of one Oby's at once, PENDING_ALL in all (GitHub
+// items count apart: GH_WAITING_MAX); what's kept of each, the first PENDING_TEXT_MAX characters
+const PENDING_PER_ASKER = 20;
+const PENDING_ALL = 100;
+const PENDING_TEXT_MAX = 20000;
+function pendingCrowded(p, fromId) {
+  const asks = listPending(p).filter((w) => w.kind !== 'github');
+  return asks.length >= PENDING_ALL || asks.filter((w) => w.fromId === fromId).length >= PENDING_PER_ASKER;
+}
+function pendingWords(text) {
+  const t = String(text ?? '');
+  return t.length > PENDING_TEXT_MAX ? `${t.slice(0, PENDING_TEXT_MAX)}\n… (cut: ${(t.length - PENDING_TEXT_MAX).toLocaleString('en-US')} more characters)` : t;
+}
 function pendingFor(p, askId) {
   return pendingEntries(p).some((w) => w.askId === askId);
 }
@@ -7765,6 +7943,8 @@ function decidePending(p, id, decision) {
   if (!w || w.id !== id || !Number.isInteger(w.pid) || !processAlive(w.pid)) throw gone();
   // an ask passed on for someone else: never with everything you allow, and its Oby isn't listed for it
   if (w.depth > 0 && ['trust', 'always'].includes(decision?.decision)) throw Object.assign(new Error("decision: answer, decline or write (an ask passed on from another ask never gets everything you allow, and doesn't list the Oby that passed it on)"), { status: 400, field: 'decision' });
+  // locked down: there's nothing more to let it use (Claude Code, your folders read only)
+  if (decision?.decision === 'trust' && w.kind !== 'github' && readLockdown(p)) throw Object.assign(new Error("decision: answer, decline or write (your Oby is locked down: there's no more to let it use until you lift it)"), { status: 400, field: 'decision' });
   try {
     fs.writeFileSync(path.join(dir, `${id}.decision.json`), JSON.stringify({ ...decision, at: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
   } catch (e) {
@@ -9759,7 +9939,7 @@ const WORDS_KEPT = "Its words aren't here: only Obys your owner lists as Answer 
 // Sphere is inside the fence; your console's address isn't there (it isn't for Claude to open).
 const CHANNEL_SENDER_MAX = 5;
 const CHANNEL_SENDER_MS = 10 * 60e3;
-const CHANNEL_KIND = { waiting: 'something waits for you', asked: 'an Oby asked yours', direct: 'a direct message to you', mention: 'you were mentioned', answered: 'an answer to your ask', failed: "your Oby couldn't answer an ask", paused: "your Oby paused: its runtime can't answer for now", resumed: 'your Oby is back after a pause', test: 'a test notification' };
+const CHANNEL_KIND = { waiting: 'something waits for you', asked: 'an Oby asked yours', direct: 'a direct message to you', mention: 'you were mentioned', answered: 'an answer to your ask', failed: "your Oby couldn't answer an ask", paused: "your Oby paused: its runtime can't answer for now", resumed: 'your Oby is back after a pause', blocked: "an ask made your Oby try what you don't allow", test: 'a test notification' };
 function notifyChannelOn(p) {
   try {
     return notifyOf(loadSettings(p)).claude;
@@ -10643,12 +10823,11 @@ async function githubPr(p, a) {
   const ready = await ghReady();
   if (!ready.ok) return `GitHub can't be reached from ${owner}'s machine: ${ready.why}.`;
   const n = String(number);
-  const fields = 'number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,files,reviews,comments,body,labels,createdAt,updatedAt,statusCheckRollup';
-  const [view, diff, checks] = await Promise.all([
-    ghRun(['pr', 'view', n, `--repo=${repo}`, '--json', fields]),
-    ghRun(['pr', 'diff', n, `--repo=${repo}`], { timeoutMs: 60e3 }),
-    ghRun(['pr', 'checks', n, `--repo=${repo}`, '--json', 'name,state,bucket,workflow']),
-  ]);
+  const fields = 'number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,baseRefOid,mergeable,mergeStateStatus,reviewDecision,additions,deletions,changedFiles,files,reviews,comments,body,labels,createdAt,updatedAt,statusCheckRollup';
+  // the view first, then the diff of exactly the commits it names (base...head, as GitHub shows a pull
+  // request's changes): a push between two reads can't show the model one commit's diff while the
+  // read is pinned to another. Without both commits, `gh pr diff`, and the read pins nothing
+  const view = await ghRun(['pr', 'view', n, `--repo=${repo}`, '--json', fields]);
   if (view.code !== 0) return `Couldn't read ${repo}#${number}: ${ghSaid(view)}.`;
   let j;
   try {
@@ -10656,6 +10835,12 @@ async function githubPr(p, a) {
   } catch {
     return `Couldn't read ${repo}#${number}: gh's answer wasn't JSON.`;
   }
+  const [baseAt, headAt] = [ghSha(j?.baseRefOid), ghSha(j?.headRefOid)];
+  const pinned = !!(baseAt && headAt);
+  const [diff, checks] = await Promise.all([
+    pinned ? ghRun(['api', '-H', 'Accept: application/vnd.github.diff', `repos/${repo}/compare/${baseAt}...${headAt}`], { timeoutMs: 60e3 }) : ghRun(['pr', 'diff', n, `--repo=${repo}`], { timeoutMs: 60e3 }),
+    ghRun(['pr', 'checks', n, `--repo=${repo}`, '--json', 'name,state,bucket,workflow']),
+  ]);
   const arr = (x) => (Array.isArray(x) ? x : []);
   // checks: gh pr checks (it exits 8 while some are pending, with the same JSON), else the PR's own rollup
   let list = null;
@@ -10688,7 +10873,7 @@ async function githubPr(p, a) {
     reviews: arr(j.reviews).slice(-30).map((r) => ({ by: ghLogin(r?.author?.login), state: ghWord(r?.state), at: cleanLine(r?.submittedAt, 30), text: ghText(r?.body, 3000) })),
     comments: arr(j.comments).slice(-30).map((x) => ({ by: ghLogin(x?.author?.login), at: cleanLine(x?.createdAt, 30), text: ghText(x?.body, 3000) })),
   };
-  if (pr.headCommit) githubKeepRead(p, repo, number, pr.headCommit);
+  if (pinned && diff.code === 0) githubKeepRead(p, repo, number, headAt); // the commit whose diff it read
   let d = diff.code === 0 ? diff.out : '';
   const bytes = Buffer.byteLength(d);
   let cut = '';
@@ -10898,10 +11083,11 @@ async function githubCarryOut(p, w, d) {
   if (d.decision === 'timeout') return { ok: false, text: `No answer from ${owner} within the hour, so nothing was posted on ${ref}.` };
   if (d.decision !== 'act' && d.decision !== 'comment') return { ok: false, text: `${owner} chose not to ${words.verb} ${ref} on GitHub.` };
   const req = d.decision === 'comment' ? { ...g, action: 'comment', event: null, body: w.text } : { ...g, body: w.text };
-  // checked again: your settings as they are now, and the pull request as it is now
+  // checked again: your settings as they are now (locked down: no GitHub), and the pull request as it is now
+  if (readLockdown(p)) return { ok: false, text: `${owner}'s Oby is locked down, so nothing was posted on ${ref}.` };
   let s;
   try {
-    s = loadSettings(p);
+    s = lockdownOverlay(p, loadSettings(p));
   } catch {
     return { ok: false, text: `${owner}'s settings need fixing, so nothing was posted on ${ref}.` };
   }
@@ -10979,6 +11165,8 @@ function githubDecide(p, id, b) {
   const v = w && githubPendingView(p, w);
   if (!v) throw Object.assign(new Error('That is no longer waiting for you.'), { status: 404, code: 'not_found' });
   if (!v.options.includes(b.decision)) throw Object.assign(new Error(`decision: ${v.options.join(', ')}`), { field: 'decision' });
+  // locked down: nothing goes up on GitHub; it waits until you lift lockdown, or you say no
+  if (b.decision !== 'decline' && readLockdown(p)) throw Object.assign(new Error("Your Oby is locked down: nothing goes up on GitHub until you lift it. Lift lockdown first, or choose Don't."), { status: 409, code: 'locked_down' });
   decidePending(p, id, { decision: b.decision });
   return { ok: true };
 }
@@ -11024,6 +11212,14 @@ function githubShellDeny(s) {
 // A client for the Sphere's API. Made for an instrument (`tool`), every request
 // it sends carries that instrument's name and one call id, so the Sphere counts
 // one call per use, however many requests it takes. Redirects are refused.
+// the relay no longer takes this Oby's token, and profile.json has no newer one: it was replaced (token
+// rotate, here or by someone holding a copy of it, who then holds the Oby alone) or the Oby was removed.
+// The old token can't ask for a new one, so the way back is an admin's (suspend, remove, release the
+// handle) and joining again; a relay that ties a new token to the member's own key would need more
+function tokenGoneWords(p) {
+  const h = slug(p?.agent?.name || '') || 'this Oby';
+  return `the Sphere at ${p.sphere} doesn't take ${h}'s token any more: it was replaced (token rotate, here or by someone with a copy of it) or @${h} was removed. If you didn't do either, someone else may have its token: ask an admin of this Sphere to suspend @${h} at once, then to remove it and release its handle, and join again (${meCmd()} join).`;
+}
 // a token replaced (token rotate, possibly by another process of this profile): profile.json has
 // the new one. true when it changed, so a call the relay refused can be tried once more
 function tokenChanged(p) {
@@ -11047,7 +11243,7 @@ function client(p, tool = null) {
     } catch {
       data = { error: text.slice(0, 200) };
     }
-    if (res.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
+    if (res.status === 401) throw new Error(tokenGoneWords(p));
     if (!res.ok) throw Object.assign(new Error(relayError(data, res.status)), { relaySaid: relaySaid(data, res.status) });
     return data && typeof data === 'object' ? data : {};
   };
@@ -11156,7 +11352,12 @@ async function stream(p, role, { onEvent, onOpen, onDown }) {
       // a new token, from token rotate: connect with it (it may land in profile.json a moment after the
       // relay closed this stream, so look once more before giving up)
       if (res.status === 401 && (tokenChanged(p) || (await new Promise((r) => setTimeout(r, 2000)), tokenChanged(p)))) continue;
-      if (res.status === 401) die(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset?). Join again.`);
+      if (res.status === 401) {
+        // its token was replaced elsewhere (or it was removed): you're told, then it stops
+        notifyOwner(p, { type: 'failed', title: "Your Oby stopped: the Sphere doesn't take its token any more", body: tokenGoneWords(p), ref: `token-gone-${Date.now().toString(36)}` });
+        await new Promise((r) => setTimeout(r, NOTIFY_COALESCE_MS + 1500)).catch(() => {});
+        die(tokenGoneWords(p));
+      }
       if (res.status === 403) throw new Error('suspended by the operator');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       backoff = 1000;
@@ -11526,17 +11727,82 @@ async function checkLatestVersion(appHome, file) {
 //   the relay forgets the old token at once. This profile's processes pick up the new one by
 //   themselves (they read profile.json again when the relay says no).
 
+// Lockdown is kept twice: lockdown.json, and a copy in security/lockdown.json. It fails closed: one
+// copy removed, or either one damaged (there, but not a lockdown), and it's still on: both are put
+// back, marked `restored`, and you're told. Only setLockdown(p, false) lifts it, and it leaves a
+// note (security/lockdown-lifted.json) first, so a running representative tells a lift from both
+// copies being deleted (it puts them back from what it saw: watchLockdown, in startRep).
 const lockdownFile = (p) => path.join(p.dir, 'lockdown.json');
-function readLockdown(p) {
-  const l = readJsonFile(lockdownFile(p), null);
-  return isMap(l) && typeof l.at === 'string' && Number.isFinite(Date.parse(l.at)) ? { at: l.at, why: cleanLine(l.why || '', 120) } : null;
+const lockdownCopy = (p) => path.join(p.dir, 'security', 'lockdown.json');
+const lockdownLiftedFile = (p) => path.join(p.dir, 'security', 'lockdown-lifted.json');
+// one copy: null (no file), { at, why, restored? }, or { damaged: when } (a file that isn't a lockdown)
+function lockdownRecord(f) {
+  let st;
+  try {
+    st = fs.statSync(f);
+  } catch (e) {
+    return e.code === 'ENOENT' ? null : { damaged: new Date().toISOString() };
+  }
+  const l = readJsonFile(f, null);
+  const time = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+  if (isMap(l) && time(l.at)) return { at: new Date(Date.parse(l.at)).toISOString(), why: cleanLine(l.why || '', 120), ...(time(l.restored) ? { restored: new Date(Date.parse(l.restored)).toISOString() } : {}) };
+  return { damaged: st.mtime.toISOString() };
 }
-function setLockdown(p, on, why = '') {
-  if (!on) return void fs.rmSync(lockdownFile(p), { force: true });
-  if (!readLockdown(p)) writeSecret(lockdownFile(p), { at: new Date().toISOString(), why: cleanLine(why, 120) });
+// { at, why, restored? } while you're locked down, else null. at: when it began (the copy that
+// reads, else when a damaged copy last changed); restored: when a removed or damaged copy was put back
+function readLockdown(p) {
+  const a = lockdownRecord(lockdownFile(p));
+  const b = lockdownRecord(lockdownCopy(p));
+  if (!a && !b) return null;
+  const good = [a, b].find((x) => x?.at);
+  const lock = good ? { at: good.at, why: good.why, ...(a?.restored || b?.restored ? { restored: a?.restored || b?.restored } : {}) } : { at: [a?.damaged, b?.damaged].filter(Boolean).sort()[0], why: '' };
+  if (a?.at && b?.at) return lock;
+  // the copy in security/ missing alone: written (a lockdown from before it was kept twice); anything
+  // else (lockdown.json removed, a copy damaged) is put back as restored, and you're told
+  const quiet = a?.at && !b;
+  const kept = quiet ? lock : { ...lock, restored: new Date().toISOString() };
+  try {
+    writeSecret(lockdownCopy(p), kept);
+    writeSecret(lockdownFile(p), kept);
+  } catch {}
+  if (!quiet) lockdownKept(p, kept, a?.damaged || b?.damaged ? 'damaged' : 'removed');
+  return kept;
+}
+// lockdown.json removed or damaged while it was on: kept on, and you're told (your log, a notification)
+function lockdownKept(p, lock, how) {
+  log(red('  ⚠ lockdown: ') + `lockdown.json was ${how === 'damaged' ? 'changed' : 'removed'} without lifting it, so your Oby stays locked down. Lift it with ${meCmd()} lockdown --off${profileFlag(p)}, or in your console.`);
+  notifyOwner(p, { type: 'blocked', title: 'Lockdown is still on: its file was removed or changed', body: `Your Oby stays locked down until you lift it (${meCmd()} lockdown --off, or Lift lockdown in your console). Something removed or changed lockdown.json without lifting it.`, ref: `lockdown-kept-${Date.now().toString(36)}` });
+}
+// by: where you did it (the command line, your console), for the representative's log
+function setLockdown(p, on, why = '', by = 'the command line') {
+  if (!on) {
+    writeSecret(lockdownLiftedFile(p), { at: new Date().toISOString(), by: cleanLine(by, 40) });
+    for (const f of [lockdownFile(p), lockdownCopy(p)]) fs.rmSync(f, { force: true });
+    return;
+  }
+  if (readLockdown(p)) return;
+  const l = { at: new Date().toISOString(), why: cleanLine(why, 120) };
+  writeSecret(lockdownCopy(p), l);
+  writeSecret(lockdownFile(p), l);
+}
+// the last lift: { at, by } or null
+function lockdownLifted(p) {
+  const l = readJsonFile(lockdownLiftedFile(p), null);
+  return isMap(l) && typeof l.at === 'string' && Number.isFinite(Date.parse(l.at)) ? { at: l.at, by: cleanLine(l.by || '', 40) } : null;
+}
+// a decision of yours (at: when you made it) from before lockdown began counts for nothing while it's on
+function decidedBeforeLockdown(p, at) {
+  const l = readLockdown(p);
+  return !!l && !(Date.parse(at) >= Date.parse(l.at));
+}
+// lockdown began after `since` (a run's start): what that run made isn't sent
+function lockedSince(p, since) {
+  const l = readLockdown(p);
+  return !!l && Date.parse(l.at) >= since;
 }
 // your settings as an ask sees them while you're locked down: everyone waits for you (a declined
-// Oby stays declined), and nothing reaches past reading your folders
+// Oby stays declined), nothing reaches past reading your folders, and Claude Code answers (Codex and
+// Cursor can't be kept to your folders): every route, and an Oby that answers instead, is Claude Code
 function lockdownOverlay(p, s) {
   if (!s || !readLockdown(p)) return s;
   const t = structuredClone(s);
@@ -11551,25 +11817,50 @@ function lockdownOverlay(p, s) {
   t.machine.browser = 'off';
   t.machine.mcp = [];
   if (isMap(t.github)) t.github = { ...t.github, enabled: false };
+  const claude = (u) => (u.runtime === 'claude' ? u : { ...u, runtime: 'claude', model: null, effort: null });
+  t.routing.default = claude(t.routing.default);
+  t.routing.rules = t.routing.rules.map((r) => ({ ...r, use: claude(r.use) }));
+  if (isMap(t.availability) && t.availability.whenUnable === 'other' && t.availability.otherRuntime !== 'claude') t.availability = { ...t.availability, whenUnable: 'hold', otherRuntime: null };
   return t;
 }
-const LOCKDOWN_WORDS = 'every ask waits for you; your Oby answers with no shell, web, browser, MCP servers, writes, GitHub or files, and asks no other Oby';
+const LOCKDOWN_WORDS = 'every ask waits for you; your Oby answers with Claude Code, with no shell, web, browser, MCP servers, writes, GitHub or files, and asks no other Oby';
+const LOCK_WATCH_MS = 500; // how often a running representative looks at lockdown
 
 // ---- blocked attempts: what an answer tried that your settings didn't allow
+// a tool's error result that says your settings refused it (Claude Code's words for a denied tool)
+const REFUSED_WORDS = /permission|denied|not allowed|don.t ask mode|blocked by|operation not permitted/i;
+function toolResultText(c) {
+  if (typeof c === 'string') return c.slice(0, 2000);
+  return Array.isArray(c) ? c.map((x) => (typeof x?.text === 'string' ? x.text : '')).join(' ').slice(0, 2000) : '';
+}
 const blockedFile = (p) => path.join(p.dir, 'security', 'blocked.jsonl');
 const BLOCKED_KEEP = 200;
-// one denial in a few words: the tool, and what it was for (a file, a command, an address)
+// one denial in a few words: the tool, and what it was for (kind: a file, a command, an address, a pattern)
 function deniedOf(j) {
   if (!Array.isArray(j?.permission_denials)) return [];
   return j.permission_denials.slice(0, 20).map((d) => {
     const i = isMap(d?.tool_input) ? d.tool_input : {};
-    const what = [i.file_path, i.path, i.command, i.url, i.pattern, i.query].find((v) => typeof v === 'string' && v.trim());
-    return { tool: cleanLine(String(d?.tool_name || 'a tool'), 40), what: what ? cleanLine(what, 120) : '' };
+    const [kind, what] = [['file', i.file_path], ['file', i.path], ['command', i.command], ['url', i.url], ['pattern', i.pattern], ['pattern', i.query]].find(([, v]) => typeof v === 'string' && v.trim()) || [];
+    return { tool: cleanLine(String(d?.tool_name || 'a tool'), 40), what: what ? cleanLine(what, 120) : '', ...(kind ? { kind } : {}) };
   });
+}
+// what a notification says of one: the file it tried; of a command, its program; of an address, its
+// host; of a search, nothing. What an answer tried to send out may be what it read, and a notification
+// can leave this machine (Slack, a phone): the whole of it stays in your log and the check
+function deniedBrief(d) {
+  if (!d.what || d.kind === 'file') return `${d.tool}${d.what ? ` ${d.what}` : ''}`;
+  if (d.kind === 'command') return `${d.tool} ${cleanLine(d.what.trim().split(/\s+/)[0], 40)} …`;
+  if (d.kind === 'url') {
+    try {
+      return `${d.tool} ${new URL(d.what).host}`;
+    } catch {}
+  }
+  return `${d.tool} …`;
 }
 function noteBlocked(p, { msg, from, denied }) {
   const asker = slug(from?.name || '') || 'someone';
-  const entry = { ts: new Date().toISOString(), ask: msg.id, from: asker, channel: msg.channel, denied };
+  const hop = (msg.depth || 0) > 0; // passed on by from for someone else, who can't be named
+  const entry = { ts: new Date().toISOString(), ask: msg.id, from: asker, channel: msg.channel, ...(hop ? { hop: true } : {}), denied: denied.map(({ tool, what }) => ({ tool, what })) };
   try {
     fs.mkdirSync(path.dirname(blockedFile(p)), { recursive: true, mode: 0o700 });
     const kept = readBlocked(p, Infinity).slice(-(BLOCKED_KEEP - 1));
@@ -11578,8 +11869,8 @@ function noteBlocked(p, { msg, from, denied }) {
     fs.renameSync(tmp, blockedFile(p));
   } catch {}
   const words = denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; ');
-  log(`${yellow('  ⚠ blocked:')} ${dim(`${asker}'s ask made your Oby try what your settings don't allow: ${printable(words)}`)}`);
-  notifyOwner(p, { type: 'blocked', from: asker, channel: msg.channel, body: `Blocked: ${words}`, ref: `${msg.id}-blocked`, about: msg.id });
+  log(`${yellow('  ⚠ blocked:')} ${dim(`${asker}'s ${hop ? 'ask, passed on for someone else,' : 'ask'} made your Oby try what your settings don't allow: ${printable(words)}`)}`);
+  notifyOwner(p, { type: 'blocked', from: asker, channel: msg.channel, body: `Blocked${hop ? ` (an ask @${asker} passed on for someone else)` : ''}: ${denied.map(deniedBrief).join('; ')}`, ref: `${msg.id}-blocked`, about: msg.id });
 }
 // the newest last; only what's from the last `days`
 function readBlocked(p, days = 30) {
@@ -11599,14 +11890,17 @@ function readBlocked(p, days = 30) {
       }
     })
     .filter((e) => isMap(e) && typeof e.ts === 'string' && Date.parse(e.ts) >= since && Array.isArray(e.denied))
-    .map((e) => ({ ts: e.ts, ask: ID.m.test(String(e.ask)) ? e.ask : null, from: slug(String(e.from || '')) || 'someone', channel: slug(String(e.channel || '')) || null, denied: e.denied.filter(isMap).slice(0, 20).map((d) => ({ tool: cleanLine(String(d.tool || ''), 40), what: cleanLine(String(d.what || ''), 120) })) }));
+    .map((e) => ({ ts: e.ts, ask: ID.m.test(String(e.ask)) ? e.ask : null, from: slug(String(e.from || '')) || 'someone', channel: slug(String(e.channel || '')) || null, ...(e.hop === true ? { hop: true } : {}), denied: e.denied.filter(isMap).slice(0, 20).map((d) => ({ tool: cleanLine(String(d.tool || ''), 40), what: cleanLine(String(d.what || ''), 120) })) }));
 }
 
 // ---- secrets in the folders your Oby reads, under names the never-read list doesn't cover
 const SECRET_PATTERNS = [
-  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----/],
+  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/],
   ['an AWS access key', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ['a GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})\b/],
+  ['a GitLab token', /\bglpat-[A-Za-z0-9_-]{20,}/],
+  ['an npm token', /\bnpm_[A-Za-z0-9]{36}\b/],
+  ['a Hugging Face token', /\bhf_[A-Za-z]{30,}\b/],
   ['a Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
   ['an Anthropic API key', /\bsk-ant-[A-Za-z0-9_-]{20,}/],
   ['an OpenAI API key', /\bsk-(?:proj-)?(?!ant-)[A-Za-z0-9_-]{32,}/],
@@ -11614,19 +11908,70 @@ const SECRET_PATTERNS = [
   ['a Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
   ['an Obysphere token', /\btok_[A-Za-z0-9_-]{30,}\b/],
 ];
-const SCAN_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache', 'coverage']);
+// what isn't looked at: other people's code (dependencies), named in the report. Build output (dist,
+// build, …) is looked at last, and of .git only its config files (a remote's URL can hold a token):
+// answers can read all of them
+const SCAN_DEPS = new Set(['node_modules', 'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache']);
+const SCAN_LATER = new Set(['dist', 'build', 'out', '.next', 'coverage']);
 const SCAN_FILES = 4000;
-const SCAN_BYTES = 1024 * 1024;
+const SCAN_BYTES = 1024 * 1024; // of a bigger file, its first MB
 const SCAN_MS = 4000;
-// [{ folder, file (relative), line, kind }]: never the secret itself
+// a file's text: UTF-8, or UTF-16 (a byte-order mark, or every other byte 0); null for anything binary
+function scanText(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
+  if (buf[0] === 0xfe && buf[1] === 0xff) return Buffer.from(buf.subarray(2)).swap16().toString('utf16le');
+  const head = buf.subarray(0, 8000);
+  if (!head.includes(0)) return buf.toString('utf8');
+  let odd = 0;
+  let even = 0;
+  for (let i = 0; i < head.length; i++) if (head[i] === 0) i % 2 ? odd++ : even++;
+  return odd > head.length / 4 && even < odd / 20 ? buf.subarray(0, buf.length - (buf.length % 2)).toString('utf16le') : null;
+}
+// { found: [{ folder, file (relative), line, kind }], files, partial (files over SCAN_BYTES: their first
+// part), binary, skipped (dependency folders' names), cut }: never the secret itself
 function scanSecrets(s) {
   const found = [];
   const never = neverReadForms(neverReadOf(s)).regex;
   const start = Date.now();
   let files = 0;
+  let partial = 0;
+  let binary = 0;
   let cut = false;
+  const skipped = new Set();
+  const look = (root, full) => {
+    if (cut) return;
+    if (files >= SCAN_FILES || Date.now() - start > SCAN_MS) return void (cut = true);
+    // a file your Oby never reads is already kept from answers
+    if (isSecretPath(full) || never?.test(full)) return;
+    let text;
+    try {
+      const fd = fs.openSync(full, 'r');
+      files++;
+      let buf;
+      try {
+        const size = fs.fstatSync(fd).size;
+        if (size > SCAN_BYTES) partial++;
+        buf = Buffer.alloc(Math.min(size, SCAN_BYTES));
+        buf = buf.subarray(0, fs.readSync(fd, buf, 0, buf.length, 0));
+      } finally {
+        fs.closeSync(fd);
+      }
+      text = scanText(buf);
+    } catch {
+      return;
+    }
+    if (text === null) return void binary++;
+    for (const [kind, re] of SECRET_PATTERNS) {
+      const m = re.exec(text);
+      if (!m) continue;
+      found.push({ folder: path.basename(root), file: path.relative(root, full), line: text.slice(0, m.index).split('\n').length, kind });
+      if (found.length >= 50) cut = true;
+      return;
+    }
+  };
   for (const f of s.machine.folders) {
     const root = f.path;
+    const later = [];
     const walk = (dir, depth) => {
       if (cut || depth > 12) return;
       let entries = [];
@@ -11637,38 +11982,29 @@ function scanSecrets(s) {
       }
       for (const e of entries) {
         if (cut) return;
-        if (files >= SCAN_FILES || Date.now() - start > SCAN_MS) return void (cut = true);
         const full = path.join(dir, e.name);
         if (e.isSymbolicLink()) continue;
         if (e.isDirectory()) {
-          if (!SCAN_SKIP.has(e.name)) walk(full, depth + 1);
+          if (SCAN_DEPS.has(e.name)) skipped.add(e.name);
+          else if (e.name === '.git') {
+            // its config, and its submodules': a remote's URL can carry a token
+            look(root, path.join(full, 'config'));
+            let mods = [];
+            try {
+              mods = fs.readdirSync(path.join(full, 'modules'), { withFileTypes: true }).filter((x) => x.isDirectory() && !x.isSymbolicLink());
+            } catch {}
+            for (const x of mods.slice(0, 50)) look(root, path.join(full, 'modules', x.name, 'config'));
+          } else if (SCAN_LATER.has(e.name)) later.push([full, depth + 1]);
+          else walk(full, depth + 1);
           continue;
         }
-        if (!e.isFile()) continue;
-        files++;
-        // a file your Oby never reads is already kept from answers
-        if (isSecretPath(full) || never?.test(full)) continue;
-        let text;
-        try {
-          if (fs.statSync(full).size > SCAN_BYTES) continue;
-          const buf = fs.readFileSync(full);
-          if (buf.subarray(0, 8000).includes(0)) continue; // binary
-          text = buf.toString('utf8');
-        } catch {
-          continue;
-        }
-        for (const [kind, re] of SECRET_PATTERNS) {
-          const m = re.exec(text);
-          if (!m) continue;
-          found.push({ folder: path.basename(root), file: path.relative(root, full), line: text.slice(0, m.index).split('\n').length, kind });
-          if (found.length >= 50) return void (cut = true);
-          break;
-        }
+        if (e.isFile()) look(root, full);
       }
     };
     walk(root, 0);
+    for (const [dir, depth] of later) walk(dir, depth);
   }
-  return { found, files, cut };
+  return { found, files, partial, binary, skipped: [...skipped].sort(), cut };
 }
 
 // ---- the check. checks: [{ id, level: risk|warn|ok|info, title, detail, fix }]
@@ -11684,7 +12020,7 @@ async function securityReport(p, { scan = true } = {}) {
     return { profile: p.profile, lockdown: readLockdown(p), checks, blocked: readBlocked(p), scanned: null };
   }
   const lock = readLockdown(p);
-  if (lock) add('lockdown', 'info', 'Lockdown is on', `Since ${shortTime(lock.at)}: ${LOCKDOWN_WORDS}.`, `${meCmd()} lockdown --off${profileFlag(p)} when you're ready`);
+  if (lock) add('lockdown', lock.restored ? 'warn' : 'info', 'Lockdown is on', `Since ${shortTime(lock.at)}: ${LOCKDOWN_WORDS}.${lock.restored ? ` Its file was removed or changed without lifting it (${shortTime(lock.restored)}), so it was put back: lockdown stays on until you lift it.` : ''}`, `${meCmd()} lockdown --off${profileFlag(p)} when you're ready`);
 
   // the Sphere: sealed, or readable by whoever runs the relay
   let sealed = null;
@@ -11724,8 +12060,15 @@ async function securityReport(p, { scan = true } = {}) {
   let scanned = null;
   if (scan) {
     scanned = scanSecrets(s);
-    if (scanned.found.length) add('secrets', 'risk', `${scanned.found.length === 1 ? 'A secret' : `${scanned.found.length} secrets`} in the folders your Oby reads`, scanned.found.slice(0, 8).map((x) => `${x.folder}/${x.file}:${x.line} (${x.kind})`).join('; ') + (scanned.found.length > 8 ? '; …' : ''), 'Move them out, or add the file names to Settings › This machine › Never read');
-    else add('secrets', 'ok', 'No secrets found in your folders', `${scanned.files} file${scanned.files === 1 ? '' : 's'} looked at${scanned.cut ? ' (not all: there were too many)' : ''}; files your Oby never reads were skipped.`);
+    const where = (x) => `${x.folder}/${x.file}:${x.line} (${x.kind})`;
+    // what it didn't look at, said: an "ok" covers only the files it read
+    const n = (k, one, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+    const not = [scanned.skipped.length && `${scanned.skipped.join(', ')} (dependencies)`, scanned.binary && n(scanned.binary, 'binary file'), 'the files your Oby never reads'].filter(Boolean);
+    const looked = `${n(scanned.files, 'file')} looked at${scanned.partial ? ` (of ${n(scanned.partial, 'file')} over ${fmtSize(SCAN_BYTES)}, the first ${fmtSize(SCAN_BYTES)})` : ''}${scanned.cut ? ', not all: there were too many' : ''}`;
+    const notWords = not.length > 1 ? `${not.slice(0, -1).join(', ')}, and ${not.at(-1)}` : not[0];
+    if (scanned.found.length) add('secrets', 'risk', `${scanned.found.length === 1 ? 'A secret' : `${scanned.found.length} secrets`} in the folders your Oby reads`, scanned.found.slice(0, 8).map(where).join('; ') + (scanned.found.length > 8 ? '; …' : ''), 'Move them out, or add the file names to Settings › This machine › Never read');
+    else add('secrets', 'ok', 'No secrets found in the files your Oby can read', `${looked}; not looked at: ${notWords}.`);
+    scanned = { files: scanned.files, partial: scanned.partial, binary: scanned.binary, skipped: scanned.skipped, cut: scanned.cut, found: scanned.found.map(where) };
   }
 
   // this profile's files: only you may read them
@@ -11754,11 +12097,13 @@ async function securityReport(p, { scan = true } = {}) {
   // what answers tried that your settings blocked
   const blocked = readBlocked(p);
   if (blocked.length) {
-    const by = [...new Set(blocked.map((b) => `@${b.from}`))];
-    add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask, or ${meCmd()} lockdown${profileFlag(p)}`);
+    // an ask passed on for someone else (a hop) is named by the Oby passing it on, who may not be the one trying
+    const by = [...new Set(blocked.map((b) => `@${b.from}${b.hop ? " (passing on someone else's ask)" : ''}`))];
+    const hops = blocked.some((b) => b.hop);
+    add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask${hops ? ', and have asks passed on from another ask wait for you or be declined (access.hops)' : ''}, or ${meCmd()} lockdown${profileFlag(p)}`);
   }
   checks.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level));
-  return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned: scanned && { files: scanned.files, cut: scanned.cut } };
+  return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned };
 }
 
 async function securityCmd() {
@@ -11783,7 +12128,7 @@ async function lockdownCmd() {
   if (pos.length) die(`usage: ${meCmd()} lockdown [--off] [--note "<why>"]${profileFlag(p)}`);
   if (opt.off) {
     if (!readLockdown(p)) return console.log(`${p.agent.name}'s Oby isn't locked down.`);
-    setLockdown(p, false);
+    setLockdown(p, false, '', 'the command line');
     return console.log(`${green('✓')} Lockdown lifted: your settings apply again.`);
   }
   const was = readLockdown(p);

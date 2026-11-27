@@ -6,6 +6,8 @@
 // control.json beside it sets:
 //   text, sleepMs            Claude Code's answer, and a wait before it (after a partial one)
 //   denials                  what its run was refused, as Claude Code reports it: [{ tool_name, tool_input }]
+//   streamDenials            the same, but as the run goes (each a tool_use, then its error tool_result saying
+//                            permission was denied), before it answers, fails or sleeps: [{ tool_name, tool_input }]
 //   classify                 'auto' (the first kind whose words the message has), a rule number, 'none' or 'fail'
 //   claudeAuth               'claude.ai' (default, a Team plan), 'console' (an API key) or 'none'; claudeMissing
 //   claudeHelp               'old': an older Claude Code, whose --help has no --restricted
@@ -91,6 +93,10 @@ stdin((prompt) => {
   const model = flag('--model') || 'fake-default';
   record('calls.jsonl', { bin: 'claude', prompt, settings: JSON.parse(read(flag('--settings')) || 'null'), mcp: JSON.parse(read(flag('--mcp-config')) || 'null'), system: read(flag('--append-system-prompt-file')) });
   out({ type: 'system', subtype: 'init', model, tools: ['Read'], apiKeySource: 'none', session_id: 'fake-init' });
+  (control.streamDenials || []).forEach((d, i) => {
+    out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_refused_' + i, name: d.tool_name, input: d.tool_input }] } });
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_refused_' + i, is_error: true, content: 'Permission to use ' + d.tool_name + ' has been denied.' }] } });
+  });
   const failed = failure('claude');
   // crash: the model and its tools said things that look like failures, then it stopped with no result and nothing on stderr
   if (failed === 'crash') {
