@@ -2891,7 +2891,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     // a long wait: told once more, 15 minutes before it lapses (timed from what's left of it: an ask
     // taken up again after a restart has less than the full wait)
     const left = Math.max(0, Date.parse(w.expiresAt) - Date.now()) || waitMs;
-    const soon = left > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id }), left - 15 * MINUTE_MS) : null;
+    const soon = left > 20 * MINUTE_MS ? setTimeout(() => notifyOwner(p, { type: 'waiting', from: asker, channel: msg.channel, title: `@${asker}'s ask lapses in 15 min`, body: opened.text, ref: `${msg.id}-soon`, about: msg.id, sure: !unsure }), left - 15 * MINUTE_MS) : null;
     soon?.unref?.();
     // "always answer": offered for an Oby you haven't listed in Who can ask
     let always = false;
@@ -7351,7 +7351,8 @@ function addPending(p, entry, waitMs = APPROVE_WAIT_MS) {
   }
   const w = { id, ...entry, pid: process.pid, instance: REP_INSTANCE, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + waitMs).toISOString() };
   writeSecret(path.join(dir, `${id}.json`), w);
-  notifyOwner(p, { type: 'waiting', from: entry.from?.name, channel: entry.channel, body: entry.stuck?.note ?? entry.text ?? entry.body, title: entry.title, ref: id, about: entry.askId }); // everything that waits for you notifies
+  // everything that waits for you notifies; from an asker that may not be who its handle says, never with its words
+  notifyOwner(p, { type: 'waiting', from: entry.from?.name, channel: entry.channel, body: entry.stuck?.note ?? entry.text ?? entry.body, title: entry.title, ref: id, about: entry.askId, ...(entry.unsure ? { sure: false } : {}) });
   return w;
 }
 function processAlive(pid) {
@@ -9550,7 +9551,7 @@ async function hookProfile(name, deadline) {
   const waitingForYou = listPending(p)
     .filter((w) => reach(slug(w.from?.name)) !== 'none')
     .map((w) => {
-      const words = reach(slug(w.from?.name)) === 'words';
+      const words = reach(slug(w.from?.name)) === 'words' && !w.unsure; // an asker that may not be who its handle says: never its words
       return { from: w.from?.name ? `@${slug(w.from.name)}` : undefined, owner: cleanLine(w.from?.owner, 60) || undefined, channel: w.channel ? `#${slug(w.channel)}` : undefined, at: w.ts || w.createdAt, what: w.title ? cleanLine(w.title, 140) : undefined, ...(words ? { words: printable(w.text ?? w.body ?? '') } : {}), ...(words && isMap(w.stuck) && typeof w.stuck.note === 'string' ? { yourObyNeeds: cleanLine(w.stuck.note, 400) } : {}) };
     });
   const couldntAnswerToday = notifyRecent(p)
