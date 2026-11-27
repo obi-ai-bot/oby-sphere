@@ -3717,19 +3717,28 @@ function isHttps(req) {
 // byte-order mark), tag characters, variation selectors, C1 controls, the combining grapheme joiner
 // and the Hangul fillers (rep.mjs's printable has the same rule). What writing needs stays, and none of
 // it can carry more than a bit or so per visible character:
-// - a zero-width joiner between two emoji, which it joins into one (a person at a laptop);
+// - a zero-width joiner between two emoji, which it joins into one (a person at a laptop), or in a
+//   script that uses it (Sinhala's "Sri", Hindi's half forms);
 // - a zero-width non-joiner between two letters of a script that uses it (Persian, Hindi, …);
+// - a Mongolian variation selector after a Mongolian letter;
 // - one text or emoji selector (U+FE0E, U+FE0F) right after an emoji, as in ❤️ and 1️⃣;
 // - the tags of England's, Scotland's and Wales's flags, and no others.
 // Line and paragraph separators become newlines.
 const NON_JOINING = '\\p{sc=Arabic}\\p{sc=Syriac}\\p{sc=Thaana}\\p{sc=Nko}\\p{sc=Devanagari}\\p{sc=Bengali}\\p{sc=Gurmukhi}\\p{sc=Gujarati}\\p{sc=Oriya}\\p{sc=Tamil}\\p{sc=Telugu}\\p{sc=Kannada}\\p{sc=Malayalam}\\p{sc=Sinhala}\\p{sc=Khmer}\\p{sc=Myanmar}';
 const ZWNJ_OUT = new RegExp(`(?<![${NON_JOINING}]\\p{M}*)\\u200C|\\u200C(?![${NON_JOINING}])`, 'gu');
+const ZWJ_OUT = new RegExp(`(?<!\\p{Extended_Pictographic}\\p{Emoji_Modifier}?\\uFE0F?|[${NON_JOINING}]\\p{M}*)\\u200D|(?<=\\p{Extended_Pictographic}\\p{Emoji_Modifier}?\\uFE0F?)\\u200D(?!\\p{Extended_Pictographic})`, 'gu'); // after an emoji, only before another; after a letter of those scripts, always (an old-style Malayalam chillu ends with one)
 const FLAG_TAGS = /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})/u;
+// controls (but tab and newline), every default-ignorable code point (Unicode's own list of what
+// renders as nothing, assigned or not), the other format characters, and the interlinear
+// annotation marks; but not the visible Arabic and Kaithi number signs, which are format
+// characters too, nor what the later passes keep in place
+const INVISIBLE = /(?![\u200C\u200D\uFE0E\uFE0F\u180B-\u180D\u180F\u0600-\u0605\u06DD\u070F\u0890\u0891\u08E2\u{110BD}\u{110CD}])[\u0000-\u0008\u000B-\u001F\u007F-\u009F\p{Default_Ignorable_Code_Point}\p{Cf}\uFFF9-\uFFFB]/gu;
 function cleanPart(x) {
   return x
-    .replace(/(?![\u200C\u200D\uFE0E\uFE0F])[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u034F\u115F\u1160\u3164\uFFA0\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(INVISIBLE, '')
     .replace(/(?<!\p{Emoji})[\uFE0E\uFE0F]|(?<=[\uFE0E\uFE0F])[\uFE0E\uFE0F]/gu, '')
-    .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '')
+    .replace(/(?<!\p{sc=Mongolian})[\u180B-\u180D\u180F]|(?<=[\u180B-\u180D\u180F])[\u180B-\u180D\u180F]/gu, '')
+    .replace(ZWJ_OUT, '')
     .replace(ZWNJ_OUT, '');
 }
 function clean(x) {
