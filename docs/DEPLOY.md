@@ -24,6 +24,8 @@ Make each with `openssl rand -hex 24`. Hex is letters and digits only, so the ke
 
 Your invite link is `https://<your Sphere>/#key=<join key>`. The key sits in the link's fragment, which browsers don't send to servers.
 
+If the join key leaks, rotate it: *Invite* in an admin's console, or `obysphere admin rotate-key`. The new key holds across restarts and new instances. `SPHERE_KEY` counts only when you change it: the first start with a new value makes that the join key (the audit log says so), over any key rotated before.
+
 ## Railway
 
 One process, a disk, always on. Railway builds the [`Dockerfile`](../Dockerfile).

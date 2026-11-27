@@ -346,9 +346,10 @@ function apply(op, liveEvents = true) {
   if (liveEvents) for (const [e, d, who] of ev) broadcast(e, d, who);
 }
 
-// keys are kept only as hashes (a record from an older version gets hashed here)
+// keys are kept only as hashes (a record from an older version gets hashed here). envKeyHash: the
+// hash of the SPHERE_KEY last applied at a start (see init), so a key an admin rotated stays rotated
 function sphereRecord(s) {
-  const out = { name: s.name, createdAt: s.createdAt, keyHash: s.keyHash, adminKeyHash: s.adminKeyHash };
+  const out = { name: s.name, createdAt: s.createdAt, keyHash: s.keyHash, adminKeyHash: s.adminKeyHash, ...(s.envKeyHash ? { envKeyHash: s.envKeyHash } : {}) };
   if (s.key) out.keyHash = sha(String(s.key));
   if (s.adminKey) out.adminKeyHash = sha(String(s.adminKey));
   return out;
@@ -797,7 +798,7 @@ function fsStore() {
         const key = CFG.key || token(16);
         const adminKey = CFG.adminKey || 'adm_' + token(24);
         if (!CFG.key || !CFG.adminKey) generated = { key, adminKey };
-        snap = { sphere: { name: CFG.name || 'Obysphere', key, adminKey, createdAt: now() } };
+        snap = { sphere: { name: CFG.name || 'Obysphere', key, adminKey, createdAt: now(), ...(CFG.key ? { envKeyHash: sha(String(CFG.key)) } : {}) } };
       }
       if (legacyKeys && !fs.existsSync(KEYS) && !CFG.adminKey) writeKeysFile(KEYS, snap.sphere.key, snap.sphere.adminKey);
       const plainAdmin = snap.sphere.adminKey;
@@ -1479,7 +1480,7 @@ function redisStore() {
             if (S.sphere) return;
             b.push({
               t: 'init',
-              sphere: { name: CFG.name || 'Obysphere', keyHash: sha(String(CFG.key)), adminKeyHash: sha(String(CFG.adminKey)), createdAt: now() },
+              sphere: { name: CFG.name || 'Obysphere', keyHash: sha(String(CFG.key)), envKeyHash: sha(String(CFG.key)), adminKeyHash: sha(String(CFG.adminKey)), createdAt: now() },
               policy: { ...DEFAULT_POLICY, sealed: CFG.sealedDefault },
               paused: false,
             });
@@ -3946,12 +3947,22 @@ async function init() {
   strongEnough('The join key (SPHERE_KEY / --key)', CFG.key);
   strongEnough('The admin key (SPHERE_ADMIN_KEY / --admin-key)', CFG.adminKey);
   const info = await store.init();
-  // what the command line or environment says wins over what's stored (join key, name, limits);
+  // what the command line or environment says wins over what's stored (name, limits);
   // `--sealed` / SPHERE_SEALED only sets the first value: the operator's switch is kept after
   await store.commit((b) => {
     const fields = {};
     if (CFG.name && CFG.name !== S.sphere.name) fields.name = cleanLine(CFG.name, 80);
-    if (CFG.key && sha(String(CFG.key)) !== S.sphere.keyHash) fields.keyHash = sha(String(CFG.key));
+    // the join key in the environment: applied when the operator changed it since it was last applied,
+    // never just because it differs from the stored one (an admin may have rotated the key since: a
+    // restart, a cold start or another instance must not bring a leaked key back). Audited
+    const envKey = CFG.key ? sha(String(CFG.key)) : null;
+    if (envKey && envKey !== S.sphere.envKeyHash) {
+      fields.envKeyHash = envKey;
+      if (envKey !== S.sphere.keyHash) {
+        fields.keyHash = envKey;
+        b.audit('rotate', { actor: 'operator', detail: 'the join key was set from SPHERE_KEY at start: old invite links and viewers on the old key are out; members keep their tokens' });
+      }
+    }
     if (Object.keys(fields).length) b.push({ t: 'sphere', fields });
     const pol = {};
     if (CFG.maxFileBytes && CFG.maxFileBytes !== S.policy.maxFileBytes) pol.maxFileBytes = CFG.maxFileBytes;
