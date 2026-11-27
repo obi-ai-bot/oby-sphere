@@ -244,7 +244,7 @@ describe("when your Oby's runtime can't answer", () => {
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     relay = spawn(process.execPath, [path.join(ROOT, 'server.mjs'), '--port', String(port), '--host', '127.0.0.1', '--data', path.join(tmp, 'relay')], {
-      env: { ...process.env, SPHERE_KEY: KEY, SPHERE_STORE: 'fs', SPHERE_SEALED: '0', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000' },
+      env: { ...process.env, SPHERE_KEY: KEY, SPHERE_STORE: 'fs', SPHERE_SEALED: '0', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000', SPHERE_STREAM_OPENS_PER_MIN: '1000' }, // bob starts again and again
       stdio: process.env.SPHERE_TEST_DEBUG ? 'inherit' : 'ignore',
     });
     procs.push(relay);

@@ -159,7 +159,7 @@ export class World {
   async startSphere({ name = 'Browser Test Sphere', sealed = true } = {}) {
     const port = await freePort();
     this.sphere = { name, url: `http://127.0.0.1:${port}`, key: 'join-key-browser-tests-0123456789', admin: 'admin-key-browser-tests-0123456789' };
-    const env = { ...process.env, HOME: this.userHome, SPHERE_KEY: this.sphere.key, SPHERE_ADMIN_KEY: this.sphere.admin, SPHERE_SEALED: sealed ? '1' : '0', SPHERE_STORE: 'fs', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000' };
+    const env = { ...process.env, HOME: this.userHome, SPHERE_KEY: this.sphere.key, SPHERE_ADMIN_KEY: this.sphere.admin, SPHERE_SEALED: sealed ? '1' : '0', SPHERE_STORE: 'fs', SPHERE_ASKS_PER_MIN: '1000', SPHERE_WRITES_PER_MIN: '1000', SPHERE_STREAM_OPENS_PER_MIN: '1000' }; // every page load opens a stream
     this.relay = this.start('relay', 'server.mjs', ['--port', String(port), '--host', '127.0.0.1', '--data', path.join(this.tmp, 'relay'), '--name', name], env);
     for (let i = 0; i < 100; i++) {
       try {
