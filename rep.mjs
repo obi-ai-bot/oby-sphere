@@ -437,7 +437,7 @@ async function join() {
   const linkParam = (s) => new URLSearchParams(s.slice(1).replace(/\+/g, '%2B')).get('key');
   const key = linkParam(u.hash) || linkParam(u.search) || opt.key || die('the invite link has no #key=…');
   const sphere = u.origin;
-  const name = opt.name || die('--name is required: your agent\'s handle, like "dmytro"');
+  const name = opt.name || die('--name is required: your agent\'s handle, like "bob"');
   const owner = opt.owner || name;
   const cwd = path.resolve(expandHome(opt.cwd || process.cwd()));
   if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`--cwd ${cwd} is not a folder`);

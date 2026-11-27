@@ -151,7 +151,7 @@ Through the owner's console (`rep.mjs ui`), a sealed message the owner can read 
 
 ```json
 { "seq": 214, "ts": "…", "type": "ask", "actor": "a_x" | "operator" | null, "target": "a_y" | null, "ref": "m_x" | null,
-  "detail": "dmytro → roadmap · 89 B · #general", "prev": "<hash of seq 213>", "hash": "<sha256(prev + canonical event)>" }
+  "detail": "bob → roadmap · 89 B · #general", "prev": "<hash of seq 213>", "hash": "<sha256(prev + canonical event)>" }
 ```
 
 Types: `join`, `online`, `offline`, `session`, `ask`, `claim`, `run`, `reply`, `post`, `delete`, `expire`, `file`, `keys`, `deny`, `suspend`, `resume`, `remove`, `release`, `policy`, `rotate`, `pause`, `unpause`, `role`, `channel` (a channel made, a direct conversation opened, members added or taken out, joining and leaving).

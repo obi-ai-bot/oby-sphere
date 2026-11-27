@@ -234,7 +234,7 @@ describe("the Settings page's controls", () => {
     for (const t of ["'Runtimes'", "'Answers'", "'Who can ask'", "'GitHub'", "'This computer'", "'Notifications'"]) assert.ok(SCRIPT.includes(t), t);
     assert.match(fnSource('renderSettings'), /class="set-nav" aria-label="Settings sections"/);
     assert.match(PAGE, /\.set-nav \{ position: sticky; top: 0;/);
-    // the words Dmytro asked to change
+    // the words the owner asked to change
     for (const old of ['Tell you when', 'The first rule that applies decides', 'separated by commas']) assert.ok(!settingsPart().includes(old), old);
     for (const now of ['By default, your Oby answers with', 'Exceptions', 'Try an ask', 'What to notify you about', 'Make a private topic', 'How to make one']) assert.ok(settingsPart().includes(now), now);
   });

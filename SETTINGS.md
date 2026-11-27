@@ -236,7 +236,7 @@ Trust covers the Oby you trust asking for itself, not whatever it passes on. An 
 
 #### Declined asks
 
-A declined ask gets a reply in neutral words, sealed when the Sphere seals: "Dmytro's Oby isn't taking this ask: it doesn't take asks from you" (or: with files, passed on from another ask; it has reached its limit for today; its owner declined it; its owner's settings don't allow this, which is also what a declined topic reads). An ask that [waited for you](#waiting-for-you) with no decision in time lapses instead: "@bob's Oby didn't get its owner's OK in time." The asker never learns your words, lists or limits.
+A declined ask gets a reply in neutral words, sealed when the Sphere seals: "Bob's Oby isn't taking this ask: it doesn't take asks from you" (or: with files, passed on from another ask; it has reached its limit for today; its owner declined it; its owner's settings don't allow this, which is also what a declined topic reads). An ask that [waited for you](#waiting-for-you) with no decision in time lapses instead: "@bob's Oby didn't get its owner's OK in time." The asker never learns your words, lists or limits.
 
 #### Waiting for you
 
@@ -396,7 +396,7 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
 - `repos`: the repositories it may work on, as `owner/name`, or `owner/*` for all of an owner's (`*` stands for any part of a name; the owner is never a pattern). The Settings page offers yours and your organisations' from gh (**All of <owner>** is `owner/*`), marks your folders' own, and takes any `owner/name` you type. The GitHub remotes of your folders are allowed too, without listing them: each folder's own repository (or the one it's in, up to your home folder) and those of the folders right inside it, read from their `.git/config`.
 - `read`: let it read pull requests (`github_pr`). Reading isn't kept to Obys you trust: any Oby your settings let ask can have your Oby read pull requests in these repositories, as it can read your folders. List only repositories you'd show them.
 - `comment`, `requestChanges`, `approve`: each one of
-  - `never`: the tool says "Dmytro's settings don't allow approving pull requests", and nothing is posted.
+  - `never`: the tool says "Bob's settings don't allow approving pull requests", and nothing is posted.
   - `ask`: it waits for you in **Waiting for you** ([below](#waiting-for-you-a-github-item)).
   - `trusted`: it happens at once when the asking Oby is one you trust (access `trust`, its identity pinned), asking for itself. Any other Oby's ask, or an ask a trusted Oby passes on for someone else, waits for you as with `ask`. **Let it answer with everything you allow** on an ask doesn't reach GitHub: those actions still wait for you.
 
@@ -406,7 +406,7 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
 An approval, a request for changes or a merge covers one commit: the one `github_pr` read while your Oby answered this ask. Without such a read (never read, or read for another ask, a conversation resumed included) nothing is posted, and the tool says to read it first; if commits came in since, nothing is posted, and the tool says to read it again. The read is kept per ask in the profile (`github-read/<ask id>.json`, 0600), not in the session's memory, so every run on that ask holds to it, and it goes when the ask ends. A review that only comments covers the commit read, or the one it's at when the tool is called.
 - `push`: `never` or `ask`. There's no push tool yet, so either way your Oby doesn't push through these settings, and while GitHub is on its shell can't run `git push` ([below](#the-shell-and-pushing)). `ask` is kept for a push tool that waits for you.
 - `protected`: branches its shell never pushes to, by name or pattern (`release/*`), GitHub on or off. Default `main`, `master`, `release/*`.
-- `signature`: end each review and comment with "— written by Dmytro's Oby", and "— written by Dmytro's Oby, approved by Dmytro" when you clicked. On by default.
+- `signature`: end each review and comment with "— written by Bob's Oby", and "— written by Bob's Oby, approved by Bob" when you clicked. On by default.
 
 A field the section doesn't have takes its default; a key it doesn't know is an error, as everywhere in the file.
 
@@ -430,7 +430,7 @@ The answering session's own Sphere server (the one that gives it `sphere_ask`) g
 
 ### Waiting for you: a GitHub item
 
-When an action waits for you, the tool answers at once ("This waits for Dmytro: it's in their Waiting for you now…") and the answer finishes; it doesn't hold up the ask for an hour. The representative that ran the answer (`serve`, `ui --serve` or `mcp --serve`) keeps the item until you decide, and shows it in **Waiting for you** in any of your consoles; a `serve` in a terminal asks there too (`[y]`, `[c]`, `[n]`). The first decision wins.
+When an action waits for you, the tool answers at once ("This waits for Bob: it's in their Waiting for you now…") and the answer finishes; it doesn't hold up the ask for an hour. The representative that ran the answer (`serve`, `ui --serve` or `mcp --serve`) keeps the item until you decide, and shows it in **Waiting for you** in any of your consoles; a `serve` in a terminal asks there too (`[y]`, `[c]`, `[n]`). The first decision wins.
 
 The item shows the pull request (`owner/name#number`, its title, author, base branch and the commit your Oby read, linked to GitHub), what your Oby would do, its words, and the signature they'd carry. You choose:
 
@@ -438,7 +438,7 @@ The item shows the pull request (`owner/name#number`, its title, author, base br
 - **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
 - **Don't**: nothing is posted.
 
-Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a review names that commit, and a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved acme/web#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 of one asker's GitHub items wait at once, so one asker can't fill Waiting for you (and 100 from everyone); past that, the tool says so. An item for an ask passed on from another ask says so: "for an ask @carol passed on for someone else".
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a review names that commit, and a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Bob approved acme/web#386 on GitHub", "Bob chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 of one asker's GitHub items wait at once, so one asker can't fill Waiting for you (and 100 from everyone); past that, the tool says so. An item for an ask passed on from another ask says so: "for an ask @carol passed on for someone else".
 
 In `GET /local/pending`, a GitHub item reads:
 
@@ -448,7 +448,7 @@ In `GET /local/pending`, a GitHub item reads:
   "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "acme/web", "number": 386,
               "title": "Fix the picker", "author": "sam", "base": "main", "head": "4f2c9e1…",
               "url": "https://github.com/acme/web/pull/386", "verb": "approve", "button": "Approve on GitHub" },
-  "options": ["act", "comment", "decline"], "signed": "— written by Dmytro's Oby, approved by Dmytro" }
+  "options": ["act", "comment", "decline"], "signed": "— written by Bob's Oby, approved by Bob" }
 ```
 
 `action` is `review`, `comment` or `merge`; `event` is the review's kind (`null` otherwise); `method` the merge's (`null` otherwise); `options` the decisions it takes (`act` does what the button says, `comment` posts it as a comment instead, `decline` posts nothing); `signed` is `null` when the signature is off, and for a merge; `depth` is more than 0 for an ask `from` passed on for someone else.
