@@ -216,6 +216,59 @@ describe("the owner's own session", () => {
     assert.equal((await files()).length, before + 1);
   });
 
+  test('nor the private places the answering sandbox keeps out, nor any of these under another letter case', async () => {
+    const put = (f, body = 'x\n') => {
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, body);
+      return f;
+    };
+    // what sits on alice's computer: transcripts, histories, other assistants' sessions, ~/Library
+    const transcript = put(path.join(userHome, '.claude', 'projects', '-work', 'session.jsonl'), '{"message":"my db password is hunter2"}\n');
+    put(path.join(userHome, '.claude', 'settings.json'), '{"env":{"GITHUB_TOKEN":"ghp_notreal"}}\n');
+    put(path.join(userHome, '.claude.json'), '{"mcpServers":{}}\n');
+    put(path.join(cfg, 'history.jsonl'), '{"display":"export KEY=sk-notreal"}\n');
+    const refused = [
+      [transcript, /Claude Code's own settings|private/],
+      [put(path.join(userHome, '.zsh_history'), ': 1:0;export OPENAI_API_KEY=sk-notreal\n'), /private/],
+      [put(path.join(userHome, '.bash_history'), 'export DB=postgres://u:pw@db\n'), /private/],
+      [put(path.join(userHome, '.codex', 'sessions', '2026', 'rollout.jsonl')), /private/],
+      [put(path.join(userHome, '.cursor', 'chats', 'x.json')), /private/],
+      [put(path.join(userHome, 'Library', 'Messages', 'chat.db')), /private/],
+      ['~/.zsh_history', /private/],
+    ];
+    // macOS and Windows: one file, whatever the letter case of its path
+    const caseBlind = fs.existsSync(path.join(userHome, '.CLAUDE'));
+    const upper = (f) => tmp + f.slice(tmp.length).toUpperCase(); // below the test's own folder
+    if (caseBlind)
+      refused.push(
+        [path.join(userHome, '.CLAUDE', 'projects', '-work', 'session.jsonl'), /Claude Code's own settings|private/],
+        [path.join(userHome, '.Claude', 'settings.json'), /Claude Code's own settings/],
+        [path.join(userHome, '.CLAUDE.json'), /Claude Code's own settings/],
+        [path.join(upper(cfg), 'history.jsonl'), /Claude Code's own settings/],
+        [path.join(tmp, 'REPS', 'alice', 'settings.json'), /Obysphere's own files/],
+        [path.join(tmp, 'REPS', 'alice', 'notify', 'recent.jsonl'), /Obysphere's own files/],
+        [path.join(userHome, '.ZSH_HISTORY'), /private/],
+        [path.join(userHome, 'LIBRARY', 'Messages', 'chat.db'), /private/],
+        [path.join(upper(appHome), 'current', 'update-check.json'), /Obysphere's own files/],
+      );
+    put(path.join(home, 'alice', 'notify', 'recent.jsonl'), '{}\n');
+    const before = (await files()).length;
+    for (const [f, why] of refused) {
+      const post = await alice.tool('sphere_post', { message: 'here you go', files: [f] });
+      assert.ok(post.result.isError, `${f} was sent: ${text(post)}`);
+      assert.match(text(post), why, f);
+      const ask = await alice.tool('sphere_ask', { agent: 'bob', message: 'look at this', files: [f], wait_seconds: 10 });
+      assert.ok(ask.result.isError, `${f} was sent with an ask: ${text(ask)}`);
+    }
+    assert.equal((await files()).length, before, 'nothing was uploaded');
+    // the person's own files in ~/Library's cloud drives (iCloud Drive, Dropbox and the like) go
+    for (const f of [put(path.join(userHome, 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'plan.md'), '# Plan\n'), put(path.join(userHome, 'Library', 'CloudStorage', 'Dropbox', 'notes.md'), '# Notes\n')]) {
+      const ok = await alice.tool('sphere_post', { message: 'my file', files: [f] });
+      assert.ok(!ok.result.isError, `${f}: ${text(ok)}`);
+    }
+    assert.equal((await files()).length, before + 2);
+  });
+
   test("no text, sphere_use input or file leaves with this profile's token or private keys", async () => {
     const keys = JSON.parse(fs.readFileSync(path.join(home, 'alice', 'keys.json'), 'utf8'));
     const n = (await call('GET', '/api/messages?channel=general&limit=100', { tok: token('alice') })).messages.length;

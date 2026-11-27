@@ -299,6 +299,12 @@ const SANDBOX_HOME_DENY = [
   '.zsh_history', '.zhistory', '.zsh_sessions', '.bash_history', '.bash_sessions', '.histfile', '.sh_history', '.python_history', '.node_repl_history', '.psql_history', '.mysql_history', '.sqlite_history', '.irb_history', '.rediscli_history', '.lesshst', '.viminfo',
   'Library',
 ];
+// what your own session never sends either (readLocalFiles), but for ~/Library's cloud drives: iCloud
+// Drive (and apps' folders in it), and Dropbox, Google Drive or OneDrive, the person's own files
+const CLOUD_DRIVES = ['Library/Mobile Documents', 'Library/CloudStorage'];
+// macOS and Windows keep a file's name in any letter case: paths compare folded there
+const CASE_BLIND = process.platform === 'darwin' || process.platform === 'win32';
+const caseFold = (s) => (CASE_BLIND ? String(s).toLowerCase() : String(s));
 // folders an Oby may never be given (under your home folder), besides home itself and its Obysphere profiles
 const PRIVATE_DIRS = ['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config', '.claude', '.cursor', '.local', '.npm'];
 const APPROVE_WAIT_MS = Math.max(1, Number(process.env.OBYSPHERE_APPROVE_WAIT_SEC) || 3600) * 1000;
@@ -5005,7 +5011,7 @@ function toolAttach(a, p) {
 function isSecretPath(p) {
   if (SECRETISH.test(p)) return true;
   if (/[\\/]\.obysphere[^\\/]*[\\/]/i.test(p) && /\.json$/i.test(p)) return true; // any representative's profile, keys or pins
-  return p.startsWith(HOME + path.sep) && (/[\\/](keys|profile|peers|sessions|console|settings)\.json$/i.test(p) || /[\\/]notify[\\/]/i.test(p));
+  return caseFold(p).startsWith(caseFold(HOME + path.sep)) && (/[\\/](keys|profile|peers|sessions|console|settings)\.json$/i.test(p) || /[\\/]notify[\\/]/i.test(p));
 }
 
 // What a reply says about itself (answeredBy, declined, lapsed…): for a sealed one, only what its
@@ -5055,13 +5061,31 @@ function formatReply(r, target, o, agents = []) {
 // words too, so what it sends is checked here, whatever asked for it: only a file itself, never a
 // link (looked at without following it, and opened without following one); never a secret (the
 // deny-list), a file your never-read names hide, Obysphere's own files (any profile, the app),
-// Claude Code's own settings or the system's (/proc, /sys, /dev); and nothing that holds this
-// profile's token or keys. p: the profile (its never-read names, its token and keys).
+// Claude Code's own settings, the private places the answering sandbox keeps out (histories,
+// other assistants' sessions, ~/Library) or the system's (/proc, /sys, /dev); and nothing that
+// holds this profile's token or keys. Paths are compared by the file's real path, and on macOS and
+// Windows in any letter case (~/.CLAUDE is ~/.claude there). p: the profile (its never-read names,
+// its folders, its token and keys).
 function readLocalFiles(list, p) {
   const all = [].concat(list || []);
   if (all.length > 10) throw new Error('At most 10 files at a time.');
   const own = guardedFolders();
   const secrets = p ? ownSecrets(p) : [];
+  let set;
+  const settings = () => {
+    if (set === undefined) {
+      try {
+        set = loadSettings(p);
+      } catch {
+        throw new Error(`Your Oby's settings need fixing (${meCmd()} settings says why): no file is sent until then, since your never-read names can't be read.`);
+      }
+    }
+    return set;
+  };
+  // a private place is refused, but for one of your Oby's folders inside it (yours to share, as in
+  // the sandbox) and the cloud drives macOS keeps in ~/Library (iCloud Drive; Dropbox, Google Drive
+  // and OneDrive in CloudStorage): the person's own files
+  const shared = (x, d) => CLOUD_DRIVES.some((c) => insideFolder(x, path.join(os.homedir(), c))) || (!!p && settings().machine.folders.some((f) => insideFolder(f.path, d.dir) && insideFolder(x, f.path)));
   let hide;
   const files = [];
   for (const f of all) {
@@ -5074,15 +5098,11 @@ function readLocalFiles(list, p) {
       throw new Error(`There's no file at ${full} on this machine.`);
     }
     if (st.isSymbolicLink()) throw new Error(`${shown} is a link: send the file itself, not a link to it.`);
-    let real;
-    try {
-      real = fs.realpathSync(full);
-    } catch {
-      real = full;
-    }
+    // its real path in the letter case the disk keeps (the JavaScript realpath keeps the one given)
+    const real = realOr(full, true);
     for (const x of [full, real]) {
       if (/^\/(proc|sys|dev)(\/|$)/.test(x)) throw new Error(`${shown} is a system file: never sent.`);
-      const where = own.find((d) => insideFolder(x, d.dir));
+      const where = own.find((d) => insideFolder(x, d.dir) && !(d.private && shared(x, d)));
       if (where) throw new Error(`${shown} is one of ${where.what}: never sent.`);
       if (isSecretPath(x)) throw new Error(`${shown} looks like a secret (a key, a credential or an .env file): Obysphere never sends it.`);
     }
@@ -5090,7 +5110,7 @@ function readLocalFiles(list, p) {
     if (p) {
       if (hide === undefined) {
         try {
-          hide = neverReadForms(neverReadOf(loadSettings(p))).regex;
+          hide = neverReadForms(neverReadOf(settings())).regex;
         } catch {
           throw new Error(`Your Oby's settings need fixing (${meCmd()} settings says why): no file is sent until then, since your never-read names can't be read.`);
         }
@@ -5115,20 +5135,24 @@ function readLocalFiles(list, p) {
 }
 
 // the folders nothing is sent from: every place profiles may be (this one and the usual ones), the
-// app, and Claude Code's own settings; each as given and as its real path
+// app, Claude Code's own settings, and the private places the read-only shell's sandbox never reads
+// (SANDBOX_HOME_DENY, with CLAUDE_CONFIG_DIR's transcripts and history); each as given and as its
+// real path
 function guardedFolders() {
   const home = os.homedir();
+  const cfg = process.env.CLAUDE_CONFIG_DIR;
   const named = [
     [[HOME, process.env.OBYSPHERE_HOME, path.join(home, '.obysphere'), path.join(home, '.obysphere-mvp')], "Obysphere's own files (a profile: its token, keys and settings)"],
     [[process.env.OBYSPHERE_APP_HOME, path.join(home, '.local', 'share', 'obysphere')], "Obysphere's own files (the app)"],
-    [[process.env.CLAUDE_CONFIG_DIR, path.join(home, '.claude'), path.join(home, '.claude.json')], "Claude Code's own settings"],
+    [[cfg, path.join(home, '.claude'), path.join(home, '.claude.json')], "Claude Code's own settings"],
+    [[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(cfg ? ['projects', 'history.jsonl'].map((d) => path.join(cfg, d)) : [])], "your private places (shell histories, other assistants' sessions and transcripts, your Library)", true],
   ];
   const out = [];
-  for (const [dirs, what] of named) for (const d of dirs.filter(Boolean)) for (const dir of new Set([path.resolve(d), realOr(path.resolve(d))])) out.push({ dir, what });
+  for (const [dirs, what, priv] of named) for (const d of dirs.filter(Boolean)) for (const dir of new Set([path.resolve(d), realOr(path.resolve(d)), realOr(path.resolve(d), true)])) out.push({ dir, what, ...(priv ? { private: true } : {}) });
   return out;
 }
 function insideFolder(file, dir) {
-  const r = path.relative(dir, file);
+  const r = path.relative(caseFold(dir), caseFold(file));
   return r === '' || (r !== '..' && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r));
 }
 
@@ -6980,9 +7004,10 @@ function folderProblem(abs) {
   return null;
 }
 
-function realOr(f) {
+// native: in the letter case the disk keeps (macOS, Windows), where fs.realpathSync keeps the one given
+function realOr(f, native = false) {
   try {
-    return fs.realpathSync(f);
+    return native ? fs.realpathSync.native(f) : fs.realpathSync(f);
   } catch {
     return path.resolve(f);
   }
