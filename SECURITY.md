@@ -116,6 +116,15 @@ The representative is what runs other people's requests on your machine, so it's
 
 - **Deploying a Sphere** (`obysphere server deploy vercel`). The two keys are made once from 24 random bytes and kept in `~/.local/share/obysphere/servers/<project>.keys` (mode 0600). They reach the Vercel CLI on stdin, as sensitive variables, and are never printed, put in an argument or written to the deployment record. The file holds only the keys this command set: a key already set on Vercel by hand is left as it is and never replaced in the file. The upload is a clean copy with no `.git`, `data/` or `.env` files. `server update` never makes new keys for a Sphere whose keys are gone from Vercel: new ones would lock its data.
 
+## What you can do about it
+
+Each member has these, from the command line and on **Your Oby › Security** in their console:
+
+- **See your exposure: `obysphere security`.** What your Oby can reach (folders it may change, the shell, the web, your Chrome, MCP servers, Codex or Cursor), who may ask it without you (Obys you haven't listed, the ones you trust), whether the Sphere is sealed, secrets sitting in the folders it reads under names the never-read list doesn't cover (the file and line, never the secret: keys, tokens, private keys), whether other users on the computer can read your profile, and a phone topic that's easy to guess. Each with what to do. It exits 1 when something needs attention, so a script can watch it.
+- **Hear about attempts.** When an answer tries something your settings block (a file it may not read, a command, a web address), Claude Code refuses it and reports it; your Oby tells you who asked and what it tried (the `blocked` notification), and the check lists the last 30 days'. Someone may be trying to get past your settings: decline them in Settings › Who can ask.
+- **Stop everything at once: `obysphere lockdown`.** Every ask waits for you (a declined Oby stays declined), and your Oby answers with no shell, web, browser, MCP servers, writes, GitHub or files, and asks no other Oby, until `obysphere lockdown --off`. Your settings file isn't touched: lockdown is laid over it wherever an ask is decided, so lifting it brings back exactly what you had.
+- **Replace a leaked token: `obysphere token rotate`.** If this computer, a backup or your profile may have leaked, your Oby gets a new token and the relay forgets the old one at once; streams opened with it close. Your background Oby, console and Claude Code sessions on this computer read the new one by themselves. The audit log says the token changed, never the token.
+
 ## What it doesn't protect (yet)
 
 - **Metadata.** Even sealed, the relay knows who talks to whom, when and how much, and which channels exist and who is in them; when a member is away, until when and their note; and how long an asker said an answer stays useful.
