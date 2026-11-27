@@ -2501,7 +2501,10 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
         c = again; // it waits for you now: asked outside the queue, then back in line
       }
     } finally {
-      if (ranHere) handoffGone(p, msg.id); // the note its session left goes with the ask
+      if (ranHere) {
+        handoffGone(p, msg.id); // the note its session left goes with the ask
+        if (!held || settled) githubReadGone(p, msg.id); // and the pull requests it read (a held ask tried again keeps them)
+      }
       if (held && settled) heldGone(held);
       else if (held && readHeld(p, held.id)?.until === held.until) writeHeld(p, { ...held, until: new Date(Date.now() + RETRY_MS).toISOString() }); // not now (the Sphere, or another process on it): soon
     }
@@ -2783,6 +2786,10 @@ function sweepAsks(p) {
   // what was left of a stopped process's waits (pending/left-*.json): taken by the next catch-up, else gone after the longest hold
   try {
     for (const n of fs.readdirSync(pendingDir(p))) if (/^left-m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(pendingDir(p), n)).mtimeMs < Date.now() - 8 * 864e5) fs.rmSync(path.join(pendingDir(p), n), { force: true });
+  } catch {}
+  // the pull requests an ask read (github-read/), when its process stopped before the ask ended
+  try {
+    for (const n of fs.readdirSync(path.join(p.dir, 'github-read'))) if (/^m_[A-Za-z0-9_-]{1,32}\.json$/.test(n) && fs.statSync(path.join(p.dir, 'github-read', n)).mtimeMs < old) fs.rmSync(path.join(p.dir, 'github-read', n), { force: true });
   } catch {}
   listWithdrawn(p); // deleted messages: asks taken back go from Waiting for you after a few minutes
   sweepNotify(p);
@@ -8575,7 +8582,8 @@ const GH_BODY_MAX = 20000;
 const GH_DIFF_MAX = 200 * 1024;
 const GH_EVENT_SETTING = { APPROVE: 'approve', REQUEST_CHANGES: 'requestChanges', COMMENT: 'comment' };
 const GH_MERGE = ['merge', 'squash', 'rebase'];
-const GH_WAITING_MAX = 20; // GitHub items waiting for you at once
+const GH_WAITING_MAX = 20; // GitHub items waiting for you at once, per asker (one asker can't fill Waiting for you)
+const GH_WAITING_ALL = 100; // and from everyone together
 const GH_LEVEL_WORDS = { never: 'never', ask: 'asks you first', trusted: 'on its own for Obys you trust (asks you first for others)' };
 
 // settings.github, checked; missing means the defaults (GitHub off)
@@ -8958,22 +8966,28 @@ function githubSigned(p, s, body, { approved = false } = {}) {
   const line = githubSignatureLine(p, approved);
   return text ? `${text}\n\n${line}` : line;
 }
-// the command for an action: every value its own argv element (--body=… whatever it holds)
-function githubArgv(req, body) {
+// a review names its commit: GraphQL's addPullRequestReview with commitOID, so it lands on the commit
+// your Oby read even if more came in a moment before (gh pr review takes whatever the head is then)
+const GH_REVIEW_MUTATION = 'mutation($pr: ID!, $event: PullRequestReviewEvent!, $commit: GitObjectID!, $body: String) { addPullRequestReview(input: { pullRequestId: $pr, event: $event, commitOID: $commit, body: $body }) { pullRequestReview { id } } }';
+const GH_NODE = /^[A-Za-z0-9_=-]{1,200}$/; // a pull request's GraphQL id, like PR_kwDOAbc123
+// the command for an action: every value its own argv element (--body=…, --raw-field=name=…, whatever it holds;
+// -f/--raw-field takes a value as it is, never a file or a placeholder, unlike -F)
+function githubArgv(req, body, prId = null) {
   const n = String(req.number);
   const repo = `--repo=${req.repo}`;
   if (req.action === 'merge') return ['pr', 'merge', n, repo, `--${req.method || 'merge'}`, ...(req.head ? ['--match-head-commit', req.head] : [])];
   if (req.action === 'comment') return ['pr', 'comment', n, repo, `--body=${body}`];
-  const flag = { APPROVE: '--approve', REQUEST_CHANGES: '--request-changes', COMMENT: '--comment' }[req.event];
-  return ['pr', 'review', n, repo, flag, ...(body ? [`--body=${body}`] : [])];
+  return ['api', 'graphql', `--raw-field=query=${GH_REVIEW_MUTATION}`, `--raw-field=pr=${prId}`, `--raw-field=event=${req.event}`, `--raw-field=commit=${req.head}`, ...(body ? [`--raw-field=body=${body}`] : [])];
 }
-async function githubRun(p, s, req, { approved = false } = {}) {
-  const r = await ghRun(githubArgv(req, req.action === 'merge' ? '' : githubSigned(p, s, req.body, { approved })), { timeoutMs: 60e3 });
+// prId: the pull request's GraphQL id, from githubPrHead (a review needs it, and the commit in req.head)
+async function githubRun(p, s, req, { approved = false, prId = null } = {}) {
+  if (req.action === 'review' && (!GH_NODE.test(String(prId)) || !ghSha(req.head))) return { ok: false, why: "which pull request or commit to review isn't known" };
+  const r = await ghRun(githubArgv(req, req.action === 'merge' ? '' : githubSigned(p, s, req.body, { approved }), prId), { timeoutMs: 60e3 });
   return r.code === 0 ? { ok: true } : { ok: false, why: ghSaid(r) };
 }
 // the pull request as it is now: open?, its title, author, base and head commit
 async function githubPrHead(repo, number) {
-  const r = await ghRun(['pr', 'view', String(number), `--repo=${repo}`, '--json', 'number,title,state,isDraft,headRefOid,baseRefName,author']);
+  const r = await ghRun(['pr', 'view', String(number), `--repo=${repo}`, '--json', 'id,number,title,state,isDraft,headRefOid,baseRefName,author']);
   if (r.code !== 0) return { ok: false, why: ghSaid(r) };
   let j;
   try {
@@ -8981,7 +8995,7 @@ async function githubPrHead(repo, number) {
   } catch {
     return { ok: false, why: "gh's answer wasn't JSON" };
   }
-  return { ok: true, title: cleanLine(j?.title, 200), state: ghWord(j?.state) || 'UNKNOWN', draft: !!j?.isDraft, head: ghSha(j?.headRefOid), base: cleanLine(j?.baseRefName, 200), author: ghLogin(j?.author?.login) };
+  return { ok: true, id: GH_NODE.test(String(j?.id)) ? j.id : null, title: cleanLine(j?.title, 200), state: ghWord(j?.state) || 'UNKNOWN', draft: !!j?.isDraft, head: ghSha(j?.headRefOid), base: cleanLine(j?.baseRefName, 200), author: ghLogin(j?.author?.login) };
 }
 
 // ---- the answering session hands its ask to its owner (sphere_ask_owner): a note in
@@ -9097,10 +9111,31 @@ function githubCheck(p, a) {
   return { s, g, repo, number, owner };
 }
 
-// in the answering session's server: the commit each pull request was at when github_pr read it,
-// so an approval, a request for changes or a merge covers what your Oby read, not what came after
-const githubReadHeads = new Map();
+// the commit each pull request was at when github_pr read it, kept per ask (github-read/<ask id>.json in
+// the profile, 0600), not per process: an approval, a request for changes or a merge covers what your Oby
+// read while answering this ask (in any run of it: a held ask tried again, one you let try again), never a
+// read from another ask or a conversation resumed, and nothing without one. Gone when the ask ends.
 const githubKey = (repo, number) => `${repo.toLowerCase()}#${number}`;
+const githubReadFile = (p, askId) => path.join(p.dir, 'github-read', `${askId}.json`);
+function githubReadsOf(p, askId) {
+  if (!ID.m.test(String(askId))) return {};
+  const r = readJsonFile(githubReadFile(p, askId), {});
+  return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+}
+function githubRead(p, repo, number) {
+  const r = githubReadsOf(p, process.env.SPHERE_CAUSE);
+  const k = githubKey(repo, number);
+  return Object.hasOwn(r, k) ? ghSha(r[k]) : null;
+}
+function githubKeepRead(p, repo, number, head) {
+  const askId = process.env.SPHERE_CAUSE;
+  if (!ID.m.test(String(askId)) || !ghSha(head)) return;
+  fs.mkdirSync(path.dirname(githubReadFile(p, askId)), { recursive: true, mode: 0o700 });
+  writeSecret(githubReadFile(p, askId), { ...githubReadsOf(p, askId), [githubKey(repo, number)]: ghSha(head) });
+}
+function githubReadGone(p, askId) {
+  if (ID.m.test(String(askId))) fs.rmSync(githubReadFile(p, askId), { force: true });
+}
 
 async function githubPr(p, a) {
   const c = githubCheck(p, a);
@@ -9155,7 +9190,7 @@ async function githubPr(p, a) {
     reviews: arr(j.reviews).slice(-30).map((r) => ({ by: ghLogin(r?.author?.login), state: ghWord(r?.state), at: cleanLine(r?.submittedAt, 30), text: ghText(r?.body, 3000) })),
     comments: arr(j.comments).slice(-30).map((x) => ({ by: ghLogin(x?.author?.login), at: cleanLine(x?.createdAt, 30), text: ghText(x?.body, 3000) })),
   };
-  if (pr.headCommit) githubReadHeads.set(githubKey(repo, number), pr.headCommit);
+  if (pr.headCommit) githubKeepRead(p, repo, number, pr.headCommit);
   let d = diff.code === 0 ? diff.out : '';
   const bytes = Buffer.byteLength(d);
   let cut = '';
@@ -9211,16 +9246,18 @@ async function githubAct(p, action, a) {
   const pr = await githubPrHead(repo, number);
   if (!pr.ok) return `Couldn't read ${ref}: ${pr.why}. Nothing was posted.`;
   if (pr.state !== 'OPEN') return `${ref} is ${pr.state.toLowerCase()}, so there's nothing to ${w.verb.replace(/ on$/, '')}. Nothing was posted.`;
-  // an approval, a request for changes or a merge covers one commit: the one github_pr read, when it read one
+  // an approval, a request for changes or a merge covers one commit: the one github_pr read in this ask,
+  // and none without a read; a review that only comments covers the read one, else the one it's at now
+  const read = action === 'comment' ? null : githubRead(p, repo, number);
   if (action !== 'comment') {
-    const read = githubReadHeads.get(githubKey(repo, number));
     if (!pr.head) return `Couldn't tell which commit ${ref} is at, so nothing was posted.`;
+    if (!read && req.event !== 'COMMENT') return `You haven't read ${ref} in this ask: read it with github_pr first (${w.noun} covers only the commit you read). Nothing was posted.`;
     if (read && read !== pr.head) return `${ref} has new commits since you read it (${read.slice(0, 7)} then, ${pr.head.slice(0, 7)} now), so nothing was posted. Read it again with github_pr before you ${w.verb} it.`;
   }
-  Object.assign(req, { title: pr.title, author: pr.author, base: pr.base, head: pr.head });
+  Object.assign(req, { title: pr.title, author: pr.author, base: pr.base, head: read || pr.head });
   // on its own: only for the Oby you trust, asking for itself (the representative says so: SPHERE_GITHUB_TRUST)
   if (level === 'trusted' && process.env.SPHERE_GITHUB_TRUST === '1') {
-    const r = await githubRun(p, s, req);
+    const r = await githubRun(p, s, req, { prId: pr.id });
     return r.ok ? `Done: ${w.done} ${ref} on GitHub, as ${owner}${g.signature ? ', signed as written by their Oby' : ''}.` : `GitHub didn't take it: ${r.why}. Nothing was posted.`;
   }
   // it waits for the owner: a request for the representative that ran this answer, which holds it
@@ -9249,8 +9286,11 @@ function githubQueued(p) {
 }
 function githubQueue(p, req) {
   const owner = cleanLine(p.agent.owner, 60);
-  if (githubQueued(p).length + pendingEntries(p).filter((w) => w.kind === 'github').length >= GH_WAITING_MAX)
-    return { ok: false, why: `${GH_WAITING_MAX} GitHub actions already wait for ${owner}: nothing more is added until they decide those. Nothing was posted.` };
+  // what waits now: queued for a representative to take, or taken into Waiting for you; whose ask each is
+  const askers = [...githubQueued(p).map((n) => readJsonFile(path.join(githubQueueDir(p), n), null)?.asker ?? null), ...pendingEntries(p).filter((w) => w.kind === 'github').map((w) => w.askerId ?? null)];
+  if (askers.filter((a) => a === (req.asker ?? null)).length >= GH_WAITING_MAX)
+    return { ok: false, why: `${GH_WAITING_MAX} of this asker's GitHub actions already wait for ${owner}: nothing more is added for it until they decide those. Nothing was posted.` };
+  if (askers.length >= GH_WAITING_ALL) return { ok: false, why: `${GH_WAITING_ALL} GitHub actions already wait for ${owner}: nothing more is added until they decide those. Nothing was posted.` };
   const rid = 'g_' + randomBytes(6).toString('hex');
   writeSecret(path.join(githubQueueDir(p), `${rid}.json`), { rid, ...req, createdAt: new Date().toISOString() });
   return { ok: true, rid };
@@ -9372,7 +9412,7 @@ async function githubCarryOut(p, w, d) {
   // an approval, a request for changes or a merge covers the commit your Oby read
   if (req.action !== 'comment' && !g.head) return { ok: false, text: `Nothing was posted on ${ref}: which commit ${owner}'s Oby read isn't known.` };
   if (req.action !== 'comment' && now.head !== g.head) return { ok: false, text: `${ref} has new commits since ${owner}'s Oby read it, so nothing was posted: ask again for a fresh look.` };
-  const r = await githubRun(p, s, req, { approved: true });
+  const r = await githubRun(p, s, req, { approved: true, prId: now.id });
   if (!r.ok) return { ok: false, text: `${owner} said yes, but GitHub didn't take it: ${r.why}. Nothing was posted on ${ref}.` };
   return { ok: true, text: d.decision === 'comment' ? `${owner} posted the review on ${ref} as a comment, not as ${words.noun}.` : `${owner} ${words.done} ${ref} on GitHub.` };
 }

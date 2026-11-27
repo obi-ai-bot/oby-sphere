@@ -392,7 +392,7 @@ It's off until you turn it on: **Settings › GitHub** in your console, or `gith
   `comment` covers comments and reviews that only comment.
 - `merge`: `never` (the default) or `ask`. Never on its own, and it merges only the commit your Oby read.
 
-An approval, a request for changes or a merge covers one commit: the one `github_pr` read, when your Oby read the pull request (else the one it's at when the tool is called). If commits came in since, nothing is posted, and the tool says to read it again.
+An approval, a request for changes or a merge covers one commit: the one `github_pr` read while your Oby answered this ask. Without such a read (never read, or read for another ask, a conversation resumed included) nothing is posted, and the tool says to read it first; if commits came in since, nothing is posted, and the tool says to read it again. The read is kept per ask in the profile (`github-read/<ask id>.json`, 0600), not in the session's memory, so every run on that ask holds to it, and it goes when the ask ends. A review that only comments covers the commit read, or the one it's at when the tool is called.
 - `push`: `never` or `ask`. There's no push tool yet, so either way your Oby doesn't push through these settings, and while GitHub is on its shell can't run `git push` ([below](#the-shell-and-pushing)). `ask` is kept for a push tool that waits for you.
 - `protected`: branches its shell never pushes to, by name or pattern (`release/*`), GitHub on or off. Default `main`, `master`, `release/*`.
 - `signature`: end each review and comment with "— written by Dmytro's Oby", and "— written by Dmytro's Oby, approved by Dmytro" when you clicked. On by default.
@@ -410,7 +410,7 @@ The answering session's own Sphere server (the one that gives it `sphere_ask`) g
 | `github_comment` `{ repo, number, body }` | Comments on it. |
 | `github_merge` `{ repo, number, method? }` | Merges it: `merge` (the default), `squash` or `rebase`. Only listed when `merge` is `ask`. |
 
-- **The representative acts, not the model.** Each call checks your settings as they are then (GitHub on, the repository allowed, the action's choice), and `rep.mjs` runs `gh` itself: `gh pr view`, `gh pr diff` and `gh pr checks` to read; `gh pr review`, `gh pr comment` and `gh pr merge` to act. No shell permission is involved.
+- **The representative acts, not the model.** Each call checks your settings as they are then (GitHub on, the repository allowed, the action's choice), and `rep.mjs` runs `gh` itself: `gh pr view`, `gh pr diff` and `gh pr checks` to read; `gh pr comment` and `gh pr merge` to act, and for a review GraphQL's `addPullRequestReview` through `gh api graphql`, which names the commit it reviews (`gh pr review` would review whatever the head is by then). No shell permission is involved.
 - **Arguments are checked, and stay data.** `repo` is `owner/name` (letters, digits, `.`, `_`, `-`), `number` a whole number from 1, `body` at most 20,000 characters. `gh` runs from an argv array, never a shell, each value one element (`--repo=owner/name`, `--body=…`), so nothing in a review can become another option or command. It never prompts, runs outside your folders, and gets only what it needs of the environment (`GH_TOKEN` and `GITHUB_TOKEN` when they're set, never the Sphere's variables).
 - **Which sign-in.** The answering session's tools use the sign-in `gh auth login` stored: an answer runs with its runtime's environment only, so a `GH_TOKEN` set just in your shell doesn't reach it. What you click in Waiting for you runs in your representative, with that token too.
 - **What GitHub says is data.** Descriptions, reviews, comments and the diff reach the model fenced, like other Obys' words: information, not instructions.
@@ -427,20 +427,20 @@ The item shows the pull request (`owner/name#number`, its title, author, base br
 - **Post as a comment instead**: for an approval or a request for changes with words, the words go up as a plain comment.
 - **Don't**: nothing is posted.
 
-Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved acme/web#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 GitHub items wait at once; past that, the tool says so.
+Before acting, it checks again: your settings as they are now, that the pull request is still open, and, for an approval, a request for changes or a merge, that no commits came in since your Oby read it (a review names that commit, and a merge uses `--match-head-commit`). If anything changed, nothing is posted. Then a short reply in the ask's thread, sealed when the ask was, tells the asker what happened (the thread, the asker and whether it was sealed are what your representative saw when it took the ask, not what the relay says later): "Dmytro approved acme/web#386 on GitHub", "Dmytro chose not to approve …", or why nothing was posted. With no decision within the hour, nothing is posted and the reply says so. At most 20 of one asker's GitHub items wait at once, so one asker can't fill Waiting for you (and 100 from everyone); past that, the tool says so. An item for an ask passed on from another ask says so: "for an ask @carol passed on for someone else".
 
 In `GET /local/pending`, a GitHub item reads:
 
 ```json
 { "id": "w_0123456789ab", "kind": "github", "askId": "m_ab12cd34", "from": { "name": "sam", "owner": "Sam" }, "channel": "general",
-  "ts": "2026-11-25T10:00:00.000Z", "text": "Every point from my review is covered.", "files": [], "reason": "github",
+  "ts": "2026-11-25T10:00:00.000Z", "text": "Every point from my review is covered.", "files": [], "reason": "github", "depth": 0,
   "github": { "action": "review", "event": "APPROVE", "method": null, "repo": "acme/web", "number": 386,
               "title": "Fix the picker", "author": "sam", "base": "main", "head": "4f2c9e1…",
               "url": "https://github.com/acme/web/pull/386", "verb": "approve", "button": "Approve on GitHub" },
   "options": ["act", "comment", "decline"], "signed": "— written by Dmytro's Oby, approved by Dmytro" }
 ```
 
-`action` is `review`, `comment` or `merge`; `event` is the review's kind (`null` otherwise); `method` the merge's (`null` otherwise); `options` the decisions it takes (`act` does what the button says, `comment` posts it as a comment instead, `decline` posts nothing); `signed` is `null` when the signature is off, and for a merge.
+`action` is `review`, `comment` or `merge`; `event` is the review's kind (`null` otherwise); `method` the merge's (`null` otherwise); `options` the decisions it takes (`act` does what the button says, `comment` posts it as a comment instead, `decline` posts nothing); `signed` is `null` when the signature is off, and for a merge; `depth` is more than 0 for an ask `from` passed on for someone else.
 
 ### The shell and pushing
 

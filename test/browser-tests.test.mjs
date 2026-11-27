@@ -316,6 +316,7 @@ if (!chromium) {
             const asked = await world.rep(['ask', 'alice', question, '--profile', 'carol', '--wait', '60']);
             assert.ok(asked.out.includes(ANSWER), asked.out);
             const session = world.session(world.fake.calls().find((c) => c.prompt.includes(question)));
+            await session.call('github_pr', { repo: 'acme/payments', number: pr }); // an approval covers the commit read in this ask
             assert.match(await session.call('github_review', { repo: 'acme/payments', number: pr, event: 'APPROVE', body: 'Looks right to me.' }), /waits for Alice Test/);
             session.close();
             const writes = world.gh.writes().length;
@@ -328,9 +329,10 @@ if (!chromium) {
             await noSidewaysScroll(page, vp, 'a GitHub item in Waiting for you');
             await card.getByRole('button', { name: 'Approve on GitHub' }).click();
             await card.waitFor({ state: 'detached' });
-            const done = await until(() => world.gh.writes()[writes], 'gh pr review');
-            assert.deepEqual(done.argv.slice(0, 5), ['pr', 'review', String(pr), '--repo=acme/payments', '--approve']);
-            assert.match(done.argv[5], /^--body=Looks right to me\.\n\n— written by Alice Test's Oby, approved by Alice Test$/);
+            const done = await until(() => world.gh.writes()[writes], 'the review, through gh api graphql');
+            assert.deepEqual(done.argv.slice(0, 2), ['api', 'graphql']);
+            assert.ok(done.argv.includes('--raw-field=event=APPROVE') && done.argv.includes(`--raw-field=pr=PR_kwFAKE${pr}`), done.argv.join(' '));
+            assert.match(done.argv.at(-1), /^--raw-field=body=Looks right to me\.\n\n— written by Alice Test's Oby, approved by Alice Test$/);
             // and the ask's thread says so, for Carol
             await switchView(page, 'Conversation');
             await page.getByRole('log').getByText(`Alice Test approved acme/payments#${pr} on GitHub.`).waitFor();
