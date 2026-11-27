@@ -40,6 +40,8 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
     switch (name.toUpperCase()) {
       case 'PING':
         return 'PONG';
+      case 'MGET':
+        return a.map((k) => get(k, 'string')?.v ?? null);
       case 'GET':
         return get(a[0], 'string')?.v ?? null;
       case 'SET': {
@@ -150,6 +152,8 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
           const n = base + l.length;
           if (n !== Number(argv[0])) return -1;
           run(['RPUSH', logKey, ...argv.slice(1)], true);
+          // a fourth key: the log's change counter, bumped in the same script
+          if (keys.length >= 4) return [n + argv.length - 1, run(['INCR', keys[3]], true)];
           return keys.length >= 3 ? n + argv.length - 1 : list(logKey).length;
         }
         if (script.startsWith('-- obysphere:rewrite')) {
@@ -167,12 +171,18 @@ export function startFakeUpstash({ port = 0, token = 'fake-token', latencyMs = 0
           }
           const add = argv.slice(2 + 2 * k);
           if (add.length) run(['RPUSH', logKey, ...add], true);
+          if (keys.length >= 4) return [n + add.length - 1, skipped, run(['INCR', keys[3]], true)];
           return [n + add.length - 1, skipped];
         }
         if (script.startsWith('-- obysphere:read')) {
           const from = Number(argv[0]) - base;
           if (from < 0) return [base];
-          return [base, run(['LRANGE', logKey, from, from + Number(argv[1]) - 1], true)];
+          const items = run(['LRANGE', logKey, from, from + Number(argv[1]) - 1], true);
+          if (keys.length >= 4) {
+            const seq = live(keys[3])?.v;
+            return seq === undefined ? [base, items] : [base, items, seq]; // Redis drops a trailing nil
+          }
+          return [base, items];
         }
         if (script.startsWith('-- obysphere:compact')) {
           // KEYS log, base, tail, pointer, old snapshot list, new snapshot list;

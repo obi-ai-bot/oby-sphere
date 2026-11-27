@@ -68,6 +68,9 @@ const CFG = {
   asksPerMin: Number(args['asks-per-min'] ?? env.SPHERE_ASKS_PER_MIN) || null,
   writesPerMin: Number(args['writes-per-min'] ?? env.SPHERE_WRITES_PER_MIN) || null,
   pollMs: Number(env.SPHERE_POLL_MS) || 1000,
+  // redis: how often an instance looks for news when nothing has happened for half a minute and
+  // nobody waits for an answer (eight times pollMs unless set)
+  pollIdleMs: Number(env.SPHERE_POLL_IDLE_MS) || 8 * (Number(env.SPHERE_POLL_MS) || 1000),
   compactEvery: compactEvery(env.SPHERE_COMPACT_EVERY), // redis: log entries in the tail before a compaction (0: never)
   compactWaitMs: Math.max(0, Number(env.SPHERE_COMPACT_WAIT_MS ?? 3600000) || 0), // redis: no compaction until this long after the first compaction-aware start
   streamMaxMs: Number(env.SPHERE_STREAM_MAX_MS) || (ON_VERCEL ? 280000 : 0),
@@ -1070,6 +1073,7 @@ const APPEND_LUA = `-- obysphere:append${LOG_LUA}
 local n = base + redis.call('LLEN', log)
 if n ~= tonumber(ARGV[1]) then return -1 end
 for i = 2, #ARGV do redis.call('RPUSH', log, ARGV[i]) end
+if KEYS[4] then return {n + #ARGV - 1, redis.call('INCR', KEYS[4])} end
 return n + #ARGV - 1`;
 // Deleting messages: as APPEND_LUA, after overwriting ARGV[2] entries of the log by absolute
 // position (ARGV[3], ARGV[4], ... : a position, then what goes there): a deleted message's own
@@ -1086,12 +1090,16 @@ for i = 0, k - 1 do
   if at >= 0 and at < len then redis.call('LSET', log, at, ARGV[4 + 2 * i]) else skipped = skipped + 1 end
 end
 for i = 3 + 2 * k, #ARGV do redis.call('RPUSH', log, ARGV[i]) end
+if KEYS[4] then return {n + #ARGV - 3 - 2 * k, skipped, redis.call('INCR', KEYS[4])} end
 return {n + #ARGV - 3 - 2 * k, skipped}`;
 // {base, entries from position ARGV[1], at most ARGV[2]}, or {base} when that position was compacted away
+// With a fourth key, the log's change counter too (see syncLocked): {base, entries, counter}
 const READ_LUA = `-- obysphere:read${LOG_LUA}
 local from = tonumber(ARGV[1]) - base
 if from < 0 then return {base} end
-return {base, redis.call('LRANGE', log, from, from + tonumber(ARGV[2]) - 1)}`;
+local items = redis.call('LRANGE', log, from, from + tonumber(ARGV[2]) - 1)
+if KEYS[4] then return {base, items, redis.call('GET', KEYS[4])} end
+return {base, items}`;
 // Compaction. Swaps in the snapshot list KEYS[6] (ARGV[4] entries, the state
 // folded from positions 0 to ARGV[2]) only if the snapshot pointer KEYS[4] is
 // still ARGV[1] (so base hasn't moved), the position is still in the log, and the
@@ -1126,11 +1134,17 @@ function redisStore() {
     snap: CFG.prefix + 'snap',
     snapList: (id) => CFG.prefix + 'snap:' + id,
     pres: CFG.prefix + 'presence',
+    // change counters: every write to the log bumps `seq` (in the same script, so a counter that
+    // hasn't moved means a log that hasn't), every stream that opens or closes bumps `presSeq`. An
+    // instance with nothing new to read reads these two (one MGET) instead of the log
+    seq: CFG.prefix + 'seq',
+    presSeq: CFG.prefix + 'presence:seq',
     rl: CFG.prefix + 'rl:',
     file: CFG.prefix + 'file:',
     rsv: CFG.prefix + 'rsv:', // uploads under way, per member (see reserve)
   };
   const LOG_KEYS = ['3', K.log, K.base, K.tail]; // what every log script starts with
+  const SEQ_KEYS = ['4', K.log, K.base, K.tail, K.seq]; // and the change counter, for reads and writes
   let applied = 0; // log position applied to memory (absolute: snapshot included)
   let base = 0; // the log's base, as last read
   let snapCount = 0; // entries in the snapshot, as last read
@@ -1191,6 +1205,25 @@ function redisStore() {
   let lastSweep = 0;
   let lastRefresh = 0;
   let polling = false;
+  // The cost on Upstash is per command, so an instance waits for news cheaply. It knows the log's
+  // counter as of its last read (null: no writer has kept one yet, so every look is a read); a
+  // look whose counter hasn't moved reads nothing more. A full read comes at least every
+  // FULL_READ_MS anyway, for writes from a relay of an older version, which keeps no counter.
+  // It looks every pollMs for half a minute after news (30 looks), or while someone waits for an
+  // answer here, and every pollIdleMs otherwise.
+  let knownSeq = null;
+  let knownPres = null;
+  let presStale = false;
+  let lastFull = 0;
+  let quietSince = Date.now();
+  const FULL_READ_MS = 5 * 60000;
+  const BUSY_FOR_MS = 30 * CFG.pollMs; // half a minute, at the usual pollMs
+  // presence: each stream here is kept for PRES_TTL_MS and renewed every PRES_KEEP_MS; others'
+  // are read when their counter moves, and at least every PRES_READ_MS (one that ended in a crash
+  // leaves by its time, without a word)
+  const PRES_TTL_MS = 60000;
+  const PRES_KEEP_MS = 25000;
+  const PRES_READ_MS = 30000;
   let chainLock = Promise.resolve();
   const lock = (fn) => {
     const run = chainLock.then(fn, fn);
@@ -1200,7 +1233,7 @@ function redisStore() {
 
   // A network error (no HTTP reply) is retried for commands that are safe to send twice; a write
   // (EVAL appends to the log) isn't, since the first try may have landed.
-  const RETRY_SAFE = new Set(['LRANGE', 'LLEN', 'GET', 'ZRANGEBYSCORE', 'ZADD', 'ZREMRANGEBYSCORE']);
+  const RETRY_SAFE = new Set(['LRANGE', 'LLEN', 'GET', 'MGET', 'ZRANGEBYSCORE', 'ZADD', 'ZREMRANGEBYSCORE']);
   async function redisFetch(url, body, retry) {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -1225,9 +1258,24 @@ function redisStore() {
     return j.map((x) => x.result);
   }
 
-  async function syncLocked() {
+  // Brings this instance up to the log; true when it read anything new. cheap: first only the two
+  // counters (one command), and the log only when its counter moved, or when the last full read is
+  // FULL_READ_MS old
+  async function syncLocked({ cheap = false } = {}) {
+    if (cheap && knownSeq !== null && Date.now() - lastFull < FULL_READ_MS) {
+      const [seq, ps] = await call(['MGET', K.seq, K.presSeq], true);
+      if (ps !== knownPres) {
+        knownPres = ps;
+        presStale = true;
+      }
+      if (seq === knownSeq) {
+        maybeCompact();
+        return false;
+      }
+    }
+    const was = applied;
     for (;;) {
-      const r = await call(['EVAL', READ_LUA, ...LOG_KEYS, String(applied), '200'], true); // a read: safe to send twice
+      const r = await call(['EVAL', READ_LUA, ...SEQ_KEYS, String(applied), '200'], true); // a read: safe to send twice
       base = Number(r[0]);
       if (folding.size) watchFolds(); // deleting messages
       if (r.length < 2) {
@@ -1246,14 +1294,19 @@ function redisStore() {
         }
         applied++;
       }
-      if (items.length < 200) break;
+      if (items.length < 200) {
+        knownSeq = r[2] === undefined || r[2] === null ? null : String(r[2]); // the counter as of this read, atomically
+        break;
+      }
     }
+    lastFull = Date.now();
     maybeCompact(); // compaction: now and then, in the background
+    return applied !== was;
   }
 
   async function commitLocked(build) {
     for (let attempt = 0; attempt < 40; attempt++) {
-      await syncLocked();
+      await syncLocked({ cheap: attempt === 0 }); // after a failed append, the whole read: a writer may keep no counter
       const b = builder();
       try {
         build(b);
@@ -1290,13 +1343,23 @@ function redisStore() {
   async function tryAppend(b, over = []) {
     const entries = b.ops.map((o) => JSON.stringify(o));
     let n;
+    let seq;
     let skipped = 0;
     if (over.length) {
-      const r = await call(['EVAL', REWRITE_LUA, ...LOG_KEYS, String(applied), String(over.length), ...over.flatMap(([p, e]) => [String(p), e]), ...entries]);
+      const r = await call(['EVAL', REWRITE_LUA, ...SEQ_KEYS, String(applied), String(over.length), ...over.flatMap(([p, e]) => [String(p), e]), ...entries]);
       n = Number(r?.[0]);
       skipped = Number(r?.[1]) || 0;
-    } else n = Number(await call(['EVAL', APPEND_LUA, ...LOG_KEYS, String(applied), ...entries]));
+      seq = r?.[2];
+    } else {
+      const r = await call(['EVAL', APPEND_LUA, ...SEQ_KEYS, String(applied), ...entries]);
+      n = Number(Array.isArray(r) ? r[0] : r);
+      seq = Array.isArray(r) ? r[1] : undefined;
+    }
     if (!(n >= 0)) return false;
+    // it appended at the position this instance had read up to, so the log is what this instance
+    // holds now, and the counter its write left is the one to compare with; news is likely soon
+    if (seq !== undefined && seq !== null) knownSeq = String(seq);
+    quietSince = Date.now();
     for (let i = 0; i < b.ops.length; i++) {
       logBytes += entries[i].length;
       apply(b.ops[i]);
@@ -1464,7 +1527,8 @@ function redisStore() {
 
   async function refreshPresence(force = false) {
     const t = Date.now();
-    if (!force && t - pres.at < 1000) return;
+    if (!force && !presStale && t - pres.at < PRES_READ_MS) return;
+    presStale = false;
     const members = await call(['ZRANGEBYSCORE', K.pres, String(t), '+inf']);
     const map = new Map();
     for (const mem of members || []) {
@@ -1474,7 +1538,7 @@ function redisStore() {
       map.set(agent, c);
     }
     pres = { at: t, map };
-    if (t - lastSweep > 60000) {
+    if (t - lastSweep > 5 * 60000) {
       lastSweep = t;
       call(['ZREMRANGEBYSCORE', K.pres, '-inf', String(t)]).catch(() => {});
     }
@@ -1487,10 +1551,10 @@ function redisStore() {
     try {
       while (streams.size || waiters.size) {
         try {
-          await lock(syncLocked);
-          if (Date.now() - lastRefresh > 5000 && streams.size) {
+          if (await lock(() => syncLocked({ cheap: true }))) quietSince = Date.now();
+          if (Date.now() - lastRefresh > PRES_KEEP_MS && streams.size) {
             lastRefresh = Date.now();
-            const exp = String(Date.now() + 20000);
+            const exp = String(Date.now() + PRES_TTL_MS);
             const args = [];
             for (const st of streams) if (st.agentId) args.push(exp, member(st));
             if (args.length) await call(['ZADD', K.pres, ...args]);
@@ -1500,7 +1564,9 @@ function redisStore() {
         } catch (e) {
           console.error('sync:', e.message);
         }
-        await new Promise((r) => setTimeout(r, CFG.pollMs));
+        // every pollMs while something happens or someone waits for an answer here; otherwise pollIdleMs
+        const busy = waiters.size > 0 || Date.now() - quietSince < BUSY_FOR_MS;
+        await new Promise((r) => setTimeout(r, busy ? CFG.pollMs : Math.max(CFG.pollMs, CFG.pollIdleMs)));
       }
     } finally {
       polling = false;
@@ -1533,7 +1599,7 @@ function redisStore() {
       useAdminKey(CFG.adminKey);
       return { created, generated: false, keysFile: null };
     },
-    sync: () => lock(syncLocked),
+    sync: () => lock(() => syncLocked({ cheap: true })),
     commit: (build) => lock(() => commitLocked(build)),
     freshPresence: () => refreshPresence(),
     // a sliding minute: this minute's count plus the last minute's, weighted by how much of it is still in the window
@@ -1548,14 +1614,16 @@ function redisStore() {
       return pres.map.get(id) || { rep: 0, session: 0 };
     },
     async presenceOpen(st) {
-      await call(['ZADD', K.pres, String(Date.now() + 20000), member(st)]);
+      // the counter tells other instances to read presence again
+      await pipeline([['ZADD', K.pres, String(Date.now() + PRES_TTL_MS), member(st)], ['INCR', K.presSeq]]);
+      quietSince = Date.now();
       await refreshPresence(true);
       pollLoop();
     },
     async presenceClose(st) {
       // a stream we ended on purpose (the function's time limit) stays counted
       // until its entry expires, so the reconnect doesn't flap online/offline
-      if (!st.planned) await call(['ZREM', K.pres, member(st)]).catch(() => {});
+      if (!st.planned) await pipeline([['ZREM', K.pres, member(st)], ['INCR', K.presSeq]]).catch(() => {});
       await refreshPresence(true).catch(() => {});
     },
     wake: () => pollLoop(),
