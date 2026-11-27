@@ -9124,10 +9124,11 @@ function isProgram(f) {
 }
 
 // PATH with its full folders only, in their order: an empty, `.` or other relative entry names a
-// folder relative to wherever a program runs. (obysphere.mjs has the same.)
+// folder relative to wherever a program runs, and one with a line break or another control
+// character would start a line of its own in a service file. (obysphere.mjs has the same.)
 function fullPath(value, platform = process.platform) {
   const win = platform === 'win32';
-  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
+  const full = (d) => !/[\u0000-\u001f\u007f]/.test(d) && (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
   return String(value || '').split(win ? ';' : ':').filter(full).join(win ? ';' : ':');
 }
 

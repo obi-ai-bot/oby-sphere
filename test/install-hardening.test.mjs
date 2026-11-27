@@ -199,6 +199,9 @@ describe('programs by their full path, never from the folder a command runs in (
       assert.equal(fullPath('/usr/bin::.:node_modules/.bin:/opt/x/bin:', 'darwin'), '/usr/bin:/opt/x/bin', file);
       assert.equal(fullPath('.:bin:', 'linux'), '');
       assert.equal(fullPath('C:\\Windows\\System32;.;bin;;D:rel;\\rooted;"C:\\Program Files\\Git\\cmd"', 'win32'), 'C:\\Windows\\System32;"C:\\Program Files\\Git\\cmd"');
+      // an entry with a line break or another control character, which would start a line of its own in a service file (R63)
+      assert.equal(fullPath('/usr/bin:/opt/tools\nExecStartPre=/bin/echo injected\nX=:/opt/a\tb:/opt/c\u007f:/bin', 'linux'), '/usr/bin:/bin', file);
+      assert.equal(fullPath('C:\\Tools\r\nX=1;C:\\Windows', 'win32'), 'C:\\Windows');
     }
   });
 
@@ -486,6 +489,50 @@ describe('the service files and the menu bar app (finding 2, 3, 5)', () => {
     const unit = fs.readFileSync(path.join(l, 'services', 'obysphere-alice.service'), 'utf8');
     for (const k of [...Object.keys(bad), 'OBYSPHERE_TEST']) assert.ok(!unit.includes(k), `the unit has no ${k}`);
     assert.ok(unit.includes(`Environment="PATH=${NODE_DIR}:/usr/bin"`), unit);
+  });
+
+  test('a line break never adds a line to a service file: a PATH entry with one is dropped, any other value refused (R63)', { skip: WIN && 'folder names with a line break' }, async () => {
+    const injected = 'ExecStartPre=/bin/echo injected';
+    // a profile with its console's port chosen already, so none is tried
+    const port = await freePort();
+    const profileIn = (profiles) => fs.writeFileSync(path.join(fakeProfile(profiles, 'alice'), 'service.json'), JSON.stringify({ port }), { mode: 0o600 });
+    // a PATH entry that is a full path, with lines after it: systemd would read each as a directive
+    const h = tmp('svc-newline');
+    profileIn(path.join(h, 'profiles'));
+    const PATH = `${NODE_DIR}:/usr/bin:/opt/tools\n${injected}\nX=`;
+    let r = await cli(['start'], envFor(h, { PATH, OBYSPHERE_SERVICE_PLATFORM: 'linux' }));
+    assert.equal(r.code, 0, r.out);
+    const unit = fs.readFileSync(path.join(h, 'services', 'obysphere-alice.service'), 'utf8');
+    assert.ok(!unit.includes(injected), unit);
+    assert.ok(unit.includes(`Environment="PATH=${NODE_DIR}:/usr/bin"\n`), unit);
+    // anything else the service file holds: refused, and nothing written
+    const profilesWithBreak = path.join(tmp('svc-newline-home'), `profiles\n${injected}`);
+    profileIn(profilesWithBreak);
+    for (const [what, extra] of [
+      ['OBYSPHERE_DOWNLOADS', { OBYSPHERE_DOWNLOADS: `/tmp/downloads\n${injected}` }],
+      ['OBYSPHERE_APP_HOME', { OBYSPHERE_APP_HOME: `/tmp/app\n${injected}` }],
+      ['the profiles folder', { OBYSPHERE_HOME: profilesWithBreak }],
+    ]) {
+      for (const platform of ['linux', 'darwin', 'win32']) {
+        const d = tmp('svc-newline-refused');
+        if (!extra.OBYSPHERE_HOME) profileIn(path.join(d, 'profiles'));
+        r = await cli(['start'], envFor(d, { ...extra, OBYSPHERE_SERVICE_PLATFORM: platform }));
+        assert.equal(r.code, 1, `${what} on ${platform}: ${r.out}`);
+        assert.match(r.stderr, /has a line break or another control character, so it can't go in a service file/, `${what} on ${platform}`);
+        const written = fs.existsSync(path.join(d, 'services')) ? fs.readdirSync(path.join(d, 'services')).filter((f) => f !== 'dryrun.jsonl') : [];
+        assert.deepEqual(written, [], `${what} on ${platform}: no service file`);
+      }
+    }
+    // the menu bar's agent too: no icon, rather than an agent written with it
+    const m = tmp('svc-newline-menubar');
+    profileIn(path.join(m, 'profiles'));
+    assert.equal((await cli(['start'], envFor(m, { OBYSPHERE_SERVICE_PLATFORM: 'darwin' }))).code, 0);
+    const agent = path.join(m, 'services', 'com.obysphere.menubar.plist');
+    fs.rmSync(agent);
+    r = await cli(['menubar', 'on'], envFor(m, { OBYSPHERE_SERVICE_PLATFORM: 'darwin', OBYSPHERE_DOWNLOADS: `/tmp/downloads\n${injected}` }));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.stdout, /No menu bar icon: OBYSPHERE_DOWNLOADS has a line break or another control character/);
+    assert.ok(!fs.existsSync(agent), 'no agent written');
   });
 
   test("OBYSPHERE_NOTIFIER_APP is the menu bar's app only in test mode", async () => {
