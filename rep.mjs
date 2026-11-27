@@ -434,6 +434,19 @@ async function join() {
   const dir = path.join(HOME, profile);
   const again = fs.existsSync(path.join(dir, 'profile.json'));
   if (again && !opt.force) die(`profile "${profile}" already exists in ${dir} (use --profile <other> or --force)`);
+  // joined again: to the same Sphere, which still knows this profile, its pins still hold. To
+  // another, or to one that doesn't know it now (set up afresh, or it was removed), a handle there
+  // may be someone else's: its pins start afresh (afresh: true)
+  const before = again ? readJsonFile(path.join(dir, 'profile.json'), {}) : null;
+  const knows = async () => {
+    try {
+      const r = await fetch(sphere + '/api/info', { headers: { authorization: `Bearer ${String(before.token)}` }, redirect: 'error', signal: AbortSignal.timeout(10000) });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  };
+  const afresh = again && !(before?.sphere === sphere && typeof before?.token === 'string' && (await knows()));
 
   const keys = genKeys();
   const res = await fetch(sphere + '/api/join', {
@@ -466,16 +479,18 @@ async function join() {
   };
   saveProfile(p);
   writeSecret(path.join(dir, 'keys.json'), keys);
-  if (fs.existsSync(path.join(dir, 'peers.json'))) fs.rmSync(path.join(dir, 'peers.json')); // a new Sphere: pin afresh
+  // pinned afresh, but for the same Sphere that still knew this profile: its Obys are the ones first seen there
+  if (afresh || !again) fs.rmSync(path.join(dir, 'peers.json'), { force: true });
   // seen asks and the sealed pin are the old Sphere's (a pin for this one is kept: its relay can't lift it)
   fs.rmSync(path.join(dir, 'seen'), { recursive: true, force: true });
   if (!sealPinned(p)) fs.rmSync(sealPinFile(p), { force: true });
   if (data.sphere?.policy?.sealed) pinSealed(p);
-  // a profile joined again keeps the settings it had; a new one starts from these flags. Its pins
-  // start afresh, so the Obys it trusted (by handle) wait for you again until you trust them again
+  // a profile joined again keeps the settings it had; a new one starts from these flags. Pinned
+  // afresh, a handle may be someone else's until checked, so whoever it listed by handle (but a
+  // decline) is asked like anyone it hasn't listed
   let reset = [];
   if (!fs.existsSync(settingsFile(p))) firstSettings(p);
-  else if (again) reset = untrustAll(p);
+  else if (afresh) reset = untrustAll(p);
 
   console.log(`
 ${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as ${p.bot ? `a bot for ${printable(p.agent.owner)} (no person behind it)` : `${printable(p.agent.owner)}'s representative`}.
@@ -484,8 +499,8 @@ ${green('✓')} ${bold(p.agent.name)} joined ${bold(printable(p.sphereName))} as
   Profile:  ${path.join(dir, 'profile.json')}  (your token and keys: never share them)
   Settings: ${settingsFile(p)}  (what your Oby may do: ${meCmd()} settings --profile ${profile})
 
-${reset.length ? `${yellow('Trust reset:')} ${reset.map((n) => '@' + n).join(', ')} now wait${reset.length === 1 ? 's' : ''} for you (Ask me first): a profile joined again pins every Oby afresh,
-  so trust one again (Settings › Who can ask) once you've checked with its owner that it's theirs.
+${reset.length ? `${yellow('Who can ask, reset:')} ${reset.map((n) => '@' + n).join(', ')} ${reset.length === 1 ? 'is' : 'are'} now taken like any Oby you haven't listed: every Oby is pinned afresh, and a
+  handle may be someone else's here, so list one again (Settings › Who can ask) once you've checked with its owner that it's theirs.
 
 ` : ''}Next:
   1. ${goOnline(profile)}
@@ -496,7 +511,8 @@ ${reset.length ? `${yellow('Trust reset:')} ${reset.map((n) => '@' + n).join(', 
 `);
 }
 
-// joining again: the Obys a profile trusted (settings, by handle) wait for you; the handles it returns
+// joining again, pinned afresh: the Obys a profile listed by handle (settings) are asked like any
+// it hasn't listed, but a decline stays; the handles it returns
 function untrustAll(p) {
   let s;
   try {
@@ -505,9 +521,9 @@ function untrustAll(p) {
     log(yellow(`  your settings couldn't be read (${printable(e.message)}): check who you trust in ${settingsFile(p)}`));
     return [];
   }
-  const were = Object.keys(s.access.agents).filter((n) => s.access.agents[n] === 'trust');
+  const were = Object.keys(s.access.agents).filter((n) => s.access.agents[n] !== 'decline');
   if (!were.length) return [];
-  for (const n of were) s.access.agents[n] = 'approve';
+  for (const n of were) delete s.access.agents[n];
   writeSettings(p, validateSettings(s));
   return were;
 }

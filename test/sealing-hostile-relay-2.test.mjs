@@ -289,6 +289,47 @@ describe('a sealed Sphere whose relay turns hostile, again', () => {
       s.settingsFor('bob', { alice: 'trust', carol: 'decline' }, { access: { default: 'answer' } });
     }
   });
+
+  test('R18: joining the same Sphere again keeps the pins; joining another resets who may ask, but not a decline', async () => {
+    s.reset();
+    const dir = path.join(s.home, 'carol');
+    const settings = () => JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
+    const set = (agents) => fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ ...settings(), access: { ...settings().access, agents } }), { mode: 0o600 });
+    // carol has seen everyone, and lists who may ask
+    const hello = await s.rep(['post', 'R18-HELLO', '--profile', 'carol']);
+    assert.equal(hello.code, 0, hello.out);
+    assert.ok(fs.existsSync(path.join(dir, 'peers.json')), `${hello.out}\n${fs.readdirSync(dir)}`);
+    const pins = s.peersOf('carol');
+    assert.ok(pins[s.ids.bob] && pins[s.ids.mallory]);
+    set({ alice: 'trust', bob: 'answer', mallory: 'decline' });
+    const same = await s.rep(['join', `${s.h.url}/#key=${KEY}`, '--name', 'carol-again', '--owner', 'Carol Test', '--cwd', s.work, '--profile', 'carol', '--force']);
+    assert.match(same.out, /joined/, same.out);
+    assert.deepEqual(s.peersOf('carol'), pins, 'the same Sphere: its pins still hold');
+    assert.deepEqual(settings().access.agents, { alice: 'trust', bob: 'answer', mallory: 'decline' });
+    assert.doesNotMatch(same.out, /reset/);
+    // the same address, but it doesn't know this profile now (set up afresh): pinned afresh, listings reset
+    const token = s.profile('carol').token;
+    s.h.request = async (req, url, body) => (url.pathname === '/api/info' && String(req.headers.authorization) === `Bearer ${token}` ? { status: 401, json: { error: 'Unknown token.', code: 'unauthorized' } } : s.serveForged(req, url, body));
+    const fresh = await s.rep(['join', `${s.h.url}/#key=${KEY}`, '--name', 'carol-afresh', '--owner', 'Carol Test', '--cwd', s.work, '--profile', 'carol', '--force']);
+    assert.match(fresh.out, /joined/, fresh.out);
+    assert.match(fresh.out, /@alice, @bob/);
+    assert.ok(!fs.existsSync(path.join(dir, 'peers.json')), 'pinned afresh');
+    assert.deepEqual(settings().access.agents, { mallory: 'decline' });
+    s.reset();
+    set({ alice: 'trust', bob: 'answer', mallory: 'decline' });
+    // another Sphere: a handle there is someone else's until checked
+    const other = await startHostileRelay(s.base);
+    try {
+      const j = await s.rep(['join', `${other.url}/#key=${KEY}`, '--name', 'carol-elsewhere', '--owner', 'Carol Test', '--cwd', s.work, '--profile', 'carol', '--force']);
+      assert.match(j.out, /joined/, j.out);
+      assert.match(j.out, /@alice/);
+      assert.match(j.out, /@bob/);
+      assert.deepEqual(settings().access.agents, { mallory: 'decline' });
+      assert.ok(!fs.existsSync(path.join(dir, 'peers.json')) || !Object.keys(s.peersOf('carol')).some((k) => k.startsWith('a_')), 'no pins from the old Sphere');
+    } finally {
+      await other.close();
+    }
+  });
 });
 
 // Replays: v1 envelopes (an older Oby's, a relay that says it takes no other, or one the relay
