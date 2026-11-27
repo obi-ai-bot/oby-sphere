@@ -41,7 +41,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const { randomBytes, createHash, createHmac, timingSafeEqual } = crypto;
-const VERSION = 'obysphere/0.3';
+const VERSION = 'obysphere/0.4';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const IS_MAIN = (() => {
   try {
@@ -91,7 +91,7 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000, readsInFlight: 8, stallMs: 20000, repliesPerAsk: 10 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: Number(process.env.SPHERE_STREAM_OPENS_PER_MIN) || 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000, readsInFlight: 8, stallMs: 20000, repliesPerAsk: 10 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
 const COMPACT_GAP_MS = 5000; // fs: deletions rewrite messages.jsonl at most this often (see compactSoon)
 const FORCED_GAP_MS = 60e3; // redis: deletions and cuts by time bring a compaction forward at most this often, per instance
@@ -3245,13 +3245,16 @@ async function route(req, res, url) {
       if (st.role === 'viewer' && st.ip === ip) fromIp++;
       if (st.role === 'viewer') viewers++;
     }
-    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams)
+    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams) {
+      // for the operator: whose streams are open, and for how long (no token, no words)
+      if (me) console.error(`${me.name} has ${mine} streams open, the most a member may: ${[...streams].filter((x) => x.agentId === me.id).map((x) => `${x.role} ${Math.round((Date.now() - x.opened) / 1000)}s`).join(', ')}`);
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
+    }
     // each one a member opens and closes says it's online, or in a session, and back: so many a minute
     if (me && !take(streamOpens, me.id, LIMITS.streamOpensPerMin)) throw err(429, 'rate_limited', 'Too many streams opened: try again in a moment.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, opened: Date.now(), keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {

@@ -1110,8 +1110,14 @@ async function ui() {
       if (req.headers.accept) headers.accept = String(req.headers.accept).slice(0, 200);
       // admin calls go with your token alone; the admin key passes through once, for Admin access… (a claim)
       if (req.method === 'POST' && url.pathname === '/api/admin/claim' && req.headers['x-admin-key']) headers['x-admin-key'] = String(req.headers['x-admin-key']).slice(0, 200);
+      // the call to the relay ends with the browser's: when the response closes, or when its
+      // connection was gone before this line (a request's own 'close' comes once its body is read,
+      // so it isn't one), and a stream also checks before each event (below): one held for nobody
+      // counts against the member's open streams on the relay
       const ac = new AbortController();
-      res.on('close', () => ac.abort());
+      const gone = () => ac.abort();
+      res.on('close', gone);
+      if (res.destroyed || req.socket?.destroyed) gone();
       const relay = () => fetch(p.sphere + url.pathname + url.search, { method: req.method, headers: { ...headers, authorization: `Bearer ${p.token}` }, body, signal: ac.signal, redirect: 'error' });
       let r = await relay();
       if (r.status === 401 && tokenChanged(p)) r = await relay(); // a new token, from token rotate
@@ -1156,6 +1162,7 @@ async function ui() {
         let buf = '';
         try {
           for await (const chunk of r.body) {
+            if (res.destroyed || ac.signal.aborted) break; // the browser left: so does this stream
             buf += dec.decode(chunk, { stream: true });
             if (buf.length > MAX_EVENT) break; // a relay that never ends an event: dropped
             let i;
@@ -1165,7 +1172,10 @@ async function ui() {
               res.write((await openBlock(block)) + '\n\n');
             }
           }
-        } catch {}
+        } catch {
+        } finally {
+          ac.abort(); // the relay's stream ends with this one, however it ended
+        }
         return res.end();
       }
       // one type, exactly, and at most a charset: "application/json, text/html" is no JSON

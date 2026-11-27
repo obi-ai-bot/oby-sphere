@@ -18,6 +18,8 @@ import { consoleAuth, consoleSecret } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).version; // this checkout's version
+const RELAY = PKG_VERSION.split('.').slice(0, 2).join('.'); // what its relay says it speaks (obysphere/<major.minor>)
+const RELAY_RE = RELAY.replaceAll('.', '\\.');
 const ROOT = fs.realpathSync(path.join(HERE, '..'));
 const CLI = path.join(ROOT, 'obysphere.mjs');
 const REP = path.join(ROOT, 'rep.mjs');
@@ -589,7 +591,7 @@ describe('server deploy vercel, with a fake vercel', () => {
     assert.ok(!secretsIn(JSON.stringify(rec)), 'no secrets in the record');
     assert.ok(r.stdout.includes(`${relayBase}/#key=<SPHERE_KEY from that file>`));
     assert.ok(r.stdout.includes(keysFile()));
-    assert.match(r.stdout, /It answers: relay 0\.3, fs store/);
+    assert.match(r.stdout, new RegExp(`It answers: relay ${RELAY_RE}, fs store`));
     assert.ok(!secretsIn(r.out), 'no key printed');
   });
 
@@ -603,7 +605,7 @@ describe('server deploy vercel, with a fake vercel', () => {
     const st = await cli(['server', 'status'], env);
     assert.equal(st.code, 0, st.out);
     assert.match(st.stdout, /team-sphere/);
-    assert.match(st.stdout, /up · relay 0\.3 · fs store/);
+    assert.match(st.stdout, new RegExp(`up · relay ${RELAY_RE} · fs store`));
     const down = await cli(['server', 'status', 'http://127.0.0.1:9'], env);
     assert.equal(down.code, 1);
     assert.match(down.stdout, /doesn't answer/);
@@ -671,9 +673,9 @@ describe('status, open and the version check, against a local relay', () => {
     assert.equal(s.profiles.length, 1);
     assert.deepEqual(
       { profile: s.profiles[0].profile, running: s.profiles[0].running, reachable: s.profiles[0].relay.reachable, relay: s.profiles[0].relay.version, versions: s.profiles[0].versions },
-      { profile: 'alice', running: false, reachable: true, relay: '0.3', versions: 'same' },
+      { profile: 'alice', running: false, reachable: true, relay: RELAY, versions: 'same' },
     );
-    assert.match((await cli(['status'], env)).stdout, /not running: obysphere start[\s\S]*reachable · relay 0\.3[\s\S]*they match/);
+    assert.match((await cli(['status'], env)).stdout, new RegExp(`not running: obysphere start[\\s\\S]*reachable · relay ${RELAY_RE}[\\s\\S]*they match`));
     assert.equal((await cli(['open'], env)).code, 1);
 
     // the console running (as its service would run it)
