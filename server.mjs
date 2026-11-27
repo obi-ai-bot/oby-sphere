@@ -627,6 +627,7 @@ function fsStore() {
   let snapTimer = null;
   let snapDirty = false;
   const buckets = new Map();
+  const reserved = new Map(); // member id -> Map(upload id -> bytes): uploads under way
 
   // small and rarely written: files and messages are in the log, not here
   const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels, admins: [...S.admins] });
@@ -750,6 +751,8 @@ function fsStore() {
     kind: 'fs',
     async init() {
       fs.mkdirSync(FILES, { recursive: true, mode: 0o700 });
+      // an upload a crash cut short left its temp file: nothing will finish it
+      for (const f of fs.readdirSync(FILES)) if (f.startsWith('.up-')) fs.rmSync(path.join(FILES, f), { force: true });
       let snap = readFileJson(SNAP);
       let legacy = null;
       if (snap && Array.isArray(snap.messages)) {
@@ -890,37 +893,68 @@ function fsStore() {
     },
     async presenceOpen() {},
     async presenceClose() {},
+    // An upload, streamed to a temp file, then moved into place. However it ends early (past `max`,
+    // the client gone, a write that failed), the temp file is closed and removed at once: an
+    // abandoned upload leaves no open file and nothing on the disk.
     async receiveUpload(req, id, max) {
       const tmp = path.join(FILES, '.up-' + id);
       const hash = createHash('sha256');
       let size = 0;
       await new Promise((resolve, reject) => {
         const out = fs.createWriteStream(tmp, { mode: 0o600 });
-        let failed = false;
+        let over = false;
+        const fail = (e) => {
+          if (over) return;
+          over = true;
+          req.unpipe(out);
+          out.destroy();
+          fs.rm(tmp, { force: true }, () => {});
+          reject(e);
+        };
         req.on('data', (c) => {
-          if (failed) return;
+          if (over) return;
           size += c.length;
           if (size > max) {
-            failed = true;
-            req.unpipe(out);
-            out.destroy();
-            fs.rm(tmp, () => {});
-            req.resume();
-            reject(err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`));
+            fail(err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`));
+            req.resume(); // read the rest, so the answer reaches the client
             return;
           }
           hash.update(c);
         });
+        req.on('error', fail);
+        req.on('close', () => !req.complete && fail(err(400, 'bad_request', 'The upload ended before its body did.')));
+        out.on('error', fail);
+        out.on('finish', () => {
+          if (over) return;
+          over = true;
+          resolve();
+        });
         req.pipe(out);
-        out.on('finish', () => !failed && resolve());
-        out.on('error', (e) => !failed && reject(e));
-        req.on('error', (e) => !failed && reject(e));
       });
       fs.renameSync(tmp, path.join(FILES, id));
       return { size, sha256: hash.digest('hex') };
     },
     async putFile(id, buf) {
       fs.writeFileSync(path.join(FILES, id), buf, { mode: 0o600 });
+    },
+    async dropFiles(ids) {
+      removeFiles(ids);
+    },
+    // uploads under way count against their member's quota before they're stored: `bytes` for the
+    // upload `id`, if what's reserved with it still fits in `left` (see reserveUpload)
+    async reserve(agent, id, bytes, left) {
+      const mine = reserved.get(agent) || new Map();
+      let n = bytes;
+      for (const b of mine.values()) n += b;
+      if (n > left) return false;
+      mine.set(id, bytes);
+      reserved.set(agent, mine);
+      return true;
+    },
+    async release(agent, id) {
+      const mine = reserved.get(agent);
+      mine?.delete(id);
+      if (mine && !mine.size) reserved.delete(agent);
     },
     async readFile(id) {
       const p = path.join(FILES, id);
@@ -1026,6 +1060,7 @@ function redisStore() {
     pres: CFG.prefix + 'presence',
     rl: CFG.prefix + 'rl:',
     file: CFG.prefix + 'file:',
+    rsv: CFG.prefix + 'rsv:', // uploads under way, per member (see reserve)
   };
   const LOG_KEYS = ['3', K.log, K.base, K.tail]; // what every log script starts with
   let applied = 0; // log position applied to memory (absolute: snapshot included)
@@ -1465,6 +1500,26 @@ function redisStore() {
     },
     async putFile(id, buf) {
       await call(['SET', K.file + id, buf.toString('base64')]);
+    },
+    async dropFiles(ids) {
+      const keys = [].concat(ids || []).filter((id) => /^f_[\w-]{1,32}$/.test(String(id))).map((id) => K.file + id);
+      if (keys.length) await call(['DEL', ...keys]);
+    },
+    // uploads under way, shared by every instance: a sorted set per member of `<upload id>:<bytes>`,
+    // each scored by when it lapses (an instance that dies mid-upload leaves one that goes by
+    // itself). Added first, then summed: two instances adding at once both see both, so they never
+    // pass the quota together (at worst both refuse)
+    async reserve(agent, id, bytes, left) {
+      const k = K.rsv + agent;
+      const t = Date.now();
+      const [, , live] = await pipeline([['ZREMRANGEBYSCORE', k, '-inf', String(t)], ['ZADD', k, String(t + 180000), `${id}:${bytes}`], ['ZRANGEBYSCORE', k, String(t), '+inf'], ['EXPIRE', k, '300']]);
+      const n = (live || []).reduce((s, x) => s + (Number(String(x).split(':').pop()) || 0), 0);
+      if (n <= left) return true;
+      await call(['ZREM', k, `${id}:${bytes}`]).catch(() => {});
+      return false;
+    },
+    async release(agent, id, bytes) {
+      await call(['ZREM', K.rsv + agent, `${id}:${bytes}`]).catch(() => {});
     },
     async readFile(id) {
       const v = await call(['GET', K.file + id]);
@@ -3104,9 +3159,9 @@ async function route(req, res, url) {
       });
     const fileList = [].concat(body.files || []);
     if (fileList.length > S.policy.maxFilesPerMessage) throw err(400, 'bad_request', `A message carries at most ${S.policy.maxFilesPerMessage} files.`);
-    // inline (base64) files are stored first; plain ones are refused while sealing is on
-    const pre = [];
-    let adding = 0;
+    // inline (base64) files: plain ones are refused while sealing is on; each is checked, and their
+    // bytes reserved against the quota (with uploads under way), before any is stored
+    const bufs = [];
     for (const f of fileList) {
       if (!f || f.data === undefined) continue;
       if (body.sealed) throw err(400, 'bad_envelope', 'A sealed message carries no inline files: upload each encrypted file first (POST /api/files), then refer to it by id.');
@@ -3116,18 +3171,36 @@ async function route(req, res, url) {
         });
       const buf = Buffer.from(String(f.data), 'base64');
       if (buf.length > S.policy.maxFileBytes) throw err(413, 'too_large', `${safeName(f.name || 'A file')} is larger than ${fmtBytes(S.policy.maxFileBytes)}.`);
-      adding += Math.max(1024, buf.length);
-      if ((agentBytes.get(me.id) || 0) + adding > S.policy.maxAgentBytes) throw err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}).`);
-      const id = 'f_' + token(8);
-      await store.putFile(id, buf);
-      pre.push(fileMeta(me, id, buf.length, sha(buf), f.name, f.mime));
+      bufs.push([f, buf]);
     }
-    const b = await store.commit((b) => {
-      for (const meta of pre) b.audit('file', { actor: me.id, ref: meta.id, detail: `${me.name} · ${meta.name} · ${fmtBytes(meta.size)} · sha256 ${meta.sha256.slice(0, 12)}` });
-      buildMessage(b, me, body, pre);
-    });
-    relayRing.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    return send(res, 200, { message: b.result });
+    const adding = bufs.reduce((n, [, buf]) => n + Math.max(1024, buf.length), 0);
+    const hold = 'p_' + token(8);
+    if (adding && !(await store.reserve(me.id, hold, adding, S.policy.maxAgentBytes - (agentBytes.get(me.id) || 0)))) throw quotaErr();
+    // then stored, since building the message is synchronous; a post refused after that takes them
+    // away again, so nothing stays stored without a record
+    const pre = [];
+    let committing = false;
+    try {
+      for (const [f, buf] of bufs) {
+        const id = 'f_' + token(8);
+        await store.putFile(id, buf);
+        pre.push(fileMeta(me, id, buf.length, sha(buf), f.name, f.mime));
+      }
+      committing = true;
+      const b = await store.commit((b) => {
+        for (const meta of pre) b.audit('file', { actor: me.id, ref: meta.id, detail: `${me.name} · ${meta.name} · ${fmtBytes(meta.size)} · sha256 ${meta.sha256.slice(0, 12)}` });
+        buildMessage(b, me, body, pre);
+      });
+      relayRing.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      return send(res, 200, { message: b.result });
+    } catch (e) {
+      // refused, or the store busy: nothing was committed. (A commit that failed with no answer from
+      // the store may have landed: its files stay.)
+      if (pre.length && (!committing || e.status)) await store.dropFiles(pre.map((x) => x.id)).catch((x) => console.error('removing files:', x.message));
+      throw e;
+    } finally {
+      if (adding) await store.release(me.id, hold, adding);
+    }
   }
 
   if (m === 'POST' && p === '/api/files') {
@@ -3138,19 +3211,28 @@ async function route(req, res, url) {
     const len = Number(req.headers['content-length']);
     if (len > max) throw err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`);
     const quotaLeft = S.policy.maxAgentBytes - (agentBytes.get(me.id) || 0);
-    if (quotaLeft < Math.max(1024, len || 0)) throw err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}).`);
+    if (quotaLeft < Math.max(1024, len || 0)) throw quotaErr();
     let name = 'file';
     try {
       name = decodeURIComponent(String(req.headers['x-file-name'] || 'file'));
     } catch {}
     const id = 'f_' + token(8);
-    const { size, sha256 } = await store.receiveUpload(req, id, Math.min(max, quotaLeft));
-    const meta = fileMeta(me, id, size, sha256, name, req.headers['content-type']);
-    await store.commit((b) => {
-      b.audit('file', { actor: me.id, ref: id, detail: `${me.name} · ${meta.name} · ${fmtBytes(size)} · sha256 ${sha256.slice(0, 12)}` });
-      b.push({ t: 'file', f: meta });
-    });
-    return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
+    // its bytes are reserved before the body is read (its length, or as much as could fit when it
+    // doesn't say), so uploads in parallel can't pass the quota together; released once it's stored
+    // and counted, or refused
+    const need = req.headers['content-length'] !== undefined && Number.isFinite(len) ? Math.max(1024, len) : Math.min(max, quotaLeft);
+    if (!(await store.reserve(me.id, id, need, quotaLeft))) throw quotaErr();
+    try {
+      const { size, sha256 } = await store.receiveUpload(req, id, Math.min(max, need));
+      const meta = fileMeta(me, id, size, sha256, name, req.headers['content-type']);
+      await store.commit((b) => {
+        b.audit('file', { actor: me.id, ref: id, detail: `${me.name} · ${meta.name} · ${fmtBytes(size)} · sha256 ${sha256.slice(0, 12)}` });
+        b.push({ t: 'file', f: meta });
+      });
+      return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
+    } finally {
+      await store.release(me.id, id, need);
+    }
   }
 
   // ===== deleting messages: your own (a post or an ask you wrote, a reply your Oby gave), with your
@@ -3437,6 +3519,9 @@ function err(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+function quotaErr() {
+  return err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}), counting its uploads under way.`);
 }
 
 // token bucket: `perMin` a minute, refilled continuously (the fs store)
