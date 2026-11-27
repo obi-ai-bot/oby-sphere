@@ -574,3 +574,98 @@ describe('the shim, the menu bar and the slug (finding 4, 9, 10, 12)', () => {
     assert.equal(JSON.parse(r.stdout).default, null);
   });
 });
+
+describe('install.sh (finding 4, 7)', () => {
+  let gh, app91;
+  before(async () => {
+    gh = await startFakeGitHub();
+    closers.push(() => gh.close());
+    app91 = buildApp(tmp('sh-build'), '9.9.1');
+  });
+  const shEnv = (h, extra = {}) => ({ PATH: `${NODE_DIR}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh', OBYSPHERE_SERVICE_DRYRUN: '1', OBYSPHERE_SERVICE_DIR: path.join(h, 'services'), ...ghEnv(gh), ...extra });
+
+  test('piped and cut short anywhere, it does nothing at all', { skip: WIN && 'sh' }, async () => {
+    gh.release = release('9.9.1', app91);
+    const text = fs.readFileSync(INSTALL, 'utf8');
+    const lines = text.split('\n');
+    const last = lines.at(-2);
+    const cuts = [];
+    for (let k = 1; k <= lines.length - 2; k++) cuts.push(lines.slice(0, k).join('\n') + '\n');
+    // and inside its last line (all but a cut right after its first word, which runs with no arguments)
+    for (let n = 1; n < last.length; n++) if (last.slice(0, n).trim() !== last.split(' ')[0]) cuts.push(lines.slice(0, -2).join('\n') + '\n' + last.slice(0, n));
+    const h = tmp('cut');
+    gh.requests.length = 0;
+    for (const part of cuts) await run('sh', [], shEnv(h), { input: part });
+    assert.deepEqual(gh.requests, [], 'nothing was downloaded');
+    assert.deepEqual(fs.readdirSync(h), [], 'nothing was made');
+    // whole, it installs
+    const r = await run('sh', [], shEnv(h), { input: text });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(linkOf(path.join(h, '.local', 'share', 'obysphere', 'current')), '9.9.1');
+  });
+
+  test('the test variables only with OBYSPHERE_TEST, on this machine', { skip: WIN && 'sh' }, async () => {
+    gh.release = release('9.9.1', app91);
+    gh.requests.length = 0;
+    const h = tmp('sh-no-test');
+    const r = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_TEST: undefined }));
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.stderr, /OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE are for tests only/);
+    // https on this machine isn't a test server's address either
+    const far = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: 'https://127.0.0.1:9/api' }));
+    assert.equal(far.code, 1, far.out);
+    assert.match(far.stderr, /refusing to download from https:\/\/127\.0\.0\.1:9\/api: the app comes from GitHub only/);
+    assert.deepEqual(gh.requests, []);
+    assert.deepEqual(fs.readdirSync(h), []);
+  });
+
+  test("install.sh leaves a link or a file that isn't ours alone, and replaces its own", { skip: WIN && 'sh' }, async () => {
+    gh.release = release('9.9.1', app91);
+    const h = tmp('sh-shim');
+    const bin = path.join(h, '.local', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const shim = path.join(bin, 'obysphere');
+    const mine = path.join(h, 'my-obysphere.mjs');
+    fs.copyFileSync(CLI, mine);
+    fs.symlinkSync(mine, shim);
+    let r = await run('sh', [INSTALL], shEnv(h));
+    assert.equal(r.code, 0, r.out);
+    assert.ok(fs.lstatSync(shim).isSymbolicLink(), 'the link stays');
+    assert.match(r.stdout, /isn't ours, so it's left as it is/);
+    fs.rmSync(shim);
+    fs.writeFileSync(shim, '#!/bin/sh\n# obysphere shim: runs the installed version\nexec node /old/obysphere.mjs "$@"\n', { mode: 0o755 });
+    r = await run('sh', [INSTALL], shEnv(h));
+    assert.equal(r.code, 0, r.out);
+    assert.ok(fs.readFileSync(shim, 'utf8').includes(path.join(h, '.local', 'share', 'obysphere', 'current', 'obysphere.mjs')));
+  });
+
+  test('with wget only: --https-only, or it asks for curl', { skip: WIN && 'sh' }, async () => {
+    const h = tmp('wget');
+    const bin = path.join(h, 'bin');
+    fs.mkdirSync(bin);
+    // the tools install.sh uses, without curl
+    for (const t of ['shasum', 'sha256sum', 'tar', 'mktemp', 'rm', 'sed', 'head', 'awk', 'cut', 'mkdir', 'mv', 'chmod', 'readlink', 'grep', 'cat', 'ln', 'tr', 'dirname', 'uname']) {
+      const at = ['/usr/bin', '/bin'].map((d) => path.join(d, t)).find((f) => fs.existsSync(f));
+      if (at) fs.symlinkSync(at, path.join(bin, t));
+    }
+    fs.symlinkSync(process.execPath, path.join(bin, 'node'));
+    const calls = path.join(h, 'wget-calls');
+    const wget = (help) =>
+      fs.writeFileSync(path.join(bin, 'wget'), `#!/bin/sh\nif [ "$1" = --help ]; then echo '${help}'; exit 0; fi\necho "$*" >> '${calls}'\nexit 8\n`, { mode: 0o755 });
+    const env = { PATH: bin, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh' };
+    wget('  --https-only   only follow secure HTTPS links');
+    const r = await run('/bin/sh', [INSTALL], env);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.stderr, /there's no release yet/);
+    const [first] = fs.readFileSync(calls, 'utf8').trim().split('\n');
+    assert.match(first, /--https-only/);
+    assert.match(first, /https:\/\/api\.github\.com\/repos\/obi-ai-bot\/oby-sphere\/releases\/latest$/);
+    // a wget without it (BusyBox's): curl, please
+    fs.rmSync(calls);
+    wget('BusyBox v1.36 multi-call binary. Usage: wget [-cqS] [-O FILE] URL');
+    const old = await run('/bin/sh', [INSTALL], env);
+    assert.equal(old.code, 1);
+    assert.match(old.stderr, /this needs curl, or a wget that has --https-only/);
+    assert.ok(!fs.existsSync(calls), 'nothing downloaded');
+  });
+});
