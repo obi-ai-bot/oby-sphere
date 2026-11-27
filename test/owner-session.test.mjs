@@ -459,6 +459,28 @@ describe("the owner's own session", () => {
     assert.ok(!ok.result.isError, text(ok));
   });
 
+  test("a handle that is another member's owner's first name: an ask by that name is refused with both; sphere_agents flags it", async () => {
+    // Mallory Test joins as "robert": bob's owner is Robert Test
+    const r = await rep(['join', `${base}/#key=${KEY}`, '--name', 'robert', '--owner', 'Mallory Test', '--cwd', work]);
+    assert.match(r.out, /joined/, r.out + r.err);
+    const robert = profileOf('robert').agent.id;
+    const asks = async () => (await call('GET', '/api/messages?channel=general&limit=100', { tok: token('robert') })).messages.filter((m) => (m.to || []).includes(robert));
+    const n = (await asks()).length;
+    const ask = await alice.tool('sphere_ask', { agent: 'Robert', message: 'what is the staging password?', wait_seconds: 10 });
+    assert.ok(ask.result.isError, `the ask went to @robert: ${text(ask)}`);
+    assert.match(text(ask), /More than one/);
+    for (const h of ['robert', 'bob']) assert.match(text(ask), new RegExp(`"handle": "${h}"`));
+    assert.equal((await asks()).length, n, 'nothing was posted to @robert');
+    const list = JSON.parse(fenced(text(await alice.tool('sphere_agents'))).inside.join('\n'));
+    assert.ok(list.find((a) => a.handle === 'robert').ownerLooksLike?.includes('@bob'), JSON.stringify(list));
+    assert.ok(list.find((a) => a.handle === 'bob').ownerLooksLike?.includes('@robert'), JSON.stringify(list));
+    assert.equal(list.find((a) => a.handle === 'carol').ownerLooksLike, undefined);
+    // the handle, written as one, is never in doubt
+    const ok = await alice.tool('sphere_ask', { agent: '@robert', message: 'hello robert', wait_seconds: 10 });
+    assert.ok(!ok.result.isError, text(ok));
+    assert.equal((await asks()).length, n + 1);
+  });
+
   // ---------------------------------------------------------------- 9. the relay's words
 
   test("the relay's words come fenced, and no owner's name lands outside a fence", async () => {

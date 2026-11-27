@@ -4252,7 +4252,7 @@ async function mcp() {
   // these descriptions ship with this file: never taken from the relay
   const str = (description) => ({ type: 'string', description });
   const askProps = {
-    agent: str("The agent to ask: its handle (see sphere_agents) or its owner's name."),
+    agent: str("The agent to ask: its handle (see sphere_agents; written with @, as in @bob, only that handle) or its owner's name."),
     message: str('What to ask or tell them. Write for an agent that does not know your context.'),
     channel: str('Channel to post in (default: general, or the current one).'),
     wait_seconds: { type: 'number', description: 'How long to wait for the reply (default 300, max 900).' },
@@ -4582,10 +4582,10 @@ async function toolAgents(api, p) {
       canReceiveSealed: !!a.keys,
       about: cleanLine(a.about, 200),
       instruments: offeredBy(a).length ? offeredBy(a).map((i) => i.name) : undefined, // instruments it offers (sphere_use)
-      ownerLooksLike: alike.get(a.id), // other Obys whose owner's name looks like this one's
+      ownerLooksLike: alike.get(a.id), // other Obys a person could mean by the same name: their owners' names look alike, or one's handle is the other's owner's name
     })),
   );
-  return alike.size ? `${list}\n\nSome owners' names look like another member's (ownerLooksLike): before asking one of them, confirm the handle with your owner.` : list;
+  return alike.size ? `${list}\n\nSome owners' names, or handles, look like another member's owner's name (ownerLooksLike): before asking one of them, confirm the handle with your owner.` : list;
 }
 
 // ---- whether an agent can answer now, in the words askers read (sphere_agents, sphere_ask,
@@ -4656,7 +4656,14 @@ function resolveAgent(agents, p, name) {
     return a;
   };
   const handle = here.filter((a) => slug(a.name) === slug(n) && slug(n) === n.toLowerCase());
-  if (handle.length === 1) return sure(handle[0]);
+  if (handle.length === 1) {
+    // a handle that is also another Oby's owner's name, whole or first ("robert", beside Robert
+    // Test's @bob): the person may mean either, unless it's written as a handle (@robert)
+    const key = nameKey(n);
+    const also = /^\s*@/.test(String(name || '')) ? [] : here.filter((a) => a.id !== handle[0].id && !!key && [nameKey(a.owner), nameKey(a.owner).split(' ')[0]].includes(key));
+    if (!also.length) return sure(handle[0]);
+    throw new Error(`More than one Oby fits ${JSON.stringify(cleanLine(n, 40))}: @${slug(handle[0].name)} by its handle, and ${also.map((a) => `@${slug(a.name)}`).join(', ')} by its owner's name. Ask by handle, written with @, after your owner says which one they mean. ${quoted('Candidates', [handle[0], ...also].map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) })))}`);
+  }
   const list = here.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) }));
   const wanted = cleanLine(n, 60).toLowerCase();
   const pick = here.filter((a) => {
@@ -4669,23 +4676,32 @@ function resolveAgent(agents, p, name) {
 }
 
 // owners' names that look like another member's (the same name, or one that's another's first
-// name, once case, accents, look-alike letters and spacing are set aside): sphere_agents flags
-// them, so a person confirms the handle before an ask goes to one of them
+// name, once case, accents, look-alike letters and spacing are set aside), and handles that look
+// like another member's owner's name ("robert", beside Robert Test's @bob: both are flagged):
+// sphere_agents flags them, so a person confirms the handle before an ask goes to one of them
 function nameKey(s) {
   // Cyrillic and Greek letters that look Latin, and digits and marks that look like letters
   const look = { '\u{430}': 'a', '\u{435}': 'e', '\u{43E}': 'o', '\u{440}': 'p', '\u{441}': 'c', '\u{443}': 'y', '\u{445}': 'x', '\u{456}': 'l', '\u{458}': 'j', '\u{455}': 's', '\u{501}': 'd', '\u{4BB}': 'h', '\u{4CF}': 'l', '\u{3B1}': 'a', '\u{3BF}': 'o', '\u{3C1}': 'p', '\u{3BD}': 'v', '\u{3C4}': 't', '\u{3B9}': 'l', '\u{3BA}': 'k', '0': 'o', '1': 'l', i: 'l', '|': 'l' };
   return [...cleanLine(s, 60).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()].map((c) => look[c] ?? c).join('').replace(/rn/g, 'm').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 function lookalikeOwners(here) {
-  const keys = new Map(here.map((a) => [a.id, { whole: nameKey(a.owner), first: nameKey(a.owner).split(' ')[0] }]));
+  const keys = new Map(here.map((a) => [a.id, { whole: nameKey(a.owner), first: nameKey(a.owner).split(' ')[0], handle: nameKey(slug(a.name)) }]));
   const out = new Map();
+  const flag = (a, b) => {
+    const list = out.get(a.id) || [];
+    if (!list.includes(`@${slug(b.name)}`)) out.set(a.id, [...list, `@${slug(b.name)}`]);
+  };
   for (const a of here)
     for (const b of here) {
       if (a.id === b.id) continue;
       const x = keys.get(a.id);
       const y = keys.get(b.id);
-      if (!x.whole || !y.whole) continue;
-      if (x.whole === y.whole || x.whole === y.first || x.first === y.whole) out.set(a.id, [...(out.get(a.id) || []), `@${slug(b.name)}`]);
+      if (!y.whole) continue;
+      if (x.whole && (x.whole === y.whole || x.whole === y.first || x.first === y.whole)) flag(a, b);
+      if (x.handle && (x.handle === y.whole || x.handle === y.first)) {
+        flag(a, b);
+        flag(b, a);
+      }
     }
   return out;
 }
