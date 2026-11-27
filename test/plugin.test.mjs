@@ -421,7 +421,7 @@ describe('the MCP server (scripts/mcp.mjs)', () => {
     assert.match(text, /isn't installed/);
     assert.match(text, /obi-ai-bot\/oby-sphere repository\), under Get started › With the CLI/);
     assert.doesNotMatch(text, /curl[^\n]*\|\s*sh/, 'no download-and-run command in the plugin');
-    assert.match(text, /obysphere join "<invite link>"/);
+    assert.match(text, /obysphere join '<invite link>'/);
     assert.deepEqual(checkCommands(text.split('\n'), 'obysphere_setup').problems, []);
     assert.equal((await m.request(5, 'tools/call', { name: 'sphere_ask', arguments: {} })).error.code, -32602);
     assert.equal((await m.request(6, 'no/such/method')).error.code, -32601);
