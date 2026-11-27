@@ -835,17 +835,23 @@ async function ui() {
     }
     return agentsById;
   };
-  // open, verified and unsealed are this console's to say: whatever the relay put there goes first.
-  // A sealed message it can't open shows no words (the relay's beside an envelope aren't its
-  // sender's); a plain one from a member, where this profile seals, is marked unsealed (the page
-  // says the relay could have written it)
+  // open, verified, unsealed and who wrote it are this console's to say: whatever the relay put
+  // there goes first. One rep.mjs wouldn't take as a message isn't passed on (null; a deleted
+  // one's tombstone is). Its sender: fromPinned, the handle and owner's name first seen for its id
+  // (the page names it so, whatever the relay calls it later), and fromUnsure when the relay calls
+  // it otherwise now. A sealed message it can't open shows no words (the relay's beside an envelope
+  // aren't its sender's); a plain one from a member, where this profile seals, is marked unsealed
+  // (the page says the relay could have written it). A sealed message's meta is what its sender
+  // put inside it, signed (the relay's beside it is relayMeta, which the page doesn't show)
   const openForPage = (m, amap, pinned = sealPinned(p)) => {
-    if (!m || typeof m !== 'object' || Array.isArray(m)) return m;
-    const { open: _open, verified: _verified, unsealed: _unsealed, ...rest } = m;
-    if (!validMessage(rest)) return rest;
-    if (!rest.sealed) return plainInSealed(p, rest, pinned) ? { ...rest, unsealed: true } : rest;
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+    const { open: _open, verified: _verified, unsealed: _unsealed, fromPinned: _fp, fromUnsure: _fu, relayMeta: _rm, ...rest } = m;
+    if (!validMessage(rest)) return validTombstone(rest) ? rest : null;
+    const named = namedFor(rest, amap);
+    if (!rest.sealed) return { ...rest, ...named, ...(plainInSealed(p, rest, pinned) ? { unsealed: true } : {}) };
+    const relayMeta = isMap(rest.meta) && Object.keys(rest.meta).length ? { relayMeta: rest.meta } : {};
     const o = sec.open(rest, amap);
-    if (!o.readable) return { ...rest, text: '' };
+    if (!o.readable) return { ...rest, ...named, text: '', meta: {}, ...relayMeta };
     if (o.verified && o.files.length) {
       for (const f of o.files) {
         if (!fileKeys.has(f.id)) fileKeys.set(f.id, new Map());
@@ -855,16 +861,25 @@ async function ui() {
     }
     return {
       ...rest,
+      ...named,
       text: o.text,
       files: o.files.map(({ id, name, mime, size }) => ({ id, name, mime, size, sha256: rest.files.find((x) => x.id === id)?.sha256 })),
+      meta: (o.verified && o.meta) || {},
+      ...relayMeta,
       open: true,
       verified: o.verified,
     };
   };
+  const namedFor = (m, amap) => {
+    if (!m.from || m.from === p.agent.id || !amap.has(m.from)) return {};
+    const w = sec.identity(amap.get(m.from));
+    const a = amap.get(m.from);
+    return { fromPinned: { name: w.pinned || slug(a.name), owner: cleanLine(w.owner ?? a.owner, 60) }, ...(w.ok ? {} : { fromUnsure: cleanLine(w.why, 200) }) };
+  };
   const openAll = async (list) => {
     const amap = await agentsMap(list.some((m) => m?.sealed && m.from && !agentsById.get(m.from)?.keys));
     const pinned = sealPinned(p);
-    return list.map((m) => openForPage(m, amap, pinned));
+    return list.map((m) => openForPage(m, amap, pinned)).filter((m) => m !== null);
   };
   // a new profile/Sphere pair at this origin: the browser clears what an earlier one left
   const pairsFile = path.join(p.dir, 'console.json');
@@ -1095,7 +1110,7 @@ async function ui() {
       }
       if (ev === 'message' && data && typeof data === 'object') {
         const [o] = await openAll([data]);
-        return `event: message\ndata: ${JSON.stringify(o)}`;
+        return o ? `event: message\ndata: ${JSON.stringify(o)}` : ': a message that is not one';
       }
       // a change to a message: its timing and waiting only, checked; anything else is dropped
       if (ev === 'message-update') {
@@ -2644,7 +2659,7 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       // your access levels, limits and what waits for you. One the relay renamed, or a handle it
       // re-pointed at another id, isn't sure (who.ok false): it waits for you, never with the risky reach
       const who = agentsById.has(msg.from) ? sec.identity(listed) : { ok: false, why: "it isn't listed in the Sphere", pinned: null };
-      const from = { ...listed, name: who.pinned || listed.name };
+      const from = { ...listed, name: who.pinned || listed.name, owner: who.owner ?? listed.owner };
       const asker = slug(from.name);
       const gateFrom = who.ok || who.pinned ? asker : ''; // a handle another id was first seen with is never this one's
       const opened = sec.open(msg, agentsById);
@@ -4640,12 +4655,15 @@ function agentState(a) {
 // whose owner's name fits counts, so another member can't take an owner's name ("Bob", beside
 // "Bob Test") and be the one asked: more than one, and the ask is refused with their handles. And
 // the Oby first seen under that handle: a relay that re-points a handle at another id and its
-// keys gets a refusal.
+// keys gets a refusal. An owner's name is the one first seen for each id (the relay's only for
+// an Oby not seen yet), so the relay can't give it to another Oby: a name first seen for an Oby it
+// doesn't list now isn't given to another either.
 function resolveAgent(agents, p, name) {
   const here = agents.filter((a) => validAgent(a) && !a.removed);
   const n = String(name || '').trim().replace(/^@/, '');
+  const sec = getSec(p);
   const sure = (a) => {
-    const w = getSec(p).identity(a);
+    const w = sec.identity(a);
     if (!w.ok) throw new Error(`@${slug(a.name)} isn't the Oby you know by that name: ${w.why}. Check with its owner before you ask it anything.`);
     return a;
   };
@@ -4653,10 +4671,13 @@ function resolveAgent(agents, p, name) {
   if (handle.length === 1) return sure(handle[0]);
   const list = here.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) }));
   const wanted = cleanLine(n, 60).toLowerCase();
-  const pick = here.filter((a) => {
-    const owner = cleanLine(a.owner, 60).toLowerCase();
+  const fits = (o) => {
+    const owner = cleanLine(o, 60).toLowerCase();
     return !!wanted && (owner === wanted || owner.split(' ')[0] === wanted);
-  });
+  };
+  const pick = here.filter((a) => fits(sec.pinOf(a.id)?.owner ?? a.owner));
+  const gone = sec.pins().filter((x) => x.owner !== null && fits(x.owner) && !here.some((a) => a.id === x.id));
+  if (gone.length) throw new Error(`The Oby first seen with an owner called ${JSON.stringify(cleanLine(n, 40))} (@${gone[0].name}) isn't listed in the Sphere now, so that name isn't given to another: ask by handle, after your owner checks with them which one they mean. ${quoted('Agents', list)}`);
   if (pick.length === 1) return sure(pick[0]);
   if (pick.length > 1) throw new Error(`More than one Oby's owner is called ${JSON.stringify(cleanLine(n, 40))}: ask by handle, after your owner says which one they mean. ${quoted('Candidates', pick.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) })))}`);
   throw new Error(`There's no agent ${JSON.stringify(cleanLine(n, 40))} here. ${quoted('Agents', list)}`);
@@ -4716,12 +4737,9 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
   while (Date.now() < deadline) {
     const left = Math.ceil((deadline - Date.now()) / 1000);
     const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(looked ? 25 : 5, Math.max(1, left))}`);
-    for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === msg.id)) {
-      const o = openFor(p, r, here);
-      const doubt = replyDoubt(o, strict);
-      if (!doubt) return formatReply(r, target, o, here);
-      doubted ||= doubt;
-    }
+    const got = replyFor(p, replies, msg, target, here, strict);
+    if (got.text) return got.text;
+    doubted ||= got.doubt;
     // its owner's settings say "Ask me first": they've been told, so don't keep the asker waiting
     if (Date.now() - looked >= 3000) {
       looked = Date.now();
@@ -4734,6 +4752,20 @@ async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) 
     progress?.(`@${slug(target.name)} is working on it on its owner's machine (${Math.round((Date.now() - t0) / 1000)}s)`);
   }
   return `No reply from @${slug(target.name)} after ${waitS}s; it is still working on its owner's machine.${doubted ? ` ${doubtWords(target, doubted)}` : ''} ${later}`;
+}
+
+// The answer to your ask (sphere_ask) or use (sphere_use) among its replies: { text } (formatReply),
+// or { doubt } (why a reply that says it's the answer isn't taken: replyDoubt), or {}. Only a
+// reply to that very message, from the Oby asked; strict: the ask was sealed, or this profile seals
+function replyFor(p, replies, ask, target, here, strict) {
+  let doubt = null;
+  for (const r of (replies || []).filter((x) => validMessage(x) && x.from === target.id && x.replyTo === ask.id)) {
+    const o = openFor(p, r, here);
+    const d = replyDoubt(o, strict);
+    if (!d) return { text: formatReply(r, target, o, here) };
+    doubt ||= d;
+  }
+  return doubt ? { doubt } : {};
 }
 
 // why a reply to your ask isn't taken as its Oby's answer, or null: in a sealed Sphere (or to a
@@ -5807,14 +5839,18 @@ async function toolUse(api, p, a, depth, progress, { pairs = [] } = {}) {
   const waitS = Math.min(900, Math.max(10, Number(a.wait_seconds) || 300));
   const deadline = Date.now() + waitS * 1000;
   const t0 = Date.now();
+  // as for sphere_ask: a reply to this use, from its Oby; sealed and verified when the use was sealed or this profile seals
+  const strict = !!msg.sealed || sealPinned(p);
+  let doubted = null;
   while (Date.now() < deadline) {
     const left = Math.ceil((deadline - Date.now()) / 1000);
     const { replies } = await api.get(`/api/messages/${msg.id}/replies?wait=${Math.min(25, Math.max(1, left))}`);
-    const r = (replies || []).find((x) => validMessage(x) && x.from === target.id);
-    if (r) return formatReply(r, target, openFor(p, r, here), here);
+    const got = replyFor(p, replies, msg, target, here, strict);
+    if (got.text) return got.text;
+    doubted ||= got.doubt;
     progress?.(`@${slug(target.name)} is working on ${name} on its owner's machine (${Math.round((Date.now() - t0) / 1000)}s)`);
   }
-  return `No result from @${slug(target.name)}'s ${name} after ${waitS}s${inst.kind === 'command' ? ' (a command instrument waits for its owner unless they trust you)' : ''}. Check later with sphere_check message_id "${msg.id}".`;
+  return `No result from @${slug(target.name)}'s ${name} after ${waitS}s${inst.kind === 'command' ? ' (a command instrument waits for its owner unless they trust you)' : ''}.${doubted ? ` ${doubtWords(target, doubted)}` : ''} Check later with sphere_check message_id "${msg.id}".`;
 }
 
 // the one tool for others' instruments: its words ship here, whatever members wrote
@@ -6056,9 +6092,10 @@ function notePolicy(policy, p = null) {
   }
 }
 
-// a plain message from a member, where this profile seals: the relay could have written it
+// a plain message from a member, where this profile seals: the relay could have written it. Its
+// kind too: the relay's own system messages come from no one, so one "from" a member is its doing
 function plainInSealed(p, m, pinned = sealPinned(p)) {
-  return pinned && !!m && !m.sealed && !!m.from && m.kind !== 'system';
+  return pinned && !!m && !m.sealed && !!m.from;
 }
 
 // v1 only, for a while, to a relay from before v2 envelopes (it refused one): sphere -> when
@@ -6359,8 +6396,8 @@ function getSec(p) {
   } catch {
     throw broken("don't hold usable keys");
   }
-  // peers.json: { <agent id>: { name, seal, sign, pinnedAt, env, envSince }, _sphere }. _sphere is the
-  // Sphere its pins belong to: pins from another are never used here
+  // peers.json: { <agent id>: { name, owner, seal, sign, pinnedAt, env, envSince }, _sphere }. _sphere
+  // is the Sphere its pins belong to: pins from another are never used here
   const peersFile = path.join(p.dir, 'peers.json');
   const warned = new Set();
   const readPeers = () => {
@@ -6375,6 +6412,8 @@ function getSec(p) {
     return peers;
   };
   const writePeers = (peers) => writeSecret(peersFile, { ...peers, _sphere: p.sphere });
+  // an owner's name, as the relay gives it (set at join, never changed by a Sphere): kept as it came
+  const ownerOf = (agent) => (typeof agent?.owner === 'string' ? agent.owner.slice(0, 200) : '');
   const pub = { seal: keys.seal.x, sign: keys.sign.x };
   const okKey = (x) => typeof x === 'string' && /^[A-Za-z0-9_-]{43}$/.test(x);
   const sha = (s) => createHash('sha256').update(s).digest('hex');
@@ -6423,7 +6462,7 @@ function getSec(p) {
       const pin = Object.hasOwn(peers, agent.id) ? peers[agent.id] : null;
       // first keys seen (an agent whose handle was pinned before it published keys gets them now)
       if (!pin || (!pin.seal && !pin.sign)) {
-        peers[agent.id] = { ...(pin || {}), name: pin?.name || slug(agent.name), seal: agent.keys.seal, sign: agent.keys.sign, pinnedAt: pin?.pinnedAt || new Date().toISOString() };
+        peers[agent.id] = { ...(pin || {}), name: pin?.name || slug(agent.name), owner: typeof pin?.owner === 'string' ? pin.owner : ownerOf(agent), seal: agent.keys.seal, sign: agent.keys.sign, pinnedAt: pin?.pinnedAt || new Date().toISOString() };
         writePeers(peers);
         return { ok: true, keys: agent.keys };
       }
@@ -6435,32 +6474,47 @@ function getSec(p) {
       return { ok: false, why: 'changed', keys: pin };
     },
 
-    // the handle an agent id was first seen with, kept beside its keys: a Sphere never renames
-    // an agent or gives a handle out again, so a relay that calls an id by another handle, or
-    // lists a handle under another id, is lying. { ok, pinned } or { ok: false, why, pinned }:
-    // pinned is the handle first seen for this id (null when there's none)
+    // the handle and the owner's name an agent id was first seen with, kept beside its keys: a
+    // Sphere never renames an agent, changes its owner's name or gives a handle out again, so a
+    // relay that calls an id by another handle or owner, or lists a handle under another id, is
+    // lying. { ok, pinned, owner } or { ok: false, why, pinned, owner }: pinned is the handle
+    // first seen for this id, owner its owner's name (null when there's none)
     identity(agent) {
-      if (agent && agent.id === p.agent.id) return { ok: true, pinned: p.agent.name };
+      if (agent && agent.id === p.agent.id) return { ok: true, pinned: p.agent.name, owner: p.agent.owner };
       const name = slug(agent?.name);
-      if (!agent || !ID.a.test(String(agent.id)) || !name) return { ok: false, why: "it isn't listed in the Sphere", pinned: null };
+      if (!agent || !ID.a.test(String(agent.id)) || !name) return { ok: false, why: "it isn't listed in the Sphere", pinned: null, owner: null };
       const peers = readPeers();
       const pin = Object.hasOwn(peers, agent.id) ? peers[agent.id] : null;
       const pinned = typeof pin?.name === 'string' && pin.name ? pin.name : null;
+      const pinnedOwner = typeof pin?.owner === 'string' ? pin.owner : null;
       const why = (w) => {
         if (!warned.has(`id:${agent.id}`)) {
           warned.add(`id:${agent.id}`);
           log(red(`⚠ ${w}: its messages aren't taken as ${pinned || name}'s, and nothing is sealed for it. If its owner confirms, delete its entry in ${peersFile}.`));
         }
-        return { ok: false, why: w, pinned };
+        return { ok: false, why: w, pinned, owner: pinnedOwner };
       };
       if (pinned && pinned !== name) return why(`the Sphere now calls ${pinned} "${name}"`);
+      if (pinnedOwner !== null && pinnedOwner !== ownerOf(agent)) return why(`the Sphere now says ${pinned || name}'s owner is ${JSON.stringify(cleanLine(ownerOf(agent), 60))}, first seen as ${JSON.stringify(cleanLine(pinnedOwner, 60))}`);
       const other = Object.entries(peers).find(([id, x]) => id !== agent.id && ID.a.test(id) && x?.name === name);
       if (other) return why(`another Oby was first seen as ${name}`);
-      if (!pin) {
-        peers[agent.id] = { name, pinnedAt: new Date().toISOString() };
+      // first seen now (or, pinned before owners were, its owner's name now)
+      if (!pin || pinnedOwner === null) {
+        peers[agent.id] = { ...(pin || {}), name: pinned || name, owner: ownerOf(agent), pinnedAt: pin?.pinnedAt || new Date().toISOString() };
         writePeers(peers);
       }
-      return { ok: true, pinned: name };
+      return { ok: true, pinned: name, owner: ownerOf(agent) };
+    },
+    // the handle and owner's name first seen for an id ({ name, owner }), or null; and every pin
+    pinOf(id) {
+      const peers = readPeers();
+      const pin = ID.a.test(String(id)) && Object.hasOwn(peers, id) ? peers[id] : null;
+      return pin && typeof pin.name === 'string' ? { name: pin.name, owner: typeof pin.owner === 'string' ? pin.owner : null } : null;
+    },
+    pins() {
+      return Object.entries(readPeers())
+        .filter(([id, x]) => ID.a.test(id) && x && typeof x.name === 'string')
+        .map(([id, x]) => ({ id, name: x.name, owner: typeof x.owner === 'string' ? x.owner : null }));
     },
 
     // the newest envelope a peer was seen to send (2 once it sent a v2 one), and since when
@@ -9579,7 +9633,13 @@ async function hookDirect(p, deadline, reach = () => 'who') {
     return r.json();
   };
   const [{ channels }, { agents }, info] = await Promise.all([get('/api/channels'), get('/api/agents'), get('/api/info')]);
-  const sealed = !!info?.sphere?.policy?.sealed;
+  // sealed when this profile saw it sealed (sealed.json), whatever the relay says now
+  if (info?.sphere?.policy?.sealed) {
+    try {
+      pinSealed(p);
+    } catch {}
+  }
+  const sealed = sealPinned(p) || !!info?.sphere?.policy?.sealed;
   const names = (Array.isArray(channels) ? channels : [])
     .filter((c) => c && c.kind === 'dm' && Array.isArray(c.members) && c.members.includes(p.agent.id) && typeof c.name === 'string' && /^[a-z0-9_-]{1,80}$/.test(c.name))
     .slice(0, 10)
@@ -9594,10 +9654,12 @@ async function hookDirect(p, deadline, reach = () => 'who') {
       const o = openFor(p, m, amap);
       if (!o.readable || (o.sealed && !o.verified)) continue;
       if (!o.sealed && sealed) continue; // in a sealed Sphere, a plain message is the relay's own doing
-      const handle = slug(amap.get(m.from)?.name);
+      // the handle first seen for its id, whatever the relay calls it now
+      const who = amap.has(m.from) ? getSec(p).identity(amap.get(m.from)) : { ok: false, pinned: null };
+      const handle = slug(who.pinned || amap.get(m.from)?.name);
       const r = handle ? reach(handle) : 'who';
       if (r === 'none') continue; // an Oby you decline
-      const sure = !!handle && getSec(p).identity(amap.get(m.from)).ok;
+      const sure = !!handle && who.ok;
       out.push({ from: `@${handle || 'unknown'}`, channel: `#${m.channel}`, at: m.ts, ...(r === 'words' && sure ? { words: printable(o.text) } : {}) });
     }
   }
@@ -10405,11 +10467,16 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
     const { askId, body, asker: askerId, channel, sealed, depth, ...github } = req;
     if (askerId && !agents().get(askerId)) await refreshAgents().catch(() => {});
     const asker = askerId ? agents().get(askerId) || null : null;
+    // named by the handle and owner first seen for its id, as handle() names an ask: one the relay
+    // renamed since says it isn't sure who this is
+    const who = asker ? getSec(p).identity(asker) : { ok: false, pinned: null, owner: null, why: "it isn't listed in the Sphere" };
+    const askerName = slug(who.pinned || asker?.name) || 'unknown';
     const thread = askId && channel ? { id: askId, channel, sealed } : null;
     const w = addPending(p, {
       kind: 'github',
       askId,
-      from: asker ? { name: slug(asker.name), owner: cleanLine(asker.owner, 60) } : { name: 'unknown', owner: 'unknown' },
+      from: { name: askerName, owner: cleanLine(who.owner ?? asker?.owner, 60) || 'unknown' },
+      ...(who.ok ? {} : { unsure: cleanLine(who.why, 200) }),
       channel: channel || 'general',
       ts: new Date().toISOString(),
       text: body,
@@ -10420,7 +10487,7 @@ function githubFollower(p, { api, agents, refreshAgents, terminal, prompt }) {
       github,
     });
     const words = githubWords(req);
-    log(`\n${yellow('⏸')} ${asker ? `${bold(slug(asker.name))}'s ask` : 'an ask'}: your Oby would ${words.verb} ${bold(`${req.repo}#${req.number}`)} on GitHub${req.title ? dim(` (${printable(req.title)})`) : ''}`);
+    log(`\n${yellow('⏸')} ${asker ? `${bold(askerName)}'s ask` : 'an ask'}: your Oby would ${words.verb} ${bold(`${req.repo}#${req.number}`)} on GitHub${req.title ? dim(` (${printable(req.title)})`) : ''}${who.ok || !asker ? '' : yellow(` · not sure who this is: ${printable(who.why)}`)}`);
     log(dim(`  waiting for you · your console's Waiting for you${terminal ? ', or here' : ''}`));
     const ac = new AbortController();
     if (terminal) prompt(() => githubAskInTerminal(p, w, ac.signal));
@@ -10521,6 +10588,7 @@ function githubPendingView(p, w) {
     files: [],
     reason: 'github',
     depth: Number.isInteger(w.depth) && w.depth > 0 ? w.depth : 0,
+    ...(typeof w.unsure === 'string' && w.unsure ? { unsure: cleanLine(w.unsure, 200) } : {}), // the relay renamed the asker since it asked
     github: { ...g, url: prUrl(g.repo, g.number), verb: words.verb, button: words.button },
     options: ['act', ...(asComment ? ['comment'] : []), 'decline'],
     signed: s && githubOf(s).signature && g.action !== 'merge' ? githubSignatureLine(p, true) : null,
