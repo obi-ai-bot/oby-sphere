@@ -23,6 +23,10 @@ import net from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+// Windows looks for a program in the folder you're in before PATH, unless this says not to. Every
+// program here is started by its full path anyway (programPath); this covers what they start.
+process.env.NoDefaultCurrentDirectoryInExePath = '1';
+
 const SELF = fileURLToPath(import.meta.url);
 const APP_DIR = path.dirname(SELF);
 const REPO = 'obi-ai-bot/oby-sphere';
@@ -32,9 +36,19 @@ const HOME = profilesHome();
 // the app: <app home>/<version>/, with `current` (and `previous`, for --rollback) pointing at one
 const APP_HOME = path.resolve(process.env.OBYSPHERE_APP_HOME || path.join(os.homedir(), '.local', 'share', 'obysphere'));
 const BIN_DIR = path.resolve(process.env.OBYSPHERE_BIN_DIR || path.join(os.homedir(), '.local', 'bin'));
+// for tests only, with OBYSPHERE_TEST=1: OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE send the
+// update check and the downloads to a server on this machine, and OBYSPHERE_NOTIFIER_APP moves the
+// menu bar's app. Without it they're refused (nothing is downloaded) or ignored, wherever they were
+// set: a repository's settings or a CI job can set a variable. None goes into a service file.
+const TEST = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_TEST || '');
 const RELEASES_API = trimSlash(process.env.OBYSPHERE_RELEASES_API || `https://api.github.com/repos/${REPO}`);
 const DOWNLOAD_BASE = trimSlash(process.env.OBYSPHERE_DOWNLOAD_BASE || `https://github.com/${REPO}`);
 const MAIN_TARBALL = process.env.OBYSPHERE_DOWNLOAD_BASE ? `${DOWNLOAD_BASE}/archive/refs/heads/main.tar.gz` : `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
+const NOT_FOR_YOU = (process.env.OBYSPHERE_RELEASES_API || process.env.OBYSPHERE_DOWNLOAD_BASE) && !TEST
+  ? 'OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE are for tests only (with OBYSPHERE_TEST=1, and a server on this machine), so nothing was downloaded. Unset them, and the app comes from GitHub.'
+  : null;
+// where the app may come from: GitHub, over https (tests: this machine too)
+const GITHUB_HOSTS = new Set(['github.com', 'api.github.com', 'codeload.github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'github-releases.githubusercontent.com']);
 // for tests only: OBYSPHERE_SERVICE_PLATFORM (darwin, linux or win32) says which system's service
 // to write, whatever this one is; OBYSPHERE_SERVICE_DRYRUN writes down the launchctl, systemctl,
 // schtasks and open commands instead of running them
@@ -44,8 +58,10 @@ const NO_CHECK = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_NO_UPDATE_CHECK
 const RESERVED = new Set([4848, 4849, 4850]); // the relay's, the console's and the demo's ports
 const VER = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?(?:\+[0-9A-Za-z.-]{1,40})?$/;
 const DAY = 24 * 3600e3;
-const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'follow', 'json', 'help', 'clear']);
+const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'allow-downgrade', 'follow', 'json', 'help', 'clear']);
 const SHIM_MARK = '# obysphere shim';
+// profile names Obysphere keeps: com.obysphere.menubar is the menu bar icon's LaunchAgent
+const KEPT_NAMES = new Set(['menubar']);
 
 const tty = process.stdout.isTTY;
 const c = (code) => (s) => (tty ? `\x1b[${code}m${s}\x1b[0m` : String(s));
@@ -115,7 +131,7 @@ Admins
                                    check it on this machine, with the admin key (never sent anywhere)
 
 Keep it up to date
-  obysphere update [--check] [--channel stable|main] [--rollback]
+  obysphere update [--check] [--channel stable|main] [--rollback] [--allow-downgrade]
   obysphere version | doctor
 
 Run a Sphere
@@ -170,7 +186,7 @@ function homeWhy() {
 
 function listProfiles() {
   try {
-    return fs.readdirSync(HOME).filter((d) => /^[a-z0-9-]{1,32}$/.test(d) && fs.existsSync(path.join(HOME, d, 'profile.json'))).sort();
+    return fs.readdirSync(HOME).filter((d) => /^[a-z0-9-]{1,32}$/.test(d) && !KEPT_NAMES.has(d) && fs.existsSync(path.join(HOME, d, 'profile.json'))).sort();
   } catch {
     return [];
   }
@@ -212,6 +228,7 @@ function targets({ one = false, all = !one && !!opt.all } = {}) {
   const want = typeof opt.profile === 'string' ? opt.profile : process.env.OBYSPHERE_PROFILE || (all ? null : defaultProfile());
   if (want) {
     const n = slug(want);
+    if (KEPT_NAMES.has(n)) die(keptName(n));
     if (!names.includes(n)) die(`no profile "${n}" in ${HOME}${names.length ? ` (there: ${names.join(', ')})` : ''}`);
     return [n];
   }
@@ -219,6 +236,7 @@ function targets({ one = false, all = !one && !!opt.all } = {}) {
   if (all || names.length === 1) return names;
   die(`several profiles here (${names.join(', ')}): pass --profile <name>${!one && opt.all === undefined ? ', or --all' : ''}, or choose one for every command: obysphere profiles use <name>`);
 }
+const keptName = (n) => `"${n}" is the menu bar icon's name, so a profile can't have it: rename that profile's folder in ${HOME}, then use the new name.`;
 
 // obysphere profiles use <name>: the profile every command (and the Claude Code plugin) uses
 // when nothing else says; --clear forgets it. --profile and OBYSPHERE_PROFILE still win.
@@ -230,6 +248,7 @@ function useProfile(name) {
   }
   if (!name) die('usage: obysphere profiles use <name> | profiles use --clear');
   const n = slug(name);
+  if (KEPT_NAMES.has(n)) die(keptName(n));
   const names = listProfiles();
   if (!names.includes(n)) die(`no profile "${n}" in ${HOME}${names.length ? ` (there: ${names.join(', ')})` : ''}`);
   fs.writeFileSync(file, n + '\n', { mode: 0o644 });
@@ -338,12 +357,14 @@ function appForService() {
   return runsInstalled() && fs.existsSync(path.join(cur, 'rep.mjs')) ? cur : APP_DIR;
 }
 
-// what the service runs: `rep.mjs ui --serve`, with the profiles folder fixed and your PATH
-// (so it finds claude, codex, cursor-agent and gh). No keys: the token stays in profile.json.
+// what the service runs: `rep.mjs ui --serve`, with the profiles folder fixed and your PATH's full
+// folders (so it finds claude, codex, cursor-agent and gh; an empty, `.` or other relative entry
+// would find them in whatever folder they run in). No keys: the token stays in profile.json. No
+// test variable either: a service outlives whatever set one.
 function serviceEnv() {
   // OBYSPHERE_CLI: it runs for `obysphere`, so what the console says to type names it (as run() does)
-  const env = { OBYSPHERE_HOME: HOME, PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', OBYSPHERE_CLI: '1' };
-  for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK', 'OBYSPHERE_RELEASES_API', 'OBYSPHERE_NOTIFIER_APP']) if (process.env[k]) env[k] = process.env[k];
+  const env = { OBYSPHERE_HOME: HOME, PATH: fullPath(process.env.PATH || '') || '/usr/local/bin:/usr/bin:/bin', OBYSPHERE_CLI: '1' };
+  for (const k of ['OBYSPHERE_APP_HOME', 'OBYSPHERE_DOWNLOADS', 'OBYSPHERE_NO_UPDATE_CHECK']) if (process.env[k]) env[k] = process.env[k];
   return env;
 }
 function serviceSpec(name, port, app = appForService()) {
@@ -426,15 +447,17 @@ function runOs(bin, args, { detach = false } = {}) {
     fs.appendFileSync(file, JSON.stringify({ cmd: bin, args }) + '\n');
     return { status: 0, stdout: '', stderr: '' };
   }
+  const exe = programPath(bin);
+  if (!exe) return { status: 1, stdout: '', stderr: `${bin} isn't on your PATH` };
   if (detach) {
     try {
-      spawn(bin, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
+      spawn(exe, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
       return { status: 0, stdout: '', stderr: '' };
     } catch (e) {
       return { status: 1, stdout: '', stderr: e.message };
     }
   }
-  const r = spawnSync(bin, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30e3 });
+  const r = spawnSync(exe, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30e3 });
   return { status: r.error ? 1 : r.status, stdout: r.stdout || '', stderr: r.stderr || r.error?.message || '' };
 }
 const uid = () => (typeof process.getuid === 'function' ? process.getuid() : 0);
@@ -581,8 +604,9 @@ const MENU_LABEL = 'com.obysphere.menubar';
 const menuFile = () => path.join(serviceDir(), `${MENU_LABEL}.plist`);
 const menuPrefs = () => path.join(HOME, 'menubar.json');
 const menubarWanted = () => PLATFORM === 'darwin' && readJson(menuPrefs(), {}).on !== false;
-// where rep.mjs builds the app (OBYSPHERE_NOTIFIER_APP moves it, for tests)
-const menuApp = () => (process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
+// where rep.mjs builds the app (OBYSPHERE_NOTIFIER_APP moves it, for tests only: a LaunchAgent
+// would run whatever program is there at every login). rep.mjs checks it's the one it built.
+const menuApp = () => (TEST && process.env.OBYSPHERE_NOTIFIER_APP ? path.resolve(process.env.OBYSPHERE_NOTIFIER_APP) : path.join(os.homedir(), 'Applications', 'Obysphere.app'));
 
 function menuSpec(app) {
   return {
@@ -679,13 +703,15 @@ async function menubar() {
 // ---- what the menu shows: { icon: { state: on|away|off, count, tip }, items: [...] }. An item is
 // { kind: header|line|open|run|menu|separator, title, dot (line), url (open: your console only),
 // args (run: obysphere's own words), busy, confirm: { title, text, button } (run), items (menu) }.
+// Every 30 seconds: GitHub is asked at most once a day (latestKnown), and a Sphere only while an Oby
+// of yours that's in it runs (the menu shows nothing of it otherwise).
 async function menuModel(now = new Date()) {
   const client = clientVersion();
   const [latest, rows] = await Promise.all([
     latestKnown(),
     Promise.all(
       listProfiles().map(async (n) => {
-        const r = await statusOf(n, client);
+        const r = await statusOf(n, client, { runningOnly: true });
         return { ...r, ...(r.running ? await consoleState(r.port) : {}), held: heldCount(n) };
       }),
     ),
@@ -809,7 +835,8 @@ function menuOf(all, { update = null, now = new Date() } = {}) {
     items.push({ kind: 'line', title: 'No profile here yet: obysphere join', dot: 'off' });
   }
   items.push({ kind: 'separator' });
-  if (update) items.push({ kind: 'run', title: `Update to ${update}`, args: ['update'], busy: `Updating to ${update}…` });
+  // the release it names, whichever channel you installed from (main isn't checksummed)
+  if (update) items.push({ kind: 'run', title: `Update to ${update}`, args: ['update', '--channel', 'stable'], busy: `Updating to ${update}…` });
   items.push({ kind: 'run', title: 'Hide this icon', args: ['menubar', 'off'], confirm: { title: 'Hide the Obysphere icon?', text: 'Your Oby keeps running. obysphere menubar on brings the icon back.', button: 'Hide' } });
   const state = states.includes('away') ? 'away' : states.includes('on') ? 'on' : 'off';
   const say = rows.length > 1 ? `${states.filter((s) => s !== 'off').length} of ${rows.length} Obys running` : items.find((i) => i.kind === 'line').title;
@@ -993,12 +1020,7 @@ function schtasks(args) {
   return runOs(DRY ? 'schtasks' : schtasksBin(), args);
 }
 function schtasksBin() {
-  if (process.platform !== 'win32') return which('schtasks') || 'schtasks';
-  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
-    const f = dir && path.isAbsolute(dir) ? path.join(dir, 'schtasks.exe') : null;
-    if (f && fs.existsSync(f)) return f;
-  }
-  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'schtasks.exe');
+  return programPath('schtasks') || (process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'schtasks.exe') : 'schtasks');
 }
 
 async function untilQuiet(port) {
@@ -1160,10 +1182,14 @@ function clientVersion() {
   return String(readJson(path.join(appForService(), 'package.json'), {}).version || VERSION);
 }
 
-async function statusOf(name, client) {
+// runningOnly: the Sphere is asked only when the console runs (the menu bar, every 30 seconds)
+async function statusOf(name, client, { runningOnly = false } = {}) {
   const p = publicProfile(name);
   const port = savedPort(name);
-  const [running, relay] = await Promise.all([consoleAnswers(port), p.sphere ? relayHealth(p.sphere) : { ok: false, error: 'no Sphere address' }]);
+  const health = async () => (p.sphere ? relayHealth(p.sphere) : { ok: false, error: 'no Sphere address' });
+  const [running, relay] = runningOnly
+    ? await consoleAnswers(port).then(async (up) => [up, up ? await health() : { ok: false, error: 'not asked: not running' }])
+    : await Promise.all([consoleAnswers(port), health()]);
   return {
     ...p,
     console: port ? consoleUrl(name, port) : null,
@@ -1250,6 +1276,7 @@ async function doctor() {
 
   const latest = await latestKnown();
   say(`\n${bold('Updates')}`);
+  if (NOT_FOR_YOU) no('OBYSPHERE_RELEASES_API or OBYSPHERE_DOWNLOAD_BASE is set, so nothing is checked or downloaded', NOT_FOR_YOU);
   if (latest.latest && cmpVersion(latest.latest, client) > 0) note(`${latest.latest} is out (you have ${client})`, 'obysphere update');
   else if (latest.latest) ok(`up to date (${client})`);
   else say(dim(`  ${NO_CHECK ? 'not checked (OBYSPHERE_NO_UPDATE_CHECK)' : 'no release found yet'}`));
@@ -1258,53 +1285,82 @@ async function doctor() {
 
 // ================================================================ update
 
+// the update check's cache: in the app home, else (run from a checkout) beside your profiles, so the
+// menu bar's look every 30 seconds doesn't ask GitHub each time; none when neither folder is there
+// (a check from nowhere makes no folder)
 function cacheFile() {
-  return path.join(APP_HOME, 'update-check.json');
+  for (const dir of [APP_HOME, HOME]) if (fs.existsSync(dir)) return path.join(dir, 'update-check.json');
+  return null;
 }
-// the newest release, as last checked (once a day at most; never with OBYSPHERE_NO_UPDATE_CHECK)
+// the newest release, as last checked: once a day at most, not again within an hour of a check that
+// failed, and never with OBYSPHERE_NO_UPDATE_CHECK
 async function latestKnown({ force = false } = {}) {
-  const c = readJson(cacheFile(), {});
+  const file = cacheFile();
+  const c = file ? readJson(file, {}) : {};
   const cached = { latest: VER.test(String(c.latest)) ? c.latest : null, checkedAt: typeof c.checkedAt === 'string' ? c.checkedAt : null };
-  const fresh = cached.checkedAt && Date.now() - Date.parse(cached.checkedAt) < DAY;
+  const ago = (t) => (typeof t === 'string' ? Date.now() - Date.parse(t) : Infinity);
+  const fresh = ago(cached.checkedAt) < DAY || ago(c.failedAt) < 3600e3;
   if (!force && (fresh || NO_CHECK)) return cached;
   try {
     const r = await latestRelease();
     return saveCache(r.version);
   } catch (e) {
     if (e.noRelease) return saveCache(null);
+    if (file) writeSecret(file, { ...cached, failedAt: new Date().toISOString() });
     return cached;
   }
 }
 function saveCache(latest) {
   const rec = { latest, checkedAt: new Date().toISOString() };
-  // kept only where the app is installed: checking from a checkout leaves no folder behind
-  if (fs.existsSync(APP_HOME)) writeSecret(cacheFile(), rec);
+  const file = cacheFile();
+  if (file) writeSecret(file, rec);
   return rec;
 }
 
-// http only for this machine (tests); the code comes from GitHub over https
+// GitHub over https, and nothing else (tests: a server on this machine, by its name or address)
 function checkedUrl(u) {
   const url = new URL(u);
-  if (url.protocol === 'https:' || (url.protocol === 'http:' && /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(url.hostname))) return url;
-  throw new Error(`refusing to download from ${url.origin}: https only`);
+  if (url.protocol === 'https:' && GITHUB_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password) return url;
+  if (TEST && /^https?:$/.test(url.protocol) && /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\])$/.test(url.hostname)) return url;
+  throw new Error(`refusing to download from ${url.origin}: the app comes from GitHub only`);
 }
+// GitHub sends a release's files on to where it keeps them: each redirect is checked before it's followed
 async function get(u, { timeoutMs = 60e3, accept } = {}) {
-  const url = checkedUrl(u);
-  let r;
-  try {
-    r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'obysphere', ...(accept ? { accept } : {}) } });
-  } catch (e) {
-    throw new Error(`couldn't reach ${url.host} (${clean(netWhy(e), 80)}): check your network and try again`);
+  if (NOT_FOR_YOU) throw new Error(NOT_FOR_YOU);
+  let url = checkedUrl(u);
+  const signal = AbortSignal.timeout(timeoutMs);
+  for (let hops = 0; ; hops++) {
+    let r;
+    try {
+      r = await fetch(url, { signal, redirect: 'manual', headers: { 'user-agent': 'obysphere', ...(accept ? { accept } : {}) } });
+    } catch (e) {
+      throw new Error(`couldn't reach ${url.host} (${clean(netWhy(e), 80)}): check your network and try again`);
+    }
+    const to = [301, 302, 303, 307, 308].includes(r.status) ? r.headers.get('location') : null;
+    if (!to) return r;
+    await r.body?.cancel().catch(() => {});
+    if (hops >= 5) throw new Error(`${url.host} sent the download on too many times`);
+    url = checkedUrl(new URL(to, url));
   }
-  if (r.url) checkedUrl(r.url); // and wherever it was sent
-  return r;
 }
+// read as it comes, and stopped at 64 MB (the app is far smaller): never held whole first
+const DOWNLOAD_MAX = 64 * 1024 * 1024;
 async function download(u) {
   const r = await get(u);
   if (!r.ok) throw new Error(`${u} answered ${r.status}`);
-  const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length > 64 * 1024 * 1024) throw new Error(`${u} is larger than expected`);
-  return buf;
+  const big = () => new Error(`${u} is larger than expected`);
+  if (Number(r.headers.get('content-length')) > DOWNLOAD_MAX) {
+    await r.body?.cancel().catch(() => {});
+    throw big();
+  }
+  const parts = [];
+  let size = 0;
+  for await (const part of r.body || []) {
+    size += part.length;
+    if (size > DOWNLOAD_MAX) throw big(); // leaving the loop cancels the rest
+    parts.push(part);
+  }
+  return Buffer.concat(parts);
 }
 async function latestRelease() {
   const r = await get(`${RELEASES_API}/releases/latest`, { timeoutMs: 10e3, accept: 'application/vnd.github+json' });
@@ -1357,7 +1413,9 @@ function unpack(bytes, { expect = null, main = null } = {}) {
     fs.writeFileSync(tgz, bytes, { mode: 0o600 });
     const x = path.join(stage, 'x');
     fs.mkdirSync(x);
-    const r = spawnSync('tar', ['-xzf', tgz, '-C', x], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 120e3 });
+    const tar = programPath('tar');
+    if (!tar) throw new Error("couldn't unpack it: there's no tar on your PATH");
+    const r = spawnSync(tar, ['-xzf', tgz, '-C', x], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 120e3 });
     if (r.error || r.status !== 0) throw new Error(`couldn't unpack it with tar: ${clean(r.stderr || r.error?.message, 300)}`);
     const tops = fs.readdirSync(x, { withFileTypes: true }).filter((d) => d.isDirectory());
     if (tops.length !== 1) throw new Error("the download isn't one app folder");
@@ -1384,18 +1442,27 @@ function shimText() {
   const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
   return `#!/bin/sh\n${SHIM_MARK}: runs the installed version (obysphere update switches it)\nexec node --preserve-symlinks-main ${sq(path.join(APP_HOME, 'current', 'obysphere.mjs'))} "$@"\n`;
 }
+// ours: a plain file (never a link, whose target would be written) with the mark on its second line.
+// A new one is written beside it and renamed over it.
 function ensureShim() {
   if (process.platform === 'win32') return;
   const shim = path.join(BIN_DIR, 'obysphere');
+  const st = fs.lstatSync(shim, { throwIfNoEntry: false });
   let now = null;
   try {
-    now = fs.readFileSync(shim, 'utf8');
+    if (st?.isFile()) now = fs.readFileSync(shim, 'utf8');
   } catch {}
   if (now === shimText()) return;
-  if (now !== null && !now.includes(SHIM_MARK)) return warn(`${yellow('!')} ${shim} isn't ours, so it's left as it is.`);
+  if (st && !String(now ?? '').split('\n')[1]?.startsWith(SHIM_MARK)) return warn(`${yellow('!')} ${shim} isn't ours, so it's left as it is.`);
   fs.mkdirSync(BIN_DIR, { recursive: true });
-  fs.writeFileSync(shim, shimText(), { mode: 0o755 });
-  fs.chmodSync(shim, 0o755);
+  const tmp = `${shim}.${process.pid}.${randomBytes(3).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmp, shimText(), { mode: 0o755, flag: 'wx' });
+    fs.chmodSync(tmp, 0o755);
+    fs.renameSync(tmp, shim);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 
 // current -> version (and previous -> what current was), then the services again
@@ -1444,6 +1511,9 @@ async function update() {
   saveCache(rel.version);
   if (opt.check) return say(cmpVersion(rel.version, have) > 0 ? `${rel.version} is out (you have ${have}): obysphere update` : `You have the newest release (${have}).`);
   if (cur === rel.version) return activate(rel.version, 'stable');
+  // an older release is never taken by surprise (one made latest again by mistake, or by someone who shouldn't)
+  if (cmpVersion(rel.version, have) < 0 && !opt['allow-downgrade'])
+    die(`The latest release is ${rel.version}, older than the ${have} you have: nothing changed. To go back to it on purpose: obysphere update --allow-downgrade`);
   const file = `obysphere-${rel.version}.tar.gz`;
   const at = `${DOWNLOAD_BASE}/releases/download/${rel.tag}`;
   say(dim(`Downloading ${rel.version} from ${new URL(at).host}…`));
@@ -1518,8 +1588,9 @@ const skipped = (name) => SKIP.has(name) || name.startsWith('.env') || name.ends
 // tracked files only when it's a git checkout; otherwise everything but the skipped names. No symlinks.
 function exportApp(src, dest) {
   let tracked = null;
-  if (fs.existsSync(path.join(src, '.git'))) {
-    const r = spawnSync('git', ['-C', src, 'ls-files', '-z'], { encoding: 'utf8', env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(src) }, stdio: ['ignore', 'pipe', 'ignore'], timeout: 30e3 });
+  const git = programPath('git');
+  if (git && fs.existsSync(path.join(src, '.git'))) {
+    const r = spawnSync(git, ['-C', src, 'ls-files', '-z'], { encoding: 'utf8', env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(src) }, stdio: ['ignore', 'pipe', 'ignore'], timeout: 30e3 });
     if (!r.error && r.status === 0) tracked = r.stdout.split('\0').filter(Boolean);
   }
   const copy = (rel) => {
@@ -2066,19 +2137,49 @@ function parseArgs(list) {
   return { pos, opt };
 }
 
+// a program on your PATH, as doctor shows it (on Windows a .cmd too); null when it isn't there
 function which(bin) {
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : ['']; // node.exe, as the file is named
-  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
-    if (!dir) continue;
-    for (const e of exts) {
-      const f = path.join(dir, bin + e);
-      try {
-        fs.accessSync(f, fs.constants.X_OK);
-        if (fs.statSync(f).isFile()) return f;
-      } catch {}
+  return programPath(bin, { exts: process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : undefined }); // node.exe, as the file is named
+}
+
+// A program by its name, as a full path from your PATH's full folders: never the folder this runs
+// in (where Windows looks first), nor an empty, `.` or other relative PATH entry, which name a folder
+// relative to wherever a program runs (a shared repository, the temp folder). On Windows,
+// name.com or name.exe, as Windows runs them. A full path is taken as it is, a relative one never.
+// null when it's nowhere. (rep.mjs has the same.)
+function programPath(name, { env = process.env, platform = process.platform, exts, isFile = isProgram } = {}) {
+  const win = platform === 'win32';
+  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d) : d.startsWith('/'));
+  const n = String(name || '');
+  if (full(n)) return n;
+  if (!n || /[\\/]/.test(n)) return null;
+  const ends = exts || (win ? (/\.(com|exe)$/i.test(n) ? [''] : ['.com', '.exe']) : ['']);
+  for (const entry of String(env.PATH ?? env.Path ?? '').split(win ? ';' : ':')) {
+    const dir = win ? entry.replace(/^"(.*)"$/, '$1') : entry;
+    if (!full(dir)) continue;
+    for (const e of ends) {
+      const f = (win ? path.win32 : path.posix).join(dir, n + e);
+      if (isFile(f)) return f;
     }
   }
   return null;
+}
+function isProgram(f) {
+  try {
+    if (!fs.statSync(f).isFile()) return false;
+    if (process.platform !== 'win32') fs.accessSync(f, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// PATH with its full folders only, in their order: an empty, `.` or other relative entry names a
+// folder relative to wherever a program runs. (rep.mjs has the same.)
+function fullPath(value, platform = process.platform) {
+  const win = platform === 'win32';
+  const full = (d) => (win ? /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(d.replace(/^"(.*)"$/, '$1')) : d.startsWith('/'));
+  return String(value || '').split(win ? ';' : ':').filter(full).join(win ? ';' : ':');
 }
 
 // the node a service runs with: the one on your PATH when it's this one and stays put
@@ -2126,8 +2227,13 @@ function writeSecret(file, obj) {
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(tmp, file);
 }
+// a profile name: cut first (a name is 32 characters), then trimmed of its dashes in one pass
 function slug(s) {
-  return String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+  const t = String(s || '').slice(0, 256).toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-');
+  let [a, b] = [0, t.length];
+  while (a < b && t[a] === '-') a++;
+  while (b > a && t[b - 1] === '-') b--;
+  return t.slice(a, b).slice(0, 32);
 }
 // no terminal escapes or other control characters (newline and tab stay)
 function printable(s) {

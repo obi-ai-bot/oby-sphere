@@ -720,6 +720,7 @@ describe('notifications', () => {
     delete real.NODE_TEST_CONTEXT; // as a person runs it
     delete real.OBYSPHERE_NOTIFY_LOG;
     // macOS: Obysphere's own app would come first; here there's none, and no tools on this PATH to build it
+    real.OBYSPHERE_TEST = '1'; // so OBYSPHERE_NOTIFIER_APP counts
     real.OBYSPHERE_NOTIFIER_APP = path.join(tmp, 'no-notifier', 'Obysphere.app');
     const run = () =>
       new Promise((resolve) => {

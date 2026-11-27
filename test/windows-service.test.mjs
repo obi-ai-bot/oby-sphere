@@ -315,7 +315,7 @@ describe('obysphere start on Windows: a scheduled task (schtasks faked)', () => 
     gh.release = release('9.9.0', buildApp(tmp('builds'), '9.9.0'));
     const { sched, dirs } = fakes(h);
     const services = path.join(h, 'services');
-    const env = envFor(h, { OBYSPHERE_HOME: profiles, OBYSPHERE_SERVICE_DIR: services, OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download, path: dirs, ...sched.env });
+    const env = envFor(h, { OBYSPHERE_HOME: profiles, OBYSPHERE_SERVICE_DIR: services, OBYSPHERE_TEST: '1', OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download, path: dirs, ...sched.env });
     const cli = path.join(ROOT, 'obysphere.mjs');
     cleanups.push(() => run(cli, ['stop'], env));
     assert.equal((await run(cli, ['start'], env)).code, 0);
