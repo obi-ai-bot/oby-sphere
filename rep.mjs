@@ -6658,10 +6658,12 @@ function getSec(p) {
       const keys = o.v === 2 ? [`n-${sha(`${m.from}\0${o.nonce}`)}`, `s-${sig}`] : [`${Array.isArray(m.to) && m.to.length ? 's1' : 's'}-${sig}`];
       const unkept = () => ({ why: `it couldn't be recorded as seen (${seenErr || 'an error'} in ${seenDir}), so a replay of it couldn't be told apart` });
       const seenAs = (was) => ({ why: `it was seen before, as ${ID.m.test(was) ? was : 'another message'}: the relay replayed it` });
+      // the same words under this id: its key, or (v1) the one an older rep.mjs kept it under
+      const same = (x) => x === keys[0] || (o.v !== 2 && (x === `s-${sig}` || x === `s1-${sig}`));
       // looked at first, so a replay that's refused leaves nothing behind
       const had = look(`i-${m.id}`);
       if (had === undefined) return unkept();
-      if (had !== null && had !== keys[0]) return { why: `the relay showed other words under ${m.id} before` };
+      if (had !== null && !same(had)) return { why: `the relay showed other words under ${m.id} before` };
       for (const k of new Set([...keys, `s-${sig}`, `s1-${sig}`])) {
         const was = look(k);
         if (was === undefined) return unkept();
@@ -6671,7 +6673,7 @@ function getSec(p) {
       // then kept, each made with O_EXCL: of two processes only one is first
       const id = first(`i-${m.id}`, keys[0]);
       if (id === null) return unkept();
-      if (id !== keys[0]) return { why: `the relay showed other words under ${m.id} before` };
+      if (!same(id)) return { why: `the relay showed other words under ${m.id} before` };
       for (const k of keys) {
         const was = first(k, m.id);
         if (was === null) return unkept();

@@ -481,6 +481,27 @@ describe('replays, after seen/ forgets', () => {
     }
     assert.match(bob.out, /clock/);
   });
+
+  test("R12: a v1 ask an older rep.mjs already kept in seen/ (s-) is still taken after the update", async () => {
+    s.reset();
+    const { ids } = s;
+    const keys = s.keysOf('carol');
+    const agents = (await s.call('GET', '/api/agents', { tok: s.profile('carol').token })).agents;
+    const readers = { [ids.carol]: keys.seal.x, [ids.bob]: agents.find((a) => a.id === ids.bob).keys.seal };
+    const sealed = envelope({ readers, inner: { text: 'KEPT-BEFORE-12 what changed?', files: [] }, sign: { d: keys.sign.d, x: keys.sign.x }, m: { from: ids.carol, channel: 'general', to: [ids.bob] }, v: 1 });
+    const id = 'm_keptold0001';
+    // what an older rep.mjs of bob's left when it saw this ask (stopped before answering it)
+    const sig = crypto.createHash('sha256').update(String(sealed.sig)).digest('hex');
+    fs.mkdirSync(path.join(s.home, 'bob', 'seen'), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(s.home, 'bob', 'seen', `i-${id}`), `s-${sig}`, { mode: 0o600 });
+    fs.writeFileSync(path.join(s.home, 'bob', 'seen', `s-${sig}`), id, { mode: 0o600 });
+    s.forgedReplies.length = 0;
+    s.fake.control({ text: 'ANSWERED-AFTER-THE-UPDATE' });
+    await inject('message', s.forge({ id, ts: new Date().toISOString(), channel: 'general', from: ids.carol, kind: 'ask', to: [ids.bob], text: '', replyTo: null, cause: null, files: [], depth: 0, meta: {}, sealed }));
+    await waitFor(() => s.forgedReplies.length, 15000, `bob to answer it\n${bob.out.slice(-2000)}`);
+    assert.equal(s.runsWith('KEPT-BEFORE-12').length, 1);
+    assert.ok(!s.forgedReplies[0].meta?.expired && !s.forgedReplies[0].meta?.declined, JSON.stringify(s.forgedReplies[0].meta));
+  });
 });
 
 // keys.json for a profile from before keys were made at join: processes that start together make
