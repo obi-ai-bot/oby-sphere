@@ -88,7 +88,7 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
@@ -208,6 +208,9 @@ const answerRing = ring(1000); // ms from an ask to its first reply
 const toolCounts = dict(); // instrument -> { calls, last, byAgent } (this instance, since it started)
 const seenCalls = new Set();
 const authAudited = new Map(); // client -> when its failed attempts were last audited
+const localFails = new Map(); // client -> its failed attempts, counted here before any round trip to the store
+const localJoins = new Map(); // client -> its joins, likewise
+const streamOpens = new Map(); // agent id -> its streams opened, likewise
 
 // live, this process only
 const live = new Map(); // agent id -> { rep: Set, client: Set }
@@ -1872,7 +1875,9 @@ setInterval(() => {
   for (const [k, c] of S.claims) if (t - Date.parse(c.ts) > CLAIM_MS) S.claims.delete(k);
   for (const [k, at] of authAudited) if (t - at > 120000) authAudited.delete(k);
   for (const [k, r] of denyAudited) if (t - r.at > 120000) denyAudited.delete(k);
-  for (const [k, b] of readBuckets) if (t - b.t > 120000) readBuckets.delete(k);
+  for (const map of [readBuckets, localFails, localJoins, streamOpens]) for (const [k, b] of map) if (t - b.t > 120000) map.delete(k);
+  // failed attempts counted past the minute's audit budget, and none since to say so: said now
+  if (authBudget.over && t - authBudget.at >= 60000) store.commit((b) => b.audit('deny', { detail: `unauthorized: ${authBudgetCarry()}` })).catch((e) => console.error('audit:', e.message));
 }, 60000).unref();
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{1,32}$/;
@@ -2848,17 +2853,45 @@ export async function handle(req, res) {
 }
 export default handle;
 
-// a wrong token, Sphere key or admin key: counted per client, audited once a minute, then refused
+// a wrong token, Sphere key or admin key: counted per client (here first, then in the store, which
+// every instance shares), audited once a minute per client, then refused
 async function authFailed(req, what) {
   const ip = clientIp(req);
+  take(localFails, ip, LIMITS.authFailsPerMin);
   const ok = await store.rate('authfail', ip, LIMITS.authFailsPerMin);
-  const t = Date.now();
-  if (t - (authAudited.get(ip) || 0) > 60000) {
-    authAudited.set(ip, t);
-    await store.commit((b) => b.audit('deny', { detail: `unauthorized: ${what} from ${ip}${ok ? '' : ', now rate-limited'}` }));
-  }
+  const due = authAuditDue(ip, Date.now());
+  if (due !== null) await store.commit((b) => b.audit('deny', { detail: `unauthorized: ${what} from ${ip}${ok ? '' : ', now rate-limited'}${due}` }));
   if (!ok) throw err(429, 'rate_limited', 'Too many failed attempts from this address. Try again in a minute.');
   throw err(401, 'unauthorized', 'This needs an agent token, the Sphere key or the admin key.');
+}
+// Failed attempts are audited once a minute per client, and at most LIMITS.authAuditsPerMin a minute
+// from all clients together (on Redis, per instance): many addresses (an IPv6 block has thousands)
+// add a few events a minute, not one each. Past the budget they're counted, and the next event
+// audited says how many, from how many addresses. Returns what to add to the event, or null when it
+// isn't audited.
+const authBudget = { at: 0, n: 0, over: 0, from: new Set() };
+function authBudgetCarry() {
+  const words = `${authBudget.over.toLocaleString('en-US')} more failed attempt${authBudget.over === 1 ? '' : 's'} from ${authBudget.from.size.toLocaleString('en-US')} address${authBudget.from.size === 1 ? '' : 'es'} in the minute before, not audited one by one`;
+  authBudget.over = 0;
+  authBudget.from.clear();
+  return words;
+}
+function authAuditDue(ip, t) {
+  if (t - (authAudited.get(ip) || 0) <= 60000) return null;
+  let carry = '';
+  if (t - authBudget.at >= 60000) {
+    if (authBudget.over) carry = ` · ${authBudgetCarry()}`;
+    authBudget.at = t;
+    authBudget.n = 0;
+  }
+  if (authBudget.n >= LIMITS.authAuditsPerMin) {
+    authBudget.over++;
+    if (authBudget.from.size < 100000) authBudget.from.add(ip);
+    return null;
+  }
+  authBudget.n++;
+  authAudited.set(ip, t);
+  return carry + (authBudget.n === LIMITS.authAuditsPerMin ? ' · more failures this minute are counted, and the next one audited says how many' : '');
 }
 
 async function route(req, res, url) {
@@ -2876,25 +2909,27 @@ async function route(req, res, url) {
   if (m === 'POST' && p === '/api/join') {
     const ip = clientIp(req);
     const hdr = req.headers['x-sphere-key'];
-    if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
-      const words = 'Too many join attempts from this address. Try again in a minute.';
-      // audited (at most once a minute per address) only when the caller has the key: refusals of
-      // callers with none, or a wrong one, leave nothing to flood the audit log with (nor cost a read)
+    const words = 'Too many join attempts from this address. Try again in a minute.';
+    // counted here first: past the limit, or past its failed attempts with a key this instance doesn't
+    // know, a caller is refused before the store is read (on Redis, a round trip)
+    if (!take(localJoins, ip, S.policy.rate.joinsPerMinPerIp) || (hdr && !secretOk(hdr, S.sphere.keyHash) && !peek(localFails, ip, LIMITS.authFailsPerMin))) {
       if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
       throw err(429, 'rate_limited', words);
     }
-    // the key in a header is checked before reading anything; a body is small either way. The store
-    // is read first (redis: a key rotated on another instance), but not for a join with no key at all
-    if (hdr) {
-      await store.sync();
-      if (!secretOk(hdr, S.sphere.keyHash)) await joinRefused(ip);
+    // a join with no key at all: refused, not audited, and no round trip to the store
+    let body = hdr ? null : await readJson(req, 16 * 1024);
+    if (body && !body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere.");
+    if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
+      // audited (at most once a minute per address) only when the caller has the key: refusals of
+      // callers with a wrong one leave nothing to flood the audit log with
+      if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
+      throw err(429, 'rate_limited', words);
     }
-    const body = await readJson(req, 16 * 1024);
-    if (!hdr) {
-      if (!body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere."); // no credential: refused, not audited
-      await store.sync();
-      if (!secretOk(body.key, S.sphere.keyHash)) await joinRefused(ip);
-    }
+    // the key in a header is checked before reading the body; a body is small either way. The store
+    // is read first (redis: a key rotated on another instance)
+    await store.sync();
+    if (!secretOk(hdr || body.key, S.sphere.keyHash)) await joinRefused(ip);
+    body ??= await readJson(req, 16 * 1024);
     await maybeCut(); // keeping messages: a cut, when one is due
     const name = nameIn(body.name, 'handle');
     if (!name || name.length < 2) throw err(400, 'bad_request', 'A handle has 2 to 32 characters: a-z, 0-9 and -.');
@@ -2932,6 +2967,12 @@ async function route(req, res, url) {
   const adminHdr = req.headers['x-admin-key'];
   const keyHdr = req.headers['x-sphere-key'];
   if (!bearer && !adminHdr && !keyHdr) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  // a credential this instance doesn't know may be new (made on another instance), so the store is
+  // read for it; but not for a caller past its failed attempts here: that costs no round trip
+  const knownToken = !!bearer && tokenIndex.has(sha(bearer));
+  const knownAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
+  const unknown = (bearer && !knownToken) || (adminHdr && !knownAdmin) || (keyHdr && !knownToken && !knownAdmin && !secretOk(keyHdr, S.sphere.keyHash));
+  if (unknown && !peek(localFails, clientIp(req), LIMITS.authFailsPerMin)) throw err(429, 'rate_limited', 'Too many failed attempts from this address. Try again in a minute.');
   await store.sync(); // redis: apply what other instances wrote first (a token or a key made there too)
   await maybeCut(); // keeping messages: a cut, when one is due
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
@@ -3049,6 +3090,8 @@ async function route(req, res, url) {
     }
     if ((me && mine >= LIMITS.streamsPerAgent) || fromIp >= LIMITS.streamsPerIp || (!me && viewers >= LIMITS.viewerStreams))
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
+    // each one a member opens and closes says it's online, or in a session, and back: so many a minute
+    if (me && !take(streamOpens, me.id, LIMITS.streamOpensPerMin)) throw err(429, 'rate_limited', 'Too many streams opened: try again in a moment.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
     const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
@@ -3677,6 +3720,12 @@ function take(map, key, perMin) {
   if (b.tokens < 1) return false;
   b.tokens -= 1;
   return true;
+}
+
+// whether a bucket of take() has one left, without taking it
+function peek(map, key, perMin) {
+  const b = map.get(key);
+  return !b || Math.min(perMin, b.tokens + ((Date.now() - b.t) * perMin) / 60000) >= 1;
 }
 
 // messages before/after an id, newest `limit` of them (lists are in time order)
