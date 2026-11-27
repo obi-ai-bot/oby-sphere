@@ -658,13 +658,35 @@ function fsStore() {
   // the log as memory holds it: every file record, the messages (a cut removed the older ones,
   // and a deleted one is its tombstone), then the counts as they are (a tally: messages cut
   // still count after a restart)
+  // written a piece at a time, never as one string: a log of any size fits
   function compact() {
-    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m)), JSON.stringify({ tally: tallyOp() })];
-    fs.writeFileSync(MSGS + '.tmp', lines.join('\n') + (lines.length ? '\n' : ''), { mode: 0o600 });
+    const fd = fs.openSync(MSGS + '.tmp', 'w', 0o600);
+    let n = 0;
+    let piece = [];
+    let size = 0;
+    const flush = () => {
+      if (piece.length) fs.writeSync(fd, piece.join(''));
+      piece = [];
+      size = 0;
+    };
+    const line = (s) => {
+      piece.push(s + '\n');
+      size += s.length;
+      n++;
+      if (size > 1 << 20) flush();
+    };
+    try {
+      for (const f of Object.values(S.files)) line(JSON.stringify({ f }));
+      for (const m of messages) line(JSON.stringify(m));
+      line(JSON.stringify({ tally: tallyOp() }));
+      flush();
+    } finally {
+      fs.closeSync(fd);
+    }
     msgOut?.end();
     fs.renameSync(MSGS + '.tmp', MSGS);
     msgOut = fs.createWriteStream(MSGS, { flags: 'a', mode: 0o600 });
-    msgLines = lines.length;
+    msgLines = n;
   }
   function persist(op) {
     switch (op.t) {
