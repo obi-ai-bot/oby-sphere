@@ -46,7 +46,7 @@ const consoleCmd = (profile) => (process.env.OBYSPHERE_CLI ? `obysphere open --p
 // profiles: OBYSPHERE_HOME, else the one of ~/.obysphere and ~/.obysphere-mvp (made before the rename) that holds a profile (profilesHome)
 const HOME = profilesHome();
 const DOWNLOADS = path.resolve(process.env.OBYSPHERE_DOWNLOADS || path.join(os.homedir(), 'Downloads', 'obysphere'));
-const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off', 'if-needed', 'no-scan', 'yes', 'unpin']);
+const BOOL = new Set(['approve', 'serve', 'as-session', 'help', 'notify', 'force', 'quiet', 'open', 'insecure', 'json', 'bot', 'hook', 'off', 'if-needed', 'no-scan', 'yes', 'unpin', 'print']);
 // What an answering session may do. Reading, searching and listing files works
 // inside the owner's chosen folder only, with no rule needed (in dontAsk mode
 // anything outside it is denied). A bare "Read" rule would open every file on
@@ -360,6 +360,8 @@ function help() {
   node rep.mjs mcp     [--profile <name>] [--serve]                MCP server for Claude Code / Cursor
   node rep.mjs ui      [--profile <name>] [--port 4849] [--serve] [--open]
                                          your console: the Sphere in a browser, signed in as you
+  node rep.mjs open    [--profile <name>] [--port <n>] [--page you] [--print]
+                                         your console in a browser, signed in: a link that works once
   node rep.mjs admin   claim | status | grant <handle> | revoke <handle> | rotate-key [--yes]
   node rep.mjs admin   policy [--sealed on|off] [--max-depth N] [--max-file-bytes N] [--keep-days N] [--pause|--resume]
                                          this Sphere's admins and policy (--keep-days 0: no time limit). claim makes your Oby an admin:
@@ -769,12 +771,15 @@ function awayUntil(s, now = new Date()) {
 // events, files) before the page gets them, and seals what the page sends.
 //
 // Only you get in: a new secret at each start, kept in the profile
-// (console-auth.json, 0600, by port). Every /local/* and /api/* call needs it. A
-// program of yours sends it in x-obysphere-auth; a browser gets it once in a
-// link's fragment (#auth=…: obysphere open, the link printed here, a
-// notification, the menu bar) and trades it for an HttpOnly, SameSite=Strict
-// cookie. Another user on this machine, a container, or a page elsewhere has
-// none of them.
+// (console-auth.json, 0600, by port). Every /local/* and /api/* call needs it, in
+// x-obysphere-auth: a program of yours reads it there; a browser's page trades a
+// code that works once, for a few minutes (#code=…: obysphere open, rep.mjs open,
+// the menu bar, a notification, the link printed in a terminal), which a program
+// with the secret asks for (POST /local/open-code), for the secret, and keeps it in
+// its tab (sessionStorage: its origin, port included). Never a cookie: cookies
+// reach every port of a host, so any program listening on another port would get
+// it. The secret is never in a log, a command line or a URL. Another user on this
+// machine, a container, or a page elsewhere has none of them.
 async function ui() {
   // the page beside this rep.mjs, never the relay's: it runs with this console's local API (your
   // settings, your decisions), so a page the relay sent could change them
@@ -786,13 +791,37 @@ async function ui() {
   const host = `${slug(p.profile) || 'me'}.localhost`;
   const hosts = new Set([`${host}:${port}`, `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
   const origins = new Set([...hosts].map((h) => `http://${h}`));
-  const secret = randomBytes(32).toString('base64url');
-  const cookieName = `obysphere-console-${port}`;
-  // 'header' (a program of yours), 'cookie' (a browser that traded the link), or null
-  const authedBy = (req) => {
-    const h = req.headers[CONSOLE_AUTH_HEADER];
-    if (h !== undefined) return sameSecret(h, secret) ? 'header' : null;
-    return sameSecret(cookieOf(req, cookieName), secret) ? 'cookie' : null;
+  let secret = randomBytes(32).toString('base64url');
+  const authed = (req) => sameSecret(req.headers[CONSOLE_AUTH_HEADER], secret);
+  // codes that sign a browser in once (code -> its expiry), and codes used (code -> until when
+  // it's remembered): a code used twice was seen by someone else, so the secret changes
+  const codes = new Map();
+  const usedCodes = new Map();
+  const mintCode = () => {
+    const now = Date.now();
+    for (const m of [codes, usedCodes]) for (const [c, until] of m) if (until <= now) m.delete(c);
+    while (codes.size >= CONSOLE_CODES_MAX) codes.delete(codes.keys().next().value);
+    const code = randomBytes(32).toString('base64url');
+    codes.set(code, now + CONSOLE_CODE_MS);
+    return { code, expiresAt: new Date(now + CONSOLE_CODE_MS).toISOString() };
+  };
+  // a code's trade: the secret, once; 'used' when it was traded before (the secret is new now)
+  const redeem = (code) => {
+    if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)) return null;
+    const until = codes.get(code);
+    if (until !== undefined) {
+      codes.delete(code);
+      if (until <= Date.now()) return null;
+      usedCodes.set(code, Date.now() + CONSOLE_CODE_MS);
+      return secret;
+    }
+    if (!usedCodes.has(code)) return null;
+    usedCodes.delete(code);
+    secret = randomBytes(32).toString('base64url');
+    codes.clear();
+    keepConsoleSecret(p, port, secret);
+    log(yellow('  a link to your console was used twice: ') + 'whoever used it is signed out, and your console has a new secret (open it again: ' + (process.env.OBYSPHERE_CLI ? 'obysphere open' : `${meCmd()} open --profile ${p.profile}`) + ').');
+    return 'used';
   };
   let ready;
   const started = new Promise((r) => (ready = r)); // the secret is kept: requests wait for it
@@ -904,42 +933,68 @@ async function ui() {
           res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
           return res.end(`This console's page is gone from ${pageFile}: install Obysphere again.`);
         }
-        // before the trade (#auth=…), the page only learns that it can sign in
-        const me = authedBy(req) ? { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName } : { signin: true };
+        // the page learns only that it's a console: who you are comes from /local/me, once it has
+        // the secret (a page load can't send it)
         const nonce = randomBytes(16).toString('base64');
-        const html = withNonce(page, nonce).replace('<head>', `<head><script nonce="${nonce}">window.OBYSPHERE_CONSOLE=${JSON.stringify(me).replace(/</g, '\\u003c')}</script>`);
+        const html = withNonce(page, nonce).replace('<head>', `<head><script nonce="${nonce}">window.OBYSPHERE_CONSOLE={}</script>`);
         const pairs = readJsonFile(pairsFile, {});
         const fresh = !pairs[pairKey];
         if (fresh) writeSecret(pairsFile, { ...pairs, [pairKey]: new Date().toISOString() });
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...pageHeaders(nonce), ...(fresh ? { 'clear-site-data': '"cache", "storage"' } : {}) });
         return res.end(html);
       }
-      if (!url.pathname.startsWith('/local/') && !url.pathname.startsWith('/api/')) {
+      const signin = url.pathname === '/console-signin';
+      if (!signin && !url.pathname.startsWith('/local/') && !url.pathname.startsWith('/api/')) {
         res.writeHead(404, { 'content-type': 'text/plain' });
         return res.end('not found');
       }
-      // ---- /local/* and /api/*: from this origin only, and only with this start's secret
+      // ---- /local/*, /api/* and the sign-in: from this origin only
       const site = req.headers['sec-fetch-site'];
       if ((site && site !== 'same-origin' && site !== 'none') || (req.headers.origin && !origins.has(req.headers.origin))) return sendJson(res, 403, { error: 'Only this console may call its API.', code: 'forbidden' });
-      const by = authedBy(req);
-      if (!by) {
+      const howToOpen = `Open your console from this machine: ${process.env.OBYSPHERE_CLI ? 'obysphere open' : `${meCmd()} open --profile ${p.profile}`}.`;
+      const noAuth = (error = howToOpen) => {
         res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'www-authenticate': 'Obysphere-Console' });
-        return res.end(JSON.stringify({ error: `Open your console from this machine: ${process.env.OBYSPHERE_CLI ? 'obysphere open' : `the link ${meCmd()} ui printed when it started`}.`, code: 'console_auth' }));
+        return res.end(JSON.stringify({ error, code: 'console_auth' }));
+      };
+      // the page's sign-in: a code from a link (#code=…), traded once for the secret, which the
+      // page keeps in its tab and sends in x-obysphere-auth. No cookie.
+      if (signin) {
+        if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST only.', code: 'bad_request' });
+        let code = null;
+        try {
+          code = JSON.parse((await readBody(req, 1024)).toString('utf8'))?.code;
+        } catch {}
+        const got = redeem(code);
+        if (got === 'used') return noAuth(`That link was already used: a link signs one browser in, once. ${howToOpen}`);
+        if (!got) return noAuth(`That link doesn't open your console any more: a link works once, for a few minutes, and only until your console starts again. ${howToOpen}`);
+        return sendJson(res, 200, { secret: got });
       }
-      // the page's cookie: writes, and every /local call (its answers hold paths and your rules),
-      // also need a header other sites can't send without a preflight
-      if (by === 'cookie' && req.headers['x-obysphere-console'] !== '1' && (req.method !== 'GET' || url.pathname.startsWith('/local/'))) return sendJson(res, 403, { error: 'Only this console may call its API.', code: 'forbidden' });
+      // ---- only with this start's secret, in its header (never a cookie)
+      if (!authed(req)) return noAuth();
       // ---- this machine's own API: your Oby's settings, what waits for you, today's usage.
       // Answered here and never sent to the relay.
       if (url.pathname.startsWith('/local/')) {
-        // the trade: a link's #auth=… for this console's cookie
-        if (url.pathname === '/local/auth') {
+        // a code that signs a browser in once, for a program of yours that has the secret: it
+        // opens #code=… in a browser (obysphere open, the menu bar, a notification's click)
+        if (url.pathname === '/local/open-code') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST only.', code: 'bad_request' });
-          res.writeHead(204, { 'cache-control': 'no-store', 'set-cookie': `${cookieName}=${secret}; Path=/; HttpOnly; SameSite=Strict` });
-          return res.end();
+          return sendJson(res, 200, mintCode());
         }
+        // who you are, for the page once it's signed in
+        if (url.pathname === '/local/me') {
+          if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only.', code: 'bad_request' });
+          return sendJson(res, 200, { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName });
+        }
+        // the old trade of a link's secret for a cookie: no more (cookies ignore ports)
+        if (url.pathname === '/local/auth') return sendJson(res, 410, { error: `Your console no longer signs browsers in with a cookie. ${howToOpen}`, code: 'gone' });
         return await localApi(req, res, url, p);
       }
+      // a new token reaches the page never: rotating it goes through /local/token, which keeps
+      // it in your profile (the relay's answer would hand the page a live token, and leave your
+      // profile, your background Oby and this console with the dead one). Nor a join's.
+      url.searchParams.delete('__path'); // a Vercel relay reads its route from it
+      const route = url.pathname.toLowerCase().replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+      if (route === '/api/me/token' || route === '/api/join') return sendJson(res, 403, { error: route === '/api/join' ? 'Your console joins nothing: it is your Oby already.' : `A new token for your Oby goes through this console's Settings (POST /local/token), or ${meCmd()} token rotate, so your profile keeps it.`, code: 'forbidden' });
       url.searchParams.delete('key');
       // the owner watching: counts as their session, and sees what a viewer sees
       if (url.pathname === '/api/stream') url.searchParams.set('role', 'console');
@@ -1135,10 +1190,19 @@ async function ui() {
   ready();
   const link = `http://${host}:${port}/`;
   notifyConsoleUrl(p, link); // notifications link here
-  log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(`${link}#auth=${secret}`)}`);
-  log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it, with this link (a new one each start${process.env.OBYSPHERE_CLI ? `; obysphere open opens it` : ''}). Also at http://localhost:${port}/#auth=${secret}`));
-  const open = opt.open && process.platform === 'darwin' && programPath('open');
-  if (open) spawn(open, [`${link}#auth=${secret}`], { stdio: 'ignore' }).on('error', () => {});
+  // a new link, for another browser or tab: obysphere open (for a console in a terminal, with its port)
+  const another = process.env.OBYSPHERE_CLI ? `obysphere open --profile ${p.profile}${opt.serve ? '' : ` --port ${port}`}` : `${meCmd()} open --profile ${p.profile} --port ${port}`;
+  const who = `signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it`;
+  // in a terminal you look at, a link that signs one browser in, once, within a few minutes; in a
+  // log (the background service's console.log, which `obysphere logs` prints), the address alone
+  if (process.stderr.isTTY && !opt.serve) {
+    log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(`${link}#code=${mintCode().code}`)}`);
+    log(dim(`  ${who}. This link signs one browser in, once, in the next ${CONSOLE_CODE_MS / 60e3} minutes; another: ${another}`));
+  } else {
+    log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(link)}`);
+    log(dim(`  ${who}. To sign a browser in: ${another}`));
+  }
+  if (opt.open && process.platform === 'darwin') openInBrowser(`${link}#code=${mintCode().code}`);
   if (opt.serve) serveWhenReachable(p);
 }
 
@@ -1146,6 +1210,8 @@ async function ui() {
 // at } }, one entry per console (a profile may run one in a terminal and one in the background).
 // Written once both addresses are held; entries of consoles that are gone are dropped.
 const CONSOLE_AUTH_HEADER = 'x-obysphere-auth';
+const CONSOLE_CODE_MS = 5 * 60e3; // how long a code that signs a browser in (#code=…) waits to be used
+const CONSOLE_CODES_MAX = 32; // codes not used yet, at most: the oldest goes
 const consoleAuthFile = (p) => path.join(p.dir, 'console-auth.json');
 function keepConsoleSecret(p, port, secret) {
   const all = readJsonFile(consoleAuthFile(p), {});
@@ -1176,21 +1242,77 @@ function sameSecret(a, b) {
   const y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
-function cookieOf(req, name) {
-  for (const part of String(req.headers.cookie || '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
-  }
-  return null;
+
+// ---- open: your console in a browser, signed in. The console that runs for this profile (--port,
+// else the one that started last) proves it knows its secret; then it makes a code that signs one
+// browser in, once, within a few minutes (POST /local/open-code), and this opens
+// http://<profile>.localhost:<port>/#code=…[&<page>]. --print prints the link instead: a desktop
+// notification's click and the menu bar run it, and open what it prints themselves. Without
+// --print: macOS gets the link on osascript's stdin (a command line is there for any user of the
+// Mac to read); elsewhere it's printed. (obysphere open does the same, and opens it everywhere.)
+async function openCmd() {
+  const p = loadProfile();
+  const hash = consolePage(opt.page);
+  if (hash === null) die('--page is a page of your console: you, traffic, settings, exchange:m_…, or mode=conversation&c=<channel>.');
+  const port = opt.port !== undefined ? Number(opt.port) : Number(/:(\d{1,5})\/$/.exec(consoleLink(p))?.[1]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) die('--port is the port your console listens on.');
+  const secret = consoleSecretOf(p, port);
+  const where = `http://${slug(p.profile) || 'me'}.localhost:${port}/`;
+  if (!secret || !(await consoleProves(port, secret))) die(`${p.agent.name}'s console isn't running at ${where}: ${process.env.OBYSPHERE_CLI ? `obysphere start --profile ${p.profile}` : `${meCmd()} ui --profile ${p.profile}`}`);
+  let code;
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/local/open-code`, { method: 'POST', headers: { [CONSOLE_AUTH_HEADER]: secret, 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(5000), redirect: 'error' });
+    code = r.ok ? (await r.json()).code : null;
+  } catch {}
+  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)) die(`${p.agent.name}'s console at ${where} made no link: it may be older than this rep.mjs (start it again).`);
+  const link = `${where}#code=${code}${hash ? `&${hash}` : ''}`;
+  if (opt.print) return console.log(link);
+  if (process.platform === 'darwin' && (await openInBrowser(link))) return log(`Opening ${cyan(where)}`);
+  log(`Open this link in your browser: it signs one browser in, once, in the next ${CONSOLE_CODE_MS / 60e3} minutes.`);
+  console.log(link);
 }
-// a link to your console that signs a browser in (a desktop notification, opened by this
-// machine): the secret in its fragment, which browsers never send anywhere
-function consoleAuthLink(p, link) {
-  const m = /^http:\/\/[a-z0-9.-]+:(\d{1,5})\/(#.*)?$/.exec(String(link));
-  const secret = m && consoleSecretOf(p, m[1]);
-  if (!secret) return link;
-  const [base, hash = ''] = String(link).split('#');
-  return `${base}#auth=${secret}${hash ? `&${hash}` : ''}`;
+// --page: a page of the console, as its links say it (page=you, mode=conversation&c=general), or
+// a page's name alone (you, exchange:m_…); '' for none; null for anything else
+function consolePage(v) {
+  if (v === undefined || v === true || v === '') return '';
+  const s = String(v);
+  if (/^[a-z]{1,20}(:m_[A-Za-z0-9_-]{1,32})?$/.test(s)) return `page=${s}`;
+  const q = new URLSearchParams(s);
+  const keys = [...q.keys()];
+  if (!keys.length || keys.length > 3 || keys.some((k) => !['page', 'mode', 'c'].includes(k)) || new Set(keys).size !== keys.length) return null;
+  if ([...q.values()].some((x) => !/^[A-Za-z0-9:_-]{1,64}$/.test(x))) return null;
+  return keys.map((k) => `${k}=${q.get(k)}`).join('&');
+}
+// the console at the port answers the challenge with this secret: it's yours, so the secret may go
+async function consoleProves(port, secret) {
+  const nonce = randomBytes(18).toString('base64url');
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/console-hello?nonce=${nonce}`, { signal: AbortSignal.timeout(3000), redirect: 'error' });
+    const proof = r.ok ? (await r.json())?.proof : null;
+    return sameSecret(proof, consoleProof(secret, nonce));
+  } catch {
+    return false;
+  }
+}
+// macOS: a link to your console, to your browser through osascript's stdin, never a command line
+// (ps shows every user's). true when osascript took it.
+async function openInBrowser(link) {
+  if (!/^http:\/\/[a-z0-9.-]+:\d{1,5}\/#[A-Za-z0-9=&:_-]+$/.test(link)) return false;
+  const exe = programPath('osascript');
+  if (!exe) return false;
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(exe, [], { stdio: ['pipe', 'ignore', 'ignore'] });
+    } catch {
+      return resolve(false);
+    }
+    const t = setTimeout(() => child.kill('SIGKILL'), 15e3);
+    child.on('error', () => (clearTimeout(t), resolve(false)));
+    child.on('close', (code) => (clearTimeout(t), resolve(code === 0)));
+    child.stdin.on('error', () => {});
+    child.stdin.end(`open location "${link}"\n`);
+  });
 }
 
 // /local/*: what only this machine knows. Errors keep to { error, field? }.
@@ -8596,19 +8718,21 @@ function desktopNotifyPlain(p, title, body, link, type) {
 // OBYSPHERE_NOTIFIER_APP=<path>.app builds it elsewhere, for tests only (with OBYSPHERE_TEST=1;
 // without it, it's ignored): as dev.oby.obysphere.test, and not registered with LaunchServices, so
 // it never stands in for the real one.
-const NOTIFIER_VERSION = '2';
+const NOTIFIER_VERSION = '3';
 const NOTIFIER_ELSEWHERE = truthyEnv(process.env.OBYSPHERE_TEST) && !!process.env.OBYSPHERE_NOTIFIER_APP;
 const NOTIFIER_ID = NOTIFIER_ELSEWHERE ? 'dev.oby.obysphere.test' : 'dev.oby.obysphere';
 const NOTIFIER_SWIFT = String.raw`import AppKit
 import UserNotifications
 
 // Obysphere's app. It's opened three ways:
-//   --note <file>: reads {title, body, url, group, id} from the file, removes it, shows the
-//     notification, writes <file>.done (ok, not-allowed or error) and quits;
+//   --note <file>: reads {title, body, url, group, id, node, cli, home, profile, page} from the file,
+//     removes it, shows the notification, writes <file>.done (ok, not-allowed or error) and quits;
 //   --menu --node <node> --cli <obysphere.mjs>: the menu bar icon, from its LaunchAgent (obysphere
 //     start writes it). What it shows comes from "obysphere menubar model", every 30 seconds and when
-//     you open it; what you choose runs "obysphere <words>" or opens a page of your console;
-//   with nothing (a click on one of its notifications): opens that notification's page, then quits.
+//     you open it; what you choose runs "obysphere <words>", or opens a page of your console with the
+//     link "obysphere open ... --print" prints (it works once: the app holds no secret);
+//   with nothing (a click on one of its notifications): opens that notification's page, signed in
+//     with the link "<node> <cli> open ... --print" prints (else the page itself), then quits.
 
 let argv = CommandLine.arguments
 func arg(_ k: String) -> String? {
@@ -8623,6 +8747,41 @@ func localPage(_ s: String) -> URL? {
 func bringForward() {
   if #available(macOS 14.0, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
 }
+// node <cli> with these words (and env added to the app's own), its stdin closed; done(status,
+// stdout, stderr) on the main thread
+func runNode(_ node: String, _ cli: String, _ args: [String], env: [String: String] = [:], timeout: Double, _ done: @escaping (Int32, String, String) -> Void) {
+  DispatchQueue.global().async {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: node)
+    p.arguments = ["--preserve-symlinks-main", cli] + args
+    if !env.isEmpty { p.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new } }
+    p.standardInput = FileHandle.nullDevice
+    let out = Pipe(), err = Pipe()
+    p.standardOutput = out
+    p.standardError = err
+    do { try p.run() } catch {
+      let why = error.localizedDescription
+      DispatchQueue.main.async { done(-1, "", why) }
+      return
+    }
+    var o = Data(), e = Data()
+    let g = DispatchGroup()
+    g.enter()
+    DispatchQueue.global().async { o = out.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+    g.enter()
+    DispatchQueue.global().async { e = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
+    let stop = DispatchWorkItem { if p.isRunning { p.terminate() } }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
+    p.waitUntilExit()
+    stop.cancel()
+    g.wait()
+    let code = p.terminationStatus
+    let so = String(decoding: o, as: UTF8.self), se = String(decoding: e, as: UTF8.self)
+    DispatchQueue.main.async { done(code, so, se) }
+  }
+}
+// the link a command printed, when it's a page of your console
+func printedPage(_ out: String) -> URL? { localPage(out.trimmingCharacters(in: .whitespacesAndNewlines)) }
 
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
   var menu: Menu?
@@ -8630,7 +8789,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     UNUserNotificationCenter.current().delegate = self
     if let f = arg("--note") { post(f) }
     else if argv.contains("--menu"), let node = arg("--node"), let cli = arg("--cli") { menu = Menu(node: node, cli: cli) }
-    else { DispatchQueue.main.asyncAfter(deadline: .now() + 5) { exit(0) } }
+    else { DispatchQueue.main.asyncAfter(deadline: .now() + 30) { exit(0) } }
   }
   func done(_ path: String, _ word: String, _ code: Int32) -> Never {
     try? word.write(toFile: path + ".done", atomically: true, encoding: .utf8)
@@ -8647,18 +8806,39 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
       content.title = note["title"] ?? "Obysphere"
       content.body = note["body"] ?? ""
       if let g = note["group"] { content.threadIdentifier = g }
-      if let u = note["url"] { content.userInfo = ["url": u] }
+      // what a click needs: the page, and how to get a link that signs a browser in (never a secret)
+      var info: [String: String] = [:]
+      for k in ["url", "node", "cli", "home", "profile", "page"] { if let v = note[k] { info[k] = v } }
+      content.userInfo = info
       let request = UNNotificationRequest(identifier: note["id"] ?? UUID().uuidString, content: content, trigger: nil)
       center.add(request) { error in self.done(path, error == nil ? "ok" : "error: \(error!.localizedDescription)", error == nil ? 0 : 4) }
     }
     // the first time, macOS asks you whether Obysphere may notify: wait for your answer, not forever
     DispatchQueue.main.asyncAfter(deadline: .now() + 120) { exit(5) }
   }
-  // a click: open its page in your console; the menu bar's app stays, any other quits
+  // a click: its page in your console, signed in with the link "<node> <cli> open ... --print"
+  // prints (it works once); without one, the page itself, which says how to sign in. The menu
+  // bar's app stays, any other quits.
   func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse, withCompletionHandler finish: @escaping () -> Void) {
-    if let s = r.notification.request.content.userInfo["url"] as? String, let u = localPage(s) { NSWorkspace.shared.open(u) }
-    finish()
-    if menu == nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) } }
+    let info = r.notification.request.content.userInfo
+    let plain = (info["url"] as? String).flatMap { localPage($0) }
+    let leave = {
+      finish()
+      if self.menu == nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exit(0) } }
+    }
+    guard let node = info["node"] as? String, let cli = info["cli"] as? String, let profile = info["profile"] as? String else {
+      if let u = plain { NSWorkspace.shared.open(u) }
+      return leave()
+    }
+    var args = ["open", "--profile", profile]
+    if let page = info["page"] as? String, !page.isEmpty { args += ["--page", page] }
+    args.append("--print")
+    var env: [String: String] = [:]
+    if let home = info["home"] as? String, !home.isEmpty { env["OBYSPHERE_HOME"] = home }
+    runNode(node, cli, args, env: env, timeout: 20) { code, out, _ in
+      if code == 0, let u = printedPage(out) { NSWorkspace.shared.open(u) } else if let u = plain { NSWorkspace.shared.open(u) }
+      leave()
+    }
   }
   func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification, withCompletionHandler finish: @escaping (UNNotificationPresentationOptions) -> Void) {
     finish([.banner, .list])
@@ -8708,35 +8888,7 @@ final class Menu: NSObject, NSMenuDelegate {
 
   // obysphere with these words, its own stdin closed; done(status, stdout, stderr) on the main thread
   func run(_ args: [String], timeout: Double, _ done: @escaping (Int32, String, String) -> Void) {
-    let node = self.node, cli = self.cli
-    DispatchQueue.global().async {
-      let p = Process()
-      p.executableURL = URL(fileURLWithPath: node)
-      p.arguments = ["--preserve-symlinks-main", cli] + args
-      p.standardInput = FileHandle.nullDevice
-      let out = Pipe(), err = Pipe()
-      p.standardOutput = out
-      p.standardError = err
-      do { try p.run() } catch {
-        let why = error.localizedDescription
-        DispatchQueue.main.async { done(-1, "", why) }
-        return
-      }
-      var o = Data(), e = Data()
-      let g = DispatchGroup()
-      g.enter()
-      DispatchQueue.global().async { o = out.fileHandleForReading.readDataToEndOfFile(); g.leave() }
-      g.enter()
-      DispatchQueue.global().async { e = err.fileHandleForReading.readDataToEndOfFile(); g.leave() }
-      let stop = DispatchWorkItem { if p.isRunning { p.terminate() } }
-      DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: stop)
-      p.waitUntilExit()
-      stop.cancel()
-      g.wait()
-      let code = p.terminationStatus
-      let so = String(decoding: o, as: UTF8.self), se = String(decoding: e, as: UTF8.self)
-      DispatchQueue.main.async { done(code, so, se) }
-    }
+    runNode(node, cli, args, timeout: timeout, done)
   }
 
   func refresh() {
@@ -8803,6 +8955,14 @@ final class Menu: NSObject, NSMenuDelegate {
     case "line":
       return line(title, i["dot"] as? String)
     case "open":
+      // a page of your console, signed in: what "obysphere <args>" prints (a link that works once)
+      if i["args"] is [String] {
+        let x = NSMenuItem(title: title, action: #selector(openSigned(_:)), keyEquivalent: "")
+        x.target = self
+        x.representedObject = i
+        x.isEnabled = busy == nil
+        return x
+      }
       guard let s = i["url"] as? String, let u = localPage(s) else { return nil }
       let x = NSMenuItem(title: title, action: #selector(open(_:)), keyEquivalent: "")
       x.target = self
@@ -8831,6 +8991,18 @@ final class Menu: NSObject, NSMenuDelegate {
   @objc func tryAgain() { refresh() }
   @objc func open(_ sender: NSMenuItem) {
     if let u = sender.representedObject as? URL { NSWorkspace.shared.open(u) }
+  }
+  @objc func openSigned(_ sender: NSMenuItem) {
+    guard let i = sender.representedObject as? [String: Any], let args = i["args"] as? [String] else { return }
+    run(args, timeout: 30) { code, out, err in
+      if code == 0, let u = printedPage(out) { NSWorkspace.shared.open(u); return }
+      bringForward()
+      let a = NSAlert()
+      a.alertStyle = .warning
+      a.messageText = "\(sender.title): that didn't work"
+      a.informativeText = Menu.words(err.isEmpty ? out : err, 600) ?? "obysphere stopped without saying why."
+      a.runModal()
+    }
   }
   @objc func act(_ sender: NSMenuItem) {
     guard busy == nil, let i = sender.representedObject as? [String: Any], let args = i["args"] as? [String] else { return }
@@ -9051,9 +9223,10 @@ async function macNotify(p, title, body, link, type) {
   const fresh = !notifierCurrent(notifierPath());
   const app = await ensureNotifier();
   // one kind of notification at a time per profile: a newer one of that kind replaces the last.
-  // A click opens your console signed in: the app gets the link in a file only you can read
-  // (terminal-notifier's would be on a command line, so it gets the plain link)
-  const note = { title: String(title), body: String(body), url: consoleAuthLink(p, link), group: `obysphere-${p.profile}`, id: `obysphere-${p.profile}-${type}` };
+  // A click opens your console signed in: the app runs `rep.mjs open --print` then (node, cli,
+  // home, profile, page), for a link that works once, so the notification, which macOS keeps,
+  // holds no secret. The note goes in a file only you can read.
+  const note = { title: String(title), body: String(body), url: link, group: `obysphere-${p.profile}`, id: `obysphere-${p.profile}-${type}`, node: process.execPath, cli: SELF, home: HOME, profile: p.profile, page: String(link).split('#')[1] || '' };
   let said = await macPost(app, note);
   // just built: macOS may not know the app yet for a moment, and says no once
   if (said === 'not-allowed' && fresh) {
@@ -11395,7 +11568,7 @@ async function tokenCmd() {
   Your background Oby, console and Claude Code sessions on this computer pick it up by themselves.`);
 }
 
-const commands = { join, serve, mcp, ui, ask, agents, read: readCmd, post, delete: deleteCmd, inbox: inboxCmd, away: awayCmd, whoami, sealing: sealingCmd, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, security: securityCmd, lockdown: lockdownCmd, token: tokenCmd, help };
+const commands = { join, serve, mcp, ui, open: openCmd, ask, agents, read: readCmd, post, delete: deleteCmd, inbox: inboxCmd, away: awayCmd, whoami, sealing: sealingCmd, settings: settingsCmd, 'mcp-config': mcpConfig, admin: adminCmd, notify: notifyCmd, github: githubCmd, instruments: instrumentsCmd, use: useCmd, security: securityCmd, lockdown: lockdownCmd, token: tokenCmd, help };
 if (!commands[cmd] || opt.help) help();
 else
   Promise.resolve().then(() => commands[cmd]()).catch((e) => { // help() is synchronous

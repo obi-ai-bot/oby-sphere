@@ -226,8 +226,9 @@ export class World {
   }
 
   // a member's console (rep.mjs ui), at its own origin: http://<handle>.localhost:<port>/. Its url
-  // signs a browser in, as the link the console prints does (#auth=<its secret>); more of the
-  // page's hash goes after it with &. auth: the header a program of its owner's sends.
+  // holds the console's secret (#auth=<it>), for these tests only: withPage's open() trades it for
+  // a code that signs one page in once (#code=…), as obysphere open does; more of the page's hash
+  // goes after it with &. auth: the header a program of its owner's sends.
   async console(name, { serve = false } = {}) {
     const port = await freePort();
     const p = this.start(`${name}: rep.mjs ui`, 'rep.mjs', ['ui', '--profile', name, '--port', String(port), ...(serve ? ['--serve'] : [])], this.env());
@@ -302,7 +303,7 @@ export async function withPage(browser, t, url, vp, fn) {
       if (m.type() === 'error') problems.push(`console error at ${where}: ${m.text()}${m.location()?.url ? ` (${m.location().url})` : ''}`);
     });
     pages.push(page);
-    await page.goto(to);
+    await page.goto(await signInLink(to));
     return page;
   };
   let failed = null;
@@ -325,6 +326,27 @@ export async function withPage(browser, t, url, vp, fn) {
     await context.close();
   }
   if (failed) throw failed;
+}
+
+// a console's url with its secret (#auth=…, these tests' own way to name it) as a link that signs a
+// browser in once (#code=…), from the console itself, as obysphere open gets one; any other url as it is
+export async function signInLink(to) {
+  const u = new URL(to);
+  const hp = new URLSearchParams(u.hash.slice(1));
+  const secret = hp.get('auth');
+  if (!secret) return to;
+  const code = await new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: '/local/open-code', method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': 2, 'x-obysphere-auth': secret } }, (res) => {
+      let out = '';
+      res.on('data', (d) => (out += d));
+      res.on('end', () => { try { resolve(JSON.parse(out).code); } catch (e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.end('{}');
+  });
+  hp.delete('auth');
+  u.hash = `code=${code}${String(hp) ? `&${hp}` : ''}`;
+  return u.toString();
 }
 
 // the page's title (its one h1)

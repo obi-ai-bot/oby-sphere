@@ -115,7 +115,9 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     fs.writeFileSync(path.join(dir, 'held', 'notes.txt'), 'not an ask');
     const env = envFor(h);
     const page = `http://alice.localhost:${port}/`;
-    const signed = `${page}#auth=${secret}`; // each page it opens signs the browser in
+    // each page it opens: obysphere open prints a link that works once, and the app opens it (the
+    // page itself, for an app from before); never the secret
+    const opener = (title, where) => ({ kind: 'open', title, url: where ? `${page}#page=${where}` : page, args: ['open', '--profile', 'alice', ...(where ? ['--page', where] : []), '--print'] });
 
     // away, with two asks waiting and one held
     let m = await model(env);
@@ -126,9 +128,10 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     assert.equal(m.items[1].kind, 'line');
     assert.equal(m.items[1].dot, 'away');
     assert.match(m.items[1].title, /^Away until (\d{1,2}:\d\d|[A-Z][a-z]{2} \d{1,2}:\d\d)$/);
-    assert.deepEqual(find(m.items, '2 asks wait for you'), { kind: 'open', title: '2 asks wait for you', url: `${signed}&page=you` });
-    assert.deepEqual(find(m.items, '1 ask held until your runtime can answer'), { kind: 'open', title: '1 ask held until your runtime can answer', url: `${signed}&page=you` });
-    assert.deepEqual(find(m.items, 'Open console'), { kind: 'open', title: 'Open console', url: signed });
+    assert.deepEqual(find(m.items, '2 asks wait for you'), opener('2 asks wait for you', 'you'));
+    assert.deepEqual(find(m.items, '1 ask held until your runtime can answer'), opener('1 ask held until your runtime can answer', 'you'));
+    assert.deepEqual(find(m.items, 'Open console'), opener('Open console'));
+    assert.ok(!JSON.stringify(m).includes(secret), 'never the secret (R25, R44)');
     assert.deepEqual(find(m.items, 'I’m back').args, ['away', '--off', '--profile', 'alice']);
     assert.equal(find(m.items, 'Away'), undefined, 'while away: I’m back, not Away');
     const stop = find(m.items, 'Stop');
@@ -153,7 +156,8 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     assert.ok(morning, away.items.map((i) => i.title).join(' | '));
     const at = new Date(morning.args[2]);
     assert.ok(at > new Date() && at.getHours() === 9 && at.getMinutes() === 0 && ![0, 6].includes(at.getDay()), morning.args[2]);
-    assert.deepEqual(find(away.items, 'Another time, or a note…'), { kind: 'open', title: 'Another time, or a note…', url: `${signed}&page=you` });
+    assert.deepEqual(find(away.items, 'Another time, or a note…'), opener('Another time, or a note…', 'you'));
+    assert.ok(!JSON.stringify(m).includes(secret));
 
     // paused by its runtime
     state.away = { by: 'pause', until: soon };

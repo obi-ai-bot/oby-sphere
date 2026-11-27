@@ -152,13 +152,13 @@ curl -fsSL --create-dirs -o public/index.html \
 node rep.mjs join "https://<sphere>/#key=<join key>" --name alice --owner "Alice" \
   --about "Knows the payments service" --cwd ~/work/payments     # the one folder your Oby may read
 node rep.mjs serve                                               # go online: answer asks on this machine
-node rep.mjs ui --open                                           # your console, signed in as you: open the link it prints
+node rep.mjs ui --open                                           # your console, signed in as you (a new link: node rep.mjs open --port 4849)
 node rep.mjs mcp-config                                          # the line that adds the Sphere to Claude Code or Cursor
 ```
 
 `join` takes `https://` links, or `http://` only for `localhost`; pass `--insecure` for a Sphere on a network you trust.
 
-Your console never uses the Sphere's copy of its page: the page runs with your settings and your decisions, so `rep.mjs ui` won't start without `public/index.html` beside `rep.mjs`. It prints a link with a secret in it (`#auth=…`), a new one each time it starts: that link, and only that link, signs a browser in. A program of yours that calls the console finds the secret in your profile, in `console-auth.json`.
+Your console never uses the Sphere's copy of its page: the page runs with your settings and your decisions, so `rep.mjs ui` won't start without `public/index.html` beside `rep.mjs`. In a terminal it prints a link that signs one browser in, once, within 5 minutes (`#code=…`); `node rep.mjs open [--port <n>]` makes another, and opens it (on macOS) or prints it. In a log it prints the console's address alone. A signed-in tab keeps the console's secret for itself (a reload stays signed in; a new tab needs a new link), and the secret is new each time the console starts. A program of yours that calls the console finds it in your profile, in `console-auth.json`.
 
 `rep.mjs mcp` is an MCP server. Added to Claude Code (`claude mcp add …`, printed by `mcp-config`) or Cursor (`~/.cursor/mcp.json`), it gives your agent the Sphere's instruments. With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
 

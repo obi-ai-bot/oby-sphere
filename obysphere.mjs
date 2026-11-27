@@ -59,7 +59,7 @@ const NO_CHECK = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_NO_UPDATE_CHECK
 const RESERVED = new Set([4848, 4849, 4850]); // the relay's, the console's and the demo's ports
 const VER = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,40})?(?:\+[0-9A-Za-z.-]{1,40})?$/;
 const DAY = 24 * 3600e3;
-const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'allow-downgrade', 'follow', 'json', 'help', 'clear']);
+const BOOL = new Set(['all', 'foreground', 'check', 'rollback', 'allow-downgrade', 'follow', 'json', 'help', 'clear', 'print']);
 const SHIM_MARK = '# obysphere shim';
 // profile names Obysphere keeps: com.obysphere.menubar is the menu bar icon's LaunchAgent
 const KEPT_NAMES = new Set(['menubar']);
@@ -90,7 +90,9 @@ Join and run your Oby
                                    (a LaunchAgent on macOS, a systemd user unit on Linux, a scheduled task on Windows)
   obysphere stop | restart [--profile p | --all]
   obysphere status [--json]        each profile: running or not, its console, its Sphere, versions, updates
-  obysphere open [--profile p]     your console, in the browser
+  obysphere open [--profile p] [--page you] [--print]
+                                   your console in the browser, signed in with a link that works once
+                                   (--print prints it; --port <n> for one running in a terminal)
   obysphere logs [--profile p] [-f] [-n 50]
   obysphere profiles [--json]      your profiles, and the folder that holds them
   obysphere profiles use <name>    the profile commands and the Claude Code plugin use when you don't say (--clear forgets it)
@@ -329,14 +331,40 @@ const logFile = (name) => path.join(HOME, name, 'logs', 'console.log');
 
 // ---- the console's secret: rep.mjs ui makes one at each start and keeps it in the profile
 // (console-auth.json, 0600, by port). A program of yours sends it in x-obysphere-auth; a browser
-// gets it in a link's fragment (#auth=…).
+// gets a code that works once (#code=…, POST /local/open-code), which its page trades for it. The
+// secret is never in a URL, a command line or what obysphere prints.
 const CONSOLE_AUTH_HEADER = 'x-obysphere-auth';
 function consoleSecret(name, port) {
   const v = readJson(path.join(HOME, name, 'console-auth.json'), {})?.[String(port)]?.secret;
   return typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v) ? v : null;
 }
-// the link that opens your console signed in
-const consoleAuthUrl = (name, port, secret, hash = '') => `${consoleUrl(name, port)}#auth=${secret}${hash ? `&${hash}` : ''}`;
+// a link that signs one browser in, once, within a few minutes: a code from the console at the
+// port (once it proved it's yours: consoleAnswers), for a page of it (consolePage); null if it
+// made none
+async function consoleSignInUrl(name, port, hash = '') {
+  const secret = consoleSecret(name, port);
+  if (!secret) return null;
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/local/open-code`, { method: 'POST', headers: { [CONSOLE_AUTH_HEADER]: secret, 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(5000), redirect: 'error' });
+    const code = r.ok ? (await r.json())?.code : null;
+    const url = typeof code === 'string' && /^[A-Za-z0-9_-]{43}$/.test(code) ? `${consoleUrl(name, port)}#code=${code}${hash ? `&${hash}` : ''}` : '';
+    return /^http:\/\/[a-z0-9.-]+:\d{1,5}\/#[A-Za-z0-9=&:_-]+$/.test(url) ? url : null; // plain enough for osascript's quotes
+  } catch {
+    return null;
+  }
+}
+// --page: a page of the console, as its links say it (page=you, mode=conversation&c=general), or a
+// page's name alone (you, exchange:m_…); '' for none; null for anything else. (rep.mjs has the same.)
+function consolePage(v) {
+  if (v === undefined || v === true || v === '') return '';
+  const s = String(v);
+  if (/^[a-z]{1,20}(:m_[A-Za-z0-9_-]{1,32})?$/.test(s)) return `page=${s}`;
+  const q = new URLSearchParams(s);
+  const keys = [...q.keys()];
+  if (!keys.length || keys.length > 3 || keys.some((k) => !['page', 'mode', 'c'].includes(k)) || new Set(keys).size !== keys.length) return null;
+  if ([...q.values()].some((x) => !/^[A-Za-z0-9:_-]{1,64}$/.test(x))) return null;
+  return keys.map((k) => `${k}=${q.get(k)}`).join('&');
+}
 
 // running: the console at its port proves it knows this profile's secret (a service, or one in a
 // terminal), on 127.0.0.1 and on ::1 when something answers there. Not its favicon, which any
@@ -486,11 +514,12 @@ WantedBy=default.target
 }
 
 // launchctl, systemctl, open: run, or with OBYSPHERE_SERVICE_DRYRUN only written down
-function runOs(bin, args, { detach = false } = {}) {
+// input: what goes to its stdin (never its command line)
+function runOs(bin, args, { detach = false, input } = {}) {
   if (DRY) {
     const file = path.isAbsolute(DRY) ? DRY : path.join(serviceDir(), 'dryrun.jsonl');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, JSON.stringify({ cmd: bin, args }) + '\n');
+    fs.appendFileSync(file, JSON.stringify({ cmd: bin, args, ...(input !== undefined ? { input } : {}) }) + '\n');
     return { status: 0, stdout: '', stderr: '' };
   }
   const exe = programPath(bin);
@@ -503,7 +532,7 @@ function runOs(bin, args, { detach = false } = {}) {
       return { status: 1, stdout: '', stderr: e.message };
     }
   }
-  const r = spawnSync(exe, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30e3 });
+  const r = spawnSync(exe, args, { encoding: 'utf8', ...(input !== undefined ? { input } : { stdio: ['ignore', 'pipe', 'pipe'] }), timeout: 30e3 });
   return { status: r.error ? 1 : r.status, stdout: r.stdout || '', stderr: r.stderr || r.error?.message || '' };
 }
 const uid = () => (typeof process.getuid === 'function' ? process.getuid() : 0);
@@ -778,7 +807,8 @@ async function menuModel(now = new Date()) {
 }
 
 // what waits for you and your away, from the console's local API (this machine only, with the
-// console's secret, once it proved it knows it: statusOf); and the secret, for the links it opens
+// console's secret, once it proved it knows it: statusOf). Never the secret: the menu's pages open
+// through obysphere open --print, for a link that works once.
 async function consoleState(name, port) {
   const secret = consoleSecret(name, port);
   if (!secret) return { waiting: 0, away: null };
@@ -794,7 +824,7 @@ async function consoleState(name, port) {
   const w = a?.away;
   const iso = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
   const away = w && (w.by === 'owner' || w.by === 'pause') && (w.until === null || iso(w.until)) ? { by: w.by, until: w.until } : null;
-  return { waiting: Array.isArray(p?.pending) ? p.pending.length : 0, away, auth: secret };
+  return { waiting: Array.isArray(p?.pending) ? p.pending.length : 0, away };
 }
 
 // asks held while its runtime can't answer: the files rep.mjs keeps (reading them through the
@@ -818,7 +848,7 @@ function whenWords(iso, now = new Date()) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${t}`;
 }
 
-function awayItems(flag, now, page) {
+function awayItems(flag, now, opener) {
   // the next working day at 9:00 (Monday after a Friday), as the console offers it
   const nine = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0, 0);
   while ([0, 6].includes(nine.getDay())) nine.setDate(nine.getDate() + 1);
@@ -830,7 +860,7 @@ function awayItems(flag, now, page) {
     away(`Until ${tomorrow ? 'tomorrow' : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][nine.getDay()]} 9:00`, ['--until', nine.toISOString()]),
     away('Until I’m back', ['--note=']),
     { kind: 'separator' },
-    { kind: 'open', title: 'Another time, or a note…', url: page },
+    opener('Another time, or a note…', 'you'),
   ];
 }
 
@@ -848,8 +878,9 @@ function menuOf(all, { update = null, now = new Date() } = {}) {
   for (const r of rows) {
     if (items.length) items.push({ kind: 'separator' });
     const flag = ['--profile', r.profile];
-    // each page it opens signs the browser in (#auth=…, the console's secret)
-    const page = (hash) => `${r.console}${r.auth || hash ? `#${[r.auth ? `auth=${r.auth}` : '', hash].filter(Boolean).join('&')}` : ''}`;
+    // a page it opens: the app runs obysphere open --print and opens the link it prints, which
+    // signs the browser in once; url, the page itself, is for an app from before
+    const opener = (title, where = '') => ({ kind: 'open', title, url: `${r.console}${where ? `#page=${where}` : ''}`, args: ['open', ...flag, ...(where ? ['--page', where] : []), '--print'] });
     const until = (w) => (w.until ? ` until ${whenWords(w.until, now)}` : '');
     let state = 'on';
     let line = r.service ? 'Running' : 'Running in a terminal';
@@ -863,14 +894,14 @@ function menuOf(all, { update = null, now = new Date() } = {}) {
     if (r.running && r.console) {
       if (r.waiting) {
         count += r.waiting;
-        items.push({ kind: 'open', title: r.waiting === 1 ? '1 ask waits for you' : `${r.waiting} asks wait for you`, url: page('page=you') });
+        items.push(opener(r.waiting === 1 ? '1 ask waits for you' : `${r.waiting} asks wait for you`, 'you'));
       }
-      if (r.held) items.push({ kind: 'open', title: r.held === 1 ? '1 ask held until your runtime can answer' : `${r.held} asks held until your runtime can answer`, url: page('page=you') });
-      items.push({ kind: 'open', title: 'Open console', url: page('') });
+      if (r.held) items.push(opener(r.held === 1 ? '1 ask held until your runtime can answer' : `${r.held} asks held until your runtime can answer`, 'you'));
+      items.push(opener('Open console'));
       if (r.away?.by === 'owner') {
         items.push({ kind: 'run', title: 'I’m back', args: ['away', '--off', ...flag], busy: 'Telling askers you’re back…' });
-        items.push({ kind: 'open', title: 'Change away…', url: page('page=you') });
-      } else items.push({ kind: 'menu', title: 'Away', items: awayItems(flag, now, page('page=you')) });
+        items.push(opener('Change away…', 'you'));
+      } else items.push({ kind: 'menu', title: 'Away', items: awayItems(flag, now, opener) });
     }
     const where = many ? ` in ${r.sphereName}` : '';
     if (r.service && r.running)
@@ -910,7 +941,7 @@ async function logs() {
   const [name] = targets({ one: true });
   const file = logFile(name);
   const n = Math.max(1, Math.min(10000, Number(opt.n) || 50));
-  if (fs.existsSync(file)) process.stdout.write(lastLines(file, n));
+  if (fs.existsSync(file)) process.stdout.write(unsigned(lastLines(file, n)));
   else if (!opt.follow) die(`No log for ${name} yet (${file}): it's written while it runs in the background (obysphere start).`);
   if (!opt.follow) return;
   let at = size(file);
@@ -922,7 +953,7 @@ async function logs() {
       const buf = Buffer.alloc(Math.min(now - at, 4 * 1024 * 1024));
       fs.readSync(fd, buf, 0, buf.length, at);
       fs.closeSync(fd);
-      process.stdout.write(printable(buf.toString('utf8')));
+      process.stdout.write(unsigned(printable(buf.toString('utf8'))));
       at += buf.length;
     }
   }, 500);
@@ -934,6 +965,9 @@ function size(f) {
     return 0;
   }
 }
+// a console's sign-in in a log (its secret, #auth=…, which consoles before this one wrote there;
+// or a code), never printed
+const unsigned = (s) => String(s).replace(/#(auth|code)=[A-Za-z0-9_-]+/g, '#$1=…');
 function lastLines(file, n) {
   const sz = size(file);
   const len = Math.min(sz, 512 * 1024);
@@ -946,29 +980,56 @@ function lastLines(file, n) {
   return lines.slice(-n).join('\n') + (lines.length ? '\n' : '');
 }
 
-// your console, signed in: its link with this start's secret in the fragment (#auth=…), which the
-// page trades for a cookie. Only once the console at the port proved it's yours.
+// your console, signed in: a link with a code that works once, within a few minutes (#code=…),
+// which its page trades for the console's secret. Only once the console at the port proved it's
+// yours. --print prints the link (the menu bar opens what it prints). No command line holds it:
+// on macOS osascript gets it on its stdin (ps shows any user every command line); on Linux the
+// browser gets a page only you can read, which goes on to it; Windows keeps command lines from
+// other users.
 async function openCmd() {
   const [name] = targets({ one: true });
-  const port = savedPort(name);
+  const hash = consolePage(opt.page);
+  if (hash === null) die('--page is a page of your console: you, traffic, settings, exchange:m_…, or mode=conversation&c=<channel>.');
+  const port = opt.port !== undefined ? Number(opt.port) : savedPort(name);
+  if (opt.port !== undefined && !(Number.isInteger(port) && port >= 1 && port <= 65535)) die('--port is the port your console listens on.');
   if (!port || !(await consoleAnswers(name, port))) die(`${name}'s console isn't running: obysphere start${listProfiles().length > 1 ? ` --profile ${name}` : ''}`);
-  const url = consoleAuthUrl(name, port, consoleSecret(name, port));
-  // macOS hands the link to the browser (LaunchServices), and Windows keeps command lines from
-  // other users; on Linux a browser that xdg-open starts keeps it in its arguments, which other
-  // users can read, so it gets a page in your profile (0600) that goes on to the link
-  const [bin, args] = PLATFORM === 'darwin' ? ['open', [url]] : PLATFORM === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [openPage(name, url)]];
-  const r = runOs(bin, args, { detach: true });
-  if (r.status !== 0) die(`couldn't open a browser: open ${url} yourself`);
+  const url = await consoleSignInUrl(name, port, hash);
+  if (!url) die(`${name}'s console made no link to sign in with: it may be older than this obysphere (obysphere restart${listProfiles().length > 1 ? ` --profile ${name}` : ''})`);
+  if (opt.print) return say(url);
+  const [bin, args, input] =
+    PLATFORM === 'darwin' ? ['osascript', [], `open location "${url}"\n`]
+    : PLATFORM === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
+    : ['xdg-open', [openPage(name, url)]];
+  const r = input ? runOs(bin, args, { input }) : runOs(bin, args, { detach: true });
+  if (r.status !== 0) {
+    say(`Couldn't open a browser: open this link yourself (it works once, in the next few minutes):`);
+    return say(url);
+  }
   say(`Opening ${cyan(consoleUrl(name, port))}`);
 }
-// a page only you can read, that goes on to your console's link
+// a page only you can read, that goes on to your console's link: in your profile, or, when the
+// browser that opens .html files is a snap (Ubuntu's Firefox and Chromium read no hidden folder of
+// your home), in that snap's own folder, ~/snap/<name>/common
 function openPage(name, url) {
-  const file = path.join(HOME, name, 'open.html');
+  const snap = snapFolder();
+  const file = snap ? path.join(snap, `obysphere-open-${name}.html`) : path.join(HOME, name, 'open.html');
   const u = url.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0;url=${u}">\n<title>Your Obysphere console</title>\n<p><a href="${u}">Open your console</a></p>\n`, { mode: 0o600 });
   fs.renameSync(tmp, file);
   return file;
+}
+function snapFolder() {
+  const exe = programPath('xdg-mime');
+  if (!exe) return null;
+  const r = spawnSync(exe, ['query', 'default', 'text/html'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+  const m = /^([a-z0-9][a-z0-9-]{0,39})_[A-Za-z0-9._-]+\.desktop$/.exec(String(r.stdout || '').trim());
+  const dir = m && path.join(os.homedir(), 'snap', m[1], 'common');
+  try {
+    return dir && fs.statSync(dir).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
 }
 
 // ================================================================ the background service on Windows

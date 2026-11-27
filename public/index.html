@@ -1180,12 +1180,22 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
   };
 
-  const CONSOLE = window.OBYSPHERE_CONSOLE || null; // set when opened through `rep.mjs ui`: signed in as you
-  // your console no longer takes this page's cookie (it started again, with a new secret): the
-  // page loads again, and asks you to open it with its new link
-  const fetch = (...args) => window.fetch(...args).then((r) => {
-    if (CONSOLE && !CONSOLE.signin && !S.signedOut && r.status === 401 && /^Obysphere-Console\b/.test(r.headers.get('www-authenticate') || '')) {
+  const CONSOLE = window.OBYSPHERE_CONSOLE || null; // set when opened through `rep.mjs ui`: your console
+  // your console's secret, for this tab only: sessionStorage is this origin's (its port included)
+  // and this tab's, so a reload stays signed in and a new tab needs a link. Never a cookie, which
+  // every port of the host would get. It goes in x-obysphere-auth on every call.
+  const tabAuth = {
+    get() { try { return sessionStorage.getItem('obysphere.console'); } catch { return null; } },
+    set(v) { try { v == null ? sessionStorage.removeItem('obysphere.console') : sessionStorage.setItem('obysphere.console', v); } catch {} },
+  };
+  let AUTH = CONSOLE ? tabAuth.get() : null;
+  let signedIn = false;
+  // no cookie goes with any call (the page needs none). Your console no longer takes this tab's
+  // secret (it started again, with a new one): the page loads again, and asks for a new link
+  const fetch = (url, opts = {}) => window.fetch(url, { ...opts, credentials: 'omit' }).then((r) => {
+    if (CONSOLE && signedIn && !S.signedOut && r.status === 401 && /^Obysphere-Console\b/.test(r.headers.get('www-authenticate') || '')) {
       S.signedOut = true;
+      tabAuth.set(null);
       location.reload();
     }
     return r;
@@ -1254,9 +1264,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const hp = new URLSearchParams(location.hash.slice(1).replace(/\+/g, '%2B')); // a '+' in a key stays a '+'
   // keys never stay in the address bar (history, a screenshot, a link passed on): read, then taken out
   const hashKey = CONSOLE ? null : hp.get('key');
-  const hashAuth = CONSOLE ? hp.get('auth') : null; // your console's link: its secret, traded for a cookie
-  if (['key', 'auth', 'admin'].some((k) => hp.has(k))) {
-    for (const k of ['key', 'auth', 'admin']) hp.delete(k);
+  const hashCode = CONSOLE ? hp.get('code') : null; // your console's link: a code that works once, traded for its secret
+  if (['key', 'auth', 'code', 'admin'].some((k) => hp.has(k))) {
+    for (const k of ['key', 'auth', 'code', 'admin']) hp.delete(k);
     history.replaceState(null, '', location.pathname + location.search + (String(hp) ? `#${hp}` : ''));
   }
   S.key = CONSOLE ? 'console' : hashKey || store.get('obysphere.key');
@@ -1268,32 +1278,52 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   S.adminKey = null;
   S.mode = hp.get('mode') || store.get('obysphere.mode') || 'console';
   S.page = hp.get('page') || 'overview';
-  if (CONSOLE?.signin) return hashAuth ? signIn(hashAuth) : consoleGate();
-  if (!S.key) return gate();
-  boot().catch((e) => { if (S.signedOut) return; if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
+  // your console signs in first (not a return: the rest of this script runs before boot does)
+  if (CONSOLE) openConsole();
+  else if (!S.key) return gate();
+  else boot().catch((e) => { if (S.signedOut) return; if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
 
   function gate(err) {
     $('#root').innerHTML = `<div class="gate"><form>${obyFace(48)}<h2>Open an Obysphere</h2><p>Paste the key from your invite link.</p><input class="set-field" name="k" placeholder="Obysphere key" aria-label="Obysphere key" autocomplete="off" autofocus>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}<button class="modal-primary">Open</button></form></div>`;
     $('form').onsubmit = (e) => { e.preventDefault(); const k = e.target.k.value.trim(); store.set('obysphere.key', k); location.hash = 'key=' + encodeURIComponent(k); location.reload(); };
   }
-  // your console, not signed in: it opens only with its link, which holds a secret (a new one each
-  // time it starts)
+  // your console, not signed in: it opens only with a link from this computer, which works once
   function consoleGate(err) {
-    $('#root').innerHTML = `<div class="gate"><div class="gate-box">${obyFace(48)}<h2>Open your console</h2><p>It opens on this computer, with its own link: run <code>obysphere open</code>, or use the link your console printed when it started.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}</div></div>`;
+    $('#root').innerHTML = `<div class="gate"><div class="gate-box">${obyFace(48)}<h2>Open your console</h2><p>It opens on this computer, with a link that works once: run <code>obysphere open</code> (or <code>rep.mjs open</code>). A new tab needs a new link.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}</div></div>`;
   }
-  // the link's secret, traded once for this console's cookie (HttpOnly: the page never holds it
-  // again); then the page loads again, signed in
-  async function signIn(auth) {
+  // your console: a link's code, traded once for its secret (kept in this tab), or the secret this
+  // tab kept; then who you are, and the page
+  async function openConsole() {
+    if (hashCode) {
+      const secret = await signIn(hashCode);
+      if (!secret) return consoleGate('That link doesn’t open your console any more: a link works once, for a few minutes.');
+      AUTH = secret;
+      tabAuth.set(secret);
+    }
+    if (!AUTH) return consoleGate();
+    let me = null;
     try {
-      const r = await fetch('/local/auth', { method: 'POST', headers: { 'x-obysphere-auth': auth } });
-      if (r.ok) return location.reload();
+      const r = await fetch('/local/me', { headers: headers() });
+      if (r.ok) me = await r.json();
     } catch {}
-    consoleGate('That link is from before your console last started.');
+    if (!me) { AUTH = null; tabAuth.set(null); return consoleGate(); }
+    Object.assign(CONSOLE, { name: me.name, owner: me.owner, sphere: me.sphere, sphereName: me.sphereName });
+    signedIn = true;
+    boot().catch((e) => { if (!S.signedOut) console.error(e); });
+  }
+  async function signIn(code) {
+    try {
+      const r = await fetch('/console-signin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+      const j = r.ok ? await r.json() : null;
+      return typeof j?.secret === 'string' ? j.secret : null;
+    } catch {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------- the API
   function headers(extra = {}) {
-    const h = CONSOLE ? { 'x-obysphere-console': '1' } : { 'x-sphere-key': S.key };
+    const h = CONSOLE ? { 'x-obysphere-auth': AUTH } : { 'x-sphere-key': S.key };
     if (S.adminKey) h['x-admin-key'] = S.adminKey;
     return { ...h, ...extra };
   }
@@ -3259,7 +3289,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
   async function local(method, path, body) {
-    const r = await fetch(path, { method, headers: { 'x-obysphere-console': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(path, { method, headers: headers(body ? { 'content-type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(j.error || `HTTP ${r.status}`); e.field = j.field; e.status = r.status; throw e; }
     return j;
@@ -5936,7 +5966,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       return;
     }
     const dl = e.target.closest('a[data-dl]');
-    if (dl && !CONSOLE) {
+    if (dl) {
       e.preventDefault();
       download(dl.dataset.dl, dl.getAttribute('download')).catch((err) => alert(`Couldn't download it: ${err.message}`));
       return;
@@ -6751,11 +6781,19 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const s = cleanText(src);
     const names = new Set([...S.agents.values()].map((a) => a.name));
     const out = [];
+    // code fences, found by indexOf in one pass: ``` then its info string ([\w-]*) and a newline,
+    // its words up to the next ```. (A regex for it backtracked: 160 KB without a closing fence, a
+    // sealed message's most, took seconds.) A fence that never closes: none after it either.
+    const info = /[\w-]*\n?/y;
     let at = 0;
-    for (const m of s.matchAll(/```[\w-]*\n?([\s\S]*?)```/g)) {
-      mdLines(s.slice(at, m.index), names, out);
-      out.push(`<pre class="ss-code">${esc(m[1].replace(/\n$/, ''))}</pre>`);
-      at = m.index + m[0].length;
+    for (let open = s.indexOf('```'); open >= 0; open = s.indexOf('```', at)) {
+      info.lastIndex = open + 3;
+      info.test(s);
+      const close = s.indexOf('```', info.lastIndex);
+      if (close < 0) break;
+      mdLines(s.slice(at, open), names, out);
+      out.push(`<pre class="ss-code">${esc(s.slice(info.lastIndex, close).replace(/\n$/, ''))}</pre>`);
+      at = close + 3;
     }
     mdLines(s.slice(at), names, out);
     return out.join('');

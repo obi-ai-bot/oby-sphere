@@ -65,7 +65,7 @@ describe("what the relay sends never becomes the page's markup", () => {
 
 describe('their words, in a little Markdown', () => {
   const agents = new Map([['a_1', { id: 'a_1', name: 'alice' }]]);
-  const { md, cleanText, tidy } = sandbox(['esc', 'cleanText', 'tidy', 'MD_LINE', 'MD_INLINE', 'LOCAL_HOST', 'md', 'mdLines', 'mdInline', 'mdLink'], { S: { agents }, URL });
+  const { md, cleanText, tidy, mdLines, esc } = sandbox(['esc', 'cleanText', 'tidy', 'MD_LINE', 'MD_INLINE', 'LOCAL_HOST', 'md', 'mdLines', 'mdInline', 'mdLink'], { S: { agents }, URL });
   const links = (html) => [...html.matchAll(/<a class="tok-url" href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((m) => ({ href: m[1], text: m[2] }));
   const balanced = (html) => {
     // every tag opens and closes in order, and no attribute holds markup
@@ -126,6 +126,42 @@ describe('their words, in a little Markdown', () => {
     assert.equal(cleanText('a\tb\nc\u200F\u061C\u0000'), 'a\tb\nc');
     assert.equal(tidy({ text: 'x\u202Ey' }).text, 'xy');
     assert.match(SCRIPT, /ms\.messages\.filter\(okMessage\)\.map\(tidy\)/, 'messages are cleaned as the page takes them');
+  });
+
+  test('a code fence that never closes, in a sealed message up to the relay’s 160 KB: fast, and fences read as before (R32)', () => {
+    for (const s of ['```' + 'a'.repeat(160000), '```' + '-'.repeat(80000) + '\n' + 'b'.repeat(80000), ('```x\n' + 'y'.repeat(40) + '\n').repeat(4000), '````' + 'a'.repeat(160000), 'x```'.repeat(40000)]) {
+      const t0 = performance.now();
+      md(s);
+      const ms = performance.now() - t0;
+      assert.ok(ms < 150, `${JSON.stringify(s.slice(0, 12))}… (${s.length}) took ${ms.toFixed(0)} ms`);
+    }
+    // what a fence is hasn't changed
+    assert.equal(md('```js\nlet x;\n```'), '<pre class="ss-code">let x;</pre>');
+    assert.equal(md('a ```b``` c'), '<p>a </p><pre class="ss-code"></pre><p> c</p>', 'b: its info string');
+    assert.equal(md('```\none\n```\nmid\n```two```'), '<pre class="ss-code">one</pre><p>mid</p><pre class="ss-code"></pre>');
+    assert.equal(md('````x\n```'), '<pre class="ss-code">`x</pre>');
+    assert.equal(md('```never closed'), '<p>```never closed</p>');
+    assert.equal(md('```a-b_c\nz```'), '<pre class="ss-code">z</pre>');
+    assert.equal(md('```a b\n```'), '<pre class="ss-code"> b</pre>');
+    // and on any short input, the same as the regex it replaces
+    const before = (src) => {
+      const t = cleanText(src);
+      const out = [];
+      let at = 0;
+      for (const m of t.matchAll(/```[\w-]*\n?([\s\S]*?)```/g)) {
+        mdLines(t.slice(at, m.index), new Set(['alice']), out);
+        out.push(`<pre class="ss-code">${esc(m[1].replace(/\n$/, ''))}</pre>`);
+        at = m.index + m[0].length;
+      }
+      mdLines(t.slice(at), new Set(['alice']), out);
+      return out.join('');
+    };
+    let seed = 7;
+    const rand = (n) => ((seed = (seed * 1103515245 + 12345) % 2147483648) % n);
+    for (let i = 0; i < 4000; i++) {
+      const s = Array.from({ length: rand(24) }, () => '``` a-_\nb'[rand(10)]).join('');
+      assert.equal(md(s), before(s), JSON.stringify(s));
+    }
   });
 
   test('any input renders fast (no quadratic rules)', () => {
