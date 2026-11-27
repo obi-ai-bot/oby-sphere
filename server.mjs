@@ -59,7 +59,7 @@ const CFG = {
   host: String(args.host ?? env.HOST ?? '0.0.0.0'),
   data: path.resolve(String(args.data ?? env.SPHERE_DATA ?? path.join(HERE, 'data'))),
   store: String(args.store ?? env.SPHERE_STORE ?? (ON_VERCEL ? 'redis' : 'fs')),
-  trustProxy: truthy(args['trust-proxy'] ?? env.SPHERE_TRUST_PROXY ?? (ON_VERCEL ? '1' : '')),
+  trustProxy: proxyHops(args['trust-proxy'] ?? env.SPHERE_TRUST_PROXY ?? (ON_VERCEL ? '1' : '')), // how many proxies in front (0: none trusted)
   sealedDefault: truthy(args.sealed ?? env.SPHERE_SEALED ?? (ON_VERCEL ? '1' : '')),
   name: args.name ?? env.SPHERE_NAME,
   key: args.key ?? env.SPHERE_KEY,
@@ -88,7 +88,8 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
+const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
   maxFileBytes: CFG.store === 'redis' ? 512 * 1024 : 5 * 1024 * 1024,
@@ -98,6 +99,7 @@ const DEFAULT_POLICY = {
   keepDays: 0, // keeping messages for a set time: 0 is no time limit (as before), else that many days
   rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 },
   sealed: false,
+  maxAgents: 1000, // members at once (removed ones don't count): past it, a join is refused
 };
 // ===== the limits an admin may change (POST /api/admin/policy): each a whole number within a range, and why.
 // The command line and environment set some of them too (--max-file-bytes, --asks-per-min, --writes-per-min):
@@ -124,6 +126,9 @@ const POLICY_LIMITS = [
   // every kept message lives in memory (on Redis, in every instance): 50,000 are about 100 MB at a typical
   // length. Fewer than 100 would drop a busy day's conversation before anyone read it
   { key: 'retainMessages', min: 100, max: 50000, words: 'messages kept' },
+  // members at once (removed ones don't count): at least 2, or no one could ask anyone; every member
+  // is a record each instance holds and every reader is sent, and a handle no one else can take
+  { key: 'maxAgents', min: 2, max: 100000, words: 'members' },
   // keeping messages for a set time: 0 is no time limit; past ten years is no limit anyone means
   { key: 'keepDays', min: 0, max: 3650, words: 'messages kept', show: (v) => (v ? `${Number(v).toLocaleString('en-US')} days` : 'with no time limit'), range: 'keepDays is 0 (no time limit) or a whole number of days, up to 3,650.' },
   // an ask starts a model run on someone's machine: 1 a minute still lets a person ask; 600 (ten a second)
@@ -206,7 +211,7 @@ const authAudited = new Map(); // client -> when its failed attempts were last a
 
 // live, this process only
 const live = new Map(); // agent id -> { rep: Set, client: Set }
-const streams = new Set(); // { res, role, agentId, id, ip, keyHash, admin, planned }
+const streams = new Set(); // { res, role, agentId, id, ip, keyHash, admin, keyAll, planned }
 const waiters = new Map(); // message id -> Set<wake>
 
 const ALL = () => true;
@@ -253,7 +258,9 @@ function apply(op, liveEvents = true) {
       const a = { ...op.a, lastSeen: later(prev?.lastSeen, op.a.lastSeen) };
       S.agents[a.id] = a;
       if (a.tokenHash && !a.removed) tokenIndex.set(a.tokenHash, a);
-      if (a.removed) tombstones.add(a.name);
+      // a removed member's handle isn't given out again, unless an admin released it
+      if (a.removed && !a.released) tombstones.add(a.name);
+      else if (a.removed) tombstones.delete(a.name);
       else nameIndex.set(a.name, a);
       if (a.removed) S.admins.delete(a.id); // a removed member is no admin
       if (a.removed || a.suspended) delete S.status[a.id];
@@ -368,11 +375,33 @@ function builder() {
   return b;
 }
 
-// A refusal of a write: audited (its own commit), then sent back with its code.
-function denyErr(code, status, message, actor = null, target = null, detail = null) {
+// A refusal of a write: audited (its own commit), then sent back with its code. `once`: a refusal
+// that can come in a flood (rate-limited, forbidden, paused) names its caller and kind, and is
+// audited at most once a minute for each (see denyDue).
+function denyErr(code, status, message, actor = null, target = null, detail = null, once = null) {
   const e = err(status, code, message);
-  e.deny = { actor, target, detail: detail ?? `${code}: ${message}` };
+  e.deny = { actor, target, detail: detail ?? `${code}: ${message}`, ...(once ? { once } : {}) };
   return e;
+}
+
+// Whether a refusal is audited now. One with `once` is, the first time in a minute for that caller
+// and kind; the next one audited says how many there were since. So a caller that keeps knocking
+// adds an event a minute, not one a request. On Redis this counts per instance.
+const denyAudited = new Map(); // once -> { at, n }
+function denyDue(deny) {
+  if (!deny.once) return true;
+  const t = Date.now();
+  let r = denyAudited.get(deny.once);
+  if (!r) {
+    if (denyAudited.size >= 10000) return false; // that many callers knocking at once: refused, not audited each
+    denyAudited.set(deny.once, (r = { at: 0, n: 0 }));
+  }
+  r.n++;
+  if (t - r.at < 60000) return false;
+  if (r.n > 1) deny.detail = `${deny.detail} · ${r.n} times since the last one audited`;
+  r.at = t;
+  r.n = 0;
+  return true;
 }
 
 // ================================================================ indexes and counts
@@ -401,7 +430,24 @@ function index(m) {
   pushTo(byChannel, m.channel, m);
   for (const t of m.to) pushTo(asksTo, t, m);
   account(m);
+  holding(m, 1);
   if (m.replyTo) pushTo(repliesOf, m.replyTo, m);
+}
+
+// About what a message takes in memory and in a read: its words, or its envelope, and a little for
+// the rest. Counted per member while it's held (heldBytes): a member's share is policy.maxAgentBytes
+// (apart from its files), past which a cut takes its own oldest (see cutOps).
+const heldBytes = new Map(); // member id (system messages: '') -> bytes of its messages held
+function msgBytes(m) {
+  const s = m.sealed;
+  const words = s ? String(s.ct || '').length + 120 * Object.keys(s.to || {}).length : Buffer.byteLength(m.text || '');
+  return 300 + words + 100 * (m.files?.length || 0);
+}
+function holding(m, sign) {
+  const k = m.from ?? '';
+  const n = (heldBytes.get(k) || 0) + sign * msgBytes(m);
+  if (n > 0) heldBytes.set(k, n);
+  else heldBytes.delete(k);
 }
 
 function sizeOf(m) {
@@ -453,19 +499,7 @@ function account(m) {
 function trimMemory() {
   const keep = S.policy.retainMessages;
   if (messages.length <= keep) return;
-  const dropped = messages.splice(0, messages.length - keep);
-  for (const m of dropped) {
-    byId.delete(m.id);
-    nOf.delete(m.id);
-  }
-  byChannel.clear();
-  asksTo.clear();
-  repliesOf.clear();
-  for (const m of messages) {
-    pushTo(byChannel, m.channel, m);
-    for (const t of m.to) pushTo(asksTo, t, m);
-    if (m.replyTo) pushTo(repliesOf, m.replyTo, m);
-  }
+  dropMessages(new Set(messages.slice(0, messages.length - keep)));
 }
 
 function touch(id, ts) {
@@ -499,8 +533,9 @@ function contentHash(m) {
 //     a message removed by hand no longer passes for one trimmed.
 const MSG_EVENTS = new Set(['ask', 'reply', 'post']);
 const chain = { i: 0, prev: ZERO, seq: 0, ok: true, read: 0, events: new Map(), deletes: new Map(), cut: null };
-function verifyChain() {
-  // what all the events say, the ones not checked yet too: a tombstone's delete event comes after its message's
+// what all the events say, the ones not checked yet too: a tombstone's delete event comes after its
+// message's. Cuts read it too: chain.cut is the message the last cut named
+function indexChain() {
   for (; chain.read < auditEvents.length; chain.read++) {
     const e = auditEvents[chain.read];
     if (!e?.ref) continue;
@@ -508,6 +543,9 @@ function verifyChain() {
     else if (e.type === 'delete') chain.deletes.set(e.ref, e.content ?? null);
     else if (e.type === 'expire') chain.cut = e.ref;
   }
+}
+function verifyChain() {
+  indexChain();
   const cutSeq = chain.cut ? (chain.events.get(chain.cut)?.seq ?? Infinity) : 0; // no cut yet: older relays trimmed without a trace
   while (chain.ok && chain.i < auditEvents.length) {
     const e = auditEvents[chain.i];
@@ -597,6 +635,7 @@ function fsStore() {
   let snapTimer = null;
   let snapDirty = false;
   const buckets = new Map();
+  const reserved = new Map(); // member id -> Map(upload id -> bytes): uploads under way
 
   // small and rarely written: files and messages are in the log, not here
   const snapshot = () => ({ sphere: S.sphere, policy: S.policy, paused: S.paused, agents: S.agents, channels: S.channels, admins: [...S.admins] });
@@ -620,14 +659,36 @@ function fsStore() {
   }
   // the log as memory holds it: every file record, the messages (a cut removed the older ones,
   // and a deleted one is its tombstone), then the counts as they are (a tally: messages cut
-  // still count after a restart)
+  // still count after a restart). Written a piece at a time, never as one string: a log of any
+  // size fits
   function compact() {
-    const lines = [...Object.values(S.files).map((f) => JSON.stringify({ f })), ...messages.map((m) => JSON.stringify(m)), JSON.stringify({ tally: tallyOp() })];
-    fs.writeFileSync(MSGS + '.tmp', lines.join('\n') + (lines.length ? '\n' : ''), { mode: 0o600 });
+    const fd = fs.openSync(MSGS + '.tmp', 'w', 0o600);
+    let n = 0;
+    let piece = [];
+    let size = 0;
+    const flush = () => {
+      if (piece.length) fs.writeSync(fd, piece.join(''));
+      piece = [];
+      size = 0;
+    };
+    const line = (s) => {
+      piece.push(s + '\n');
+      size += s.length;
+      n++;
+      if (size > 1 << 20) flush();
+    };
+    try {
+      for (const f of Object.values(S.files)) line(JSON.stringify({ f }));
+      for (const m of messages) line(JSON.stringify(m));
+      line(JSON.stringify({ tally: tallyOp() }));
+      flush();
+    } finally {
+      fs.closeSync(fd);
+    }
     msgOut?.end();
     fs.renameSync(MSGS + '.tmp', MSGS);
     msgOut = fs.createWriteStream(MSGS, { flags: 'a', mode: 0o600 });
-    msgLines = lines.length;
+    msgLines = n;
   }
   function persist(op) {
     switch (op.t) {
@@ -642,7 +703,7 @@ function fsStore() {
         compact();
         return removeFiles(op.files);
       case 'expire': // a cut: the messages and files it removed leave the disk at once
-        appendLog({ x: op.upto ?? null, why: op.why, at: op.at, files: op.files || [] });
+        appendLog({ x: op.upto ?? null, ...(op.ids ? { ids: op.ids, who: op.who ?? null } : {}), why: op.why, at: op.at, files: op.files || [] });
         compact();
         return removeFiles(op.files);
       case 'audit':
@@ -665,32 +726,63 @@ function fsStore() {
   function removeFiles(ids) {
     for (const id of [].concat(ids || [])) if (/^f_[\w-]{1,32}$/.test(String(id))) fs.rmSync(path.join(FILES, id), { force: true });
   }
-  // a line cut short by a crash at the end of a log: dropped, not fatal
-  function readLog(file) {
-    let text;
+  // Each line of a log, to `each`, read a piece at a time (a log of any size: never one string). A
+  // line cut short by a crash at the end of a log is dropped, not fatal. A log that isn't there is
+  // empty; one that can't be read stops the start: starting empty would lose it at the next rewrite.
+  function readLog(file, each) {
+    let fd;
     try {
-      text = fs.readFileSync(file, 'utf8');
-    } catch {
-      return [];
+      fd = fs.openSync(file, 'r');
+    } catch (e) {
+      if (e.code === 'ENOENT') return;
+      throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it. Check its owner and permissions in ${path.dirname(file)}.`);
     }
-    const lines = text.split('\n');
-    const last = lines.pop();
-    if (last && last.trim()) {
-      try {
-        JSON.parse(last);
-        lines.push(last);
-      } catch {
-        fs.truncateSync(file, Buffer.byteLength(text) - Buffer.byteLength(last));
-        console.log(`  dropped a torn last line in ${path.basename(file)}`);
+    try {
+      const buf = Buffer.alloc(1 << 20);
+      let rest = Buffer.alloc(0);
+      let at = 0; // where `rest` starts in the file
+      for (;;) {
+        let n;
+        try {
+          n = fs.readSync(fd, buf, 0, buf.length, null);
+        } catch (e) {
+          throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it.`);
+        }
+        if (!n) break;
+        const chunk = rest.length ? Buffer.concat([rest, buf.subarray(0, n)]) : buf.subarray(0, n);
+        let start = 0;
+        for (let i; (i = chunk.indexOf(10, start)) >= 0; start = i + 1) {
+          const line = chunk.toString('utf8', start, i);
+          if (line.trim()) each(line);
+        }
+        at += start;
+        rest = Buffer.from(chunk.subarray(start)); // a copy: `buf` is read into again
       }
+      const last = rest.toString('utf8');
+      if (last.trim()) {
+        let whole = true;
+        try {
+          JSON.parse(last);
+        } catch {
+          whole = false;
+        }
+        if (whole) each(last);
+        else {
+          fs.truncateSync(file, at);
+          console.log(`  dropped a torn last line in ${path.basename(file)}`);
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
     }
-    return lines.filter((l) => l.trim());
   }
 
   return {
     kind: 'fs',
     async init() {
       fs.mkdirSync(FILES, { recursive: true, mode: 0o700 });
+      // an upload a crash cut short left its temp file: nothing will finish it
+      for (const f of fs.readdirSync(FILES)) if (f.startsWith('.up-')) fs.rmSync(path.join(FILES, f), { force: true });
       let snap = readFileJson(SNAP);
       let legacy = null;
       if (snap && Array.isArray(snap.messages)) {
@@ -734,35 +826,34 @@ function fsStore() {
           }
         }
         fs.writeFileSync(MSGS, legacy.map((m) => JSON.stringify(m)).join('\n') + (legacy.length ? '\n' : ''), { mode: 0o600 });
-        console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl (the old file is sphere.json.v0.bak)`);
+        console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl`);
       }
 
-      for (const line of readLog(MSGS)) {
+      readLog(MSGS, (line) => {
         msgLines++;
         let o;
         try {
           o = JSON.parse(line);
         } catch {
-          continue;
+          return;
         }
         if (o.p) {
           const m = byId.get(o.p);
           if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (k !== 'waiting' || !m.deleted) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
         } else if (o.d) apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
-        else if ('x' in o) apply({ t: 'expire', upto: o.x, why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+        else if ('x' in o) apply({ t: 'expire', upto: o.x, ...(Array.isArray(o.ids) ? { ids: o.ids, who: o.who ?? null } : {}), why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
         else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
-      }
-      const auditLines = readLog(AUDIT);
+      });
       let events = [];
-      for (const line of auditLines) {
+      readLog(AUDIT, (line) => {
         try {
           events.push(JSON.parse(line));
         } catch {
           events.push(null); // a damaged line breaks the chain
         }
-      }
+      });
       if (legacyKeys && events.length && events.every(Boolean)) {
         // an older, unkeyed chain: re-chained once under the admin key
         let prev = ZERO;
@@ -786,6 +877,13 @@ function fsStore() {
       for (const f of oldFiles) appendLog({ f }); // file records now live in the log
       snapDirty = true;
       saveNow(); // keys as hashes only, no file records
+      // the first version's file, kept while its messages moved to the log: they're there now, and
+      // sphere.json no longer holds them, so the copy goes (it would keep words a deletion or a cut
+      // removed). A copy an older relay left behind goes too
+      if (fs.existsSync(SNAP + '.v0.bak')) {
+        fs.rmSync(SNAP + '.v0.bak', { force: true });
+        console.log('  removed sphere.json.v0.bak: its messages are in messages.jsonl');
+      }
       if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact(); // past retainMessages: the first cut, at start (init)
       setInterval(() => snapDirty && saveNow(), 15000).unref();
       setInterval(() => {
@@ -801,7 +899,7 @@ function fsStore() {
       try {
         build(b);
       } catch (e) {
-        if (!e.deny) throw e;
+        if (!e.deny || !denyDue(e.deny)) throw e;
         const d = builder();
         d.audit('deny', e.deny);
         for (const op of d.ops) {
@@ -825,37 +923,68 @@ function fsStore() {
     },
     async presenceOpen() {},
     async presenceClose() {},
+    // An upload, streamed to a temp file, then moved into place. However it ends early (past `max`,
+    // the client gone, a write that failed), the temp file is closed and removed at once: an
+    // abandoned upload leaves no open file and nothing on the disk.
     async receiveUpload(req, id, max) {
       const tmp = path.join(FILES, '.up-' + id);
       const hash = createHash('sha256');
       let size = 0;
       await new Promise((resolve, reject) => {
         const out = fs.createWriteStream(tmp, { mode: 0o600 });
-        let failed = false;
+        let over = false;
+        const fail = (e) => {
+          if (over) return;
+          over = true;
+          req.unpipe(out);
+          out.destroy();
+          fs.rm(tmp, { force: true }, () => {});
+          reject(e);
+        };
         req.on('data', (c) => {
-          if (failed) return;
+          if (over) return;
           size += c.length;
           if (size > max) {
-            failed = true;
-            req.unpipe(out);
-            out.destroy();
-            fs.rm(tmp, () => {});
-            req.resume();
-            reject(err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`));
+            fail(err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`));
+            req.resume(); // read the rest, so the answer reaches the client
             return;
           }
           hash.update(c);
         });
+        req.on('error', fail);
+        req.on('close', () => !req.complete && fail(err(400, 'bad_request', 'The upload ended before its body did.')));
+        out.on('error', fail);
+        out.on('finish', () => {
+          if (over) return;
+          over = true;
+          resolve();
+        });
         req.pipe(out);
-        out.on('finish', () => !failed && resolve());
-        out.on('error', (e) => !failed && reject(e));
-        req.on('error', (e) => !failed && reject(e));
       });
       fs.renameSync(tmp, path.join(FILES, id));
       return { size, sha256: hash.digest('hex') };
     },
     async putFile(id, buf) {
       fs.writeFileSync(path.join(FILES, id), buf, { mode: 0o600 });
+    },
+    async dropFiles(ids) {
+      removeFiles(ids);
+    },
+    // uploads under way count against their member's quota before they're stored: `bytes` for the
+    // upload `id`, if what's reserved with it still fits in `left` (see reserveUpload)
+    async reserve(agent, id, bytes, left) {
+      const mine = reserved.get(agent) || new Map();
+      let n = bytes;
+      for (const b of mine.values()) n += b;
+      if (n > left) return false;
+      mine.set(id, bytes);
+      reserved.set(agent, mine);
+      return true;
+    },
+    async release(agent, id) {
+      const mine = reserved.get(agent);
+      mine?.delete(id);
+      if (mine && !mine.size) reserved.delete(agent);
     },
     async readFile(id) {
       const p = path.join(FILES, id);
@@ -961,6 +1090,7 @@ function redisStore() {
     pres: CFG.prefix + 'presence',
     rl: CFG.prefix + 'rl:',
     file: CFG.prefix + 'file:',
+    rsv: CFG.prefix + 'rsv:', // uploads under way, per member (see reserve)
   };
   const LOG_KEYS = ['3', K.log, K.base, K.tail]; // what every log script starts with
   let applied = 0; // log position applied to memory (absolute: snapshot included)
@@ -989,10 +1119,15 @@ function redisStore() {
       if (!l) fileAt.set(op.f.id, [pos]);
       else if (!l.includes(pos)) l.push(pos);
     } else if ((op.t === 'delete' || op.t === 'expire') && op.soon) forceAt = Math.max(forceAt, pos + 1);
-    else if (op.t === 'expire' && op.why === 'count') countAt = Math.max(countAt, pos + 1);
+    else if (op.t === 'expire' && (op.why === 'count' || op.why === 'share')) countAt = Math.max(countAt, pos + 1);
     // a deletion whose message was still in the tail: a compaction that read it before it was
     // overwritten, and swapped in after, would keep its words (see watchFolds)
     if (op.t === 'delete' && !op.soon && msgAt.get(op.id) >= base) folding.set(pos, msgAt.get(op.id));
+    // one whose message, or a record of its files, is already in the snapshot: a compaction its
+    // instance hadn't seen got there first, so its overwrite was skipped and the snapshot may keep
+    // the words. Every instance brings the next compaction forward, not only that one (it may be
+    // gone before it compacts)
+    if (op.t === 'delete' && !op.soon && (msgAt.get(op.id) < base || [].concat(op.files || []).some((id) => (fileAt.get(id) || []).some((p) => p < base)))) forceAt = Math.max(forceAt, pos + 1);
     if (op.t === 'expire') {
       for (const id of msgAt.keys()) if (!byId.has(id)) msgAt.delete(id);
       for (const id of fileAt.keys()) if (!Object.hasOwn(S.files, id)) fileAt.delete(id);
@@ -1082,7 +1217,7 @@ function redisStore() {
       try {
         build(b);
       } catch (e) {
-        if (!e.deny) throw e;
+        if (!e.deny || !denyDue(e.deny)) throw e;
         const d = builder();
         d.audit('deny', e.deny);
         await appendLocked(d); // the refusal is audited; the request still fails
@@ -1396,6 +1531,26 @@ function redisStore() {
     async putFile(id, buf) {
       await call(['SET', K.file + id, buf.toString('base64')]);
     },
+    async dropFiles(ids) {
+      const keys = [].concat(ids || []).filter((id) => /^f_[\w-]{1,32}$/.test(String(id))).map((id) => K.file + id);
+      if (keys.length) await call(['DEL', ...keys]);
+    },
+    // uploads under way, shared by every instance: a sorted set per member of `<upload id>:<bytes>`,
+    // each scored by when it lapses (an instance that dies mid-upload leaves one that goes by
+    // itself). Added first, then summed: two instances adding at once both see both, so they never
+    // pass the quota together (at worst both refuse)
+    async reserve(agent, id, bytes, left) {
+      const k = K.rsv + agent;
+      const t = Date.now();
+      const [, , live] = await pipeline([['ZREMRANGEBYSCORE', k, '-inf', String(t)], ['ZADD', k, String(t + 180000), `${id}:${bytes}`], ['ZRANGEBYSCORE', k, String(t), '+inf'], ['EXPIRE', k, '300']]);
+      const n = (live || []).reduce((s, x) => s + (Number(String(x).split(':').pop()) || 0), 0);
+      if (n <= left) return true;
+      await call(['ZREM', k, `${id}:${bytes}`]).catch(() => {});
+      return false;
+    },
+    async release(agent, id, bytes) {
+      await call(['ZREM', K.rsv + agent, `${id}:${bytes}`]).catch(() => {});
+    },
     async readFile(id) {
       const v = await call(['GET', K.file + id]);
       return v == null ? null : Buffer.from(v, 'base64');
@@ -1508,9 +1663,9 @@ function withoutKeys(op) {
 // suspended, its representative offline); records apply where they first appeared, so a
 // status cleared after its last operation is folded as cleared.
 // Deleting messages and cuts (keeping messages): a deleted message is folded as its tombstone,
-// and its files' records as {id, deleted}; a cut's messages and files are left out, and the
-// last cut of each kind stays (its messages gone, it removes nothing more), so a later fold
-// still knows the cuts are recorded.
+// and its files' records as {id, deleted}; a cut's messages and files are left out (a prefix up
+// to its `upto`, or a share cut's `ids`), and the last cut of each kind stays (its messages gone,
+// it removes nothing more), so a later fold still knows the cuts are recorded.
 function foldOps(entries, retain = Infinity) {
   const ids = [];
   const last = new Map();
@@ -1522,6 +1677,7 @@ function foldOps(entries, retain = Infinity) {
   const cutFiles = new Set();
   const lastCut = new Map(); // why -> where the last cut of that kind is
   let cutTo = -1; // messages at or before this entry were cut
+  const cutIds = new Set(); // and these, by share cuts
   entries.forEach(([, op], i) => {
     if (op.t === 'msg' && !seen.has(op.m.id)) {
       seen.add(op.m.id);
@@ -1539,6 +1695,7 @@ function foldOps(entries, retain = Infinity) {
     if (op.t === 'expire') {
       lastCut.set(String(op.why), i);
       if (op.upto && msgAt.has(op.upto)) cutTo = Math.max(cutTo, msgAt.get(op.upto));
+      for (const id of Array.isArray(op.ids) ? op.ids : []) cutIds.add(id);
       for (const f of op.files || []) cutFiles.add(f);
     }
   });
@@ -1546,7 +1703,7 @@ function foldOps(entries, retain = Infinity) {
     const [p, op] = entries[i];
     return op.t === 'status' && op.status && cleared.get(op.agent) > i ? [p, { ...op, status: null }] : entries[i];
   };
-  const alive = ids.filter((id) => msgAt.get(id) > cutTo);
+  const alive = ids.filter((id) => msgAt.get(id) > cutTo && !cutIds.has(id));
   const kept = new Set(alive.slice(Math.max(0, alive.length - retain)));
   const keptCuts = new Set(lastCut.values());
   const out = [];
@@ -1563,7 +1720,7 @@ function foldOps(entries, retain = Infinity) {
     } else if (op.t === 'patch') {
       if (kept.has(op.id)) out.push([p, op]);
     } else if (op.t === 'expire') {
-      if (keptCuts.has(i)) out.push([p, { ...op, files: [], soon: undefined }]);
+      if (keptCuts.has(i)) out.push([p, { ...op, files: [], ...(op.ids ? { ids: [] } : {}), soon: undefined }]);
     } else if (recordKey(op)) {
       if (op.t === 'claim' && op.ask && !kept.has(op.ask)) return;
       if (op.t === 'file' && cutFiles.has(op.f?.id)) return;
@@ -1630,7 +1787,7 @@ function publicAgent(a) {
     suspended: !!a.suspended,
     admin: !a.removed && S.admins.has(a.id),
     bot: !!a.bot, // no person behind it (a team's reviewer, say)
-    ...(a.removed ? { removed: true } : {}),
+    ...(a.removed ? { removed: true, ...(a.released ? { released: true } : {}) } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
     away: a.removed || a.suspended ? null : awayOf(a), // shown with the representative offline too: its owner may be away with the laptop closed
@@ -1668,9 +1825,17 @@ async function reconcileAll() {
   for (const id of Object.keys(S.agents)) await reconcile(id);
 }
 
-// a reader that doesn't read (more than ~1 MB waiting) is dropped, not buffered without end
+// a reader that doesn't read (more than ~1 MB waiting) is dropped, not buffered without end. A
+// message too large to send whole without dropping readers (past half that) goes as a stub, which
+// the reader fetches whole (GET /api/messages/:id); the limits on messages keep one from being that
+// large, so this is a last guard
 function broadcast(event, data, who = ALL) {
-  const line = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  let line = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  if (line.length > LIMITS.bufferedBytes / 2 && event === 'message') {
+    const stub = { stub: true };
+    for (const k of TOMBSTONE_KEYS) if (data[k] !== undefined) stub[k] = data[k];
+    line = `event: ${event}\ndata: ${JSON.stringify(stub)}\n\n`;
+  }
   for (const st of streams) {
     if (st.res.writableEnded || !who(st)) continue;
     st.res.write(line);
@@ -1705,6 +1870,8 @@ setInterval(() => {
   const t = Date.now();
   for (const [k, c] of S.claims) if (t - Date.parse(c.ts) > CLAIM_MS) S.claims.delete(k);
   for (const [k, at] of authAudited) if (t - at > 120000) authAudited.delete(k);
+  for (const [k, r] of denyAudited) if (t - r.at > 120000) denyAudited.delete(k);
+  for (const [k, b] of readBuckets) if (t - b.t > 120000) readBuckets.delete(k);
 }, 60000).unref();
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{1,32}$/;
@@ -1881,6 +2048,10 @@ function checkInstrumentUse(m) {
 // ================================================================ sealing: envelopes the relay checks but can't open
 
 const B64U = /^[A-Za-z0-9_-]+$/;
+// A sealed message's content (ct) is at most what its plain twin may hold: 20,000 characters (each
+// at most 6 bytes once in JSON) and, for each of up to 50 files, its id, name, type, size and key.
+// Every message is held in memory (on Redis, on every instance) and sent to every reader.
+const SEALED_CT_MAX = 160 * 1024;
 function b64Len(x, bytes) {
   return typeof x === 'string' && B64U.test(x) && Buffer.from(x, 'base64url').length === bytes;
 }
@@ -1976,10 +2147,10 @@ function ensureChannelOp(b, name, topic = '', by = null) {
 // stored already (pre: their metas), since building is synchronous.
 function buildMessage(b, me, body, pre) {
   me = S.agents[me.id] || me; // the current record: keys and suspension as they are now
-  const channel = slug(body.channel || 'general');
+  const channel = nameIn(body.channel || 'general', 'channel name');
   if (!channel) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
   if (me.suspended) throw denyErr('suspended', 403, "The Sphere's operator suspended this agent: it can't post or answer until they resume it.", me.id);
-  if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id);
+  if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id, null, null, `paused:${me.id}`);
 
   const sealedIn = body.sealed ?? null;
   const text = clean(String(body.text ?? '')).slice(0, 20000);
@@ -2038,6 +2209,8 @@ function buildMessage(b, me, body, pre) {
   checkInstrumentUse(m); // instruments: meta.instrument names one its asked agent offers
   if (sealedIn) {
     if (text.trim()) throw err(400, 'bad_envelope', 'A sealed message has empty text: its words are inside the envelope.');
+    if (typeof sealedIn?.ct === 'string' && !b64Max(sealedIn.ct, SEALED_CT_MAX))
+      throw err(400, 'bad_envelope', `That sealed message is malformed: ct is over ${fmtBytes(SEALED_CT_MAX)}, more than a message's words (20,000 characters) and its files' keys need.`);
     const parent = replyTo ? byId.get(replyTo) : null;
     m.sealed = checkSeal(me, sealedIn, m, [me.id, ...to, parent?.from]);
     if (room && room.kind !== 'public') readersIn(room, m.sealed);
@@ -2054,9 +2227,12 @@ function buildMessage(b, me, body, pre) {
 
   ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
+  // a file's record names the message it was first sent with (an upload of the sender's own, not
+  // sent yet); one sent before keeps its record as it is: another message that carries it again,
+  // sealed or not, never renames or moves it
   for (const f of m.files) {
     const meta = (Object.hasOwn(S.files, f.id) && S.files[f.id]) || pre.find((x) => x.id === f.id);
-    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, channel: meta.messageId ? meta.channel : channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
+    if (meta && !meta.messageId) b.push({ t: 'file', f: { ...meta, messageId: m.id, channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
   }
 
   const bytes = fmtBytes(sizeOf(m)) + (m.sealed ? ' sealed' : '');
@@ -2168,9 +2344,11 @@ function applyDelete(op, ev) {
   const m = byId.get(op.id);
   if (!m || m.deleted) return;
   unaccount(m);
+  holding(m, -1);
   const t = tombstoneOf(m, op);
   for (const k of Object.keys(m)) delete m[k];
   Object.assign(m, t); // in place: every index holds it
+  holding(m, 1);
   // to the streams that got the message
   ev.push(['message-delete', { id: m.id, channel: m.channel, deleted: m.deleted }, (st) => streamSees(st, m.channel) && (st.role !== 'rep' || involved(m, st.agentId))]);
   if (waiters.has(m.id)) for (const wake of waiters.get(m.id)) wake();
@@ -2227,7 +2405,8 @@ function shown(list) {
   return list.filter((m) => !(Date.parse(m.ts) < t));
 }
 
-// apply(): the messages up to `upto` (a prefix, in log order) and the files go
+// apply(): the messages up to `upto` (a prefix, in log order), or the ones `ids` names (a share
+// cut: one member's own), and the files go
 function applyCut(op) {
   if ((op.why === 'days' || op.why === 'uploads') && Date.parse(op.at) > cuts[op.why]) cuts[op.why] = Date.parse(op.at);
   for (const id of [].concat(op.files || [])) {
@@ -2236,12 +2415,22 @@ function applyCut(op) {
     if (f.by && !f.deleted) agentBytes.set(f.by, Math.max(0, (agentBytes.get(f.by) || 0) - Math.max(1024, f.size || 0)));
     delete S.files[id];
   }
+  if (Array.isArray(op.ids)) return dropMessages(new Set(op.ids.filter((id) => byId.has(id)).map((id) => byId.get(id))));
   const to = op.upto ? byId.get(op.upto) : null;
   if (!to) return; // removed already (a snapshot keeps the last cut)
-  const gone = messages.splice(0, messages.indexOf(to) + 1);
+  dropMessages(new Set(messages.slice(0, messages.indexOf(to) + 1)));
+}
+
+// messages leave memory (a cut): the indexes are made again from those that stay
+function dropMessages(gone) {
+  if (!gone.size) return;
+  let w = 0;
+  for (const m of messages) if (!gone.has(m)) messages[w++] = m;
+  messages.length = w;
   for (const m of gone) {
     byId.delete(m.id);
     nOf.delete(m.id);
+    holding(m, -1);
   }
   byChannel.clear();
   asksTo.clear();
@@ -2253,41 +2442,93 @@ function applyCut(op) {
   }
 }
 
-// one cut: messages[from..to) and their files (and files whose message is gone already), as an
-// expire operation and its audit event. `taken`: files an earlier cut of this commit took.
-function pushCut(b, from, to, { why, words, soon = false }, at, taken) {
-  const gone = messages.slice(from, to);
-  const ids = new Set(gone.map((m) => m.id));
-  const files = Object.values(S.files).filter((f) => f.messageId && !taken.has(f.id) && (ids.has(f.messageId) || !byId.has(f.messageId))).map((f) => f.id);
-  for (const id of files) taken.add(id);
-  // the event names the newest message removed that has its own event (system messages have none)
-  const ref = gone.findLast((m) => m.kind !== 'system')?.id ?? null;
-  const n = gone.length;
+// one cut: the messages `list` and their files (and files whose message is gone already), as an
+// expire operation and its audit event. A cut by time or count removes a prefix of what's held
+// (named by its newest, `upto`); a share cut, one member's own oldest (`who`, by their `ids`).
+// `c`: what this commit's cuts took so far (messages, files, and the newest message any cut removed).
+function pushCut(b, list, { why, words, who = null, soon = false }, at, c) {
+  for (const m of list) c.gone.add(m);
+  const ids = new Set(list.map((m) => m.id));
+  const files = Object.values(S.files).filter((f) => f.messageId && !c.taken.has(f.id) && (ids.has(f.messageId) || !byId.has(f.messageId))).map((f) => f.id);
+  for (const id of files) c.taken.add(id);
+  // the event names the newest message removed that has its own event (system messages have none),
+  // or the one an earlier cut named when that one is newer: so every message after the last cut's
+  // is still held (API.md, "Verifying the chain", rule 5), a share cut's too
+  const own = list.findLast((m) => m.kind !== 'system')?.id ?? null;
+  const ref = own ? (c.ref = newerRef(c.ref, own)) : null;
+  const n = list.length;
   const k = files.length;
-  b.audit('expire', { ref, detail: `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
-  b.push({ t: 'expire', why, upto: gone[n - 1].id, at, files, ...(soon ? { soon: true } : {}) });
+  const what = why === 'share' ? `${n.toLocaleString('en-US')} of ${S.agents[who]?.name ?? 'the system'}'s messages removed: it held ${words}` : `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed`;
+  b.audit('expire', { ref, target: why === 'share' ? who : null, detail: `${what}${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
+  if (why === 'share') b.push({ t: 'expire', why, ids: [...ids], who, upto: null, at, files });
+  else b.push({ t: 'expire', why, upto: list[n - 1].id, at, files, ...(soon ? { soon: true } : {}) });
+}
+
+// the newer of two messages by their own audit event (either may be null)
+function newerRef(a, b) {
+  if (!a || !b) return a || b;
+  indexChain();
+  return (chain.events.get(b)?.seq ?? -1) > (chain.events.get(a)?.seq ?? -1) ? b : a;
 }
 
 // The cuts due now, into a commit. force: a policy change (keep for less time, or fewer): at
 // once, down to exactly retainMessages; exact: down to exactly retainMessages (before a
 // compaction). policy: the policy the cut is for (a change not applied yet).
+//
+// Fair cuts. A cut by count first takes, from any member holding more than half of the messages
+// kept, its own oldest; then the oldest of all. And a member whose held messages pass its share of
+// bytes (policy.maxAgentBytes, apart from its files) loses its own oldest until they fit. So no
+// member empties everyone else's history, or the relay's memory, by posting.
 function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
   const at = now();
   const t = Date.parse(at);
-  const taken = new Set();
+  indexChain();
+  const c = { taken: new Set(), gone: new Set(), ref: chain.cut };
   let i = 0;
   const keep = keepMs(policy);
   if (keep && (force || t - cuts.days >= CUT_EVERY_MS)) {
     while (i < messages.length && Date.parse(messages[i].ts) < t - keep) i++;
-    if (i) pushCut(b, 0, i, { why: 'days', words: `older than ${Number(policy.keepDays).toLocaleString('en-US')} day${policy.keepDays === 1 ? '' : 's'}`, soon: true }, at, taken);
+    if (i) pushCut(b, messages.slice(0, i), { why: 'days', words: `older than ${Number(policy.keepDays).toLocaleString('en-US')} day${policy.keepDays === 1 ? '' : 's'}`, soon: true }, at, c);
   }
   const retain = policy.retainMessages;
   const over = messages.length - i - retain;
   if (over > 0 && (force || exact || over > cutSlack(retain))) {
-    pushCut(b, i, i + over, { why: 'count', words: `past the newest ${Number(retain).toLocaleString('en-US')}`, soon: force }, at, taken);
-    i += over;
+    let left = over;
+    const half = Math.floor(retain / 2);
+    const per = new Map();
+    for (let j = i; j < messages.length; j++) per.set(messages[j].from ?? '', (per.get(messages[j].from ?? '') || 0) + 1);
+    // the oldest of all, unless that would take messages of a member who holds no more than half:
+    // then the members past half lose their own oldest first. (An admin who keeps fewer messages
+    // keeps the newest, whoever wrote them.)
+    const big = new Set([...per].filter(([, n]) => n > half).map(([who]) => who));
+    const fair = !force && big.size > 0 && messages.slice(i, i + over).some((m) => m.from && !big.has(m.from));
+    for (const [who, n] of fair ? per : []) {
+      if (left <= 0 || n <= half) continue;
+      const mine = [];
+      for (let j = i; j < messages.length && mine.length < Math.min(n - half, left); j++) if ((messages[j].from ?? '') === who) mine.push(messages[j]);
+      pushCut(b, mine, { why: 'share', who: who || null, words: `more than half of the newest ${Number(retain).toLocaleString('en-US')}` }, at, c);
+      left -= mine.length;
+    }
+    const rest = [];
+    for (let j = i; j < messages.length && rest.length < left; j++) if (!c.gone.has(messages[j])) rest.push(messages[j]);
+    if (rest.length) pushCut(b, rest, { why: 'count', words: `past the newest ${Number(retain).toLocaleString('en-US')}`, soon: force }, at, c);
+  }
+  const cap = policy.maxAgentBytes;
+  for (const [who, held] of heldBytes) {
+    let bytes = held;
+    for (const m of c.gone) if ((m.from ?? '') === who) bytes -= msgBytes(m);
+    if (bytes <= cap * (force || exact ? 1 : 1.1)) continue;
+    const mine = [];
+    for (const m of messages) {
+      if (bytes <= cap) break;
+      if ((m.from ?? '') !== who || c.gone.has(m)) continue;
+      mine.push(m);
+      bytes -= msgBytes(m);
+    }
+    if (mine.length) pushCut(b, mine, { why: 'share', who: who || null, words: `more than its share of ${fmtBytes(cap)}` }, at, c);
   }
   if (t - cuts.uploads >= CUT_EVERY_MS) {
+    const taken = c.taken;
     const old = Object.values(S.files).filter((f) => !f.deleted && !f.messageId && !taken.has(f.id) && t - Date.parse(f.ts) > UPLOAD_KEEP_MS).map((f) => f.id);
     if (old.length) {
       b.audit('expire', { detail: `${old.length} upload${old.length === 1 ? '' : 's'} never sent removed` });
@@ -2304,6 +2545,7 @@ async function maybeCut() {
   const retain = S.policy.retainMessages;
   let due = messages.length - retain > cutSlack(retain);
   if (!due && keep && messages.length && Date.parse(messages[0].ts) < t - keep && t - cuts.days >= CUT_EVERY_MS) due = true;
+  if (!due) for (const n of heldBytes.values()) if (n > S.policy.maxAgentBytes * 1.1) due = true; // a member past its share of bytes
   if (!due && t - cuts.looked >= 60e3 && t - cuts.uploads >= CUT_EVERY_MS) {
     cuts.looked = t;
     due = Object.values(S.files).some((f) => !f.deleted && !f.messageId && t - Date.parse(f.ts) > UPLOAD_KEEP_MS);
@@ -2353,8 +2595,10 @@ function sees(v, name) {
   if (!closedChannels.has(name)) return true;
   return v.all || (!!v.id && S.channels[name].members.includes(v.id));
 }
+// a stream sees every channel with the admin key (opened with it), or while its member is an admin
+// now: decided at each event, so one made no longer an admin stops seeing closed channels at once
 function streamSees(st, name) {
-  return sees({ id: st.agentId ?? null, all: !!st.all }, name);
+  return sees({ id: st.agentId ?? null, all: !!st.keyAll || (!!st.agentId && isAdmin(S.agents[st.agentId])) }, name);
 }
 // a list (of messages, or anything in a channel) as this viewer may see it
 function visible(v, list, channelOf = (m) => m.channel) {
@@ -2415,9 +2659,9 @@ function namedAgents(list) {
 
 // a change to channels: not while paused, and counted as a write
 async function channelGate(me) {
-  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null); });
+  if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no changes until they resume it.", me?.id ?? null, null, null, `paused:${me?.id ?? 'operator'}`); });
   if (me && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id); });
+    await store.commit(() => { throw denyErr('rate_limited', 429, `Too many changes: this Sphere allows ${S.policy.rate.writesPerMin} writes a minute per agent.`, me.id, null, null, `write:${me.id}`); });
 }
 
 const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -2432,7 +2676,7 @@ async function channelRoute(req, res, url, me) {
   if (p === '/api/channels') {
     if (!me) throw err(403, 'forbidden', 'Making a channel needs an agent token: viewers can only watch.');
     const body = await readJson(req);
-    const name = slug(body.name);
+    const name = nameIn(body.name, 'channel name');
     if (!name) throw err(400, 'bad_request', 'That channel name has no letters or digits.');
     if (name.startsWith('dm-')) throw err(400, 'bad_request', 'Channel names starting with dm- are kept for direct conversations.');
     if (body.private !== undefined && typeof body.private !== 'boolean') throw err(400, 'bad_request', 'private is true or false.');
@@ -2470,7 +2714,7 @@ async function channelRoute(req, res, url, me) {
       // a private channel: its members change who is in it; a public one: anyone adds, its creator takes others out
       if (!v.all && ch.kind === 'private' && (add.length || others.length) && !ch.members.includes(me.id))
         throw denyErr('not_member', 403, `Only the members of #${name} (or an admin) change who is in it.`, actor);
-      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor);
+      if (!v.all && ch.kind === 'public' && others.length && ch.createdBy !== me.id) throw denyErr('forbidden', 403, `Only whoever made #${name} (or an admin) takes others out of it.`, actor, null, null, `forbidden:${actor}`);
       const added = add.filter((id) => !ch.members.includes(id) && !remove.includes(id));
       const removed = remove.filter((id) => ch.members.includes(id));
       if (!added.length && !removed.length) return;
@@ -2550,8 +2794,9 @@ const RESTART_MS = 2000;
 // The request handler: `node server.mjs` serves it; on Vercel, api/sphere.mjs exports it.
 export async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
-  // Vercel's rewrite passes the original path as ?__path=
-  if (url.searchParams.has('__path')) {
+  // Vercel's rewrite passes the original path as ?__path= (only there: elsewhere the path is the path,
+  // and a query can't send a request to another route than a proxy in front of the relay sees)
+  if (ON_VERCEL && url.searchParams.has('__path')) {
     const p = '/' + String(url.searchParams.get('__path')).replace(/^\/+/, '');
     url.searchParams.delete('__path');
     url.pathname = p;
@@ -2601,22 +2846,31 @@ async function route(req, res, url) {
   if (m === 'GET' && p === '/favicon.svg') return sendFile(res, path.join(HERE, 'public', 'favicon.svg'), 'image/svg+xml');
   if (m === 'GET' && p === '/healthz') return send(res, 200, { ok: true, version: VERSION, store: store.kind, paused: S.paused, sealed: !!S.policy.sealed });
 
-  await store.sync(); // redis: apply what other instances wrote first
-  await maybeCut(); // keeping messages: a cut, when one is due
-
   // ---- join with the Sphere's key: returns the agent's own token
   if (m === 'POST' && p === '/api/join') {
     const ip = clientIp(req);
+    const hdr = req.headers['x-sphere-key'];
     if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
-      await store.commit(() => {
-        throw denyErr('rate_limited', 429, 'Too many join attempts from this address. Try again in a minute.');
-      });
+      const words = 'Too many join attempts from this address. Try again in a minute.';
+      // audited (at most once a minute per address) only when the caller has the key: refusals of
+      // callers with none, or a wrong one, leave nothing to flood the audit log with (nor cost a read)
+      if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
+      throw err(429, 'rate_limited', words);
     }
-    // the key in a header is checked before reading anything; a body is small either way
-    if (req.headers['x-sphere-key'] && !secretOk(req.headers['x-sphere-key'], S.sphere.keyHash)) await joinRefused(ip);
+    // the key in a header is checked before reading anything; a body is small either way. The store
+    // is read first (redis: a key rotated on another instance), but not for a join with no key at all
+    if (hdr) {
+      await store.sync();
+      if (!secretOk(hdr, S.sphere.keyHash)) await joinRefused(ip);
+    }
     const body = await readJson(req, 16 * 1024);
-    if (!secretOk(req.headers['x-sphere-key'] || body.key, S.sphere.keyHash)) await joinRefused(ip);
-    const name = slug(body.name);
+    if (!hdr) {
+      if (!body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere."); // no credential: refused, not audited
+      await store.sync();
+      if (!secretOk(body.key, S.sphere.keyHash)) await joinRefused(ip);
+    }
+    await maybeCut(); // keeping messages: a cut, when one is due
+    const name = nameIn(body.name, 'handle');
     if (!name || name.length < 2) throw err(400, 'bad_request', 'A handle has 2 to 32 characters: a-z, 0-9 and -.');
     const tok = 'tok_' + token(24);
     const agent = {
@@ -2635,6 +2889,8 @@ async function route(req, res, url) {
     await store.commit((b) => {
       if (nameIndex.has(name)) throw err(409, 'name_taken', `The handle "${name}" is taken in this Sphere.`);
       if (tombstones.has(name)) throw err(409, 'name_taken', `The handle "${name}" belonged to a removed agent, and isn't given out again. Pick another.`);
+      const here = Object.values(S.agents).filter((x) => !x.removed).length;
+      if (here >= S.policy.maxAgents) throw denyErr('full', 403, `This Sphere has as many members as it takes (${S.policy.maxAgents.toLocaleString('en-US')}): an admin can remove one, or allow more.`, null, null, null, `full:${ip}`);
       b.push({ t: 'agent', a: agent });
       b.audit('join', { actor: agent.id, detail: `${agent.name} joined, representing ${agent.owner}` });
       ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
@@ -2643,14 +2899,19 @@ async function route(req, res, url) {
     return send(res, 200, { token: tok, agent: publicAgent(S.agents[agent.id]), sphere: sphereInfo() });
   }
 
-  // ---- everything below needs an agent token, the Sphere key or the admin key, in headers
+  // ---- everything below needs an agent token, the Sphere key or the admin key, in headers. A
+  // request with none of them is refused before the store is read (on Redis, a round trip) and
+  // leaves no audit event
   const bearer = /^Bearer\s+(\S+)$/.exec(req.headers.authorization || '')?.[1];
+  const adminHdr = req.headers['x-admin-key'];
+  const keyHdr = req.headers['x-sphere-key'];
+  if (!bearer && !adminHdr && !keyHdr) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  await store.sync(); // redis: apply what other instances wrote first (a token or a key made there too)
+  await maybeCut(); // keeping messages: a cut, when one is due
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
   if (bearer && !me) await authFailed(req, 'an unknown agent token');
-  const adminHdr = req.headers['x-admin-key'];
   const keyAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
   if (adminHdr && !keyAdmin) await authFailed(req, 'a wrong admin key');
-  const keyHdr = req.headers['x-sphere-key'];
   const viewer = keyAdmin || (!!keyHdr && secretOk(keyHdr, S.sphere.keyHash));
   if (keyHdr && !viewer && !me) await authFailed(req, 'a wrong Sphere key');
   if (!me && !viewer) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
@@ -2663,6 +2924,7 @@ async function route(req, res, url) {
     me.lastSeen = now();
     countTool(me, req);
   }
+  if (m === 'GET' && !readOk(me, req)) throw err(429, 'rate_limited', 'Too many reads: try again in a moment.');
   if (m === 'GET') await store.freshPresence();
 
   if (m === 'GET' && p === '/api/info') return send(res, 200, { sphere: sphereInfo(), me: me ? publicAgent(me) : null, admin });
@@ -2683,7 +2945,12 @@ async function route(req, res, url) {
       list = t ? asksTo.get(t.id) || [] : [];
     }
     list = shown(visible(viewOf(req, me), list));
-    return send(res, 200, { messages: slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100)) });
+    const page = slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100));
+    // a page is at most PAGE_BYTES of messages (but at least one): its newest. `more` says older
+    // ones in the range wait for a read with `before`
+    let from = page.length;
+    for (let bytes = 0; from > 0 && (from === page.length || bytes + msgBytes(page[from - 1]) <= PAGE_BYTES); ) bytes += msgBytes(page[--from]);
+    return send(res, 200, { messages: from ? page.slice(from) : page, ...(from ? { more: true } : {}) });
   }
 
   let mm;
@@ -2758,7 +3025,7 @@ async function route(req, res, url) {
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
-    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, all: isAdminRequest(req, me), planned: false };
+    const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
     streams.add(st);
     res.on('error', () => streams.delete(st));
     if (CFG.streamMaxMs) {
@@ -2915,6 +3182,20 @@ async function route(req, res, url) {
       });
       return send(res, 200, { ok: true });
     }
+    // a removed member's handle, given out again: its record stays (old messages keep their author),
+    // and a new member may join with it. Audited (`release`)
+    if (m === 'POST' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})\/release$/))) {
+      const id = mm[1];
+      await store.commit((b) => {
+        const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
+        if (!a) throw err(404, 'not_found', 'There is no such agent.');
+        if (!a.removed) throw err(409, 'not_removed', `${a.name} is a member: only a removed member's handle is released.`);
+        if (a.released) return;
+        b.push({ t: 'agent', a: { ...a, released: true }, urgent: true });
+        b.audit('release', { actor, target: a.id, detail: `${a.name}'s handle released: a new member may join with it${by}` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[id]) });
+    }
     if (m === 'POST' && p === '/api/admin/rotate-key') {
       const key = token(16);
       await store.commit((b) => {
@@ -2934,17 +3215,17 @@ async function route(req, res, url) {
     const t0 = process.hrtime.bigint();
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
       await store.commit(() => {
-        throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id);
+        throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `write:${me.id}`);
       });
     if ([].concat(body.to || []).length && !(await store.rate('ask', me.id, S.policy.rate.asksPerMin)))
       await store.commit(() => {
-        throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id);
+        throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `ask:${me.id}`);
       });
     const fileList = [].concat(body.files || []);
     if (fileList.length > S.policy.maxFilesPerMessage) throw err(400, 'bad_request', `A message carries at most ${S.policy.maxFilesPerMessage} files.`);
-    // inline (base64) files are stored first; plain ones are refused while sealing is on
-    const pre = [];
-    let adding = 0;
+    // inline (base64) files: plain ones are refused while sealing is on; each is checked, and their
+    // bytes reserved against the quota (with uploads under way), before any is stored
+    const bufs = [];
     for (const f of fileList) {
       if (!f || f.data === undefined) continue;
       if (body.sealed) throw err(400, 'bad_envelope', 'A sealed message carries no inline files: upload each encrypted file first (POST /api/files), then refer to it by id.');
@@ -2954,56 +3235,84 @@ async function route(req, res, url) {
         });
       const buf = Buffer.from(String(f.data), 'base64');
       if (buf.length > S.policy.maxFileBytes) throw err(413, 'too_large', `${safeName(f.name || 'A file')} is larger than ${fmtBytes(S.policy.maxFileBytes)}.`);
-      adding += Math.max(1024, buf.length);
-      if ((agentBytes.get(me.id) || 0) + adding > S.policy.maxAgentBytes) throw err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}).`);
-      const id = 'f_' + token(8);
-      await store.putFile(id, buf);
-      pre.push(fileMeta(me, id, buf.length, sha(buf), f.name, f.mime));
+      bufs.push([f, buf]);
     }
-    const b = await store.commit((b) => {
-      for (const meta of pre) b.audit('file', { actor: me.id, ref: meta.id, detail: `${me.name} · ${meta.name} · ${fmtBytes(meta.size)} · sha256 ${meta.sha256.slice(0, 12)}` });
-      buildMessage(b, me, body, pre);
-    });
-    relayRing.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    return send(res, 200, { message: b.result });
+    const adding = bufs.reduce((n, [, buf]) => n + Math.max(1024, buf.length), 0);
+    const hold = 'p_' + token(8);
+    if (adding && !(await store.reserve(me.id, hold, adding, S.policy.maxAgentBytes - (agentBytes.get(me.id) || 0)))) throw quotaErr();
+    // then stored, since building the message is synchronous; a post refused after that takes them
+    // away again, so nothing stays stored without a record
+    const pre = [];
+    let committing = false;
+    try {
+      for (const [f, buf] of bufs) {
+        const id = 'f_' + token(8);
+        await store.putFile(id, buf);
+        pre.push(fileMeta(me, id, buf.length, sha(buf), f.name, f.mime));
+      }
+      committing = true;
+      const b = await store.commit((b) => {
+        for (const meta of pre) b.audit('file', { actor: me.id, ref: meta.id, detail: `${me.name} · ${meta.name} · ${fmtBytes(meta.size)} · sha256 ${meta.sha256.slice(0, 12)}` });
+        buildMessage(b, me, body, pre);
+      });
+      relayRing.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      return send(res, 200, { message: b.result });
+    } catch (e) {
+      // refused, or the store busy: nothing was committed. (A commit that failed with no answer from
+      // the store may have landed: its files stay.)
+      if (pre.length && (!committing || e.status)) await store.dropFiles(pre.map((x) => x.id)).catch((x) => console.error('removing files:', x.message));
+      throw e;
+    } finally {
+      if (adding) await store.release(me.id, hold, adding);
+    }
   }
 
   if (m === 'POST' && p === '/api/files') {
-    if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new files until they resume it.", me.id); });
+    if (S.paused) await store.commit(() => { throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new files until they resume it.", me.id, null, null, `paused:${me.id}`); });
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id); });
+      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id, null, null, `write:${me.id}`); });
     const max = S.policy.maxFileBytes;
     const len = Number(req.headers['content-length']);
     if (len > max) throw err(413, 'too_large', `That file is larger than ${fmtBytes(max)}.`);
     const quotaLeft = S.policy.maxAgentBytes - (agentBytes.get(me.id) || 0);
-    if (quotaLeft < Math.max(1024, len || 0)) throw err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}).`);
+    if (quotaLeft < Math.max(1024, len || 0)) throw quotaErr();
     let name = 'file';
     try {
       name = decodeURIComponent(String(req.headers['x-file-name'] || 'file'));
     } catch {}
     const id = 'f_' + token(8);
-    const { size, sha256 } = await store.receiveUpload(req, id, Math.min(max, quotaLeft));
-    const meta = fileMeta(me, id, size, sha256, name, req.headers['content-type']);
-    await store.commit((b) => {
-      b.audit('file', { actor: me.id, ref: id, detail: `${me.name} · ${meta.name} · ${fmtBytes(size)} · sha256 ${sha256.slice(0, 12)}` });
-      b.push({ t: 'file', f: meta });
-    });
-    return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
+    // its bytes are reserved before the body is read (its length, or as much as could fit when it
+    // doesn't say), so uploads in parallel can't pass the quota together; released once it's stored
+    // and counted, or refused
+    const need = req.headers['content-length'] !== undefined && Number.isFinite(len) ? Math.max(1024, len) : Math.min(max, quotaLeft);
+    if (!(await store.reserve(me.id, id, need, quotaLeft))) throw quotaErr();
+    try {
+      const { size, sha256 } = await store.receiveUpload(req, id, Math.min(max, need));
+      const meta = fileMeta(me, id, size, sha256, name, req.headers['content-type']);
+      await store.commit((b) => {
+        b.audit('file', { actor: me.id, ref: id, detail: `${me.name} · ${meta.name} · ${fmtBytes(size)} · sha256 ${sha256.slice(0, 12)}` });
+        b.push({ t: 'file', f: meta });
+      });
+      return send(res, 200, { file: { id, name: meta.name, mime: meta.mime, size, sha256 } });
+    } finally {
+      await store.release(me.id, id, need);
+    }
   }
 
   // ===== deleting messages: your own (a post or an ask you wrote, a reply your Oby gave), with your
-  // Oby's token. A write (rate-limited), refused while suspended, and allowed while the relay is
-  // paused: it adds nothing. Deleting again gives the same tombstone.
+  // Oby's token. A write (rate-limited, a refused one too), refused while suspended, and allowed
+  // while the relay is paused: it adds nothing. Deleting again gives the same tombstone.
   if (m === 'DELETE' && (mm = p.match(/^\/api\/messages\/(m_[\w-]{1,32})$/))) {
     const id = mm[1];
     const v = viewOf(req, me);
-    const seen = (x) => !!x && sees(v, x.channel) && !hidden(x);
-    const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`);
+    // your own message is yours to delete wherever it is: a private channel you were taken out of too
+    const seen = (x) => !!x && (x.from === me.id || sees(v, x.channel)) && !hidden(x);
+    const notYours = () => denyErr('forbidden', 403, "Only its author's Oby deletes a message: yours are the posts and asks you wrote, and the replies your Oby gave.", me.id, byId.get(id)?.from ?? null, `forbidden: ${me.name} tried to delete ${id}, not its own`, `forbidden:${me.id}`);
     const msg0 = byId.get(id);
     if (!seen(msg0)) throw err(404, 'not_found', 'There is no such message.');
     if (msg0.deleted && msg0.from === me.id) return send(res, 200, { message: msg0 });
-    if (msg0.from === me.id && !(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
-      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id); });
+    if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
+      await store.commit(() => { throw denyErr('rate_limited', 429, `Too many writes: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent.`, me.id, null, null, `write:${me.id}`); });
     const b = await store.commit((b) => {
       const msg = byId.get(id);
       if (!seen(msg)) throw err(404, 'not_found', 'There is no such message.');
@@ -3050,14 +3359,20 @@ async function route(req, res, url) {
       b.result = { ok: true };
       const msg = byId.get(mm[1]);
       if (!msg || msg.deleted || hidden(msg) || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      const each = waitsOf(msg);
       if (!until) {
-        // cleared by the Oby that set it (an ask to several Obys keeps another's)
-        if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        // cleared by the Oby that set it: an ask to several Obys keeps the others' (one from a relay
+        // that didn't say whose it was goes for any of them)
+        if (msg.waiting && !msg.waiting.by && !msg.waiting.each) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        else if (Object.hasOwn(each, me.id)) {
+          delete each[me.id];
+          b.push({ t: 'patch', id: msg.id, fields: { waiting: waitingOf(each) } });
+        }
         return;
       }
       if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' }); // as a claim says it
-      const since = msg.waiting?.by === me.id ? msg.waiting.since : now();
-      b.push({ t: 'patch', id: msg.id, fields: { waiting: { for: 'owner', until, since, by: me.id } } });
+      each[me.id] = { until, since: each[me.id]?.since ?? now() };
+      b.push({ t: 'patch', id: msg.id, fields: { waiting: waitingOf(each) } });
     });
     return send(res, 200, b.result);
   }
@@ -3167,6 +3482,35 @@ async function route(req, res, url) {
   throw err(404, 'not_found', 'Not found.');
 }
 
+// Reads change nothing, but each one costs the relay work (a page of messages, the audit log): at
+// most LIMITS.readsPerMin a minute per agent and readsPerMinPerIp per client address, counted in
+// this process (no round trip to the store for it; on Redis, per instance). Not audited.
+const readBuckets = new Map();
+function readOk(me, req) {
+  if (me && !take(readBuckets, me.id, LIMITS.readsPerMin)) return false;
+  return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
+}
+
+// An ask's `waiting`, one entry for each Oby it's addressed to that waits for its owner: `by`,
+// `until` and `since` are the first of them that still waits, as a reader that knows only one reads
+// it, and while more than one waits, `each` has them all, { [agent id]: { until, since } }. Each Oby
+// sets and clears only its own entry.
+function waitsOf(msg) {
+  const w = msg.waiting;
+  const each = {};
+  if (!w || typeof w !== 'object') return each;
+  if (w.each && typeof w.each === 'object')
+    for (const [id, x] of Object.entries(w.each)) if (AGENT_ID.test(id) && typeof x?.until === 'string') each[id] = { until: x.until, since: x.since ?? null };
+  if (typeof w.by === 'string' && AGENT_ID.test(w.by) && !each[w.by] && typeof w.until === 'string') each[w.by] = { until: w.until, since: w.since ?? null }; // from before `each`
+  return each;
+}
+function waitingOf(each) {
+  const live = Object.entries(each).filter(([, x]) => Date.parse(x.until) > Date.now());
+  if (!live.length) return null;
+  const [by, first] = live[0];
+  return { for: 'owner', until: first.until, since: first.since, by, ...(live.length > 1 ? { each: Object.fromEntries(live) } : {}) };
+}
+
 async function joinRefused(ip) {
   await authFailed({ headers: {}, socket: { remoteAddress: ip } }, 'a join with a wrong key').catch((e) => {
     if (e.status === 429) throw e;
@@ -3266,9 +3610,12 @@ function auditPage(url) {
   return { events: list.filter(Boolean), head: auditHead, verified: verifyChain(), total: auditEvents.length };
 }
 
+// only the instruments the relay knows (and the one representatives add for their owner): a name a
+// caller makes up would be a new counter, kept as long as the process runs
+const TOOL_NAMES = new Set([...INSTRUMENTS.map((i) => i.name), 'sphere_ask_owner']);
 function countTool(me, req) {
   const tool = req.headers['x-sphere-tool'];
-  if (!tool || !/^sphere_[a-z_]{1,32}$/.test(tool)) return;
+  if (!tool || !TOOL_NAMES.has(tool)) return;
   const call = req.headers['x-sphere-call'];
   if (call) {
     const c = String(call).slice(0, 64);
@@ -3289,6 +3636,9 @@ function err(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+function quotaErr() {
+  return err(413, 'too_large', `This agent's files would pass its storage quota on this Sphere (${fmtBytes(S.policy.maxAgentBytes)}), counting its uploads under way.`);
 }
 
 // token bucket: `perMin` a minute, refilled continuously (the fs store)
@@ -3330,22 +3680,48 @@ function secretOk(given, hash) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// behind a proxy (Railway, Vercel, Fly) only when told to trust it
+// The client's address, for rate limits and the audit log. Behind a proxy (Railway, Vercel, Fly)
+// only when told to trust it, and then the entry that proxy added: the rightmost in
+// X-Forwarded-For, or with SPHERE_TRUST_PROXY=<n> (n proxies in a row) the n-th from the right.
+// Whatever is left of it came from the client, which can write anything there. An IPv6 address
+// counts by its /64, the block one client is usually given; an IPv4 one written as IPv6, as IPv4.
 function clientIp(req) {
+  let ip = req.socket?.remoteAddress || '?';
   if (CFG.trustProxy) {
-    const f = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    if (f) return f.slice(0, 64);
+    const hops = String(req.headers['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (hops.length) ip = hops[Math.max(0, hops.length - CFG.trustProxy)];
   }
-  return req.socket?.remoteAddress || '?';
+  return addressKey(ip.slice(0, 64));
+}
+function addressKey(ip) {
+  const v4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1];
+  if (!ip.includes(':')) return ip;
+  const bare = ip.replace(/^\[|\]$/g, '').split('%')[0]; // [::1] and a zone (fe80::1%en0)
+  const [head, tail, more] = bare.split('::');
+  if (more !== undefined) return ip;
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return ip;
+  return groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(':') + '::/64';
 }
 function isHttps(req) {
   if (req.socket?.encrypted) return true;
   return CFG.trustProxy && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
 
-// no control characters (but newline and tab) and no bidirectional overrides
+// What members write, as the relay keeps it: no control characters (but newline and tab), and
+// nothing invisible that could hide words from a person while a model still reads them: format
+// characters (bidirectional controls, zero-width spaces and joiners, word joiners, soft hyphens, the
+// byte-order mark), tag characters and variation selectors. A zero-width joiner stays between two
+// emoji, which it joins into one (a person at a laptop is one emoji); line and paragraph separators
+// become newlines.
 function clean(x) {
-  return String(x).replace(/[\u0000-\u0008\u000B-\u001F\u007F‎‏‪-‮⁦-⁩؜]/g, '');
+  return String(x)
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/(?!\u200D)[\u0000-\u0008\u000B-\u001F\u007F\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '');
 }
 // one line: names, owners, notes, topics
 function cleanLine(x, max) {
@@ -3438,21 +3814,43 @@ function later(a, b) {
   return a > b ? a : b;
 }
 
+// a JSON file, or null when there's none. One that can't be read or parsed stops the start: taking
+// it for none would make a new Sphere over the old one
 function readFileJson(file) {
+  let text;
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw new Error(`${path.basename(file)} can't be read (${e.code || e.message}): the relay won't start without it. Check its owner and permissions in ${path.dirname(file)}.`);
+  }
+  try {
+    return JSON.parse(text);
   } catch {
-    return null;
+    throw new Error(`${path.basename(file)} isn't valid JSON: the relay won't start on it. Restore it from a backup.`);
   }
 }
 
+// a handle or channel name: a-z, 0-9 and -, at most 32 characters. What's sent is cut to 64 before
+// anything runs on it, and the dashes at its ends are trimmed by hand: a regex anchored at both ends
+// takes time that grows with the square of a run of dashes
+const NAME_MAX = 64;
 function slug(x) {
-  return String(x || '')
+  const s = String(x || '')
+    .slice(0, NAME_MAX)
     .toLowerCase()
     .replace(/^[@#]/, '')
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32);
+    .replace(/[^a-z0-9-]+/g, '-');
+  let a = 0;
+  let b = s.length;
+  while (a < b && s[a] === '-') a++;
+  while (b > a && s[b - 1] === '-') b--;
+  return s.slice(a, b).slice(0, 32);
+}
+// a name a member sends (a channel, a handle): refused when it's longer than any name it could be
+function nameIn(x, what) {
+  if (x != null && String(x).length > NAME_MAX) throw err(400, 'bad_request', `That ${what} is too long: names have at most 32 characters (a-z, 0-9 and -).`);
+  return slug(x);
 }
 
 function safeName(x) {
@@ -3484,6 +3882,12 @@ function fmtBytes(n) {
 function dayKey(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// SPHERE_TRUST_PROXY / --trust-proxy: a number of proxies in a row, or on (one) or off (none)
+function proxyHops(v) {
+  if (/^\d+$/.test(String(v ?? '').trim())) return Math.min(10, Number(String(v).trim()));
+  return truthy(v) ? 1 : 0;
 }
 
 function truthy(v) {
