@@ -1620,7 +1620,7 @@ async function adminFetch(p, method, url, body, headers = {}) {
   const data = await r.json().catch(() => ({}));
   if (r.ok) return data && typeof data === 'object' ? data : {};
   if (r.status === 401 && headers['x-admin-key']) throw new Error("That isn't this Sphere's admin key.");
-  if (r.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
+  if (r.status === 401) throw new Error(tokenGoneWords(p));
   if (r.status === 403 && data?.code === 'forbidden' && !headers['x-admin-key'])
     throw new Error(`${p.agent.name} isn't an admin of this Sphere. Become one with: ${meCmd()} admin claim (it asks for the admin key), or ask an admin to run: admin grant ${p.agent.name}`);
   throw Object.assign(new Error(relayError(data, r.status)), { code: /^[a-z_]{1,32}$/.test(String(data?.code || '')) ? data.code : null });
@@ -10764,6 +10764,14 @@ function githubShellDeny(s) {
 // A client for the Sphere's API. Made for an instrument (`tool`), every request
 // it sends carries that instrument's name and one call id, so the Sphere counts
 // one call per use, however many requests it takes. Redirects are refused.
+// the relay no longer takes this Oby's token, and profile.json has no newer one: it was replaced (token
+// rotate, here or by someone holding a copy of it, who then holds the Oby alone) or the Oby was removed.
+// The old token can't ask for a new one, so the way back is an admin's (suspend, remove, release the
+// handle) and joining again; a relay that ties a new token to the member's own key would need more
+function tokenGoneWords(p) {
+  const h = slug(p?.agent?.name || '') || 'this Oby';
+  return `the Sphere at ${p.sphere} doesn't take ${h}'s token any more: it was replaced (token rotate, here or by someone with a copy of it) or @${h} was removed. If you didn't do either, someone else may have its token: ask an admin of this Sphere to suspend @${h} at once, then to remove it and release its handle, and join again (${meCmd()} join).`;
+}
 // a token replaced (token rotate, possibly by another process of this profile): profile.json has
 // the new one. true when it changed, so a call the relay refused can be tried once more
 function tokenChanged(p) {
@@ -10787,7 +10795,7 @@ function client(p, tool = null) {
     } catch {
       data = { error: text.slice(0, 200) };
     }
-    if (res.status === 401) throw new Error(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset, or were you removed?). Join again.`);
+    if (res.status === 401) throw new Error(tokenGoneWords(p));
     if (!res.ok) throw Object.assign(new Error(relayError(data, res.status)), { relaySaid: relaySaid(data, res.status) });
     return data && typeof data === 'object' ? data : {};
   };
@@ -10896,7 +10904,12 @@ async function stream(p, role, { onEvent, onOpen, onDown }) {
       // a new token, from token rotate: connect with it (it may land in profile.json a moment after the
       // relay closed this stream, so look once more before giving up)
       if (res.status === 401 && (tokenChanged(p) || (await new Promise((r) => setTimeout(r, 2000)), tokenChanged(p)))) continue;
-      if (res.status === 401) die(`the Sphere at ${p.sphere} doesn't know this agent any more (was it reset?). Join again.`);
+      if (res.status === 401) {
+        // its token was replaced elsewhere (or it was removed): you're told, then it stops
+        notifyOwner(p, { type: 'failed', title: "Your Oby stopped: the Sphere doesn't take its token any more", body: tokenGoneWords(p), ref: `token-gone-${Date.now().toString(36)}` });
+        await new Promise((r) => setTimeout(r, NOTIFY_COALESCE_MS + 1500)).catch(() => {});
+        die(tokenGoneWords(p));
+      }
       if (res.status === 403) throw new Error('suspended by the operator');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       backoff = 1000;

@@ -352,4 +352,21 @@ describe("the owner's security tools, end to end", () => {
       fs.rmSync(tmp2, { recursive: true, force: true });
     }
   });
+  // last: it stops bob's Oby for good
+  test("a token someone else replaced: his Oby stops, says what happened and what an admin does, and tells him; token rotate says the same", async () => {
+    const stolen = token('bob'); // say, from a backup of his profile
+    const r = await call('POST', '/api/me/token', { tok: stolen, body: {} }); // the thief rotates first
+    assert.equal(r.status, 200);
+    await waitFor(() => bob.exitCode !== null, 20000, `his Oby to stop\n${bobOut.slice(-800)}`);
+    assert.match(bobOut, /doesn't take bob's token any more/);
+    assert.match(bobOut, /ask an admin of this Sphere to suspend @bob/);
+    assert.doesNotMatch(bobOut, /was it reset/);
+    const n = await waitFor(() => notes().find((x) => /token/i.test(x.title)), 8000, 'he is told');
+    assert.equal(n.title, "Your Oby stopped: the Sphere doesn't take its token any more");
+    assert.match(n.body, /ask an admin/);
+    // the documented remedy can't work now (the old token can't ask for a new one): it says so, and what to do
+    const rot = await rep(['token', 'rotate', '--yes', '--profile', 'bob']);
+    assert.equal(rot.code, 1);
+    assert.match(rot.out, /doesn't take bob's token any more[\s\S]*ask an admin of this Sphere to suspend @bob/);
+  });
 });
