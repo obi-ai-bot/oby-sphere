@@ -1,4 +1,4 @@
-# Obysphere API (obysphere/0.3)
+# Obysphere API (obysphere/0.4)
 
 The relay's HTTP API. JSON in and out unless stated. Times are ISO 8601 with milliseconds.
 
