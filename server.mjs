@@ -90,6 +90,8 @@ const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives u
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
 const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000, readsInFlight: 8, stallMs: 20000, repliesPerAsk: 10 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
+const COMPACT_GAP_MS = 5000; // fs: deletions rewrite messages.jsonl at most this often (see compactSoon)
+const FORCED_GAP_MS = 60e3; // redis: deletions and cuts by time bring a compaction forward at most this often, per instance
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
   maxFileBytes: CFG.store === 'redis' ? 512 * 1024 : 5 * 1024 * 1024,
@@ -638,6 +640,8 @@ function fsStore() {
   let msgLines = 0;
   let snapTimer = null;
   let snapDirty = false;
+  let compactedAt = 0; // when messages.jsonl was last rewritten
+  let compactTimer = null; // a rewrite a deletion asked for, waiting its turn (see compactSoon)
   const buckets = new Map();
   const reserved = new Map(); // member id -> Map(upload id -> bytes): uploads under way
 
@@ -666,6 +670,9 @@ function fsStore() {
   // still count after a restart). Written a piece at a time, never as one string: a log of any
   // size fits
   function compact() {
+    clearTimeout(compactTimer);
+    compactTimer = null;
+    compactedAt = Date.now();
     const fd = fs.openSync(MSGS + '.tmp', 'w', 0o600);
     let n = 0;
     let piece = [];
@@ -694,6 +701,22 @@ function fsStore() {
     msgOut = fs.createWriteStream(MSGS, { flags: 'a', mode: 0o600 });
     msgLines = n;
   }
+  // Deleting messages: the words leave the disk with a rewrite of messages.jsonl, at once, or when
+  // one ran in the last COMPACT_GAP_MS, that long after it: deletes in a row (each costs a write)
+  // rewrite it once every few seconds, not each time. The deletion's line is in the log meanwhile,
+  // and a start after a crash rewrites it (init)
+  function compactSoon() {
+    if (compactTimer) return;
+    const wait = compactedAt + COMPACT_GAP_MS - Date.now();
+    if (wait <= 0) return compact();
+    compactTimer = setTimeout(() => {
+      try {
+        compact();
+      } catch (e) {
+        console.error('rewriting messages.jsonl:', e.message);
+      }
+    }, wait);
+  }
   function persist(op) {
     switch (op.t) {
       case 'msg':
@@ -702,9 +725,9 @@ function fsStore() {
         return appendLog({ p: op.id, ...op.fields });
       case 'file':
         return appendLog({ f: op.f });
-      case 'delete': // deleting messages: the words leave the disk at once
+      case 'delete': // deleting messages: the words leave the disk within seconds, its files at once
         appendLog({ d: op.id, at: op.at, by: op.by, files: op.files || [] });
-        compact();
+        compactSoon();
         return removeFiles(op.files);
       case 'expire': // a cut: the messages and files it removed leave the disk at once
         appendLog({ x: op.upto ?? null, ...(op.ids ? { ids: op.ids, who: op.who ?? null } : {}), why: op.why, at: op.at, files: op.files || [] });
@@ -770,8 +793,10 @@ function fsStore() {
         } catch {
           whole = false;
         }
-        if (whole) each(last);
-        else {
+        if (whole) {
+          each(last);
+          fs.appendFileSync(file, '\n'); // a crash before its newline: the next record starts a line of its own
+        } else {
           fs.truncateSync(file, at);
           console.log(`  dropped a torn last line in ${path.basename(file)}`);
         }
@@ -833,6 +858,7 @@ function fsStore() {
         console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl`);
       }
 
+      let pending = false; // a deletion or a cut the log holds but no rewrite followed (a crash)
       readLog(MSGS, (line) => {
         msgLines++;
         let o;
@@ -844,8 +870,13 @@ function fsStore() {
         if (o.p) {
           const m = byId.get(o.p);
           if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (k !== 'waiting' || !m.deleted) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
-        } else if (o.d) apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
-        else if ('x' in o) apply({ t: 'expire', upto: o.x, ...(Array.isArray(o.ids) ? { ids: o.ids, who: o.who ?? null } : {}), why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+        } else if (o.d) {
+          apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
+          pending = true;
+        } else if ('x' in o) {
+          apply({ t: 'expire', upto: o.x, ...(Array.isArray(o.ids) ? { ids: o.ids, who: o.who ?? null } : {}), why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+          pending = true;
+        }
         else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
@@ -888,7 +919,9 @@ function fsStore() {
         fs.rmSync(SNAP + '.v0.bak', { force: true });
         console.log('  removed sphere.json.v0.bak: its messages are in messages.jsonl');
       }
-      if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact(); // past retainMessages: the first cut, at start (init)
+      // past retainMessages: the first cut, at start (init); or a deletion or a cut a crash kept the
+      // words of: they leave the disk now
+      if (pending || msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
       setInterval(() => snapDirty && saveNow(), 15000).unref();
       setInterval(() => {
         const old = Date.now() - 120000;
@@ -1006,6 +1039,7 @@ function fsStore() {
     },
     shutdown(done) {
       saveNow();
+      if (compactTimer) compact(); // a deletion's words leave the disk before the relay stops
       let left = 2;
       const one = () => --left === 0 && done();
       msgOut.end(one);
@@ -1115,6 +1149,9 @@ function redisStore() {
   // looks again
   let countAt = 0;
   let countWait = 0;
+  // a compaction forceAt brought forward: at once, then at most once every FORCED_GAP_MS here, so
+  // deletions in a row don't move the whole state to and from the database each time
+  let forcedAt = 0;
   const snapOld = (ptr) => !(Date.now() - Date.parse(ptr?.at) < CUT_EVERY_MS); // none yet, or an hour old
   const noteAt = (op, pos) => {
     if (op.t === 'msg' && op.m?.id) msgAt.set(op.m.id, pos);
@@ -1371,7 +1408,9 @@ function redisStore() {
   // deletion or a cut must leave the snapshot (forceAt), or a cut by count the log (countAt, hourly)
   function maybeCompact() {
     if (compacting || CFG.compactEvery === Infinity || Date.now() < compactAfter || !compactionReady()) return;
-    if (!(forceAt > base) && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    const forced = forceAt > base && Date.now() - forcedAt >= FORCED_GAP_MS;
+    if (!forced && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    if (forced) forcedAt = Date.now();
     compacting = true;
     compact()
       .catch((e) => {
