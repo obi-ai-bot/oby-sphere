@@ -461,6 +461,15 @@ describe("the owner's own session", () => {
     assert.ok(fences && fences.length % 3 === 0, 'every block named, opened and closed');
     assert.ok(/QUOTED-[0-9A-F]{12}$/.test(ctx.trim()), 'it ends with a closing fence');
   });
+
+  // ---------------------------------------------------------------- 12. a channel name that would stall a regex
+
+  test('a channel name made to stall slug() costs nothing', async () => {
+    const t0 = Date.now();
+    const r = await alice.tool('sphere_read', { channel: `a${'-'.repeat(200000)}a` });
+    assert.ok(Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
+    assert.ok(r.result, JSON.stringify(r).slice(0, 300));
+  });
 });
 
 // sealed text never passes the relay's cleaning: opened here, it's cleaned here

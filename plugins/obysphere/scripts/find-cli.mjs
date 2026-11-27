@@ -117,8 +117,16 @@ export function profiles(vars = named()) {
 // has this computer joined a Sphere?
 export const hasProfile = (vars = named()) => profiles(vars).length > 0;
 
-// a profile name as rep.mjs reads it (its slug())
-const slug = (s) => String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+// a profile name as rep.mjs reads it (its slug()): cut before any regex, the dashes trimmed by hand
+// (/^-+|-+$/ takes quadratic time on a long run of dashes)
+const slug = (s) => {
+  const t = String(s || '').slice(0, 256).toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-');
+  let a = 0;
+  let b = t.length;
+  while (a < b && t[a] === '-') a++;
+  while (b > a && t[b - 1] === '-') b--;
+  return t.slice(a, b).slice(0, 32);
+};
 
 // the profile named by --profile (or --profile=) in these arguments, else by OBYSPHERE_PROFILE;
 // undefined when neither names one

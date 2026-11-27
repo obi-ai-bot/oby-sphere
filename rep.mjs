@@ -9987,7 +9987,14 @@ function split(s) {
   return String(s).split(/[,\s]+/).filter(Boolean);
 }
 function slug(s) {
-  return String(s || '').toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+  // cut before any regex, and the dashes trimmed by hand: /^-+|-+$/ takes quadratic time on a
+  // long run of dashes, and a handle or a channel name can come from anyone
+  const t = String(s || '').slice(0, 256).toLowerCase().replace(/^[@#]/, '').replace(/[^a-z0-9-]+/g, '-');
+  let a = 0;
+  let b = t.length;
+  while (a < b && t[a] === '-') a++;
+  while (b > a && t[b - 1] === '-') b--;
+  return t.slice(a, b).slice(0, 32);
 }
 // a plain file name: no folders, no leading dots, nothing but safe characters
 function safeName(s) {
