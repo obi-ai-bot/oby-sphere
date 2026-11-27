@@ -18,6 +18,7 @@ import http from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -160,7 +161,7 @@ describe("when your Oby's runtime can't answer", () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   const settings = ({ availability = {}, access = {} } = {}) => ({
     version: 2,
     routing: { default: { runtime: 'claude', model: null, effort: null, timeLimitMin: 10 }, rules: [] },
@@ -647,9 +648,9 @@ describe("when your Oby's runtime can't answer", () => {
         return false;
       }
     }, 8000, "dave's console");
-    const g = await call('GET', '/local/held', { at, headers: { 'x-obysphere-console': '1' } });
+    const g = await call('GET', '/local/held', { at, headers: consoleAuth(path.join(home, 'dave'), at) });
     assert.deepEqual(g.held.map((h) => [h.id, h.words]), [[id, '']], 'listed, with no words to show');
-    const d = await call('POST', '/local/held', { at, body: { id, action: 'drop' }, headers: { 'x-obysphere-console': '1' } });
+    const d = await call('POST', '/local/held', { at, body: { id, action: 'drop' }, headers: consoleAuth(path.join(home, 'dave'), at) });
     assert.equal(d.status, 502, JSON.stringify(d));
     assert.match(d.error, /stays held/);
     assert.ok(fs.existsSync(file), 'never dropped in silence');

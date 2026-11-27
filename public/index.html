@@ -809,9 +809,10 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .inv-hand[open] > summary::before { margin-bottom: 4px; transform: rotate(45deg); }
 @media (max-width: 420px) { .inv-paste { flex-direction: column; } }
 .gate { height: 100vh; display: grid; place-items: center; padding: 24px; }
-.gate form { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.gate :is(form, .gate-box) { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .gate h2 { margin-top: 8px; color: var(--ink); font-size: 17px; font-weight: 600; }
 .gate p { color: var(--muted); font-size: var(--text-md); }
+.gate code { color: var(--ink); font-family: var(--mono); }
 .gate .set-field { margin-top: 8px; }
 .gate .modal-primary { width: 100%; }
 .gate .err { color: var(--danger); font-size: var(--text-sm); }
@@ -1160,6 +1161,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   };
 
   const CONSOLE = window.OBYSPHERE_CONSOLE || null; // set when opened through `rep.mjs ui`: signed in as you
+  // your console no longer takes this page's cookie (it started again, with a new secret): the
+  // page loads again, and asks you to open it with its new link
+  const fetch = (...args) => window.fetch(...args).then((r) => {
+    if (CONSOLE && !CONSOLE.signin && !S.signedOut && r.status === 401 && /^Obysphere-Console\b/.test(r.headers.get('www-authenticate') || '')) {
+      S.signedOut = true;
+      location.reload();
+    }
+    return r;
+  });
   const S = {
     me: null, key: null, admin: false, adminKey: null, sphere: null,
     agents: new Map(), channels: new Map(), messages: [], byId: new Map(),
@@ -1218,27 +1228,43 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- keys
   const hp = new URLSearchParams(location.hash.slice(1).replace(/\+/g, '%2B')); // a '+' in a key stays a '+'
-  const hashKey = hp.get('key');
+  // keys never stay in the address bar (history, a screenshot, a link passed on): read, then taken out
+  const hashKey = CONSOLE ? null : hp.get('key');
+  const hashAuth = CONSOLE ? hp.get('auth') : null; // your console's link: its secret, traded for a cookie
+  if (['key', 'auth', 'admin'].some((k) => hp.has(k))) {
+    for (const k of ['key', 'auth', 'admin']) hp.delete(k);
+    history.replaceState(null, '', location.pathname + location.search + (String(hp) ? `#${hp}` : ''));
+  }
   S.key = CONSOLE ? 'console' : hashKey || store.get('obysphere.key');
   if (hashKey) store.set('obysphere.key', hashKey);
-  // the admin key lives in this tab only (sessionStorage), never in the URL or localStorage
-  const session = {
-    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
-    set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
-  };
-  try { localStorage.removeItem('obysphere.admin'); } catch {}
-  // in your console, admins are members: no admin key is ever kept in the page (Admin access… claims once)
-  if (CONSOLE) session.set('obysphere.admin', null);
-  else if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
-  S.adminKey = CONSOLE ? null : session.get('obysphere.admin');
+  // the admin key lives in this page's memory only: never in the URL (an #admin= link is ignored)
+  // or the browser's storage, and a reload forgets it. In your console, admins are members: no
+  // admin key is ever kept in the page (Admin access… claims once).
+  try { localStorage.removeItem('obysphere.admin'); sessionStorage.removeItem('obysphere.admin'); } catch {}
+  S.adminKey = null;
   S.mode = hp.get('mode') || store.get('obysphere.mode') || 'console';
   S.page = hp.get('page') || 'overview';
+  if (CONSOLE?.signin) return hashAuth ? signIn(hashAuth) : consoleGate();
   if (!S.key) return gate();
-  boot().catch((e) => { if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
+  boot().catch((e) => { if (S.signedOut) return; if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
 
   function gate(err) {
     $('#root').innerHTML = `<div class="gate"><form>${obyFace(48)}<h2>Open an Obysphere</h2><p>Paste the key from your invite link.</p><input class="set-field" name="k" placeholder="Obysphere key" aria-label="Obysphere key" autocomplete="off" autofocus>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}<button class="modal-primary">Open</button></form></div>`;
     $('form').onsubmit = (e) => { e.preventDefault(); const k = e.target.k.value.trim(); store.set('obysphere.key', k); location.hash = 'key=' + encodeURIComponent(k); location.reload(); };
+  }
+  // your console, not signed in: it opens only with its link, which holds a secret (a new one each
+  // time it starts)
+  function consoleGate(err) {
+    $('#root').innerHTML = `<div class="gate"><div class="gate-box">${obyFace(48)}<h2>Open your console</h2><p>It opens on this computer, with its own link: run <code>obysphere open</code>, or use the link your console printed when it started.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}</div></div>`;
+  }
+  // the link's secret, traded once for this console's cookie (HttpOnly: the page never holds it
+  // again); then the page loads again, signed in
+  async function signIn(auth) {
+    try {
+      const r = await fetch('/local/auth', { method: 'POST', headers: { 'x-obysphere-auth': auth } });
+      if (r.ok) return location.reload();
+    } catch {}
+    consoleGate('That link is from before your console last started.');
   }
 
   // ---------------------------------------------------------------- the API
@@ -1356,8 +1382,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     syncHash();
   }
   function syncHash() {
-    const p = new URLSearchParams();
-    if (!CONSOLE && hashKey) p.set('key', hashKey);
+    const p = new URLSearchParams(); // never a key: it's kept in this browser, out of the address
     p.set('mode', S.mode);
     if (S.mode === 'console') p.set('page', S.page);
     else p.set('c', S.current);
@@ -1409,6 +1434,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     for (;;) {
       try {
         const r = await fetch('/api/stream', { headers: headers({ accept: 'text/event-stream' }), cache: 'no-store' });
+        if (S.signedOut) return; // your console started again: the page loads again
         if (r.status === 401 || r.status === 403) { gate('This Obysphere no longer accepts that key (it may have been rotated).'); return; }
         if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
         backoff = 1000;
@@ -5138,7 +5164,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       : `<button class="connector nav-foot" data-admin-signin>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-in</span></button>`;
   }
   // claim: your console, your Oby becomes an admin (the key goes once, isn't stored).
-  // signin: a browser with no member keeps the key in this tab (sessionStorage), as before.
+  // signin: a browser with no member keeps the key in this page's memory only (a reload forgets it).
   function openAdmin(mode) {
     const m = $('#admin-modal');
     m.dataset.mode = mode;
@@ -5146,7 +5172,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#adm-title').textContent = claim ? 'Admin access' : 'Admin sign-in';
     $('#adm-line').textContent = claim
       ? 'Enter this Sphere’s admin key once to make your Oby an admin. The key isn’t stored.'
-      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this tab only, and forgotten when you close it.';
+      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this page only, and forgotten when you reload or close it.';
     $('#adm-go').textContent = claim ? 'Make my Oby an admin' : 'Sign in';
     $('#adm-note').textContent = claim
       ? 'It goes to the Sphere once, through your console on this machine, and the audit log records the claim. From then on your Oby’s own sign-in is enough. In a terminal: rep.mjs admin claim.'
@@ -5178,7 +5204,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         const r = await fetch('/api/admin/check', { headers: { ...headers(), 'x-admin-key': k } });
         if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : r.status === 429 ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
         S.adminKey = k;
-        session.set('obysphere.admin', k);
+        // in memory only: never in the URL or the browser's storage
         S.admin = true;
       }
       input.value = '';
@@ -5192,7 +5218,6 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     }
   }
   function adminSignOut() {
-    session.set('obysphere.admin', null);
     S.adminKey = null;
     S.admin = false;
     if (ADMIN_PAGES.includes(S.page)) S.page = 'overview';
@@ -6178,7 +6203,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       ['2. Join, choosing the folder their Oby may read', `obysphere join "${link}"${flag} ${who} --about "<what their Oby knows>" --cwd <folder it may read>`],
       ['3. Go online in the background, so others can ask them', 'obysphere start'],
       ['4. Open their console, signed in as them', 'obysphere open'],
-      ['Or with nothing installed: one file, then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
+      // the console's page comes with it, from the same place: the console never uses the Sphere's
+      ['Or with nothing installed: two files (their Oby and its console’s page), then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && curl -fsSL --create-dirs -o public/index.html https://raw.githubusercontent.com/${REPO}/main/public/index.html && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
     ];
   }
 

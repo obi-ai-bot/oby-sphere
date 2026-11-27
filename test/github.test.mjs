@@ -17,6 +17,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { makeFakeGh } from './fake-gh.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -63,7 +64,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body, headers = { 'x-obysphere-console': '1' }) => call(method, url, { at: uiBase, body, headers });
+  const local = (method, url, body, headers = consoleAuth(path.join(home, 'bob'), uiBase)) => call(method, url, { at: uiBase, body, headers });
   const settingsPath = () => path.join(home, 'bob', 'settings.json');
   const settings = (github = {}, over = {}) => ({
     version: 2,
@@ -198,7 +199,7 @@ describe('GitHub: settings, pull request tools, and approvals that wait for you'
 
   test("gh's sign-in: GET /local/github and rep.mjs github status (signed in, signed out, not installed)", async () => {
     writeSettings(settings());
-    assert.equal((await local('GET', '/local/github', undefined, {})).status, 403, 'only this console');
+    assert.equal((await local('GET', '/local/github', undefined, {})).status, 401, 'only this console');
     let st = await local('GET', '/local/github');
     assert.equal(st.status, 200);
     assert.deepEqual(st.gh, { installed: true, version: '2.99.0', signedIn: true, login: 'octo-bob', install: null, signIn: null });

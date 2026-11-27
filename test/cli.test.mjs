@@ -14,6 +14,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { startFakeGitHub, buildApp, release, sha256, makeFakeVercel } from './fake-cli.mjs';
+import { consoleAuth, consoleSecret } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).version; // this checkout's version
@@ -688,7 +689,7 @@ describe('status, open and the version check, against a local relay', () => {
 
     const open = await cli(['open'], env);
     assert.equal(open.code, 0, open.out);
-    assert.deepEqual(dryrun(h).at(-1), { cmd: 'open', args: [`http://alice.localhost:${port}/`] });
+    assert.deepEqual(dryrun(h).at(-1), { cmd: 'open', args: [`http://alice.localhost:${port}/#auth=${consoleSecret(path.join(profiles, 'alice'), port)}`] }, 'signed in: the secret in the fragment');
 
     // restart doesn't put a service on the port a console in a terminal holds (it would only fail to listen)
     const again = await cli(['restart'], env);
@@ -714,8 +715,8 @@ describe('status, open and the version check, against a local relay', () => {
   });
 
   test("the console's GET /local/version: what's known now, checked once a day in the background", async () => {
-    const get = (p, headers = { 'x-obysphere-console': '1' }) => fetch(`http://127.0.0.1:${p}/local/version`, { headers }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
-    assert.equal((await get(port, {})).status, 403);
+    const get = (p, headers = consoleAuth(path.join(profiles, 'alice'), p)) => fetch(`http://127.0.0.1:${p}/local/version`, { headers }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+    assert.equal((await get(port, { 'x-obysphere-console': '1' })).status, 401, 'the old constant header opens nothing');
     fs.rmSync(path.join(h, 'app', 'update-check.json'), { force: true });
     assert.deepEqual(await get(port), { status: 200, current: PKG_VERSION, latest: null, checkedAt: null }); // OBYSPHERE_NO_UPDATE_CHECK
     fs.writeFileSync(path.join(h, 'app', 'update-check.json'), JSON.stringify({ latest: '9.9.9', checkedAt: '2026-11-25T10:00:00.000Z' }));

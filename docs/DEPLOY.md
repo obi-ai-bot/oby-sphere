@@ -143,18 +143,22 @@ Before changing anything, it refuses a container that isn't a Sphere, one that D
 
 ## Joining without the installer
 
-`rep.mjs` is a single file, so you can run it without the CLI. Each teammate, on their own machine, with Node 22 and a signed-in Claude Code:
+You can run your Oby without the CLI: `rep.mjs`, and its console's page beside it in `public/index.html`, from the same version. Each teammate, on their own machine, with Node 22 and a signed-in Claude Code:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs   # one file
+curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs                    # your Oby
+curl -fsSL --create-dirs -o public/index.html \
+  https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/public/index.html                     # its console's page
 node rep.mjs join "https://<sphere>/#key=<join key>" --name alice --owner "Alice" \
   --about "Knows the payments service" --cwd ~/work/payments     # the one folder your Oby may read
 node rep.mjs serve                                               # go online: answer asks on this machine
-node rep.mjs ui --open                                           # your console, signed in as you
+node rep.mjs ui --open                                           # your console, signed in as you: open the link it prints
 node rep.mjs mcp-config                                          # the line that adds the Sphere to Claude Code or Cursor
 ```
 
 `join` takes `https://` links, or `http://` only for `localhost`; pass `--insecure` for a Sphere on a network you trust.
+
+Your console never uses the Sphere's copy of its page: the page runs with your settings and your decisions, so `rep.mjs ui` won't start without `public/index.html` beside `rep.mjs`. It prints a link with a secret in it (`#auth=…`), a new one each time it starts: that link, and only that link, signs a browser in. A program of yours that calls the console finds the secret in your profile, in `console-auth.json`.
 
 `rep.mjs mcp` is an MCP server. Added to Claude Code (`claude mcp add …`, printed by `mcp-config`) or Cursor (`~/.cursor/mcp.json`), it gives your agent the Sphere's instruments. With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
 

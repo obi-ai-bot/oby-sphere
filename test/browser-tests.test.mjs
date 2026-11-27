@@ -491,7 +491,7 @@ if (!chromium) {
             const dm = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('c');
             assert.match(dm, /^dm-[0-9a-f]{24}$/);
             assert.ok((await world.rep(['read', dm, '--profile', 'bob'])).out.includes(note), 'Bob reads it from the relay');
-            const hers = await open(`${carol.url}#mode=conversation&c=${dm}`);
+            const hers = await open(`${carol.url}&mode=conversation&c=${dm}`);
             await hers.getByRole('log').waitFor();
             await hers.getByText(/^Everyone in #general sees it/).waitFor(); // #general instead
             for (const name of ['Alice Test and Bob Test', 'Bob Test and Alice Test']) assert.equal(await hasPage(hers, name), false, `no "${name}" in Carol's side panel`);
@@ -575,7 +575,7 @@ if (!chromium) {
             await claim.getByRole('button', { name: 'Close' }).click();
             await claim.waitFor({ state: 'hidden' });
             // and a link straight to Policy opens the Overview
-            await hers.goto(`${alice.url}#mode=console&page=policy`);
+            await hers.goto(`${alice.url}&mode=console&page=policy`);
             await hers.reload();
             await title(hers, sphere.name).waitFor();
             assert.equal(await title(hers, 'Policy').count(), 0);
@@ -617,7 +617,7 @@ if (!chromium) {
 
             // Alice's Oby isn't an admin: her console has no Policy page, and the relay refuses a
             // change sent through her console all the same
-            const hers = await open(`${alice.url}#mode=console&page=policy`);
+            const hers = await open(`${alice.url}&mode=console&page=policy`);
             await title(hers, sphere.name).waitFor();
             assert.equal(await title(hers, 'Policy').count(), 0);
             assert.equal(await hasPage(hers, 'Policy'), false);

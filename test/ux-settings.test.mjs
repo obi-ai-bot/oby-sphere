@@ -14,6 +14,7 @@ import net from 'node:net';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { makeFakeGh } from './fake-gh.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -61,7 +62,7 @@ describe('Settings, made lean: the default for Obys you haven’t listed, and yo
     procs.push(p);
     const at = `http://127.0.0.1:${port}`;
     await until(async () => (await fetch(at + '/favicon.svg').catch(() => null))?.ok, 'the console starts');
-    return async (method, url, body, headers = { 'x-obysphere-console': '1' }) => {
+    return async (method, url, body, headers = consoleAuth(path.join(home, 'bob'), at)) => {
       const h = { ...headers };
       if (body !== undefined) h['content-type'] = 'application/json';
       const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
@@ -133,8 +134,8 @@ describe('Settings, made lean: the default for Obys you haven’t listed, and yo
   test('GET /local/github/repos: you and your organisations, their repositories, your folders’ remotes', async () => {
     const local = await consoleFor('0');
     gh.control({ orgs: ['acme', 'acme-labs', '--help', 'bad name', 'ACME'], repos: { 'octo-bob': ['dotfiles', 'web'], acme: ['payments', 'web'], 'acme-labs': ['lab'] } });
-    assert.equal((await local('GET', '/local/github/repos', undefined, {})).status, 403, 'only this console');
-    assert.equal((await local('GET', '/local/github/repos', undefined, { 'x-obysphere-console': '1', 'sec-fetch-site': 'cross-site' })).status, 403, 'not another site');
+    assert.equal((await local('GET', '/local/github/repos', undefined, {})).status, 401, 'only this console');
+    assert.equal((await local('GET', '/local/github/repos', undefined, { 'sec-fetch-site': 'cross-site' })).status, 403, 'not another site');
     const before = repoLists().length;
     const r = await local('GET', '/local/github/repos');
     assert.equal(r.status, 200, JSON.stringify(r));

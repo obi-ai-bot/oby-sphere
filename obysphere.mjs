@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -273,35 +273,65 @@ async function consolePort(name) {
   writeSecret(path.join(HOME, name, 'service.json'), { port, chosenAt: new Date().toISOString() });
   return port;
 }
-function portFree(port) {
+// free on both loopbacks, as the console listens (a machine without IPv6: 127.0.0.1 alone)
+async function portFree(port) {
+  for (const host of ['127.0.0.1', '::1']) if (!(await freeOn(port, host))) return false;
+  return true;
+}
+function freeOn(port, host) {
   return new Promise((resolve) => {
     const s = net.createServer();
-    s.once('error', () => resolve(false));
-    s.listen(port, '127.0.0.1', () => s.close(() => resolve(true)));
+    s.once('error', (e) => resolve(host === '::1' && ['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EPROTONOSUPPORT'].includes(e.code)));
+    s.listen(port, host, () => s.close(() => resolve(true)));
   });
 }
-function anyPort() {
-  return new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.once('error', reject);
-    s.listen(0, '127.0.0.1', () => {
-      const p = s.address().port;
-      s.close(() => resolve(p));
+async function anyPort() {
+  for (let i = 0; i < 20; i++) {
+    const p = await new Promise((resolve, reject) => {
+      const s = net.createServer();
+      s.once('error', reject);
+      s.listen(0, '127.0.0.1', () => {
+        const n = s.address().port;
+        s.close(() => resolve(n));
+      });
     });
-  });
+    if (!RESERVED.has(p) && (await portFree(p))) return p;
+  }
+  throw new Error('no free port on this machine for your console');
 }
 const consoleUrl = (name, port) => `http://${name}.localhost:${port}/`;
 const logFile = (name) => path.join(HOME, name, 'logs', 'console.log');
 
-// running: the console answers at its port with its own favicon (a service, or one in a terminal)
-async function consoleAnswers(port) {
-  if (!port) return false;
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/favicon.svg`, { signal: AbortSignal.timeout(1500), redirect: 'error' });
-    return r.ok && (await r.text()).includes('viewBox="0 0 64 64"');
-  } catch {
-    return false;
-  }
+// ---- the console's secret: rep.mjs ui makes one at each start and keeps it in the profile
+// (console-auth.json, 0600, by port). A program of yours sends it in x-obysphere-auth; a browser
+// gets it in a link's fragment (#auth=…).
+const CONSOLE_AUTH_HEADER = 'x-obysphere-auth';
+function consoleSecret(name, port) {
+  const v = readJson(path.join(HOME, name, 'console-auth.json'), {})?.[String(port)]?.secret;
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v) ? v : null;
+}
+// the link that opens your console signed in
+const consoleAuthUrl = (name, port, secret, hash = '') => `${consoleUrl(name, port)}#auth=${secret}${hash ? `&${hash}` : ''}`;
+
+// running: the console at its port proves it knows this profile's secret (a service, or one in a
+// terminal), on 127.0.0.1 and on ::1 when something answers there. Not its favicon, which any
+// program can serve; and the secret itself only goes to a console that proved it.
+async function consoleAnswers(name, port) {
+  const secret = port && consoleSecret(name, port);
+  if (!secret) return false;
+  const hello = async (host) => {
+    const nonce = randomBytes(18).toString('base64url');
+    try {
+      const r = await fetch(`http://${host}:${port}/console-hello?nonce=${nonce}`, { signal: AbortSignal.timeout(1500), redirect: 'error' });
+      const j = r.ok ? await r.json() : null;
+      const want = createHmac('sha256', secret).update(`obysphere console hello ${nonce}`).digest('hex');
+      return typeof j?.proof === 'string' && j.proof.length === want.length && timingSafeEqual(Buffer.from(j.proof), Buffer.from(want));
+    } catch (e) {
+      return e?.name === 'TimeoutError' || e?.name === 'AbortError' ? false : null; // null: nobody there (or no IPv6)
+    }
+  };
+  if ((await hello('127.0.0.1')) !== true) return false;
+  return (await hello('[::1]')) !== false;
 }
 
 function serviceDir() {
@@ -487,7 +517,7 @@ async function announce(name, port) {
   const url = consoleUrl(name, port);
   let up = false;
   for (let i = 0; i < 30 && !up && !DRY; i++) {
-    up = await consoleAnswers(port);
+    up = await consoleAnswers(name, port);
     if (!up) await sleep(300);
   }
   if (DRY) say(`${dim('○')} ${name}: the service is written ${dim(`(${serviceFile(name)})`)}; dry run, so nothing was started.`);
@@ -506,13 +536,19 @@ async function start() {
   }
   for (const n of names) {
     const port = await consolePort(n);
-    const answers = await consoleAnswers(port);
+    const answers = await consoleAnswers(n, port);
     if (answers && serviceInstalled(n)) {
       say(`${green('●')} ${bold(n)} already runs in the background: ${cyan(consoleUrl(n, port))}`);
       continue;
     }
     if (answers) {
       warn(`${yellow('!')} ${n}'s console already runs at ${consoleUrl(n, port)}, in a terminal: stop it there (Ctrl+C), then obysphere start again.`);
+      process.exitCode = 1;
+      continue;
+    }
+    // held by a program that isn't this console (or a console from an older version, in a terminal)
+    if (!serviceInstalled(n) && !DRY && !(await portFree(port))) {
+      warn(`${yellow('!')} port ${port}, ${n}'s console's, is taken by another program: stop it (a console in a terminal: Ctrl+C), then obysphere start again.`);
       process.exitCode = 1;
       continue;
     }
@@ -528,7 +564,7 @@ async function stop() {
   for (const n of targets()) {
     if (!serviceInstalled(n)) {
       const port = savedPort(n);
-      say(port && (await consoleAnswers(port)) ? `${n} runs in a terminal, not in the background: stop it there (Ctrl+C).` : `${n} isn't running in the background.`);
+      say(port && (await consoleAnswers(n, port)) ? `${n} runs in a terminal, not in the background: stop it there (Ctrl+C).` : `${n} isn't running in the background.`);
       continue;
     }
     await removeService(n);
@@ -543,7 +579,7 @@ async function restart() {
   for (const n of targets()) {
     const port = await consolePort(n);
     // a console in a terminal holds the port: a service started now would only fail to listen, again and again
-    if (!serviceInstalled(n) && (await consoleAnswers(port))) {
+    if (!serviceInstalled(n) && (await consoleAnswers(n, port))) {
       warn(`${yellow('!')} ${n}'s console runs at ${consoleUrl(n, port)}, in a terminal: stop it there (Ctrl+C), then obysphere start.`);
       process.exitCode = 1;
       continue;
@@ -686,18 +722,21 @@ async function menuModel(now = new Date()) {
     Promise.all(
       listProfiles().map(async (n) => {
         const r = await statusOf(n, client);
-        return { ...r, ...(r.running ? await consoleState(r.port) : {}), held: heldCount(n) };
+        return { ...r, ...(r.running ? await consoleState(n, r.port) : {}), held: heldCount(n) };
       }),
     ),
   ]);
   return menuOf(rows, { update: latest.latest && cmpVersion(latest.latest, client) > 0 ? latest.latest : null, now });
 }
 
-// what waits for you and your away, from the console's local API (this machine only, its header)
-async function consoleState(port) {
+// what waits for you and your away, from the console's local API (this machine only, with the
+// console's secret, once it proved it knows it: statusOf); and the secret, for the links it opens
+async function consoleState(name, port) {
+  const secret = consoleSecret(name, port);
+  if (!secret) return { waiting: 0, away: null };
   const get = async (route) => {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}${route}`, { headers: { 'x-obysphere-console': '1' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
+      const r = await fetch(`http://127.0.0.1:${port}${route}`, { headers: { [CONSOLE_AUTH_HEADER]: secret }, signal: AbortSignal.timeout(3000), redirect: 'error' });
       return r.ok ? await r.json() : null;
     } catch {
       return null;
@@ -707,7 +746,7 @@ async function consoleState(port) {
   const w = a?.away;
   const iso = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
   const away = w && (w.by === 'owner' || w.by === 'pause') && (w.until === null || iso(w.until)) ? { by: w.by, until: w.until } : null;
-  return { waiting: Array.isArray(p?.pending) ? p.pending.length : 0, away };
+  return { waiting: Array.isArray(p?.pending) ? p.pending.length : 0, away, auth: secret };
 }
 
 // asks held while its runtime can't answer: the files rep.mjs keeps (reading them through the
@@ -761,7 +800,8 @@ function menuOf(all, { update = null, now = new Date() } = {}) {
   for (const r of rows) {
     if (items.length) items.push({ kind: 'separator' });
     const flag = ['--profile', r.profile];
-    const page = (hash) => `${r.console}${hash ? `#${hash}` : ''}`;
+    // each page it opens signs the browser in (#auth=…, the console's secret)
+    const page = (hash) => `${r.console}${r.auth || hash ? `#${[r.auth ? `auth=${r.auth}` : '', hash].filter(Boolean).join('&')}` : ''}`;
     const until = (w) => (w.until ? ` until ${whenWords(w.until, now)}` : '');
     let state = 'on';
     let line = r.service ? 'Running' : 'Running in a terminal';
@@ -857,15 +897,29 @@ function lastLines(file, n) {
   return lines.slice(-n).join('\n') + (lines.length ? '\n' : '');
 }
 
+// your console, signed in: its link with this start's secret in the fragment (#auth=…), which the
+// page trades for a cookie. Only once the console at the port proved it's yours.
 async function openCmd() {
   const [name] = targets({ one: true });
   const port = savedPort(name);
-  if (!port || !(await consoleAnswers(port))) die(`${name}'s console isn't running: obysphere start${listProfiles().length > 1 ? ` --profile ${name}` : ''}`);
-  const url = consoleUrl(name, port);
-  const [bin, args] = PLATFORM === 'darwin' ? ['open', [url]] : PLATFORM === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
+  if (!port || !(await consoleAnswers(name, port))) die(`${name}'s console isn't running: obysphere start${listProfiles().length > 1 ? ` --profile ${name}` : ''}`);
+  const url = consoleAuthUrl(name, port, consoleSecret(name, port));
+  // macOS hands the link to the browser (LaunchServices), and Windows keeps command lines from
+  // other users; on Linux a browser that xdg-open starts keeps it in its arguments, which other
+  // users can read, so it gets a page in your profile (0600) that goes on to the link
+  const [bin, args] = PLATFORM === 'darwin' ? ['open', [url]] : PLATFORM === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [openPage(name, url)]];
   const r = runOs(bin, args, { detach: true });
   if (r.status !== 0) die(`couldn't open a browser: open ${url} yourself`);
-  say(`Opening ${cyan(url)}`);
+  say(`Opening ${cyan(consoleUrl(name, port))}`);
+}
+// a page only you can read, that goes on to your console's link
+function openPage(name, url) {
+  const file = path.join(HOME, name, 'open.html');
+  const u = url.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `<!doctype html>\n<meta charset="utf-8">\n<meta http-equiv="refresh" content="0;url=${u}">\n<title>Your Obysphere console</title>\n<p><a href="${u}">Open your console</a></p>\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  return file;
 }
 
 // ================================================================ the background service on Windows
@@ -1001,8 +1055,9 @@ function schtasksBin() {
   return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'schtasks.exe');
 }
 
+// the console from before lets go of its port (one of any version: a port still held)
 async function untilQuiet(port) {
-  for (let i = 0; i < 24 && !DRY && (await consoleAnswers(port)); i++) await sleep(250);
+  for (let i = 0; i < 24 && !DRY && port && !(await portFree(port)); i++) await sleep(250);
 }
 
 async function installTask(name, port, s, app) {
@@ -1163,7 +1218,7 @@ function clientVersion() {
 async function statusOf(name, client) {
   const p = publicProfile(name);
   const port = savedPort(name);
-  const [running, relay] = await Promise.all([consoleAnswers(port), p.sphere ? relayHealth(p.sphere) : { ok: false, error: 'no Sphere address' }]);
+  const [running, relay] = await Promise.all([consoleAnswers(name, port), p.sphere ? relayHealth(p.sphere) : { ok: false, error: 'no Sphere address' }]);
   return {
     ...p,
     console: port ? consoleUrl(name, port) : null,

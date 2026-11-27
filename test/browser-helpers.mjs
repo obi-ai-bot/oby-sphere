@@ -15,6 +15,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { makeFakeGh } from './fake-gh.mjs';
+import { consoleAuth, consoleSecret } from './console-auth-helpers.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -224,13 +225,16 @@ export class World {
     return p;
   }
 
-  // a member's console (rep.mjs ui), at its own origin: http://<handle>.localhost:<port>/
+  // a member's console (rep.mjs ui), at its own origin: http://<handle>.localhost:<port>/. Its url
+  // signs a browser in, as the link the console prints does (#auth=<its secret>); more of the
+  // page's hash goes after it with &. auth: the header a program of its owner's sends.
   async console(name, { serve = false } = {}) {
     const port = await freePort();
     const p = this.start(`${name}: rep.mjs ui`, 'rep.mjs', ['ui', '--profile', name, '--port', String(port), ...(serve ? ['--serve'] : [])], this.env());
     await this.waitFor(p, /your console for/);
     if (serve) await this.waitFor(p, /is online/);
-    return { url: `http://${name}.localhost:${port}/`, proc: p };
+    const auth = consoleAuth(path.join(this.home, name), port);
+    return { url: `http://${name}.localhost:${port}/#auth=${consoleSecret(path.join(this.home, name), port)}`, auth, proc: p };
   }
 
   // The answering session's own MCP server (`rep.mjs mcp --as-session`), started as Claude Code
@@ -425,14 +429,16 @@ export async function axeViolations(page, source) {
   return violations.flatMap((v) => v.targets.map((target) => `${v.id} (${v.impact}): ${target} — ${v.help}`));
 }
 
-// A POST to a member's console (rep.mjs ui) from outside the page, as a script on that machine
-// could send it; the console sends it on with the member's token. { status, body }
+// A POST to a member's console (rep.mjs ui) from outside the page, as a script of its owner's on
+// that machine could send it, with the console's secret (from its url's #auth=); the console sends
+// it on with the member's token. { status, body }
 export function consolePost(consoleUrl, apiPath, body) {
   const u = new URL(consoleUrl);
+  const secret = new URLSearchParams(u.hash.slice(1)).get('auth') || '';
   const data = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     // to 127.0.0.1 with the console's own Host, so no lookup of <handle>.localhost is needed
-    const req = http.request({ host: '127.0.0.1', port: u.port, path: apiPath, method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-obysphere-console': '1' } }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: apiPath, method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-obysphere-auth': secret } }, (res) => {
       let out = '';
       res.on('data', (d) => (out += d));
       res.on('end', () => {

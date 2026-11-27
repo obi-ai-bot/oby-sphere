@@ -17,6 +17,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -70,7 +71,7 @@ describe("your Oby's settings", () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body, headers = { 'x-obysphere-console': '1' }) => call(method, url, { at: uiBase, body, headers });
+  const local = (method, url, body, headers = consoleAuth(path.join(home, 'bob'), uiBase)) => call(method, url, { at: uiBase, body, headers });
   const settingsPath = () => path.join(home, 'bob', 'settings.json');
   const writeSettings = (s) => fs.writeFileSync(settingsPath(), JSON.stringify(s), { mode: 0o600 });
   const full = (over = {}) => ({
@@ -311,12 +312,12 @@ describe("your Oby's settings", () => {
       try { if ((await fetch(uiBase + '/favicon.svg')).ok) break; } catch {}
       await sleep(100);
     }
-    // the checks: header on GETs too, same site, own origin, own Host
-    assert.equal((await local('GET', '/local/settings', undefined, {})).status, 403);
-    assert.equal((await local('GET', '/local/settings', undefined, { 'x-obysphere-console': '1', 'sec-fetch-site': 'cross-site' })).status, 403);
-    assert.equal((await local('PUT', '/local/settings', { settings: full() }, { 'x-obysphere-console': '1', origin: 'http://evil.example' })).status, 403);
-    assert.equal((await local('GET', '/local/pending', undefined, { 'x-obysphere-console': '1', 'sec-fetch-site': 'same-site' })).status, 403);
-    assert.equal((await local('POST', '/local/route-preview', { text: 'x' }, {})).status, 403);
+    // the checks: the console's secret on GETs too, same site, own origin, own Host
+    assert.equal((await local('GET', '/local/settings', undefined, {})).status, 401);
+    assert.equal((await local('GET', '/local/settings', undefined, { ...consoleAuth(path.join(home, 'bob'), uiBase), 'sec-fetch-site': 'cross-site' })).status, 403);
+    assert.equal((await local('PUT', '/local/settings', { settings: full() }, { ...consoleAuth(path.join(home, 'bob'), uiBase), origin: 'http://evil.example' })).status, 403);
+    assert.equal((await local('GET', '/local/pending', undefined, { ...consoleAuth(path.join(home, 'bob'), uiBase), 'sec-fetch-site': 'same-site' })).status, 403);
+    assert.equal((await local('POST', '/local/route-preview', { text: 'x' }, {})).status, 401);
     const rebound = await new Promise((resolve) => {
       const s = net.connect(port, '127.0.0.1', () => s.write(`GET /local/settings HTTP/1.1\r\nHost: evil.example:${port}\r\nx-obysphere-console: 1\r\nConnection: close\r\n\r\n`));
       let buf = '';
@@ -564,7 +565,7 @@ describe("your Oby's settings", () => {
       await sleep(100);
     }
     const barePreview = async (body) => {
-      const { status, ...x } = await call('POST', '/local/route-preview', { at: bare, body, headers: { 'x-obysphere-console': '1' } });
+      const { status, ...x } = await call('POST', '/local/route-preview', { at: bare, body, headers: consoleAuth(path.join(home, 'bob'), bare) });
       assert.equal(status, 200);
       return x;
     };
@@ -581,7 +582,7 @@ describe("your Oby's settings", () => {
     assert.equal(r.note, "Rule 2 (Code reviews): by the words in its \"about\". Couldn't match by meaning (Claude Code isn't signed in), so by words. Claude Code isn't signed in, so this ask can't be answered.");
     // (this console hasn't read Codex's catalog yet: one that flags its default, and Cursor using another model now)
     fake.control({ cursorSignedIn: true, claudeAuth: 'none', codexModels: 'flagged', cursorModels: 'current' });
-    const [signedOut, flaggedCodex, cursorNow] = (await call('GET', '/local/environment', { at: bare, headers: { 'x-obysphere-console': '1' } })).runtimes;
+    const [signedOut, flaggedCodex, cursorNow] = (await call('GET', '/local/environment', { at: bare, headers: consoleAuth(path.join(home, 'bob'), bare) })).runtimes;
     assert.deepEqual([signedOut.signedIn, signedOut.auth, signedOut.signIn], [false, { kind: null, plan: null }, 'claude auth login']);
     assert.deepEqual([flaggedCodex.models.map((m) => [m.id, m.isDefault]), flaggedCodex.defaultEffort], [[['gpt-6.2-sol', false], ['gpt-6.2-mini', true]], 'low'], "the catalog's own flag wins, and the default effort is that model's");
     assert.deepEqual(cursorNow.models.map((m) => [m.id, m.note, m.isDefault]), [['gpt-5', "Cursor's default", false], ['sonnet-4', 'in use now', true], ['sonnet-4-thinking', '', false]], 'without --model, Cursor runs the one in use now');
@@ -1068,7 +1069,7 @@ describe("your Oby's settings", () => {
 
     // the classifier: only the project's settings, from an empty folder
     const text = 'please review this old one';
-    const { status, ...r } = await call('POST', '/local/route-preview', { at, body: { text }, headers: { 'x-obysphere-console': '1' } });
+    const { status, ...r } = await call('POST', '/local/route-preview', { at, body: { text }, headers: consoleAuth(path.join(home, 'erin'), at) });
     assert.equal(status, 200, JSON.stringify(r));
     assert.deepEqual([r.rule, r.how], [0, 'meaning']);
     const k = old.classifications().find((x) => x.prompt.includes(text));

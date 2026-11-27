@@ -3358,19 +3358,27 @@ function send(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const PAGE_HEADERS = {
-  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+// scripts only with this response's nonce: markup that got into the page somehow (an on…
+// attribute, a <script> of its own) never runs
+const pageHeaders = (nonce) => ({
+  'content-security-policy': `default-src 'self'; script-src 'nonce-${nonce}'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'cross-origin-opener-policy': 'same-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-};
+});
 
 function sendPage(res, file) {
-  if (!fs.existsSync(file)) return send(res, 404, { error: 'Not found.', code: 'not_found' });
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', ...PAGE_HEADERS });
-  fs.createReadStream(file).pipe(res);
+  let page;
+  try {
+    page = fs.readFileSync(file, 'utf8');
+  } catch {
+    return send(res, 404, { error: 'Not found.', code: 'not_found' });
+  }
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', ...pageHeaders(nonce) });
+  res.end(page.replace(/<script>/g, `<script nonce="${nonce}">`));
 }
 
 function sendFile(res, file, type) {

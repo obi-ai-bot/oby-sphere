@@ -22,6 +22,7 @@ import { makeFakeSchtasks, splitWin } from './fake-schtasks.mjs';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { makeFakeGh } from './fake-gh.mjs';
 import { startFakeGitHub, buildApp, release } from './fake-cli.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = fs.realpathSync(path.join(HERE, '..'));
@@ -332,7 +333,7 @@ describe('obysphere start on Windows: a scheduled task (schtasks faked)', () => 
     await waitFor(() => sched.runs().length > runs);
     assert.deepEqual(sched.runs().at(-1).argv.slice(1, 4), ['--preserve-symlinks-main', path.join(current, 'obysphere.mjs'), 'service-run']);
     await waitFor(() => answers(port));
-    const v = await (await fetch(`http://127.0.0.1:${port}/local/version`, { headers: { 'x-obysphere-console': '1' } })).json();
+    const v = await (await fetch(`http://127.0.0.1:${port}/local/version`, { headers: consoleAuth(path.join(profiles, 'alice'), port) })).json();
     assert.equal(v.current, '9.9.0', 'the console runs the new version');
     assert.equal((await run(cli, ['stop'], env)).code, 0);
     assert.equal(await answers(port), false);
