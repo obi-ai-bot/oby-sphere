@@ -6,7 +6,10 @@
 // every redirect checked), no test variable written into a service file, the menu bar's app only
 // as it was built here, a shim that isn't ours left alone, the `menubar` profile name kept for the
 // icon, no downgrade unless asked, a download cut at its limit, the menu bar's polling kept small,
-// install.sh safe to pipe, and a slug that costs no time. `npm test`.
+// install.sh safe to pipe, and a slug that costs no time. The second audit's (R45, R62, R63): on
+// Windows, what runtimes, command instruments and gh start is never from the folder they run in;
+// install.sh's test server is this machine, with no other host behind it; no line break in a
+// service file's values; and install.sh downloads with curl only. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -140,6 +143,21 @@ function fnFrom(file, name) {
   return new Function('path', 'fs', 'process', `${src.slice(at, end + 2)}\nreturn ${name};`)(path, fs, process);
 }
 
+// rep.mjs's answeringEnv and ghEnv, with what they use, run as if on another system: `process` is
+// { platform, env }, its keys as that system keeps them (Windows: Path, SystemRoot, windir)
+function childEnvs(platform, env) {
+  const src = fs.readFileSync(REP, 'utf8');
+  const fn = (name) => {
+    const at = src.indexOf(`\nfunction ${name}(`);
+    return at < 0 ? '' : src.slice(at, src.indexOf('\n}\n', at) + 2);
+  };
+  const constant = (name) => src.split('\n').find((l) => l.startsWith(`const ${name} =`)) || '';
+  const code = [constant('API_KEY_VARS'), constant('WINDOWS_ENV'), ...['truthyEnv', 'fullPath', 'childEnv', 'answeringEnv', 'ghEnv'].map(fn)].join('\n');
+  return new Function('process', `${code}\nreturn { answeringEnv, ghEnv };`)({ platform, env });
+}
+// a variable by its name in any case, as Windows reads it
+const varOf = (env, name) => Object.entries(env).find(([k]) => k.toUpperCase() === name.toUpperCase())?.[1];
+
 describe('programs by their full path, never from the folder a command runs in (finding 1, 3)', () => {
   test('Windows: a claude.exe in the working folder or a relative PATH entry is never the one run', () => {
     for (const file of [CLI, REP]) {
@@ -191,6 +209,58 @@ describe('programs by their full path, never from the folder a command runs in (
       assert.ok(set > 0, `${path.basename(file)} sets NoDefaultCurrentDirectoryInExePath`);
       assert.ok(set < src.search(/\bspawn(Sync)?\(/), 'before anything is spawned');
     }
+  });
+
+  test("Windows: runtimes, command instruments and gh get PATH's full folders, Windows' own variables and NoDefaultCurrentDirectoryInExePath (R45)", () => {
+    // as Windows keeps them, and as Object.entries(process.env) gives them there: Path, SystemRoot, windir
+    const env = {
+      Path: '.;bin;;C:\\Windows\\system32;C:\\Windows;"C:\\Program Files\\Git\\cmd";C:\\Users\\alice\\AppData\\Roaming\\npm',
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      ComSpec: 'C:\\Windows\\system32\\cmd.exe',
+      USERPROFILE: 'C:\\Users\\alice',
+      APPDATA: 'C:\\Users\\alice\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\alice\\AppData\\Local',
+      ProgramData: 'C:\\ProgramData',
+      TEMP: 'C:\\Users\\alice\\AppData\\Local\\Temp',
+      TMP: 'C:\\Users\\alice\\AppData\\Local\\Temp',
+      NoDefaultCurrentDirectoryInExePath: '1',
+      Anthropic_Api_Key: 'sk-ant-in-any-case',
+      GH_CONFIG_DIR: 'C:\\Users\\alice\\AppData\\Roaming\\GitHub CLI',
+      Gh_Token: 'ghp_in_any_case',
+      // never: the Oby's own, a Sphere's key, Node's options, the effort override, in whatever case
+      OBYSPHERE_HOME: 'C:\\Users\\alice\\.obysphere',
+      Sphere_Admin_Key: 'admin-key-in-any-case',
+      Node_Options: '--require evil.js',
+      Claude_Code_Effort_Level: 'max',
+    };
+    const { answeringEnv, ghEnv } = childEnvs('win32', env);
+    const runs = { claude: answeringEnv('claude'), 'claude (subscription)': answeringEnv('claude', { kind: 'subscription' }), codex: answeringEnv('codex'), cursor: answeringEnv('cursor'), 'a command instrument': answeringEnv('command'), gh: ghEnv() };
+    for (const [what, out] of Object.entries(runs)) {
+      // PATH, as one name, with its full folders only: the folder it runs in never through `.`, `bin` or an empty entry
+      assert.equal(out.PATH, 'C:\\Windows\\system32;C:\\Windows;"C:\\Program Files\\Git\\cmd";C:\\Users\\alice\\AppData\\Roaming\\npm', `${what}: ${JSON.stringify(out)}`);
+      assert.deepEqual(Object.keys(out).filter((k) => k.toUpperCase() === 'PATH'), ['PATH'], `${what}: no Path beside PATH`);
+      // what it starts by name (git, rg, node) is never one in the folder it runs in, which Windows looks in first
+      assert.equal(varOf(out, 'NoDefaultCurrentDirectoryInExePath'), '1', `${what} keeps NoDefaultCurrentDirectoryInExePath`);
+      // Windows' own: without SystemRoot nothing can use the network; the user's folders hold the sign-ins
+      for (const k of ['SystemRoot', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP']) assert.equal(varOf(out, k), env[k], `${what} keeps ${k}`);
+      for (const k of ['OBYSPHERE_HOME', 'SPHERE_ADMIN_KEY', 'NODE_OPTIONS', 'CLAUDE_CODE_EFFORT_LEVEL']) assert.equal(varOf(out, k), undefined, `${what} never gets ${k}`);
+    }
+    // a runtime's own variables in any case, and taken away in any case when it's signed in with a subscription
+    assert.equal(varOf(runs.claude, 'ANTHROPIC_API_KEY'), 'sk-ant-in-any-case');
+    assert.equal(varOf(runs['claude (subscription)'], 'ANTHROPIC_API_KEY'), undefined, 'per-token billing stays out');
+    assert.equal(varOf(runs.codex, 'ANTHROPIC_API_KEY'), undefined);
+    assert.equal(varOf(runs.gh, 'GH_TOKEN'), 'ghp_in_any_case');
+    assert.equal(varOf(runs.gh, 'GH_CONFIG_DIR'), env.GH_CONFIG_DIR);
+    assert.equal(runs.gh.GH_PROMPT_DISABLED, '1');
+    // macOS and Linux as they were: names as they are (Path isn't PATH there), and no Windows variable
+    const posix = childEnvs('darwin', { PATH: '/usr/bin:.:bin::/opt/homebrew/bin', Path: 'C:\\Tools', SystemRoot: 'C:\\Windows', HOME: '/Users/alice', ANTHROPIC_API_KEY: 'sk-ant', Anthropic_Api_Key: 'sk-other', OBYSPHERE_HOME: '/x' });
+    for (const out of [posix.answeringEnv('claude'), posix.ghEnv()]) {
+      assert.equal(out.PATH, '/usr/bin:/opt/homebrew/bin');
+      for (const k of ['Path', 'SystemRoot', 'NoDefaultCurrentDirectoryInExePath', 'Anthropic_Api_Key', 'OBYSPHERE_HOME']) assert.ok(!(k in out), `no ${k} on macOS: ${JSON.stringify(out)}`);
+    }
+    assert.equal(posix.answeringEnv('claude').ANTHROPIC_API_KEY, 'sk-ant');
   });
 
   test('update unpacks with the tar on PATH, never one in the folder it runs in or in a relative PATH entry', { skip: WIN && 'shell scripts as programs' }, async () => {
