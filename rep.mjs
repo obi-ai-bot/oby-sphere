@@ -760,18 +760,41 @@ function awayUntil(s, now = new Date()) {
 }
 
 // Your console: the Sphere's page, served from this machine and signed in as
-// your agent. It listens on 127.0.0.1 only, at an origin of its own
-// (http://<profile>.localhost:<port>), answers only to its own Host names, and
-// adds your token on the way out; the browser never sees the token. It serves
-// the page (HTML only) and /api/*, nothing else from the relay. With sealing on,
-// it opens what you can read (messages, live events, files) before the page gets
-// them, and seals what the page sends.
+// your agent. It listens on this machine's loopback only (127.0.0.1 and ::1), at
+// an origin of its own (http://<profile>.localhost:<port>), answers only to its
+// own Host names, and adds your token on the way out; the browser never sees the
+// token. It serves its own page (never the relay's) and /api/*, nothing else
+// from the relay. With sealing on, it opens what you can read (messages, live
+// events, files) before the page gets them, and seals what the page sends.
+//
+// Only you get in: a new secret at each start, kept in the profile
+// (console-auth.json, 0600, by port). Every /local/* and /api/* call needs it. A
+// program of yours sends it in x-obysphere-auth; a browser gets it once in a
+// link's fragment (#auth=…: obysphere open, the link printed here, a
+// notification, the menu bar) and trades it for an HttpOnly, SameSite=Strict
+// cookie. Another user on this machine, a container, or a page elsewhere has
+// none of them.
 async function ui() {
+  // the page beside this rep.mjs, never the relay's: it runs with this console's local API (your
+  // settings, your decisions), so a page the relay sent could change them
+  const pageFile = path.join(path.dirname(SELF), 'public', 'index.html');
+  if (!fs.existsSync(pageFile))
+    die(`your console needs its own page beside rep.mjs (${pageFile}), and won't use the Sphere's: that page would run with your settings and your decisions. Install with install.sh (then obysphere start), or fetch public/index.html from the same version into a public/ folder beside rep.mjs (docs/DEPLOY.md, "Joining without the installer").`);
   const p = loadProfile();
   const port = Number(opt.port) || 4849;
   const host = `${slug(p.profile) || 'me'}.localhost`;
   const hosts = new Set([`${host}:${port}`, `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
   const origins = new Set([...hosts].map((h) => `http://${h}`));
+  const secret = randomBytes(32).toString('base64url');
+  const cookieName = `obysphere-console-${port}`;
+  // 'header' (a program of yours), 'cookie' (a browser that traded the link), or null
+  const authedBy = (req) => {
+    const h = req.headers[CONSOLE_AUTH_HEADER];
+    if (h !== undefined) return sameSecret(h, secret) ? 'header' : null;
+    return sameSecret(cookieOf(req, cookieName), secret) ? 'cookie' : null;
+  };
+  let ready;
+  const started = new Promise((r) => (ready = r)); // the secret is kept: requests wait for it
   const api = client(p);
   const sec = getSec(p);
   await ensurePublished(api, p).catch((e) => log(yellow('  could not publish your keys: ') + e.message));
@@ -847,8 +870,9 @@ async function ui() {
   const pairsFile = path.join(p.dir, 'console.json');
   const pairKey = `${host}:${port}|${p.sphere}`;
 
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     try {
+      await started;
       // DNS rebinding: only our own Host names; and no service workers, ever
       if (!hosts.has(String(req.headers.host || '').toLowerCase())) {
         res.writeHead(421, { 'content-type': 'text/plain' });
@@ -863,45 +887,57 @@ async function ui() {
         res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" });
         return res.end(FAVICON);
       }
+      // who is at this port: the console that knows this profile's secret proves it, without
+      // showing it (obysphere's status, open and menu bar ask before they send the secret)
+      if (url.pathname === '/console-hello') {
+        const nonce = url.searchParams.get('nonce') || '';
+        if (req.method !== 'GET' || !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) return sendJson(res, 400, { error: 'GET /console-hello?nonce=<16 to 128 letters, digits, - or _>', code: 'bad_request' });
+        return sendJson(res, 200, { proof: consoleProof(secret, nonce) });
+      }
       if (url.pathname === '/' || url.pathname === '/index.html') {
         if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only.', code: 'bad_request' });
-        // the page beside this rep.mjs when there is one: the page runs with this console's local
-        // API (your settings, your decisions), so it shouldn't be whatever the relay sends
-        let page = null;
+        let page;
         try {
-          page = fs.readFileSync(path.join(path.dirname(SELF), 'public', 'index.html'), 'utf8');
-        } catch {}
-        if (page === null) {
-          const r = await fetch(p.sphere + '/', { redirect: 'error' });
-          if (!r.ok || !/^text\/html\b/i.test(r.headers.get('content-type') || '')) return sendJson(res, 502, { error: "The Sphere's page isn't HTML.", code: 'proxy' });
-          page = await r.text();
+          page = fs.readFileSync(pageFile, 'utf8');
+        } catch {
+          res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          return res.end(`This console's page is gone from ${pageFile}: install Obysphere again.`);
         }
-        const me = { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName };
-        const html = page.replace('<head>', `<head><script>window.OBYSPHERE_CONSOLE=${JSON.stringify(me).replace(/</g, '\\u003c')}</script>`);
+        // before the trade (#auth=…), the page only learns that it can sign in
+        const me = authedBy(req) ? { name: p.agent.name, owner: p.agent.owner, sphere: p.sphere, sphereName: p.sphereName } : { signin: true };
+        const nonce = randomBytes(16).toString('base64');
+        const html = withNonce(page, nonce).replace('<head>', `<head><script nonce="${nonce}">window.OBYSPHERE_CONSOLE=${JSON.stringify(me).replace(/</g, '\\u003c')}</script>`);
         const pairs = readJsonFile(pairsFile, {});
         const fresh = !pairs[pairKey];
         if (fresh) writeSecret(pairsFile, { ...pairs, [pairKey]: new Date().toISOString() });
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', ...PAGE_HEADERS, ...(fresh ? { 'clear-site-data': '"cache", "storage"' } : {}) });
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...pageHeaders(nonce), ...(fresh ? { 'clear-site-data': '"cache", "storage"' } : {}) });
         return res.end(html);
       }
-      // ---- this machine's own API: your Oby's settings, what waits for you, today's usage.
-      // Answered here and never sent to the relay. Every method needs the console's header
-      // (GETs too: these answers hold paths and your rules), from this origin only.
-      if (url.pathname.startsWith('/local/')) {
-        const site = req.headers['sec-fetch-site'];
-        if ((site && site !== 'same-origin' && site !== 'none') || req.headers['x-obysphere-console'] !== '1' || (req.headers.origin && !origins.has(req.headers.origin)))
-          return sendJson(res, 403, { error: 'Only this console may call its local API.', code: 'forbidden' });
-        return await localApi(req, res, url, p);
-      }
-      if (!url.pathname.startsWith('/api/')) {
+      if (!url.pathname.startsWith('/local/') && !url.pathname.startsWith('/api/')) {
         res.writeHead(404, { 'content-type': 'text/plain' });
         return res.end('not found');
       }
-      // the page's own requests only: same origin, a header other sites can't send without a preflight
+      // ---- /local/* and /api/*: from this origin only, and only with this start's secret
       const site = req.headers['sec-fetch-site'];
-      if (site && site !== 'same-origin' && site !== 'none') return sendJson(res, 403, { error: 'Only this console may call its API.', code: 'forbidden' });
-      if (req.method !== 'GET') {
-        if (req.headers['x-obysphere-console'] !== '1' || (req.headers.origin && !origins.has(req.headers.origin))) return sendJson(res, 403, { error: 'forbidden', code: 'forbidden' });
+      if ((site && site !== 'same-origin' && site !== 'none') || (req.headers.origin && !origins.has(req.headers.origin))) return sendJson(res, 403, { error: 'Only this console may call its API.', code: 'forbidden' });
+      const by = authedBy(req);
+      if (!by) {
+        res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'www-authenticate': 'Obysphere-Console' });
+        return res.end(JSON.stringify({ error: `Open your console from this machine: ${process.env.OBYSPHERE_CLI ? 'obysphere open' : `the link ${meCmd()} ui printed when it started`}.`, code: 'console_auth' }));
+      }
+      // the page's cookie: writes, and every /local call (its answers hold paths and your rules),
+      // also need a header other sites can't send without a preflight
+      if (by === 'cookie' && req.headers['x-obysphere-console'] !== '1' && (req.method !== 'GET' || url.pathname.startsWith('/local/'))) return sendJson(res, 403, { error: 'Only this console may call its API.', code: 'forbidden' });
+      // ---- this machine's own API: your Oby's settings, what waits for you, today's usage.
+      // Answered here and never sent to the relay.
+      if (url.pathname.startsWith('/local/')) {
+        // the trade: a link's #auth=… for this console's cookie
+        if (url.pathname === '/local/auth') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST only.', code: 'bad_request' });
+          res.writeHead(204, { 'cache-control': 'no-store', 'set-cookie': `${cookieName}=${secret}; Path=/; HttpOnly; SameSite=Strict` });
+          return res.end();
+        }
+        return await localApi(req, res, url, p);
       }
       url.searchParams.delete('key');
       // the owner watching: counts as their session, and sees what a viewer sees
@@ -978,13 +1014,14 @@ async function ui() {
       let r = await relay();
       if (r.status === 401 && tokenChanged(p)) r = await relay(); // a new token, from token rotate
       const out = {};
-      for (const h of ['content-type', 'content-disposition', 'cache-control', 'x-content-type-options', 'content-security-policy', 'x-content-sha256']) {
+      for (const h of ['content-type', 'content-disposition', 'cache-control', 'x-content-sha256']) {
         const v = r.headers.get(h);
         if (v) out[h] = v;
       }
-      // the relay's answers keep to JSON, event streams and file bytes, sandboxed
-      if (!out['x-content-type-options']) out['x-content-type-options'] = 'nosniff';
-      if (url.pathname.startsWith('/api/files/')) out['content-security-policy'] = "default-src 'none'; sandbox";
+      // the relay's answers keep to JSON, event streams and file bytes, sandboxed by this
+      // console's own headers, never the relay's
+      out['x-content-type-options'] = 'nosniff';
+      out['content-security-policy'] = "default-src 'none'; sandbox";
 
       // ---- what the page reads: opened here when it's for you
       const isMsgs = req.method === 'GET' && r.ok && (url.pathname === '/api/messages' || /^\/api\/messages\/m_[A-Za-z0-9_-]{1,32}(\/replies)?$/.test(url.pathname));
@@ -1029,9 +1066,9 @@ async function ui() {
         } catch {}
         return res.end();
       }
-      if (!/^(application\/json|text\/event-stream|application\/octet-stream|text\/plain|text\/markdown|text\/csv|image\/(png|jpeg|gif)|application\/pdf)\b/i.test(out['content-type'] || '') && !url.pathname.startsWith('/api/files/')) {
-        out['content-type'] = 'application/octet-stream';
-      }
+      // one type, exactly, and at most a charset: "application/json, text/html" is no JSON
+      if (!PROXY_TYPE.test(out['content-type'] || '') && !url.pathname.startsWith('/api/files/')) out['content-type'] = 'application/octet-stream';
+      else if (url.pathname.startsWith('/api/files/')) out['content-type'] = safeMime(out['content-type']);
       res.writeHead(r.status, out);
       if (!r.body) return res.end();
       Readable.fromWeb(r.body).on('error', () => res.end()).pipe(res);
@@ -1039,7 +1076,7 @@ async function ui() {
       if (!res.headersSent) sendJson(res, e.status || 502, { error: e.status ? e.message : `can't reach the Sphere at ${p.sphere}: ${e.message}`, code: e.code || 'proxy' });
       else res.end();
     }
-  });
+  };
 
   // a live event: messages opened when they're for you; the rest as it came
   async function openBlock(block) {
@@ -1060,20 +1097,99 @@ async function ui() {
         const [o] = await openAll([data]);
         return `event: message\ndata: ${JSON.stringify(o)}`;
       }
-    } catch {}
+      // a change to a message: its timing and waiting only, checked; anything else is dropped
+      if (ev === 'message-update') {
+        const u = messageUpdateOf(data);
+        return u ? `event: message-update\ndata: ${JSON.stringify(u)}` : ': a message-update that is not one';
+      }
+    } catch {
+      if (ev === 'message-update') return ': a message-update that is not one';
+    }
     return block;
   }
 
-  server.on('error', (e) => die(e.code === 'EADDRINUSE' ? `port ${port} is taken: pass --port <another>` : e.message));
-  server.listen(port, '127.0.0.1', () => {
-    const link = `http://${host}:${port}/`;
-    notifyConsoleUrl(p, link); // notifications link here
-    log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(link)}`);
-    log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it (also at http://localhost:${port}/)`));
-    const open = opt.open && process.platform === 'darwin' && programPath('open');
-    if (open) spawn(open, [link], { stdio: 'ignore' }).on('error', () => {});
-  });
+  // both loopbacks: browsers try ::1 first for <profile>.localhost, so a program that held
+  // [::1]:<port> while this console held 127.0.0.1 alone would get your link and its secret.
+  // Either one taken by someone else: no console. No IPv6 on this machine: 127.0.0.1 alone.
+  const listenOn = (addr) =>
+    new Promise((resolve, reject) => {
+      const s = http.createServer(handler);
+      s.once('error', reject);
+      s.listen(port, addr, () => {
+        s.off('error', reject);
+        resolve(s);
+      });
+    });
+  try {
+    await listenOn('127.0.0.1');
+  } catch (e) {
+    die(e.code === 'EADDRINUSE' ? `port ${port} is taken: pass --port <another>` : e.message);
+  }
+  try {
+    await listenOn('::1');
+  } catch (e) {
+    if (!['EADDRNOTAVAIL', 'EAFNOSUPPORT', 'EPROTONOSUPPORT'].includes(e.code)) die(e.code === 'EADDRINUSE' ? `port ${port} is taken on ::1 (IPv6) by another program, where browsers would reach it first: pass --port <another>` : `can't listen on ::1: ${e.message}`);
+  }
+  keepConsoleSecret(p, port, secret);
+  ready();
+  const link = `http://${host}:${port}/`;
+  notifyConsoleUrl(p, link); // notifications link here
+  log(`${green('●')} your console for ${bold(p.agent.name)} in ${bold(printable(p.sphereName))}: ${cyan(`${link}#auth=${secret}`)}`);
+  log(dim(`  signed in as ${printable(p.agent.owner)}'s representative${claimed ? ', an admin of this Sphere' : ''}; only this machine can open it, with this link (a new one each start${process.env.OBYSPHERE_CLI ? `; obysphere open opens it` : ''}). Also at http://localhost:${port}/#auth=${secret}`));
+  const open = opt.open && process.platform === 'darwin' && programPath('open');
+  if (open) spawn(open, [`${link}#auth=${secret}`], { stdio: 'ignore' }).on('error', () => {});
   if (opt.serve) serveWhenReachable(p);
+}
+
+// ---- the console's secret: console-auth.json in the profile (0600), { "<port>": { secret, pid,
+// at } }, one entry per console (a profile may run one in a terminal and one in the background).
+// Written once both addresses are held; entries of consoles that are gone are dropped.
+const CONSOLE_AUTH_HEADER = 'x-obysphere-auth';
+const consoleAuthFile = (p) => path.join(p.dir, 'console-auth.json');
+function keepConsoleSecret(p, port, secret) {
+  const all = readJsonFile(consoleAuthFile(p), {});
+  const kept = {};
+  for (const [k, v] of Object.entries(isMap(all) ? all : {})) {
+    if (k === String(port) || !isMap(v) || !Number.isInteger(v.pid)) continue;
+    try {
+      process.kill(v.pid, 0);
+      kept[k] = v;
+    } catch (e) {
+      if (e.code === 'EPERM') kept[k] = v;
+    }
+  }
+  writeSecret(consoleAuthFile(p), { ...kept, [port]: { secret, pid: process.pid, at: new Date().toISOString() } });
+}
+// the secret of this profile's console at that port, or null
+function consoleSecretOf(p, port) {
+  const v = readJsonFile(consoleAuthFile(p), {})?.[String(port)]?.secret;
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v) ? v : null;
+}
+// what the console answers to /console-hello?nonce=…: proof it knows the secret, never the secret
+function consoleProof(secret, nonce) {
+  return crypto.createHmac('sha256', secret).update(`obysphere console hello ${nonce}`).digest('hex');
+}
+function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+function cookieOf(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+// a link to your console that signs a browser in (a desktop notification, opened by this
+// machine): the secret in its fragment, which browsers never send anywhere
+function consoleAuthLink(p, link) {
+  const m = /^http:\/\/[a-z0-9.-]+:(\d{1,5})\/(#.*)?$/.exec(String(link));
+  const secret = m && consoleSecretOf(p, m[1]);
+  if (!secret) return link;
+  const [base, hash = ''] = String(link).split('#');
+  return `${base}#auth=${secret}${hash ? `&${hash}` : ''}`;
 }
 
 // /local/*: what only this machine knows. Errors keep to { error, field? }.
@@ -1750,7 +1866,7 @@ async function auditMessages(api) {
       }
     }
     const oldest = list[0]?.id; // in time order: the oldest first
-    if (!fresh || list.length < AUDIT_PAGE || typeof oldest !== 'string' || !ID.m.test(oldest)) return held;
+    if (!fresh || (list.length < AUDIT_PAGE && !r.more) || typeof oldest !== 'string' || !ID.m.test(oldest)) return held; // a page cut at 8 MB says `more`
     before = oldest;
   }
 }
@@ -2299,12 +2415,12 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
     const asks = [];
     let before = null;
     for (let page = 0; page < CATCH_UP_PAGES; page++) {
-      const { messages } = await api.get(`/api/messages?to=${encodeURIComponent(p.agent.name)}&limit=100${before ? `&before=${before}` : ''}`);
+      const { messages, more } = await api.get(`/api/messages?to=${encodeURIComponent(p.agent.name)}&limit=100${before ? `&before=${before}` : ''}`);
       const list = (messages || []).filter(validMessage);
       if (!list.length) break;
       asks.unshift(...list);
       before = list[0].id;
-      if (list.length < 100 || Date.parse(list[0].ts) < floor) break;
+      if ((list.length < 100 && more !== true) || Date.parse(list[0].ts) < floor) break; // a page cut at 8 MB says `more`
     }
     // after the cursor: by its ask, or by time when the relay no longer keeps that ask
     const at = cur?.after ? asks.findIndex((m) => m.id === cur.after) : -1;
@@ -8719,8 +8835,10 @@ async function buildNotifier(app) {
 async function macNotify(p, title, body, link, type) {
   const fresh = !notifierCurrent(notifierPath());
   const app = await ensureNotifier();
-  // one kind of notification at a time per profile: a newer one of that kind replaces the last
-  const note = { title: String(title), body: String(body), url: link, group: `obysphere-${p.profile}`, id: `obysphere-${p.profile}-${type}` };
+  // one kind of notification at a time per profile: a newer one of that kind replaces the last.
+  // A click opens your console signed in: the app gets the link in a file only you can read
+  // (terminal-notifier's would be on a command line, so it gets the plain link)
+  const note = { title: String(title), body: String(body), url: consoleAuthLink(p, link), group: `obysphere-${p.profile}`, id: `obysphere-${p.profile}-${type}` };
   let said = await macPost(app, note);
   // just built: macOS may not know the app yet for a moment, and says no once
   if (said === 'not-allowed' && fresh) {
@@ -10230,6 +10348,13 @@ function client(p, tool = null) {
   const call = async (method, url, body) => {
     let res = await send(method, url, body);
     if (res.status === 401 && tokenChanged(p)) res = await send(method, url, body); // a new token, from token rotate
+    // a read refused for too many (the relay allows 600 a minute, and gives one back every 100 ms):
+    // wait a little and read again, up to four times, instead of failing a catch-up or an ask's wait
+    for (let i = 0; method === 'GET' && res.status === 429 && i < 4; i++) {
+      await res.body?.cancel().catch(() => {});
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** i + Math.floor(Math.random() * 250)));
+      res = await send(method, url, body);
+    }
     return parse(res);
   };
   return {
@@ -10268,16 +10393,39 @@ function safeMime(x) {
   const v = String(x || '').trim().toLowerCase();
   return /^[a-z0-9][a-z0-9.+-]{0,40}\/[a-z0-9][a-z0-9.+-]{0,60}(; ?charset=[a-z0-9_-]{1,20})?$/.test(v) ? v : 'application/octet-stream';
 }
+// what the console passes on from the relay's /api answers as it is: these types, one of them
+// exactly, with at most a charset. Anything else goes as application/octet-stream.
+const PROXY_TYPE = /^(application\/json|text\/event-stream|application\/octet-stream|text\/plain|text\/markdown|text\/csv|image\/(png|jpeg|gif)|application\/pdf)\s*(;\s*charset=[a-z0-9_-]{1,20}\s*)?$/i;
 
-// the same headers the Sphere puts on its page
-const PAGE_HEADERS = {
-  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+// a message-update the relay sends: only the fields it may change (when an ask was claimed and
+// started, and whether it waits for its owner), each its own shape; null when it isn't one.
+// The page applies nothing else, so a relay can't swap a message's words, files or sender.
+function messageUpdateOf(u) {
+  if (!isMap(u) || !ID.m.test(String(u.id))) return null;
+  const out = { id: u.id };
+  const when = (v) => typeof v === 'string' && v.length <= 40 && Number.isFinite(Date.parse(v));
+  for (const k of ['claimedAt', 'startedAt']) if (k in u && (u[k] === null || when(u[k]))) out[k] = u[k];
+  if ('waiting' in u) {
+    const w = u.waiting;
+    if (w === null) out.waiting = null;
+    else if (isMap(w) && w.for === 'owner' && (w.until == null || when(w.until)) && (w.since == null || when(w.since)) && (w.by == null || ID.a.test(String(w.by))))
+      out.waiting = { for: 'owner', ...(w.until != null ? { until: w.until } : {}), ...(w.since != null ? { since: w.since } : {}), ...(w.by != null ? { by: w.by } : {}) };
+  }
+  return out;
+}
+
+// the same headers the Sphere puts on its page: scripts only with this response's nonce, so
+// markup that got in somehow (an on… attribute, a <script> of its own) never runs
+const pageHeaders = (nonce) => ({
+  'content-security-policy': `default-src 'self'; script-src 'nonce-${nonce}'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'cross-origin-opener-policy': 'same-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-};
+});
+// the page's own inline scripts, each with the nonce
+const withNonce = (page, nonce) => page.replace(/<script>/g, `<script nonce="${nonce}">`);
 
 // Server-sent events over fetch, reconnecting forever. An event that never ends
 // (more than MAX_EVENT buffered) drops the stream.

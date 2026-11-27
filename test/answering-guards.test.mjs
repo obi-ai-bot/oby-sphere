@@ -19,6 +19,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KEY = 'join-key-answering-guards-0123';
@@ -115,7 +116,7 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1', ...consoleAuth(bobDir(), uiBase) } });
   const setBob = (access = {}, more = {}) =>
     fs.writeFileSync(
       path.join(bobDir(), 'settings.json'),

@@ -3714,14 +3714,29 @@ function isHttps(req) {
 // What members write, as the relay keeps it: no control characters (but newline and tab), and
 // nothing invisible that could hide words from a person while a model still reads them: format
 // characters (bidirectional controls, zero-width spaces and joiners, word joiners, soft hyphens, the
-// byte-order mark), tag characters and variation selectors. A zero-width joiner stays between two
-// emoji, which it joins into one (a person at a laptop is one emoji); line and paragraph separators
-// become newlines.
+// byte-order mark), tag characters and variation selectors. What writing needs stays, and none of
+// it can carry more than a bit or so per visible character:
+// - a zero-width joiner between two emoji, which it joins into one (a person at a laptop);
+// - a zero-width non-joiner between two letters of a script that uses it (Persian, Hindi, …);
+// - one text or emoji selector (U+FE0E, U+FE0F) right after an emoji, as in ❤️ and 1️⃣;
+// - the tags of England's, Scotland's and Wales's flags, and no others.
+// Line and paragraph separators become newlines.
+const NON_JOINING = '\\p{sc=Arabic}\\p{sc=Syriac}\\p{sc=Thaana}\\p{sc=Nko}\\p{sc=Devanagari}\\p{sc=Bengali}\\p{sc=Gurmukhi}\\p{sc=Gujarati}\\p{sc=Oriya}\\p{sc=Tamil}\\p{sc=Telugu}\\p{sc=Kannada}\\p{sc=Malayalam}\\p{sc=Sinhala}\\p{sc=Khmer}\\p{sc=Myanmar}';
+const ZWNJ_OUT = new RegExp(`(?<![${NON_JOINING}]\\p{M}*)\\u200C|\\u200C(?![${NON_JOINING}])`, 'gu');
+const FLAG_TAGS = /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})/u;
+function cleanPart(x) {
+  return x
+    .replace(/(?![\u200C\u200D\uFE0E\uFE0F])[\u0000-\u0008\u000B-\u001F\u007F\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(/(?<!\p{Emoji})[\uFE0E\uFE0F]|(?<=[\uFE0E\uFE0F])[\uFE0E\uFE0F]/gu, '')
+    .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?\uFE0F?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '')
+    .replace(ZWNJ_OUT, '');
+}
 function clean(x) {
   return String(x)
     .replace(/[\u2028\u2029]/g, '\n')
-    .replace(/(?!\u200D)[\u0000-\u0008\u000B-\u001F\u007F\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
-    .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '');
+    .split(FLAG_TAGS)
+    .map((part, i) => (i % 2 ? part : cleanPart(part)))
+    .join('');
 }
 // one line: names, owners, notes, topics
 function cleanLine(x, max) {
@@ -3760,19 +3775,27 @@ function send(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const PAGE_HEADERS = {
-  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+// scripts only with this response's nonce: markup that got into the page somehow (an on…
+// attribute, a <script> of its own) never runs
+const pageHeaders = (nonce) => ({
+  'content-security-policy': `default-src 'self'; script-src 'nonce-${nonce}'; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'cross-origin-opener-policy': 'same-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
-};
+});
 
 function sendPage(res, file) {
-  if (!fs.existsSync(file)) return send(res, 404, { error: 'Not found.', code: 'not_found' });
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', ...PAGE_HEADERS });
-  fs.createReadStream(file).pipe(res);
+  let page;
+  try {
+    page = fs.readFileSync(file, 'utf8');
+  } catch {
+    return send(res, 404, { error: 'Not found.', code: 'not_found' });
+  }
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', ...pageHeaders(nonce) });
+  res.end(page.replace(/<script>/g, `<script nonce="${nonce}">`));
 }
 
 function sendFile(res, file, type) {

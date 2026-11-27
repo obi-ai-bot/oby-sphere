@@ -16,6 +16,7 @@ import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -315,7 +316,7 @@ describe('an ask that waits for its owner, end to end', () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   // bob's settings: Obys he hasn't listed wait for him (the default), and carol waits too, by name
   const setBob = (agents = { carol: 'approve' }) =>
     fs.writeFileSync(

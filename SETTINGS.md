@@ -321,10 +321,11 @@ When you've made instruments ([INSTRUMENTS.md](INSTRUMENTS.md)), it also publish
 
 ## The console's local API
 
-`rep.mjs ui` answers these itself; they never reach the relay. Every method, GETs included, needs the `x-obysphere-console: 1` header, from the console's own origin (Host, Origin and `Sec-Fetch-Site` are checked as for `/api` writes). A bad field gets 400 `{ error, field }`.
+`rep.mjs ui` answers these itself; they never reach the relay. Every call, GETs included, needs the console's secret, a new one each time it starts, kept in the profile (`console-auth.json`, 0600, by port: `{ "<port>": { "secret": … } }`). A program of yours (the menu bar, a script) sends it in the `x-obysphere-auth` header. The page gets it once, in its link's fragment (`#auth=…`), trades it for the console's cookie (`POST /local/auth`), and then sends the cookie with `x-obysphere-console: 1`. Without it: 401, `WWW-Authenticate: Obysphere-Console`. Host, Origin and `Sec-Fetch-Site` are checked too, as for `/api` (421, 403). A bad field gets 400 `{ error, field }`.
 
 | | |
 |---|---|
+| `POST /local/auth` | With the secret in `x-obysphere-auth`: 204, and `Set-Cookie: obysphere-console-<port>=<secret>; Path=/; HttpOnly; SameSite=Strict`, which signs this browser in until the console starts again |
 | `GET /local/settings` | `{ settings, path, neverReadBuiltIn }`; when the file doesn't pass, also `{ error, field }`, with `settings` as the file says (or `null`). `neverReadBuiltIn`: the built-in list of [files answers never read](#the-files-answers-never-read) (`SECRET_FILES`), which the page shows under **Never read**, read-only |
 | `PUT /local/settings` `{ settings }` | `{ settings }` (as saved), or 400 `{ error, field }`. The folders must exist, and the MCP servers must be among yours |
 | `GET /local/environment` | `{ runtimes: [Runtime], mcpServers: [{ name, transport }], chrome: { available, note }, home, checkedAt, stale? }`, with one Runtime each for `claude`, `codex` and `cursor` (below). `checkedAt`: when the runtimes were looked at (ISO time). When a fresh look takes more than a second and a half and there is one from the last 10 minutes, you get that one, with `stale: true`, while the fresh one is made for the next request |

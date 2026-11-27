@@ -18,6 +18,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { startHostileRelay } from './hostile-relay.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -415,7 +416,7 @@ describe('a sealed Sphere whose relay turns hostile', () => {
     procs.push(ui);
     await waitFor(async () => {
       try {
-        return (await fetch(uiBase + '/favicon.svg')).ok;
+        return (await fetch(uiBase + '/favicon.svg')).ok && fs.existsSync(path.join(home, 'alice', 'console-auth.json'));
       } catch {
         return false;
       }
@@ -430,7 +431,7 @@ describe('a sealed Sphere whose relay turns hostile', () => {
     };
     const plain = { ...plainAsk('m_plain6', ids.carol, 'PLAIN-6 from the relay'), to: [], kind: 'post' };
     h.json = (url, j, req) => (url.pathname === '/api/messages' && isFrom(req, 'alice') && Array.isArray(j.messages) ? { ...j, messages: [...j.messages, notMine, plain] } : undefined);
-    const { messages } = await (await fetch(`${uiBase}/api/messages`)).json();
+    const { messages } = await (await fetch(`${uiBase}/api/messages`, { headers: consoleAuth(path.join(home, 'alice'), uiBase) })).json();
     const a = messages.find((m) => m.id === 'm_notmine6');
     assert.equal(a.text, '');
     assert.ok(!a.open && a.verified !== true, JSON.stringify(a).slice(0, 200));
@@ -463,15 +464,15 @@ describe('a sealed Sphere whose relay turns hostile', () => {
       sealed: envelope({ readers: { [ids.alice]: agents.find((a) => a.id === ids.alice).keys.seal }, inner: { text: 'FORGED-7', files: [{ id: fid, name: 'plan.txt', mime: 'text/plain', size: 13, key: b64(fileKey), iv: b64(e.iv), tag: b64(e.tag) }] }, m: { from: ids.bob, channel: 'general', to: [] } }),
     };
     h.json = (url, j, req) => (url.pathname === '/api/messages' && isFrom(req, 'alice') && Array.isArray(j.messages) ? { ...j, messages: [...j.messages, forgedPost] } : undefined);
-    await (await fetch(`${uiBase}/api/messages`)).json(); // the console opens both, the forged one last
+    await (await fetch(`${uiBase}/api/messages`, { headers: consoleAuth(path.join(home, 'alice'), uiBase) })).json(); // the console opens both, the forged one last
     // the relay serves its own bytes for the genuine file: the forged key isn't there to open them
     h.request = async (req, url, body) => (url.pathname === `/api/files/${fid}` ? { raw: e.ct } : serveForged(req, url, body));
-    const swapped = await fetch(`${uiBase}/api/files/${fid}`);
+    const swapped = await fetch(`${uiBase}/api/files/${fid}`, { headers: consoleAuth(path.join(home, 'alice'), uiBase) });
     assert.notEqual(await swapped.text(), 'FORGED-FILE-7');
     assert.notEqual(swapped.status, 200);
     // with the real bytes back, the genuine key opens the genuine file
     reset();
-    const got = await fetch(`${uiBase}/api/files/${fid}`);
+    const got = await fetch(`${uiBase}/api/files/${fid}`, { headers: consoleAuth(path.join(home, 'alice'), uiBase) });
     assert.equal(await got.text(), 'GENUINE-FILE-7');
     // sphere_get_file: the relay says the file came with its forged message, and serves its own bytes
     forge(forgedPost);

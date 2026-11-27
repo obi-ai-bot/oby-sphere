@@ -13,6 +13,7 @@ import net from 'node:net';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -155,26 +156,28 @@ for (const kind of ['fs', 'redis']) {
         procs.push(p);
         return `http://127.0.0.1:${ports[i]}`;
       });
+      // each console's secret, as a program of its owner's sends it
+      const auth = (i) => { try { return consoleAuth(path.join(home, ['alice', 'carol'][i]), ports[i]); } catch { return {}; } };
       for (let i = 0; i < 50; i++) {
-        try { if ((await fetch(consoles[1] + '/api/channels')).ok && (await fetch(consoles[0] + '/api/channels')).ok) break; } catch {}
+        try { if ((await fetch(consoles[1] + '/api/channels', { headers: auth(1) })).ok && (await fetch(consoles[0] + '/api/channels', { headers: auth(0) })).ok) break; } catch {}
         await sleep(100);
       }
-      const mine = (await (await fetch(`${consoles[0]}/api/messages`)).json()).messages.find((m) => m.kind === 'ask');
+      const mine = (await (await fetch(`${consoles[0]}/api/messages`, { headers: auth(0) })).json()).messages.find((m) => m.kind === 'ask');
       assert.equal(mine.open, true);
       assert.equal(mine.verified, true);
       assert.match(mine.text, new RegExp(SECRET));
       assert.ok(mine.sealed, 'the envelope stays, for the page to say it was sealed');
       assert.deepEqual(mine.files.map((f) => f.name), ['secret.txt']);
-      const theirs = (await (await fetch(`${consoles[1]}/api/messages`)).json()).messages.find((m) => m.kind === 'ask');
+      const theirs = (await (await fetch(`${consoles[1]}/api/messages`, { headers: auth(1) })).json()).messages.find((m) => m.kind === 'ask');
       assert.equal(theirs.text, '');
       assert.ok(!theirs.open);
-      const file = await fetch(`${consoles[0]}/api/files/${mine.files[0].id}`);
+      const file = await fetch(`${consoles[0]}/api/files/${mine.files[0].id}`, { headers: auth(0) });
       assert.equal(await file.text(), FILE_SECRET);
       assert.match(file.headers.get('content-disposition'), /secret\.txt/);
       // the page sends plaintext and an inline file; the console seals both
       const sent = await (await fetch(`${consoles[0]}/api/messages`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-obysphere-console': '1' },
+        headers: { 'content-type': 'application/json', ...auth(0) },
         body: JSON.stringify({ channel: 'general', text: 'From the page: meet at 3', to: ['bob'], files: [{ name: 'agenda.md', mime: 'text/markdown', data: Buffer.from('# Agenda').toString('base64') }] }),
       })).json();
       assert.equal(sent.message.open, true);
@@ -185,7 +188,7 @@ for (const kind of ['fs', 'redis']) {
       // and live events come through opened
       const ac = new AbortController();
       const events = [];
-      fetch(`${consoles[0]}/api/stream`, { signal: ac.signal }).then(async (r) => { for await (const c of r.body) events.push(Buffer.from(c).toString()); }).catch(() => {});
+      fetch(`${consoles[0]}/api/stream`, { signal: ac.signal, headers: auth(0) }).then(async (r) => { for await (const c of r.body) events.push(Buffer.from(c).toString()); }).catch(() => {});
       await sleep(400);
       await rep(['post', 'live and sealed', '--profile', 'bob']);
       for (let i = 0; i < 30 && !events.join('').includes('live and sealed'); i++) await sleep(100);

@@ -14,6 +14,7 @@ import crypto from 'node:crypto';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -537,7 +538,7 @@ describe('sealed private channels and direct messages', () => {
       try { if ((await fetch(ui + '/api/channels')).ok) break; } catch {}
       await sleep(100);
     }
-    const page = (method, url, body) => fetch(ui + url, { method, headers: { 'content-type': 'application/json', 'x-obysphere-console': '1' }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+    const page = (method, url, body) => fetch(ui + url, { method, headers: { 'content-type': 'application/json', ...consoleAuth(path.join(home, 'alice'), ui) }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
     assert.ok((await page('GET', '/api/channels')).channels.some((c) => c.name === 'core' && c.kind === 'private'));
     const sent = await page('POST', '/api/messages', { channel: 'core', text: 'from the page, for core' });
     assert.equal(sent.message.open, true);

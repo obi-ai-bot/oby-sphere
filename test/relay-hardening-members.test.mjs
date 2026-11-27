@@ -126,7 +126,13 @@ test('the relay strips invisible characters from what members write', async () =
     assert.equal(r.message.text, 'abcdefghijklm\nline\npara');
     const emoji = 'team \u{1F469}‍\u{1F4BB} and \u{1F468}\u{1F3FD}‍\u{1F52C}, \u{1F3F3}️‍\u{1F308}';
     const e = await call(R.base, 'POST', '/api/messages', { token: j.token, body: { text: emoji } });
-    assert.equal(e.message.text, 'team \u{1F469}‍\u{1F4BB} and \u{1F468}\u{1F3FD}‍\u{1F52C}, \u{1F3F3}‍\u{1F308}', 'a joiner between emoji stays');
+    assert.equal(e.message.text, emoji, 'a joiner between emoji stays, and the emoji selector after one');
+    // what writing needs stays, with no room for hidden words: ❤️ and 1️⃣ keep their selector (one, after
+    // an emoji only), Persian its non-joiner, England its flag; any other tag, a second selector, a
+    // non-joiner in Latin text go
+    const needs = 'I \u2764\uFE0F it, 1\uFE0F\u20E3 \u{1F600}\uFE0F\uFE0F, \u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645, a\u200Cb, \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} \u{1F3F4}\u{E0068}\u{E0069}\u{E007F}';
+    const n = await call(R.base, 'POST', '/api/messages', { token: j.token, body: { text: needs } });
+    assert.equal(n.message.text, 'I \u2764\uFE0F it, 1\uFE0F\u20E3 \u{1F600}\uFE0F, \u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645, ab, \u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} \u{1F3F4}');
     const topic = await call(R.base, 'POST', '/api/channels', { token: j.token, body: { name: 'plans', topic: 'the​ plan\u{E0020}' } });
     assert.equal(topic.channel.topic, 'the plan');
   } finally {

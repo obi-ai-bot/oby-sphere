@@ -14,6 +14,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -186,7 +187,7 @@ describe('instruments', () => {
     }
   };
   const local = async (method, url, body) => {
-    const r = await fetch(uiBase + url, { method, headers: { 'x-obysphere-console': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(uiBase + url, { method, headers: { ...consoleAuth(path.join(state.home, 'bob'), uiBase), ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
   const waiting = (askId) => until(async () => ((await local('GET', '/local/pending')).pending || []).find((w) => w.askId === askId), `ask ${askId} to wait for bob`);

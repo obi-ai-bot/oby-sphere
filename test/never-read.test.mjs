@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { globMatches, ruleGlob, makeAttachingClaude } from './deny-list-helpers.mjs';
 import { repSections, recordingProxy } from './never-read-helpers.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -210,7 +211,7 @@ describe('end to end: an answer, sphere_attach, settings, the console, and the r
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   // alice asks bob's Oby to send files ("ATTACH <path>" a line, for the attaching fake); bob's reply
   const askBob = async (files) => {
     const tok = profile('alice').token;

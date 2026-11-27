@@ -11,6 +11,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KEY = 'join-key-security-tools-0123456789';
@@ -67,7 +68,7 @@ describe("the owner's security tools, end to end", () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1', ...consoleAuth(bobDir(), uiBase) } });
   // bob trusts alice with a full shell, writes, the web; Obys he hasn't listed are answered
   const settings = () => ({
     version: 2,

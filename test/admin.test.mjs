@@ -14,6 +14,7 @@ import net from 'node:net';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -482,7 +483,7 @@ describe('the admin command and the console', () => {
     assert.ok(!page.includes(ADMIN));
     const injected = JSON.parse(/window\.OBYSPHERE_CONSOLE=(\{.*?\})<\/script>/.exec(page)[1]);
     assert.ok(!('admin' in injected), 'the page learns admin from /api/info, not from the console');
-    const h = { 'x-obysphere-console': '1' };
+    const h = consoleAuth(path.join(home, 'bob'), ui.base);
     // bob isn't an admin: a key sent along on another call isn't passed on
     assert.equal((await call('GET', '/api/admin/check', { at: ui.base, headers: { ...h, 'x-admin-key': ADMIN } })).status, 403);
     assert.equal((await call('POST', '/api/admin/policy', { at: ui.base, headers: { ...h, 'x-admin-key': ADMIN }, body: { maxDepth: 4 } })).status, 403);
@@ -505,7 +506,7 @@ describe('the admin command and the console', () => {
     const ui = await startUi('carol', { OBYSPHERE_ADMIN_KEY: ADMIN });
     assert.match(ui.log(), /an admin of this Sphere/);
     assert.equal((await call('GET', '/api/info', { token: token('carol') })).me.admin, true);
-    const h = { 'x-obysphere-console': '1' };
+    const h = consoleAuth(path.join(home, 'carol'), ui.base);
     assert.equal((await call('GET', '/api/admin/check', { at: ui.base, headers: h })).via, 'member', 'with its token, not the key');
     const page = await (await fetch(ui.base + '/')).text();
     assert.ok(!page.includes(ADMIN));

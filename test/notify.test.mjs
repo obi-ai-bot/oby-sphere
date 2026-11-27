@@ -19,6 +19,7 @@ import net from 'node:net';
 import http from 'node:http';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -83,7 +84,7 @@ describe('notifications', () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   const settingsPath = (n = 'bob') => path.join(home, n, 'settings.json');
   const fileSettings = (n = 'bob') => JSON.parse(fs.readFileSync(settingsPath(n), 'utf8'));
   const slackUrl = (p = '/services/T000/B000/' + SLACK_SECRET) => `${fakeBase}${p}`;

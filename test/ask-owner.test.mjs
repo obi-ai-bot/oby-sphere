@@ -106,7 +106,7 @@ describe('an ask the Oby hands to its owner, end to end', () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   // bob answers alice's asks; askOwner as given (absent: the default)
   const setBob = (availability) =>
     fs.writeFileSync(
@@ -354,6 +354,7 @@ describe('an ask the Oby hands to its owner, end to end', () => {
 // ---- the console: the card of an ask your Oby handed you, and the setting
 import vm from 'node:vm';
 import { fnSource, constSource } from './accessibility-helpers.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 function render(names, call, given = {}, consts = []) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const base = { esc, ...given };
