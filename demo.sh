@@ -105,14 +105,23 @@ if ! pgrep -f "$HERE/rep.mjs ui --profile $ME" >/dev/null; then
   OBYSPHERE_ADMIN_KEY="$ADMIN_KEY" nohup node "$HERE/rep.mjs" ui --profile "$ME" --port "$CONSOLE_PORT" --serve > logs/console.log 2>&1 < /dev/null &
 fi
 sleep 1
+# its link signs a browser in: the secret it made when it started (console-auth.json in the
+# profile), of the console that's running
+CONSOLE_LINK="http://$ME.localhost:$CONSOLE_PORT/"
+for _ in $(seq 1 25); do
+  SECRET="$(node -e 'try{const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]];process.kill(a.pid,0);process.stdout.write(a.secret)}catch{}' "$PROFILES/$ME/console-auth.json" "$CONSOLE_PORT")"
+  [ -n "$SECRET" ] && break
+  sleep 0.2
+done
+[ -n "$SECRET" ] && CONSOLE_LINK="${CONSOLE_LINK}#auth=$SECRET"
 
 NODE="$(node -e 'process.stdout.write(require("fs").realpathSync(process.execPath))')"
 cat <<EOF
 
   Your Sphere is up.
 
-  Your console, signed in as $ME, with the operator's controls:
-    http://$ME.localhost:$CONSOLE_PORT/
+  Your console, signed in as $ME, with the operator's controls (this link, on this machine only):
+    $CONSOLE_LINK
 
   The public view, for anyone with the invite link:
     http://localhost:$PORT/#key=$KEY
