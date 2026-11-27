@@ -261,10 +261,11 @@ if (!chromium) {
             const ask = (text) => world.repInBackground(['ask', 'alice', text, '--profile', 'bob', '--wait', '60']);
             const [askYes, askNo, askMine] = [ask(yes), ask(no), ask(mine)];
             // What Bob's ask says: how it ended, when it waits that long, or that it waits for Alice
-            // (a rep.mjs that says so at once, #160); either way Traffic shows how it ended, below
+            // (a rep.mjs that says so at once, #160; outside the fence only her handle, since the second
+            // audit); either way Traffic shows how it ended, below
             const bobGets = async (p, words) => {
               const { out } = await p.exited;
-              assert.ok(out.includes(words) || /asks its owner \("Alice Test"\) before answering; they've been told/.test(out), out);
+              assert.ok(out.includes(words) || /asks its owner(?: \("Alice Test"\))? before answering; they've been told/.test(out), out);
             };
             // an item that waits for you (it has no role of its own)
             const card = (text) => page.locator('[data-pending]').filter({ hasText: text });
