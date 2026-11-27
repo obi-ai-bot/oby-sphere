@@ -11425,9 +11425,12 @@ function readBlocked(p, days = 30) {
 
 // ---- secrets in the folders your Oby reads, under names the never-read list doesn't cover
 const SECRET_PATTERNS = [
-  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----/],
+  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/],
   ['an AWS access key', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ['a GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{60,})\b/],
+  ['a GitLab token', /\bglpat-[A-Za-z0-9_-]{20,}/],
+  ['an npm token', /\bnpm_[A-Za-z0-9]{36}\b/],
+  ['a Hugging Face token', /\bhf_[A-Za-z]{30,}\b/],
   ['a Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/],
   ['an Anthropic API key', /\bsk-ant-[A-Za-z0-9_-]{20,}/],
   ['an OpenAI API key', /\bsk-(?:proj-)?(?!ant-)[A-Za-z0-9_-]{32,}/],
@@ -11435,19 +11438,70 @@ const SECRET_PATTERNS = [
   ['a Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
   ['an Obysphere token', /\btok_[A-Za-z0-9_-]{30,}\b/],
 ];
-const SCAN_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache', 'coverage']);
+// what isn't looked at: other people's code (dependencies), named in the report. Build output (dist,
+// build, …) is looked at last, and of .git only its config files (a remote's URL can hold a token):
+// answers can read all of them
+const SCAN_DEPS = new Set(['node_modules', 'vendor', 'target', '__pycache__', '.venv', 'venv', '.cache']);
+const SCAN_LATER = new Set(['dist', 'build', 'out', '.next', 'coverage']);
 const SCAN_FILES = 4000;
-const SCAN_BYTES = 1024 * 1024;
+const SCAN_BYTES = 1024 * 1024; // of a bigger file, its first MB
 const SCAN_MS = 4000;
-// [{ folder, file (relative), line, kind }]: never the secret itself
+// a file's text: UTF-8, or UTF-16 (a byte-order mark, or every other byte 0); null for anything binary
+function scanText(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
+  if (buf[0] === 0xfe && buf[1] === 0xff) return Buffer.from(buf.subarray(2)).swap16().toString('utf16le');
+  const head = buf.subarray(0, 8000);
+  if (!head.includes(0)) return buf.toString('utf8');
+  let odd = 0;
+  let even = 0;
+  for (let i = 0; i < head.length; i++) if (head[i] === 0) i % 2 ? odd++ : even++;
+  return odd > head.length / 4 && even < odd / 20 ? buf.subarray(0, buf.length - (buf.length % 2)).toString('utf16le') : null;
+}
+// { found: [{ folder, file (relative), line, kind }], files, partial (files over SCAN_BYTES: their first
+// part), binary, skipped (dependency folders' names), cut }: never the secret itself
 function scanSecrets(s) {
   const found = [];
   const never = neverReadForms(neverReadOf(s)).regex;
   const start = Date.now();
   let files = 0;
+  let partial = 0;
+  let binary = 0;
   let cut = false;
+  const skipped = new Set();
+  const look = (root, full) => {
+    if (cut) return;
+    if (files >= SCAN_FILES || Date.now() - start > SCAN_MS) return void (cut = true);
+    // a file your Oby never reads is already kept from answers
+    if (isSecretPath(full) || never?.test(full)) return;
+    let text;
+    try {
+      const fd = fs.openSync(full, 'r');
+      files++;
+      let buf;
+      try {
+        const size = fs.fstatSync(fd).size;
+        if (size > SCAN_BYTES) partial++;
+        buf = Buffer.alloc(Math.min(size, SCAN_BYTES));
+        buf = buf.subarray(0, fs.readSync(fd, buf, 0, buf.length, 0));
+      } finally {
+        fs.closeSync(fd);
+      }
+      text = scanText(buf);
+    } catch {
+      return;
+    }
+    if (text === null) return void binary++;
+    for (const [kind, re] of SECRET_PATTERNS) {
+      const m = re.exec(text);
+      if (!m) continue;
+      found.push({ folder: path.basename(root), file: path.relative(root, full), line: text.slice(0, m.index).split('\n').length, kind });
+      if (found.length >= 50) cut = true;
+      return;
+    }
+  };
   for (const f of s.machine.folders) {
     const root = f.path;
+    const later = [];
     const walk = (dir, depth) => {
       if (cut || depth > 12) return;
       let entries = [];
@@ -11458,38 +11512,29 @@ function scanSecrets(s) {
       }
       for (const e of entries) {
         if (cut) return;
-        if (files >= SCAN_FILES || Date.now() - start > SCAN_MS) return void (cut = true);
         const full = path.join(dir, e.name);
         if (e.isSymbolicLink()) continue;
         if (e.isDirectory()) {
-          if (!SCAN_SKIP.has(e.name)) walk(full, depth + 1);
+          if (SCAN_DEPS.has(e.name)) skipped.add(e.name);
+          else if (e.name === '.git') {
+            // its config, and its submodules': a remote's URL can carry a token
+            look(root, path.join(full, 'config'));
+            let mods = [];
+            try {
+              mods = fs.readdirSync(path.join(full, 'modules'), { withFileTypes: true }).filter((x) => x.isDirectory() && !x.isSymbolicLink());
+            } catch {}
+            for (const x of mods.slice(0, 50)) look(root, path.join(full, 'modules', x.name, 'config'));
+          } else if (SCAN_LATER.has(e.name)) later.push([full, depth + 1]);
+          else walk(full, depth + 1);
           continue;
         }
-        if (!e.isFile()) continue;
-        files++;
-        // a file your Oby never reads is already kept from answers
-        if (isSecretPath(full) || never?.test(full)) continue;
-        let text;
-        try {
-          if (fs.statSync(full).size > SCAN_BYTES) continue;
-          const buf = fs.readFileSync(full);
-          if (buf.subarray(0, 8000).includes(0)) continue; // binary
-          text = buf.toString('utf8');
-        } catch {
-          continue;
-        }
-        for (const [kind, re] of SECRET_PATTERNS) {
-          const m = re.exec(text);
-          if (!m) continue;
-          found.push({ folder: path.basename(root), file: path.relative(root, full), line: text.slice(0, m.index).split('\n').length, kind });
-          if (found.length >= 50) return void (cut = true);
-          break;
-        }
+        if (e.isFile()) look(root, full);
       }
     };
     walk(root, 0);
+    for (const [dir, depth] of later) walk(dir, depth);
   }
-  return { found, files, cut };
+  return { found, files, partial, binary, skipped: [...skipped].sort(), cut };
 }
 
 // ---- the check. checks: [{ id, level: risk|warn|ok|info, title, detail, fix }]
@@ -11545,8 +11590,15 @@ async function securityReport(p, { scan = true } = {}) {
   let scanned = null;
   if (scan) {
     scanned = scanSecrets(s);
-    if (scanned.found.length) add('secrets', 'risk', `${scanned.found.length === 1 ? 'A secret' : `${scanned.found.length} secrets`} in the folders your Oby reads`, scanned.found.slice(0, 8).map((x) => `${x.folder}/${x.file}:${x.line} (${x.kind})`).join('; ') + (scanned.found.length > 8 ? '; …' : ''), 'Move them out, or add the file names to Settings › This machine › Never read');
-    else add('secrets', 'ok', 'No secrets found in your folders', `${scanned.files} file${scanned.files === 1 ? '' : 's'} looked at${scanned.cut ? ' (not all: there were too many)' : ''}; files your Oby never reads were skipped.`);
+    const where = (x) => `${x.folder}/${x.file}:${x.line} (${x.kind})`;
+    // what it didn't look at, said: an "ok" covers only the files it read
+    const n = (k, one, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+    const not = [scanned.skipped.length && `${scanned.skipped.join(', ')} (dependencies)`, scanned.binary && n(scanned.binary, 'binary file'), 'the files your Oby never reads'].filter(Boolean);
+    const looked = `${n(scanned.files, 'file')} looked at${scanned.partial ? ` (of ${n(scanned.partial, 'file')} over ${fmtSize(SCAN_BYTES)}, the first ${fmtSize(SCAN_BYTES)})` : ''}${scanned.cut ? ', not all: there were too many' : ''}`;
+    const notWords = not.length > 1 ? `${not.slice(0, -1).join(', ')}, and ${not.at(-1)}` : not[0];
+    if (scanned.found.length) add('secrets', 'risk', `${scanned.found.length === 1 ? 'A secret' : `${scanned.found.length} secrets`} in the folders your Oby reads`, scanned.found.slice(0, 8).map(where).join('; ') + (scanned.found.length > 8 ? '; …' : ''), 'Move them out, or add the file names to Settings › This machine › Never read');
+    else add('secrets', 'ok', 'No secrets found in the files your Oby can read', `${looked}; not looked at: ${notWords}.`);
+    scanned = { files: scanned.files, partial: scanned.partial, binary: scanned.binary, skipped: scanned.skipped, cut: scanned.cut, found: scanned.found.map(where) };
   }
 
   // this profile's files: only you may read them
@@ -11581,7 +11633,7 @@ async function securityReport(p, { scan = true } = {}) {
     add('blocked', 'warn', `${blocked.length} ask${blocked.length === 1 ? '' : 's'} made your Oby try what you don't allow`, `In the last 30 days, from ${by.join(', ')}: they may be trying to get past your settings.`, `Decline them in Settings › Who can ask${hops ? ', and have asks passed on from another ask wait for you or be declined (access.hops)' : ''}, or ${meCmd()} lockdown${profileFlag(p)}`);
   }
   checks.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level));
-  return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned: scanned && { files: scanned.files, cut: scanned.cut } };
+  return { profile: p.profile, lockdown: lock, sealed, checks, blocked, scanned };
 }
 
 async function securityCmd() {
