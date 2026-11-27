@@ -52,7 +52,9 @@ test('forwarded headers are trusted: HSTS over https, the public URL, rate limit
   assert.match(r.headers.get('strict-transport-security') || '', /max-age=/);
   assert.equal((await r.json()).sphere.publicUrl, 'https://sphere-test.vercel.app');
   assert.equal((await fetch(at('/healthz'))).headers.get('strict-transport-security'), null, 'no HSTS over plain http');
-  const join = (ip, name) => fetch(at('/api/join'), { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `${ip}, 10.0.0.1` }, body: JSON.stringify({ key: 'wrong', name }) });
+  // Vercel sets X-Forwarded-For to the client's address; the relay takes the rightmost entry, so
+  // one a client wrote before it changes nothing
+  const join = (ip, name) => fetch(at('/api/join'), { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.0.0.${name.length}, ${ip}` }, body: JSON.stringify({ key: 'wrong', name }) });
   const statuses = [];
   for (let i = 0; i < 21; i++) statuses.push((await join('203.0.113.7', `x${i}`)).status);
   assert.equal(statuses.at(-1), 429, 'the 21st join from one address is refused');

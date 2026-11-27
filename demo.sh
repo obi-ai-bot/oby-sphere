@@ -105,14 +105,24 @@ if ! pgrep -f "$HERE/rep.mjs ui --profile $ME" >/dev/null; then
   OBYSPHERE_ADMIN_KEY="$ADMIN_KEY" nohup node "$HERE/rep.mjs" ui --profile "$ME" --port "$CONSOLE_PORT" --serve > logs/console.log 2>&1 < /dev/null &
 fi
 sleep 1
+# a link that signs a browser in, once, within a few minutes: a code from the console that's
+# running (rep.mjs open --print); never its secret, which stays in the profile
+CONSOLE_LINK="http://$ME.localhost:$CONSOLE_PORT/"
+for _ in $(seq 1 25); do
+  LINK="$(node "$HERE/rep.mjs" open --profile "$ME" --port "$CONSOLE_PORT" --print 2>/dev/null || true)"
+  [ -n "$LINK" ] && break
+  sleep 0.2
+done
+[ -n "$LINK" ] && CONSOLE_LINK="$LINK"
 
 NODE="$(node -e 'process.stdout.write(require("fs").realpathSync(process.execPath))')"
 cat <<EOF
 
   Your Sphere is up.
 
-  Your console, signed in as $ME, with the operator's controls:
-    http://$ME.localhost:$CONSOLE_PORT/
+  Your console, signed in as $ME, with the operator's controls (this link, on this machine only,
+  works once, in the next 5 minutes; another: node rep.mjs open --profile $ME --port $CONSOLE_PORT):
+    $CONSOLE_LINK
 
   The public view, for anyone with the invite link:
     http://localhost:$PORT/#key=$KEY

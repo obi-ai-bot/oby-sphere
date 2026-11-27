@@ -1,10 +1,11 @@
 // The menu bar icon (#163): what `obysphere menubar model` tells the app to show, from a fake
-// console (its local API, with the console's header) and a fake relay; and its LaunchAgent,
+// console (its local API, with the console's secret) and a fake relay; and its LaunchAgent,
 // written by start, removed with the last stop, and turned off and on (dry runs: no launchctl).
 // `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -90,10 +91,14 @@ test('menubar model: your Oby as the console sees it, from its local API with th
   const soon = new Date(Date.now() + 3 * 3600e3).toISOString();
   const state = { pending: [{ id: 'w_1' }, { id: 'w_2' }], away: { by: 'owner', until: soon, note: 'lunch' } };
   const asked = [];
+  // the console's secret, as rep.mjs ui keeps it in the profile: it proves it knows it
+  // (/console-hello), and its local API takes nothing without it
+  const secret = crypto.randomBytes(32).toString('base64url');
   const consoleServer = await listen((req, res) => {
-    if (req.url === '/favicon.svg') return res.end('<svg viewBox="0 0 64 64"></svg>');
-    asked.push({ url: req.url, header: req.headers['x-obysphere-console'] });
-    if (req.headers['x-obysphere-console'] !== '1') return res.writeHead(403).end('{}');
+    const u = new URL(req.url, 'http://x');
+    if (u.pathname === '/console-hello') return res.end(JSON.stringify({ proof: crypto.createHmac('sha256', secret).update(`obysphere console hello ${u.searchParams.get('nonce')}`).digest('hex') }));
+    asked.push({ url: req.url, header: req.headers['x-obysphere-auth'] });
+    if (req.headers['x-obysphere-auth'] !== secret) return res.writeHead(401).end('{}');
     res.writeHead(200, { 'content-type': 'application/json' });
     if (req.url === '/local/pending') return res.end(JSON.stringify({ pending: state.pending }));
     if (req.url === '/local/away') return res.end(JSON.stringify({ away: state.away }));
@@ -103,25 +108,30 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     const port = consoleServer.address().port;
     const sphere = `http://127.0.0.1:${relay.address().port}`;
     const dir = profile(h, 'alice', sphere, port);
+    fs.writeFileSync(path.join(dir, 'console-auth.json'), JSON.stringify({ [port]: { secret, pid: process.pid, at: new Date().toISOString() } }), { mode: 0o600 });
     installed(h, 'alice');
     fs.mkdirSync(path.join(dir, 'held'));
     fs.writeFileSync(path.join(dir, 'held', 'm_held1.json'), '{}');
     fs.writeFileSync(path.join(dir, 'held', 'notes.txt'), 'not an ask');
     const env = envFor(h);
     const page = `http://alice.localhost:${port}/`;
+    // each page it opens: obysphere open prints a link that works once, and the app opens it (the
+    // page itself, for an app from before); never the secret
+    const opener = (title, where) => ({ kind: 'open', title, url: where ? `${page}#page=${where}` : page, args: ['open', '--profile', 'alice', ...(where ? ['--page', where] : []), '--print'] });
 
     // away, with two asks waiting and one held
     let m = await model(env);
-    assert.ok(asked.length >= 2 && asked.every((a) => a.header === '1'), 'every local call carries the header');
+    assert.ok(asked.length >= 2 && asked.every((a) => a.header === secret), 'every local call carries the secret');
     assert.deepEqual({ state: m.icon.state, count: m.icon.count }, { state: 'away', count: 2 });
     assert.match(m.icon.tip, /^Obysphere · Away until .+ · 2 asks wait for you$/);
     assert.deepEqual(m.items[0], { kind: 'header', title: 'Alice’s Oby in Test Sphere' });
     assert.equal(m.items[1].kind, 'line');
     assert.equal(m.items[1].dot, 'away');
     assert.match(m.items[1].title, /^Away until (\d{1,2}:\d\d|[A-Z][a-z]{2} \d{1,2}:\d\d)$/);
-    assert.deepEqual(find(m.items, '2 asks wait for you'), { kind: 'open', title: '2 asks wait for you', url: `${page}#page=you` });
-    assert.deepEqual(find(m.items, '1 ask held until your runtime can answer'), { kind: 'open', title: '1 ask held until your runtime can answer', url: `${page}#page=you` });
-    assert.deepEqual(find(m.items, 'Open console'), { kind: 'open', title: 'Open console', url: page });
+    assert.deepEqual(find(m.items, '2 asks wait for you'), opener('2 asks wait for you', 'you'));
+    assert.deepEqual(find(m.items, '1 ask held until your runtime can answer'), opener('1 ask held until your runtime can answer', 'you'));
+    assert.deepEqual(find(m.items, 'Open console'), opener('Open console'));
+    assert.ok(!JSON.stringify(m).includes(secret), 'never the secret (R25, R44)');
     assert.deepEqual(find(m.items, 'I’m back').args, ['away', '--off', '--profile', 'alice']);
     assert.equal(find(m.items, 'Away'), undefined, 'while away: I’m back, not Away');
     const stop = find(m.items, 'Stop');
@@ -146,7 +156,8 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     assert.ok(morning, away.items.map((i) => i.title).join(' | '));
     const at = new Date(morning.args[2]);
     assert.ok(at > new Date() && at.getHours() === 9 && at.getMinutes() === 0 && ![0, 6].includes(at.getDay()), morning.args[2]);
-    assert.deepEqual(find(away.items, 'Another time, or a note…'), { kind: 'open', title: 'Another time, or a note…', url: `${page}#page=you` });
+    assert.deepEqual(find(away.items, 'Another time, or a note…'), opener('Another time, or a note…', 'you'));
+    assert.ok(!JSON.stringify(m).includes(secret));
 
     // paused by its runtime
     state.away = { by: 'pause', until: soon };
@@ -166,7 +177,8 @@ test('menubar model: your Oby as the console sees it, from its local API with th
     fs.mkdirSync(path.join(h, 'app'), { recursive: true });
     fs.writeFileSync(path.join(h, 'app', 'update-check.json'), JSON.stringify({ latest: '99.0.0', checkedAt: new Date().toISOString() }));
     m = await model(env);
-    assert.deepEqual(find(m.items, 'Update to 99.0.0'), { kind: 'run', title: 'Update to 99.0.0', args: ['update'], busy: 'Updating to 99.0.0…' });
+    // the release it names: the stable channel, whichever one was installed
+    assert.deepEqual(find(m.items, 'Update to 99.0.0'), { kind: 'run', title: 'Update to 99.0.0', args: ['update', '--channel', 'stable'], busy: 'Updating to 99.0.0…' });
     assert.match(m.icon.tip, /99\.0\.0 is out/);
   } finally {
     consoleServer.close();

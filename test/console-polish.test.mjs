@@ -12,6 +12,7 @@ import path from 'node:path';
 import net from 'node:net';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -45,8 +46,8 @@ describe("the console's polish", () => {
     });
   const profileFile = () => path.join(home, 'bob', 'profile.json');
   const profile = () => JSON.parse(fs.readFileSync(profileFile(), 'utf8'));
-  const CONSOLE_HEADERS = { 'x-obysphere-console': '1' };
-  const local = async (method, url, body, headers = CONSOLE_HEADERS) => {
+  let CONSOLE_HEADERS; // the console's secret, as a program of bob's sends it (once it has started)
+  const local = async (method, url, body, headers = consoleAuth(path.join(home, 'bob'), uiBase)) => {
     const h = { ...headers };
     if (body !== undefined) h['content-type'] = 'application/json';
     const r = await fetch(uiBase + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
@@ -110,7 +111,8 @@ describe("the console's polish", () => {
       await sleep(100);
     }
     // the /local checks: the console's header on GETs too, same origin, its own Host
-    assert.equal((await local('GET', '/local/invite', undefined, {})).status, 403, 'no header');
+    assert.equal((await local('GET', '/local/invite', undefined, { 'x-obysphere-console': '1' })).status, 401, 'no secret');
+    CONSOLE_HEADERS = consoleAuth(path.join(home, 'bob'), uiBase);
     assert.equal((await local('GET', '/local/invite', undefined, { ...CONSOLE_HEADERS, 'sec-fetch-site': 'cross-site' })).status, 403, 'another site');
     assert.equal((await local('GET', '/local/invite', undefined, { ...CONSOLE_HEADERS, 'sec-fetch-site': 'same-site' })).status, 403, "another profile's console (same site)");
     assert.equal((await local('GET', '/local/invite', undefined, { ...CONSOLE_HEADERS, origin: 'http://evil.example' })).status, 403, 'another origin');
@@ -126,7 +128,7 @@ describe("the console's polish", () => {
     assert.equal(r.cache, 'no-store');
     assert.equal(r.cors, null, 'no CORS: another origin can never read it');
     // at its own name, with its own origin
-    const named = await raw(uiPort, `GET /local/invite HTTP/1.1\r\nHost: bob.localhost:${uiPort}\r\nOrigin: http://bob.localhost:${uiPort}\r\nSec-Fetch-Site: same-origin\r\nx-obysphere-console: 1\r\nConnection: close\r\n\r\n`);
+    const named = await raw(uiPort, `GET /local/invite HTTP/1.1\r\nHost: bob.localhost:${uiPort}\r\nOrigin: http://bob.localhost:${uiPort}\r\nSec-Fetch-Site: same-origin\r\nx-obysphere-auth: ${CONSOLE_HEADERS['x-obysphere-auth']}\r\nConnection: close\r\n\r\n`);
     assert.match(named, /^HTTP\/1\.1 200/);
     // the relay's routes never answer it, with any credential
     assert.equal((await fetch(base + '/local/invite', { headers: { 'x-sphere-key': KEY } })).ok, false);
@@ -138,7 +140,7 @@ describe("the console's polish", () => {
     assert.deepEqual((({ invite, current }) => ({ invite, current }))(await local('GET', '/local/invite')), { invite: null, current: null });
 
     // PUT has the same checks
-    assert.equal((await local('PUT', '/local/invite', { invite: `${base}/#key=${KEY}` }, {})).status, 403);
+    assert.equal((await local('PUT', '/local/invite', { invite: `${base}/#key=${KEY}` }, {})).status, 401, 'no secret');
     assert.equal((await local('PUT', '/local/invite', { invite: `${base}/#key=${KEY}` }, { ...CONSOLE_HEADERS, origin: 'http://evil.example' })).status, 403);
     assert.equal(profile().invite, undefined, 'nothing kept from a refused call');
 
@@ -244,9 +246,10 @@ describe("the console's polish", () => {
       "'Copied'",
       '/local/invite',
     ]) assert.ok(SCRIPT.includes(s), `the page's script has ${s}`);
-    // the commands by hand are their own function, with the no-install line
+    // the commands by hand are their own function, with the no-install line: rep.mjs and its
+    // console's page beside it (the console never serves the Sphere's page)
     assert.match(SCRIPT, /function inviteCommands\(link, flag = ''\)/);
-    assert.match(SCRIPT, /curl -fsSLO https:\/\/raw\.githubusercontent\.com\/\$\{REPO\}\/main\/rep\.mjs && node rep\.mjs join/);
+    assert.match(SCRIPT, /curl -fsSLO https:\/\/raw\.githubusercontent\.com\/\$\{REPO\}\/main\/rep\.mjs && curl -fsSL --create-dirs -o public\/index\.html https:\/\/raw\.githubusercontent\.com\/\$\{REPO\}\/main\/public\/index\.html && node rep\.mjs join/);
     // the old placeholder is gone: the link carries the real key
     assert.ok(!SCRIPT.includes('<the Sphere key>'));
 
@@ -362,7 +365,7 @@ describe('console-polish review: a key with + / = !, end to end', () => {
     });
   const file = () => path.join(home, 'carol', 'profile.json');
   const local = async (method, url, body) => {
-    const r = await fetch(uiBase + url, { method, headers: { 'x-obysphere-console': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(uiBase + url, { method, headers: { ...consoleAuth(path.join(home, 'carol'), uiBase), ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
 

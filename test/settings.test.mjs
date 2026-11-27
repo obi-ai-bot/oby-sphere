@@ -17,6 +17,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -70,7 +71,7 @@ describe("your Oby's settings", () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body, headers = { 'x-obysphere-console': '1' }) => call(method, url, { at: uiBase, body, headers });
+  const local = (method, url, body, headers = consoleAuth(path.join(home, 'bob'), uiBase)) => call(method, url, { at: uiBase, body, headers });
   const settingsPath = () => path.join(home, 'bob', 'settings.json');
   const writeSettings = (s) => fs.writeFileSync(settingsPath(), JSON.stringify(s), { mode: 0o600 });
   const full = (over = {}) => ({
@@ -89,7 +90,8 @@ describe("your Oby's settings", () => {
         ...(over.rules || []),
       ],
     },
-    access: { default: 'answer', agents: { [GHOST]: 'decline', carol: 'trust', dave: 'trust' }, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, declineTopics: [TOPIC_ONLY], asksPerAgentPerDay: 0, answersPerDay: 0, rules: RULES, ...over.access },
+    // hops: answer (a hop is taken as the Oby passing it on gets); without it, hops wait for you (test/answering-guards.test.mjs)
+    access: { default: 'answer', agents: { [GHOST]: 'decline', carol: 'trust', dave: 'trust' }, acceptFiles: true, sendFiles: true, consultOthers: true, acceptHops: true, hops: 'answer', declineTopics: [TOPIC_ONLY], asksPerAgentPerDay: 0, answersPerDay: 0, rules: RULES, ...over.access },
     machine: { folders: [{ path: payments, write: false }, { path: web, write: true }], shell: 'full', web: { fetch: true, search: false }, browser: 'off', mcp: ['linear'], ...over.machine },
   });
   // an ask to bob over the relay's API; files are uploaded first
@@ -311,12 +313,12 @@ describe("your Oby's settings", () => {
       try { if ((await fetch(uiBase + '/favicon.svg')).ok) break; } catch {}
       await sleep(100);
     }
-    // the checks: header on GETs too, same site, own origin, own Host
-    assert.equal((await local('GET', '/local/settings', undefined, {})).status, 403);
-    assert.equal((await local('GET', '/local/settings', undefined, { 'x-obysphere-console': '1', 'sec-fetch-site': 'cross-site' })).status, 403);
-    assert.equal((await local('PUT', '/local/settings', { settings: full() }, { 'x-obysphere-console': '1', origin: 'http://evil.example' })).status, 403);
-    assert.equal((await local('GET', '/local/pending', undefined, { 'x-obysphere-console': '1', 'sec-fetch-site': 'same-site' })).status, 403);
-    assert.equal((await local('POST', '/local/route-preview', { text: 'x' }, {})).status, 403);
+    // the checks: the console's secret on GETs too, same site, own origin, own Host
+    assert.equal((await local('GET', '/local/settings', undefined, {})).status, 401);
+    assert.equal((await local('GET', '/local/settings', undefined, { ...consoleAuth(path.join(home, 'bob'), uiBase), 'sec-fetch-site': 'cross-site' })).status, 403);
+    assert.equal((await local('PUT', '/local/settings', { settings: full() }, { ...consoleAuth(path.join(home, 'bob'), uiBase), origin: 'http://evil.example' })).status, 403);
+    assert.equal((await local('GET', '/local/pending', undefined, { ...consoleAuth(path.join(home, 'bob'), uiBase), 'sec-fetch-site': 'same-site' })).status, 403);
+    assert.equal((await local('POST', '/local/route-preview', { text: 'x' }, {})).status, 401);
     const rebound = await new Promise((resolve) => {
       const s = net.connect(port, '127.0.0.1', () => s.write(`GET /local/settings HTTP/1.1\r\nHost: evil.example:${port}\r\nx-obysphere-console: 1\r\nConnection: close\r\n\r\n`));
       let buf = '';
@@ -564,7 +566,7 @@ describe("your Oby's settings", () => {
       await sleep(100);
     }
     const barePreview = async (body) => {
-      const { status, ...x } = await call('POST', '/local/route-preview', { at: bare, body, headers: { 'x-obysphere-console': '1' } });
+      const { status, ...x } = await call('POST', '/local/route-preview', { at: bare, body, headers: consoleAuth(path.join(home, 'bob'), bare) });
       assert.equal(status, 200);
       return x;
     };
@@ -581,7 +583,7 @@ describe("your Oby's settings", () => {
     assert.equal(r.note, "Rule 2 (Code reviews): by the words in its \"about\". Couldn't match by meaning (Claude Code isn't signed in), so by words. Claude Code isn't signed in, so this ask can't be answered.");
     // (this console hasn't read Codex's catalog yet: one that flags its default, and Cursor using another model now)
     fake.control({ cursorSignedIn: true, claudeAuth: 'none', codexModels: 'flagged', cursorModels: 'current' });
-    const [signedOut, flaggedCodex, cursorNow] = (await call('GET', '/local/environment', { at: bare, headers: { 'x-obysphere-console': '1' } })).runtimes;
+    const [signedOut, flaggedCodex, cursorNow] = (await call('GET', '/local/environment', { at: bare, headers: consoleAuth(path.join(home, 'bob'), bare) })).runtimes;
     assert.deepEqual([signedOut.signedIn, signedOut.auth, signedOut.signIn], [false, { kind: null, plan: null }, 'claude auth login']);
     assert.deepEqual([flaggedCodex.models.map((m) => [m.id, m.isDefault]), flaggedCodex.defaultEffort], [[['gpt-6.2-sol', false], ['gpt-6.2-mini', true]], 'low'], "the catalog's own flag wins, and the default effort is that model's");
     assert.deepEqual(cursorNow.models.map((m) => [m.id, m.note, m.isDefault]), [['gpt-5', "Cursor's default", false], ['sonnet-4', 'in use now', true], ['sonnet-4-thinking', '', false]], 'without --model, Cursor runs the one in use now');
@@ -780,18 +782,36 @@ describe("your Oby's settings", () => {
     assert.ok(kept[`claude:general:${ids.carol}:trusted`], "carol's trusted conversation is kept");
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'bob', 'sessions.json'), 'utf8')), kept, "and the hop's isn't");
 
-    // trust goes with the agent first seen under a handle: a relay calling another agent "carol" gets none
+    // trust goes with the agent first seen under a handle: a relay calling another agent "carol" gets
+    // none, and its ask waits for you, saying why; even "with everything you allow" gives no risky reach
     const peersFile = path.join(home, 'bob', 'peers.json');
     const peers = JSON.parse(fs.readFileSync(peersFile, 'utf8'));
     assert.equal(peers[ids.carol].name, 'carol', 'the handle is pinned');
+    const unsure = async (text, why) => {
+      const before = fake.calls().length;
+      const m = await ask('carol', text);
+      let w = null;
+      for (let i = 0; i < 80 && !w; i++) {
+        w = ((await local('GET', '/local/pending')).pending || []).find((x) => x.askId === m.id);
+        if (!w) await sleep(100);
+      }
+      assert.ok(w, `it waits for you\n${serveOut.slice(-2000)}`);
+      assert.match(w.reason, why);
+      assert.match(w.reason, /may not be the Oby it says/);
+      assert.equal(fake.calls().length, before, 'nothing runs while it waits');
+      await local('POST', `/local/pending/${w.id}`, { decision: 'trust' });
+      const r = await replyTo(m, 'carol');
+      assert.ok(!r.meta?.declined, r.text);
+      assert.equal(fake.calls().length, before + 1);
+      return lastCall();
+    };
     fs.writeFileSync(peersFile, JSON.stringify({ ...peers, [ids.carol]: { ...peers[ids.carol], name: 'mallory' } }), { mode: 0o600 });
-    ({ call: c } = await answered('carol', 'please review the diff'));
+    c = await unsure('please review the diff', /the Sphere now calls mallory "carol"/);
     assert.ok(!c.settings.permissions.allow.includes('Bash') && !c.settings.permissions.allow.some((a) => a.startsWith('Edit(')), 'no risky reach');
-    assert.match(serveOut, /the Sphere now calls mallory "carol"/);
+    assert.match(serveOut, /not with everything you allow/);
     fs.writeFileSync(peersFile, JSON.stringify({ ...peers, a_someoneelse01: { name: 'carol', pinnedAt: new Date().toISOString() }, [ids.carol]: { ...peers[ids.carol], name: undefined } }), { mode: 0o600 });
-    ({ call: c } = await answered('carol', 'please review it again'));
+    c = await unsure('please review it again', /another Oby was first seen as carol/);
     assert.ok(!c.settings.permissions.allow.includes('Bash'), 'no risky reach');
-    assert.match(serveOut, /another Oby was first seen as carol/);
     fs.writeFileSync(peersFile, JSON.stringify(peers), { mode: 0o600 });
     ({ call: c } = await answered('carol', 'review once more'));
     assert.ok(c.settings.permissions.allow.includes('Bash'), 'trusted again');
@@ -900,8 +920,9 @@ describe("your Oby's settings", () => {
   test('access: declined by Oby, topic, files and hops, before any model', async () => {
     writeSettings(full({ access: { agents: { carol: 'decline' }, declineTopics: ['salary', 'hiring plan'] } }));
     await declined('carol', 'hello', /it doesn't take asks from you\.$/);
-    await declined('alice', "What's the SALARY band?", /on this topic/);
-    await declined('alice', 'any news on the hiring   plan?', /on this topic/);
+    // a topic reads as any other setting: the asker can't tell which word was the reason (and it's counted)
+    await declined('alice', "What's the SALARY band?", /its owner's settings don't allow this\.$/);
+    await declined('alice', 'any news on the hiring   plan?', /its owner's settings don't allow this\.$/);
     await answered('alice', 'is there a nonsalary option?'); // inside another word: not the topic
     writeSettings(full({ access: { acceptFiles: false, acceptHops: false } }));
     await declined('alice', 'see attached', /with files/, { files: [{ name: 'a.txt', data: 'x' }] });
@@ -1068,7 +1089,7 @@ describe("your Oby's settings", () => {
 
     // the classifier: only the project's settings, from an empty folder
     const text = 'please review this old one';
-    const { status, ...r } = await call('POST', '/local/route-preview', { at, body: { text }, headers: { 'x-obysphere-console': '1' } });
+    const { status, ...r } = await call('POST', '/local/route-preview', { at, body: { text }, headers: consoleAuth(path.join(home, 'erin'), at) });
     assert.equal(status, 200, JSON.stringify(r));
     assert.deepEqual([r.rule, r.how], [0, 'meaning']);
     const k = old.classifications().find((x) => x.prompt.includes(text));
@@ -1127,13 +1148,14 @@ describe('a decline on a sealed Sphere', () => {
     const f = path.join(home, 'bob', 'settings.json');
     const s = JSON.parse(fs.readFileSync(f, 'utf8'));
     s.access.declineTopics = ['quarterly numbers'];
+    s.access.default = 'answer'; // an Oby bob answers: its topic is declined (one that waits for him would wait)
     fs.writeFileSync(f, JSON.stringify(s), { mode: 0o600 });
     const serve = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env(), stdio: 'ignore' });
     procs.push(serve);
     await sleep(1500);
     const out = await rep(['ask', 'bob', 'What were the quarterly numbers?', '--profile', 'alice', '--wait', '20']);
     assert.match(out, /"declined": true/, out);
-    assert.match(out, /bob Sealed's Oby isn't taking this ask: it doesn't take asks on this topic\./);
+    assert.match(out, /bob Sealed's Oby isn't taking this ask: its owner's settings don't allow this\./);
     assert.match(out, /"sealed": true/);
     let all = '';
     for (const n of fs.readdirSync(data)) if (fs.statSync(path.join(data, n)).isFile()) all += fs.readFileSync(path.join(data, n), 'latin1');

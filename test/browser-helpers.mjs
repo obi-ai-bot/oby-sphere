@@ -15,6 +15,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
 import { makeFakeGh } from './fake-gh.mjs';
+import { consoleAuth, consoleSecret } from './console-auth-helpers.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -224,13 +225,17 @@ export class World {
     return p;
   }
 
-  // a member's console (rep.mjs ui), at its own origin: http://<handle>.localhost:<port>/
+  // a member's console (rep.mjs ui), at its own origin: http://<handle>.localhost:<port>/. Its url
+  // holds the console's secret (#auth=<it>), for these tests only: withPage's open() trades it for
+  // a code that signs one page in once (#code=…), as obysphere open does; more of the page's hash
+  // goes after it with &. auth: the header a program of its owner's sends.
   async console(name, { serve = false } = {}) {
     const port = await freePort();
     const p = this.start(`${name}: rep.mjs ui`, 'rep.mjs', ['ui', '--profile', name, '--port', String(port), ...(serve ? ['--serve'] : [])], this.env());
     await this.waitFor(p, /your console for/);
     if (serve) await this.waitFor(p, /is online/);
-    return { url: `http://${name}.localhost:${port}/`, proc: p };
+    const auth = consoleAuth(path.join(this.home, name), port);
+    return { url: `http://${name}.localhost:${port}/#auth=${consoleSecret(path.join(this.home, name), port)}`, auth, proc: p };
   }
 
   // The answering session's own MCP server (`rep.mjs mcp --as-session`), started as Claude Code
@@ -298,7 +303,7 @@ export async function withPage(browser, t, url, vp, fn) {
       if (m.type() === 'error') problems.push(`console error at ${where}: ${m.text()}${m.location()?.url ? ` (${m.location().url})` : ''}`);
     });
     pages.push(page);
-    await page.goto(to);
+    await page.goto(await signInLink(to));
     return page;
   };
   let failed = null;
@@ -321,6 +326,27 @@ export async function withPage(browser, t, url, vp, fn) {
     await context.close();
   }
   if (failed) throw failed;
+}
+
+// a console's url with its secret (#auth=…, these tests' own way to name it) as a link that signs a
+// browser in once (#code=…), from the console itself, as obysphere open gets one; any other url as it is
+export async function signInLink(to) {
+  const u = new URL(to);
+  const hp = new URLSearchParams(u.hash.slice(1));
+  const secret = hp.get('auth');
+  if (!secret) return to;
+  const code = await new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: '/local/open-code', method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': 2, 'x-obysphere-auth': secret } }, (res) => {
+      let out = '';
+      res.on('data', (d) => (out += d));
+      res.on('end', () => { try { resolve(JSON.parse(out).code); } catch (e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.end('{}');
+  });
+  hp.delete('auth');
+  u.hash = `code=${code}${String(hp) ? `&${hp}` : ''}`;
+  return u.toString();
 }
 
 // the page's title (its one h1)
@@ -425,14 +451,16 @@ export async function axeViolations(page, source) {
   return violations.flatMap((v) => v.targets.map((target) => `${v.id} (${v.impact}): ${target} — ${v.help}`));
 }
 
-// A POST to a member's console (rep.mjs ui) from outside the page, as a script on that machine
-// could send it; the console sends it on with the member's token. { status, body }
+// A POST to a member's console (rep.mjs ui) from outside the page, as a script of its owner's on
+// that machine could send it, with the console's secret (from its url's #auth=); the console sends
+// it on with the member's token. { status, body }
 export function consolePost(consoleUrl, apiPath, body) {
   const u = new URL(consoleUrl);
+  const secret = new URLSearchParams(u.hash.slice(1)).get('auth') || '';
   const data = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     // to 127.0.0.1 with the console's own Host, so no lookup of <handle>.localhost is needed
-    const req = http.request({ host: '127.0.0.1', port: u.port, path: apiPath, method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-obysphere-console': '1' } }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port: u.port, path: apiPath, method: 'POST', headers: { host: u.host, 'content-type': 'application/json', 'content-length': Buffer.byteLength(data), 'x-obysphere-auth': secret } }, (res) => {
       let out = '';
       res.on('data', (d) => (out += d));
       res.on('end', () => {

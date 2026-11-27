@@ -1,5 +1,5 @@
 {
-  "description": "What waits for you in your Sphere, at the start of a session.",
+  "description": "What waits for you in your Sphere, at the start of a session; and a guard that keeps Claude away from your Oby's console, its own files and the obysphere commands that are yours to run.",
   "hooks": {
     "SessionStart": [
       {
@@ -11,6 +11,21 @@
             "timeout": 10,
             "args": [
               "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs"
+            ]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "timeout": 5,
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs"
             ]
           }
         ]

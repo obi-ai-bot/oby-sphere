@@ -202,6 +202,7 @@ p, h1, h2, h3, h4, ul, ol { margin: 0; }
 /* a link in someone's words is underlined: its colour alone is too close to the text around it */
 .tok-url { color: #64a8ff; text-decoration: underline; text-decoration-color: rgba(100, 168, 255, 0.5); text-underline-offset: 2px; }
 .tok-url:hover { text-decoration-color: currentColor; }
+.tok-host { color: var(--muted); font-size: 0.92em; overflow-wrap: anywhere; }
 .tok-mention { padding: 1px 3px; border-radius: 4px; background: rgba(100, 168, 255, 0.16); color: #8cbcff; }
 .tok-code { padding: 1px 3px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); color: #ff8a70; font-family: var(--mono); font-size: 13px; }
 .ss-code { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font: 12px/18px var(--mono); white-space: pre; overflow-x: auto; max-height: 320px; overflow-y: auto; user-select: text; }
@@ -545,6 +546,7 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .set-sec-title { color: var(--ink); font-size: var(--text-lg); font-weight: 600; line-height: 22px; }
 .set-sec-title:focus { outline: none; }
 .set-sec-line { margin-top: 2px; color: var(--muted); font-size: var(--text-md); line-height: 18px; }
+.mem-removed { margin: 24px 0 10px; }
 .set-block + .set-block { margin-top: 6px; border-top: 1px solid var(--line); }
 .set-row-head { padding: 14px 0 0; color: var(--label); font-size: var(--text-sm); }
 .set-row-head + .set-row { border-top: 0; }
@@ -740,6 +742,20 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .look-dot { display: block; width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 .look-colors [aria-checked="true"] .look-dot { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ink); }
 .look-note { margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
+/* your Oby's security (Your Oby): the check, what answers tried, lockdown and a new token */
+#you-security { margin-bottom: 12px; }
+.sec { display: grid; gap: 10px; padding: 14px 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sec-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sec-rows { display: grid; gap: 8px; }
+.sec-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: start; }
+.sec-row .status { margin-top: 5px; }
+.sec-title { color: var(--ink); font-size: var(--text-md); line-height: 20px; }
+.sec-detail, .sec-fix, .sec-lock { color: var(--muted); font-size: var(--text-sm); line-height: 18px; overflow-wrap: anywhere; }
+.sec-fix::before { content: '→ '; }
+.sec-row.is-risk .sec-title { color: var(--danger); }
+.sec-lock { margin: 0; color: var(--needs); }
+.sec-blocked ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: var(--text-sm); line-height: 18px; }
 .saved-note.is-problem { color: var(--danger); white-space: normal; }
 .icon-button.sm { width: 26px; height: 26px; }
 .chain.is-bad { color: var(--danger); }
@@ -809,9 +825,10 @@ button.inst-head:focus-visible, .inst-make-button:focus-visible, .inst-link:focu
 .inv-hand[open] > summary::before { margin-bottom: 4px; transform: rotate(45deg); }
 @media (max-width: 420px) { .inv-paste { flex-direction: column; } }
 .gate { height: 100vh; display: grid; place-items: center; padding: 24px; }
-.gate form { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.gate :is(form, .gate-box) { width: min(360px, 100%); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .gate h2 { margin-top: 8px; color: var(--ink); font-size: 17px; font-weight: 600; }
 .gate p { color: var(--muted); font-size: var(--text-md); }
+.gate code { color: var(--ink); font-family: var(--mono); }
 .gate .set-field { margin-top: 8px; }
 .gate .modal-primary { width: 100%; }
 .gate .err { color: var(--danger); font-size: var(--text-sm); }
@@ -1153,13 +1170,37 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const okFile = (f) => !!f && RID.f.test(String(f.id));
   const okMessage = (m) => !!m && RID.m.test(String(m.id)) && CHAN.test(String(m.channel)) && (m.from == null || RID.a.test(String(m.from)))
     && (m.replyTo == null || RID.m.test(String(m.replyTo))) && (m.cause == null || RID.m.test(String(m.cause)))
-    && (m.to == null || (Array.isArray(m.to) && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.every(okFile)));
+    && (m.to == null || (Array.isArray(m.to) && m.to.length <= 64 && m.to.every((x) => RID.a.test(String(x))))) && (m.files == null || (Array.isArray(m.files) && m.files.length <= 10 && m.files.every(okFile)))
+    && (m.deleted ? !('text' in m) : typeof m.text === 'string' && Number.isInteger(m.depth ?? 0));
+  // words as the page shows them: no control or direction-override characters. The relay cleans the
+  // plain words it keeps, but sealed words are opened on your machine as their sender wrote them.
+  const cleanText = (s) => String(s ?? '').replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
+  const tidy = (m) => { if (typeof m.text === 'string') m.text = cleanText(m.text); return m; };
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
   };
 
-  const CONSOLE = window.OBYSPHERE_CONSOLE || null; // set when opened through `rep.mjs ui`: signed in as you
+  const CONSOLE = window.OBYSPHERE_CONSOLE || null; // set when opened through `rep.mjs ui`: your console
+  // your console's secret, for this tab only: sessionStorage is this origin's (its port included)
+  // and this tab's, so a reload stays signed in and a new tab needs a link. Never a cookie, which
+  // every port of the host would get. It goes in x-obysphere-auth on every call.
+  const tabAuth = {
+    get() { try { return sessionStorage.getItem('obysphere.console'); } catch { return null; } },
+    set(v) { try { v == null ? sessionStorage.removeItem('obysphere.console') : sessionStorage.setItem('obysphere.console', v); } catch {} },
+  };
+  let AUTH = CONSOLE ? tabAuth.get() : null;
+  let signedIn = false;
+  // no cookie goes with any call (the page needs none). Your console no longer takes this tab's
+  // secret (it started again, with a new one): the page loads again, and asks for a new link
+  const fetch = (url, opts = {}) => window.fetch(url, { ...opts, credentials: 'omit' }).then((r) => {
+    if (CONSOLE && signedIn && !S.signedOut && r.status === 401 && /^Obysphere-Console\b/.test(r.headers.get('www-authenticate') || '')) {
+      S.signedOut = true;
+      tabAuth.set(null);
+      location.reload();
+    }
+    return r;
+  });
   const S = {
     me: null, key: null, admin: false, adminKey: null, sphere: null,
     agents: new Map(), channels: new Map(), messages: [], byId: new Map(),
@@ -1199,9 +1240,13 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const obyPic = (a, size = 22, look = lookOf(a)) => obyFace(size, false, LOOK_COLORS[look.color], look.eyes);
   const ownerName = (a) => String(a?.owner || a?.name || '?').replace(/\s*\([^)]*\)\s*/g, ' ').trim() || a?.name || '?';
   const isMe = (a) => !!S.me && !!a && a.id === S.me.id;
-  const obyOf = (a) => (isMe(a) ? 'Your Oby' : `${ownerName(a)}’s Oby`);
+  // owner names aren’t unique (anyone can join with yours): where two members share one, the
+  // handle, which is, says whose Oby it is
+  const sharedOwner = (a) => !!a?.id && members().some((x) => x.id !== a.id && ownerName(x) === ownerName(a));
+  const ownerOf = (a) => (sharedOwner(a) ? `${ownerName(a)} (@${a.name})` : ownerName(a));
+  const obyOf = (a) => (isMe(a) ? 'Your Oby' : `${ownerOf(a)}’s Oby`);
   const obyLower = (a) => (isMe(a) ? 'your Oby' : obyOf(a));
-  const machineOf = (a) => (isMe(a) ? 'your machine' : `${ownerName(a)}’s machine`);
+  const machineOf = (a) => (isMe(a) ? 'your machine' : `${ownerOf(a)}’s machine`);
   // a person (you, in the rail and your account button): their initials. The ones who talk in a
   // Sphere are Obys, and every other picture is one (avatar, picture).
   function person(a, size = 22) {
@@ -1218,32 +1263,68 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- keys
   const hp = new URLSearchParams(location.hash.slice(1).replace(/\+/g, '%2B')); // a '+' in a key stays a '+'
-  const hashKey = hp.get('key');
+  // keys never stay in the address bar (history, a screenshot, a link passed on): read, then taken out
+  const hashKey = CONSOLE ? null : hp.get('key');
+  const hashCode = CONSOLE ? hp.get('code') : null; // your console's link: a code that works once, traded for its secret
+  if (['key', 'auth', 'code', 'admin'].some((k) => hp.has(k))) {
+    for (const k of ['key', 'auth', 'code', 'admin']) hp.delete(k);
+    history.replaceState(null, '', location.pathname + location.search + (String(hp) ? `#${hp}` : ''));
+  }
   S.key = CONSOLE ? 'console' : hashKey || store.get('obysphere.key');
   if (hashKey) store.set('obysphere.key', hashKey);
-  // the admin key lives in this tab only (sessionStorage), never in the URL or localStorage
-  const session = {
-    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
-    set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
-  };
-  try { localStorage.removeItem('obysphere.admin'); } catch {}
-  // in your console, admins are members: no admin key is ever kept in the page (Admin access… claims once)
-  if (CONSOLE) session.set('obysphere.admin', null);
-  else if (hp.get('admin')) session.set('obysphere.admin', hp.get('admin'));
-  S.adminKey = CONSOLE ? null : session.get('obysphere.admin');
+  // the admin key lives in this page's memory only: never in the URL (an #admin= link is ignored)
+  // or the browser's storage, and a reload forgets it. In your console, admins are members: no
+  // admin key is ever kept in the page (Admin access… claims once).
+  try { localStorage.removeItem('obysphere.admin'); sessionStorage.removeItem('obysphere.admin'); } catch {}
+  S.adminKey = null;
   S.mode = hp.get('mode') || store.get('obysphere.mode') || 'console';
   S.page = hp.get('page') || 'overview';
-  if (!S.key) return gate();
-  boot().catch((e) => { if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
+  // your console signs in first (not a return: the rest of this script runs before boot does)
+  if (CONSOLE) openConsole();
+  else if (!S.key) return gate();
+  else boot().catch((e) => { if (S.signedOut) return; if (String(e.message).startsWith('401')) gate('That key didn’t open this Obysphere.'); else console.error(e); });
 
   function gate(err) {
     $('#root').innerHTML = `<div class="gate"><form>${obyFace(48)}<h2>Open an Obysphere</h2><p>Paste the key from your invite link.</p><input class="set-field" name="k" placeholder="Obysphere key" aria-label="Obysphere key" autocomplete="off" autofocus>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}<button class="modal-primary">Open</button></form></div>`;
     $('form').onsubmit = (e) => { e.preventDefault(); const k = e.target.k.value.trim(); store.set('obysphere.key', k); location.hash = 'key=' + encodeURIComponent(k); location.reload(); };
   }
+  // your console, not signed in: it opens only with a link from this computer, which works once
+  function consoleGate(err) {
+    $('#root').innerHTML = `<div class="gate"><div class="gate-box">${obyFace(48)}<h2>Open your console</h2><p>It opens on this computer, with a link that works once: run <code>obysphere open</code> (or <code>rep.mjs open</code>). A new tab needs a new link.</p>${err ? `<p class="err" role="alert">${esc(err)}</p>` : ''}</div></div>`;
+  }
+  // your console: a link's code, traded once for its secret (kept in this tab), or the secret this
+  // tab kept; then who you are, and the page
+  async function openConsole() {
+    if (hashCode) {
+      const secret = await signIn(hashCode);
+      if (!secret) return consoleGate('That link doesn’t open your console any more: a link works once, for a few minutes.');
+      AUTH = secret;
+      tabAuth.set(secret);
+    }
+    if (!AUTH) return consoleGate();
+    let me = null;
+    try {
+      const r = await fetch('/local/me', { headers: headers() });
+      if (r.ok) me = await r.json();
+    } catch {}
+    if (!me) { AUTH = null; tabAuth.set(null); return consoleGate(); }
+    Object.assign(CONSOLE, { name: me.name, owner: me.owner, sphere: me.sphere, sphereName: me.sphereName });
+    signedIn = true;
+    boot().catch((e) => { if (!S.signedOut) console.error(e); });
+  }
+  async function signIn(code) {
+    try {
+      const r = await fetch('/console-signin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+      const j = r.ok ? await r.json() : null;
+      return typeof j?.secret === 'string' ? j.secret : null;
+    } catch {
+      return null;
+    }
+  }
 
   // ---------------------------------------------------------------- the API
   function headers(extra = {}) {
-    const h = CONSOLE ? { 'x-obysphere-console': '1' } : { 'x-sphere-key': S.key };
+    const h = CONSOLE ? { 'x-obysphere-auth': AUTH } : { 'x-sphere-key': S.key };
     if (S.adminKey) h['x-admin-key'] = S.adminKey;
     return { ...h, ...extra };
   }
@@ -1261,7 +1342,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const apiPost = (path, body) => call('POST', path, body);
   // no key ever goes in a URL: the console's proxy adds the owner's token, and a viewer's key
   // travels in a header, so downloads go through fetch rather than a plain link
-  const fileUrl = (f, inline) => `/api/files/${f.id}${inline ? '?inline=1' : ''}`;
+  const fileUrl = (f, inline) => `/api/files/${encodeURIComponent(f.id)}${inline ? '?inline=1' : ''}`;
   async function download(id, name) {
     const r = await fetch(fileUrl({ id }), { headers: headers() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1285,7 +1366,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#rail-sphere').dataset.tip = S.sphere.name;
     ag.agents.filter(okAgent).forEach((a) => S.agents.set(a.id, a));
     ch.channels.filter(okChannel).forEach((c) => S.channels.set(c.name, c));
-    S.messages = ms.messages.filter(okMessage);
+    S.messages = ms.messages.filter(okMessage).map(tidy);
     S.messages.forEach((m) => S.byId.set(m.id, m));
     const c = hp.get('c');
     if (c && S.channels.has(c)) S.current = c;
@@ -1356,8 +1437,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     syncHash();
   }
   function syncHash() {
-    const p = new URLSearchParams();
-    if (!CONSOLE && hashKey) p.set('key', hashKey);
+    const p = new URLSearchParams(); // never a key: it's kept in this browser, out of the address
     p.set('mode', S.mode);
     if (S.mode === 'console') p.set('page', S.page);
     else p.set('c', S.current);
@@ -1396,7 +1476,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // reconnect the page catches up on what it missed.
   const EVENTS = {
     message: (d) => onMessage(d),
-    'message-update': (u) => { const m = S.byId.get(u.id); if (m) Object.assign(m, u); dirty(); },
+    'message-update': (u) => onUpdate(u),
     'message-delete': (d) => onDelete(d), // deleting messages
     agent: (d) => upsertAgent(d),
     presence: (d) => upsertAgent(d),
@@ -1409,6 +1489,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     for (;;) {
       try {
         const r = await fetch('/api/stream', { headers: headers({ accept: 'text/event-stream' }), cache: 'no-store' });
+        if (S.signedOut) return; // your console started again: the page loads again
         if (r.status === 401 || r.status === 403) { gate('This Obysphere no longer accepts that key (it may have been rotated).'); return; }
         if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
         backoff = 1000;
@@ -1463,8 +1544,26 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     else { updateTopo(); dirty(); }
   }
 
+  // a change the relay announces to a message: when an ask was claimed and started, and whether it
+  // waits for its owner, each its own shape. Nothing else of what it sends is kept, so a relay can't
+  // swap a message's words, files or sender this way (your console drops the rest too).
+  const isWhen = (v) => typeof v === 'string' && v.length <= 40 && Number.isFinite(Date.parse(v));
+  function onUpdate(u) {
+    const m = u && RID.m.test(String(u.id)) ? S.byId.get(u.id) : null;
+    if (!m) return;
+    for (const k of ['claimedAt', 'startedAt']) if (k in u && (u[k] === null || isWhen(u[k]))) m[k] = u[k];
+    if ('waiting' in u) {
+      const w = u.waiting;
+      if (w === null) m.waiting = null;
+      else if (w && typeof w === 'object' && w.for === 'owner' && [w.until, w.since].every((v) => v == null || isWhen(v)) && (w.by == null || RID.a.test(String(w.by))))
+        m.waiting = { for: 'owner', ...(w.until != null ? { until: w.until } : {}), ...(w.since != null ? { since: w.since } : {}), ...(w.by != null ? { by: w.by } : {}) };
+    }
+    dirty();
+  }
+
   function onMessage(m) {
     if (!okMessage(m) || S.byId.has(m.id)) return;
+    tidy(m);
     S.messages.push(m);
     S.byId.set(m.id, m);
     if (!S.channels.has(m.channel)) unknownChannel(m.channel);
@@ -1709,6 +1808,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       if (fresh) YOU.editing = false;
       draw(pageYou());
       loadYou(); // away and held asks, from this machine
+      if (fresh || !SEC.report) loadSecurity(); // the security check: it reads your folders, so after the page
     }
     else if (p === 'settings' && S.me && CONSOLE) { if (fresh || !document.getElementById('settings-root')) loadSettings(); return; }
     else { S.page = 'overview'; return renderOverview(true); }
@@ -1977,7 +2077,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     anim.onfinish = () => dot.remove();
   }
 
-  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', delete: 'delete', expire: 'expire', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
+  const TYPE_WORDS = { join: 'join', online: 'online', offline: 'offline', away: 'away', session: 'session', ask: 'ask', claim: 'claim', run: 'run', reply: 'reply', post: 'post', delete: 'delete', expire: 'expire', file: 'file', deny: 'deny', suspend: 'suspend', resume: 'resume', remove: 'remove', release: 'release', policy: 'policy', rotate: 'rotate', pause: 'pause', unpause: 'unpause', role: 'role' };
   function logRow(e, isNew) {
     const t = new Date(e.ts);
     const time = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + '.' + String(t.getMilliseconds()).padStart(3, '0');
@@ -2142,9 +2242,17 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         </tr>`;
       })
       .join('');
+    // removed members, for admins: a removed member's handle isn't given out again (so no one new
+    // can join as them) until an admin releases it
+    const gone = S.admin ? [...S.agents.values()].filter((a) => a.removed && !a.released && agentIdOk(a.id)).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    const removed = gone.length
+      ? `<div class="set-sec-head mem-removed"><h2 class="set-sec-title">Removed</h2><p class="set-sec-line">Their handles stay taken, so no one new can join as them. Release one to let a new member use it; old messages keep their author.</p></div>
+       <div class="table-wrap" role="region" aria-label="Removed members" tabindex="0"><table class="table mem-table is-admin"><tbody>${gone.map((a) => `<tr><td class="fill"><div class="cell">${picture(a, 28)}<div style="min-width:0"><div class="mem-name"><span class="clip ink">${esc(label(a))}</span><span class="muted mem-handle">@${esc(a.name)}</span></div></div></div></td><td class="r"><div class="mem-actions"><button class="set-button sm" data-release="${esc(a.id)}" title="A new member may join as @${esc(a.name)}">Release handle</button></div></td></tr>`).join('')}</tbody></table></div>`
+      : '';
     return (
       head('Members', `${list.length} member${list.length === 1 ? '' : 's'} · ${online} online`, `<button class="set-button" data-invite>Invite member</button>`) +
       `<div class="table-wrap" role="region" aria-label="Members" tabindex="0"><table class="table mem-table${S.admin ? ' is-admin' : ''}"><thead><tr><th>Member</th><th>Status</th><th class="hide-phone">Answers with</th><th class="r hide-narrow">Answered</th><th class="r hide-phone">Median answer</th>${S.admin ? '<th><span class="sr-only">Actions</span></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+       ${removed}
        <p class="note is-problem" id="member-problem" hidden></p>`
     );
   }
@@ -2359,7 +2467,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         // its SHA-256 stays a hover away: for checking a copy, not for reading
         const sha = f.sha256 ? `SHA-256 ${f.sha256}` : '';
         return `<tr>
-          <td class="fill">${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>Sealed file</span></span>` : `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}" title="${esc(sha)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
+          <td class="fill">${f.sealed ? `<span class="msg-file" title="Sealed end to end: only its readers can open it">${lock(15)}<span>Sealed file</span></span>` : `<a class="msg-file" href="${esc(fileUrl(f))}" download="${esc(f.name)}" data-dl="${esc(f.id)}" title="${esc(sha)}">${fileIcon()}<span>${esc(f.name)}</span></a>`}</td>
           <td class="num mono hide-phone">${esc(size(f.size))}</td>
           <td><span class="route">${picture(agent(f.from), 20)}${to.length ? arrow + to.map((id) => picture(agent(id), 20)).join('') : ''}<span class="sr-only">${esc(obyOf(agent(f.from)) + (to.length ? ` to ${to.map((id) => obyOf(agent(id))).join(', ')}` : ''))}</span></span></td>
           <td class="mono muted">${esc(clock(Date.parse(f.ts)))}</td>
@@ -2375,7 +2483,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   // The page loads the newest 1,000 events when it opens; search and filters work on what's loaded,
   // and "Export all" pages through the whole log, saved as JSON Lines for `obysphere admin audit
   // verify`. The dropdowns are this page's own (au-*), small.
-  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'role'], refused: ['deny'] };
+  const AUDIT_GROUPS = { traffic: ['ask', 'claim', 'run', 'reply', 'post', 'delete', 'file'], members: ['join', 'online', 'offline', 'away', 'session', 'keys', 'channel'], admin: ['policy', 'expire', 'rotate', 'pause', 'unpause', 'suspend', 'resume', 'remove', 'release', 'role'], refused: ['deny'] };
   const AUDIT_GROUP_WORDS = { all: 'All events', traffic: 'Traffic', members: 'Members', admin: 'Admin actions', refused: 'Refused' };
   const AUDIT_TIMES = { all: 'Any time', hour: 'Last hour', today: 'Today', week: 'Last 7 days' };
   const AU = { q: '', type: 'all', member: '', time: 'all', shown: 200, loaded: false, total: null, wired: false, exporting: false };
@@ -2612,6 +2720,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         { key: 'maxFilesPerMessage', title: 'Files per message', step: [1, 50], fmt: String },
         { key: 'maxAgentBytes', title: 'Storage per member', sub: 'All of one member’s files together.', menu: redis ? mb(1, 5, 10, 25, 50, 100) : [...mb(10, 50, 100, 200, 500), POL_GB, 2 * POL_GB, 5 * POL_GB, 10 * POL_GB], fmt: polSize },
         { key: 'retainMessages', title: 'Messages kept', sub: 'Older ones are removed.', menu: [500, 1000, 2000, 5000, 10000, 20000, 50000], fmt: polCount },
+      ]],
+      ['Members', [
+        { key: 'maxAgents', title: 'Members at most', sub: 'Past it, a join is refused. Removed members don’t count.', menu: [10, 25, 50, 100, 250, 500, 1000, 5000, 10000], fmt: polCount },
       ]],
       ['Rate limits', [
         { key: 'rate.asksPerMin', title: 'Asks per Oby', menu: [5, 10, 20, 30, 60, 120, 300, 600], fmt: polPerMin },
@@ -2865,7 +2976,60 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   function pageYou() {
     return head(`<span style="display:inline-flex;align-items:center;gap:10px" id="you-face">${obyPic(S.agents.get(S.me.id) || S.me, 28)}Your Oby</span>`, youSub(), CONSOLE ? `<button class="set-button" data-page="settings">Settings</button>` : '') +
-      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div class="section-head"><h2>Look</h2></div><div id="you-look">${lookHtml()}</div><div id="you-rest">${youRest()}</div>`;
+      `<div id="you-away" class="you-away"${awayHtml() ? '' : ' hidden'}>${awayHtml()}</div><div id="pending-box">${pendingHtml()}</div><div id="held-box">${heldHtml()}</div><div class="section-head"><h2>Look</h2></div><div id="you-look">${lookHtml()}</div>${CONSOLE ? `<div class="section-head"><h2 id="you-security-h">Security</h2></div><div id="you-security" role="region" aria-labelledby="you-security-h">${securityHtml()}</div>` : ''}<div id="you-rest">${youRest()}</div>`;
+  }
+
+  // ---------------------------------------------------------------- your Oby's security: the check, lockdown, a new token
+  // GET /local/security (rep.mjs securityReport): what your Oby can reach, who may ask it, whether the
+  // Sphere is sealed, secrets in its folders, its files, and asks that made it try what you don't allow.
+  // A rep.mjs from before it answers 404, and the card says nothing.
+  const SEC = { report: null, off: false, busy: false, loading: false };
+  const SEC_MARK = { risk: 'error', warn: 'paused', info: 'declined', ok: 'online' };
+  const SEC_SAID = { risk: 'Needs attention', warn: 'Worth a look', info: 'Looks right', ok: 'Looks right' };
+  async function loadSecurity() {
+    if (!CONSOLE || !S.me || SEC.off || SEC.loading) return;
+    SEC.loading = true;
+    try { SEC.report = await local('GET', '/local/security'); } catch (e) { if (e.status === 404) SEC.off = true; } finally { SEC.loading = false; }
+    paintSecurity();
+  }
+  function paintSecurity() {
+    const box = document.getElementById('you-security');
+    if (box && a11yDraw(box, securityHtml())) wireSecurity(box);
+  }
+  function securityHtml() {
+    if (SEC.off) return '<p class="empty-line">Update your Oby to see its security check.</p>';
+    const r = SEC.report;
+    if (!r) return '<p class="empty-line">Checking what your Oby can reach…</p>';
+    const worst = r.checks[0]?.level || 'ok';
+    const lock = r.lockdown;
+    const rows = r.checks.map((c) => `<div class="sec-row is-${esc(c.level)}"><span class="status"><span class="status-dot is-${SEC_MARK[c.level] || 'declined'}"></span></span><div class="sec-text"><div class="sec-title">${esc(c.title)}</div>${c.detail ? `<div class="sec-detail">${esc(c.detail)}</div>` : ''}${c.fix && c.level !== 'ok' ? `<div class="sec-fix">${esc(c.fix)}</div>` : ''}</div></div>`).join('');
+    const blocked = (r.blocked || []).slice(-5).reverse().map((b) => `<li><span class="mono">${esc(whenWords(b.ts))}</span> @${esc(b.from)}: ${esc(b.denied.map((d) => `${d.tool}${d.what ? ` ${d.what}` : ''}`).join('; '))}</li>`).join('');
+    return `<div class="set-group"><div class="sec">
+      <div class="sec-head"><span class="state"><span class="status"><span class="status-dot is-${SEC_MARK[worst]}"></span></span><strong>${esc(lock ? 'Locked down' : SEC_SAID[worst])}</strong></span>
+        <span class="sec-actions"><button type="button" class="set-button" data-sec="again">Check again</button>${lock ? '<button type="button" class="set-button" data-sec="unlock">Lift lockdown</button>' : '<button type="button" class="set-button is-danger" data-sec="lock" title="Every ask waits for you; answers reach nothing but your folders">Lock down</button>'}<button type="button" class="set-button" data-sec="token" title="If this computer or your profile may have leaked">New token…</button></span></div>
+      ${lock ? `<p class="sec-lock">Since ${esc(whenWords(lock.at))}: every ask waits for you, and your Oby answers with no shell, web, browser, MCP servers, writes, GitHub or files. Your settings are as you left them.</p>` : ''}
+      <div class="sec-rows">${rows}</div>
+      ${blocked ? `<div class="sec-blocked"><div class="sec-title">What answers tried that you don’t allow</div><ul>${blocked}</ul></div>` : ''}
+      <span class="saved-note" data-sec-note></span>
+    </div></div>`;
+  }
+  function wireSecurity(box) {
+    const say = (words, bad = false) => { const n = box.querySelector('[data-sec-note]'); if (n) { n.textContent = words; n.classList.toggle('is-problem', bad); } a11ySay(bad ? 'problem' : 'note', words); };
+    box.querySelectorAll('[data-sec]').forEach((b) => (b.onclick = async () => {
+      if (SEC.busy) return;
+      const what = b.dataset.sec;
+      if (what === 'token' && !confirm('A new token for your Oby? The old one stops working at once. Your Oby, console and Claude Code sessions on this computer pick up the new one by themselves.')) return;
+      SEC.busy = true;
+      try {
+        if (what === 'lock' || what === 'unlock') await local('POST', '/local/lockdown', { on: what === 'lock' });
+        if (what === 'token') await local('POST', '/local/token', { rotate: true });
+        SEC.report = await local('GET', '/local/security');
+        paintSecurity();
+        say(what === 'lock' ? 'Locked down' : what === 'unlock' ? 'Lockdown lifted' : what === 'token' ? 'Your Oby has a new token' : 'Checked');
+      } catch (e) {
+        say(e.message || 'That didn’t work.', true);
+      } finally { SEC.busy = false; }
+    }));
   }
 
   // ---------------------------------------------------------------- your Oby's look: everyone in the Sphere sees it
@@ -3126,7 +3290,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
 
   // ---------------------------------------------------------------- what waits for you (asks your settings hold for you)
   async function local(method, path, body) {
-    const r = await fetch(path, { method, headers: { 'x-obysphere-console': '1', ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(path, { method, headers: headers(body ? { 'content-type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { const e = new Error(j.error || `HTTP ${r.status}`); e.field = j.field; e.status = r.status; throw e; }
     return j;
@@ -3143,7 +3307,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         S.withdrawn = back; // deleting messages: asks their askers deleted while they waited
         if (pending?.length) await settingsForPending();
         a11yWaiting((S.pending || []).length, (pending || []).length);
-        S.pending = pending || [];
+        S.pending = pending ? pending.map(tidy) : []; // its words, cleaned as the page takes them
         renderNav();
         if (S.mode === 'console' && S.page === 'you') renderPending();
         if (S.mode === 'console' && S.page === 'overview') updateKpis(); // Waiting for you
@@ -3177,9 +3341,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const risky = riskyReach(SET.settings);
     return `<div class="section-head"><h2 class="warn">Waiting for you · ${list.length}</h2><span class="link">${list.some((p) => p.kind === 'github') ? 'Nothing here happens until you say so' : 'Your Oby answers none of these until you say so'}</span></div>` +
       list.map((p) => githubCardHtml(p) || `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">@${esc(p.from?.name || '?')} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>${esc(ownerName({ owner: p.from?.owner, name: p.from?.name }))}’s Oby asks</span><span class="room-from">${p.depth > 0 ? `passed on by @${esc(p.from?.name || '?')} for someone else` : `@${esc(p.from?.name || '?')}`} · ${esc(where(p.channel || 'general'))} · ${esc(time(p.ts))}</span><span class="why">${esc(REASON_WORDS[p.reason] || p.reason || '')}</span></div>
         <div class="q">${esc(p.text || '')}</div>
         ${p.files?.length ? `<div class="msg-attached">${p.files.map((f) => `<span class="msg-file">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size || 0))}</span></span>`).join('')}</div>` : ''}
+        ${p.unsure ? `<div class="stuck-note"><span class="stuck-head">Not sure who this is</span><span>${esc(p.unsure)}</span></div>` : ''}
         ${p.stuck ? `<div class="stuck-note"><span class="stuck-head">${obyPic(S.me, 16)}${esc(NEED_WORDS[p.stuck.need] || NEED_WORDS.access)}</span><span>${esc(p.stuck.note)}</span></div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="answer">${p.instrument?.kind === 'command' ? `Run ${esc(p.instrument.name)}` : p.stuck ? 'Let my Oby try again' : 'Let my Oby answer'}</button>
@@ -4759,6 +4924,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   const NOTIFY_EVENT_ROWS_NEWER = [
     ['paused', 'Your Oby pauses: out of usage or signed out'],
     ['resumed', 'Your Oby is back after a pause'],
+    ['blocked', 'An ask makes your Oby try what you don’t allow'],
   ];
   const CONTENT_SUB = { summary: 'Who, and what kind. Never the words.', full: 'Also the words, up to 600 characters.' };
   const NOTIFY_FIELD_WORDS = { desktop: 'on this computer', console: 'in this console', claude: 'in Claude Code', phone: 'your phone', slack: 'Slack', events: 'what to notify you about', quiet: 'quiet hours' };
@@ -4847,9 +5013,9 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const el = e.target;
       if (!el.dataset.notifyAddress) return;
       const has = !!el.value.trim();
-      const t = box.querySelector(`[data-notify-test="${el.dataset.notifyAddress}"]`);
+      const t = box.querySelector(`[data-notify-test="${CSS.escape(el.dataset.notifyAddress)}"]`);
       if (t) t.disabled = !has;
-      const c = box.querySelector(`[data-content-for="${el.dataset.notifyAddress}"]`);
+      const c = box.querySelector(`[data-content-for="${CSS.escape(el.dataset.notifyAddress)}"]`);
       if (c) c.hidden = !has;
     });
     // a masked address is replaced whole, never edited in the middle
@@ -5036,9 +5202,10 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const what = g.action === 'merge' ? 'merge' : g.action === 'comment' ? 'comment on' : { APPROVE: 'approve', REQUEST_CHANGES: 'request changes on', COMMENT: 'post a review on' }[g.event] || 'act on';
     const pr = [g.title && esc(g.title), g.author && `by @${esc(g.author)}`, g.base && `into ${esc(g.base)}`, g.head && `at <span class="mono">${esc(String(g.head).slice(0, 7))}</span>`, g.action === 'merge' && esc(g.method || 'merge')].filter(Boolean).join(' · ');
     return `<div class="ask-card" data-pending="${esc(p.id)}">
-        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">for @${esc(p.from?.name || '?')}’s ask · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
+        <div class="who">${avatar({ name: p.from?.name, owner: p.from?.owner }, 22)}<span>Your Oby would ${esc(what)} ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(ref)}</a>` : esc(ref)} on GitHub</span><span class="room-from">${p.depth > 0 ? `for an ask @${esc(p.from?.name || '?')} passed on for someone else` : `for @${esc(p.from?.name || '?')}’s ask`} · #${esc(p.channel || 'general')} · ${esc(time(p.ts))}</span></div>
         ${pr ? `<div class="gh-pr">${pr}</div>` : ''}
         ${p.text ? `<div class="q">${esc(p.text)}</div>` : g.action === 'review' ? '<div class="gh-quiet">No words: an approval on its own.</div>' : ''}
+        ${p.unsure ? `<div class="stuck-note"><span class="stuck-head">Not sure who this is</span><span>${esc(p.unsure)}</span></div>` : ''}
         ${p.signed ? `<div class="gh-quiet">Signed “${esc(p.signed)}”.</div>` : ''}
         <div class="ask-actions">
           <button class="modal-primary" data-decide="act">${esc(g.button || 'Do it on GitHub')}</button>
@@ -5062,6 +5229,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       const a = agent(b.dataset.remove);
       if (!confirm(`Remove ${obyOf(a)}? Its token stops working and it would have to join again.`)) return;
       admin(() => call('DELETE', `/api/admin/agents/${a.id}`), 'member-problem');
+    }));
+    el.querySelectorAll('[data-release]').forEach((b) => (b.onclick = () => {
+      const a = agent(b.dataset.release);
+      if (!a || !confirm(`Release @${a.name}? A new member may then join with this handle. Old messages keep their author.`)) return;
+      admin(async () => { const r = await apiPost(`/api/admin/agents/${a.id}/release`, {}); if (r.agent) upsertAgent(r.agent); renderPage(false); }, 'member-problem');
     }));
     wireInstruments(el);
     wirePolicy(el); // its rotate button too
@@ -5138,7 +5310,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       : `<button class="connector nav-foot" data-admin-signin>${navIcon(ICON_KEY)}<span class="connector-name">Admin sign-in</span></button>`;
   }
   // claim: your console, your Oby becomes an admin (the key goes once, isn't stored).
-  // signin: a browser with no member keeps the key in this tab (sessionStorage), as before.
+  // signin: a browser with no member keeps the key in this page's memory only (a reload forgets it).
   function openAdmin(mode) {
     const m = $('#admin-modal');
     m.dataset.mode = mode;
@@ -5146,7 +5318,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#adm-title').textContent = claim ? 'Admin access' : 'Admin sign-in';
     $('#adm-line').textContent = claim
       ? 'Enter this Sphere’s admin key once to make your Oby an admin. The key isn’t stored.'
-      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this tab only, and forgotten when you close it.';
+      : 'Enter this Sphere’s admin key to govern it from this browser tab. It’s kept in this page only, and forgotten when you reload or close it.';
     $('#adm-go').textContent = claim ? 'Make my Oby an admin' : 'Sign in';
     $('#adm-note').textContent = claim
       ? 'It goes to the Sphere once, through your console on this machine, and the audit log records the claim. From then on your Oby’s own sign-in is enough. In a terminal: rep.mjs admin claim.'
@@ -5178,7 +5350,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
         const r = await fetch('/api/admin/check', { headers: { ...headers(), 'x-admin-key': k } });
         if (!r.ok) return bad(r.status === 401 ? 'That isn’t this Sphere’s admin key.' : r.status === 429 ? 'Too many wrong keys from this address: try again in a minute.' : 'That key didn’t work.');
         S.adminKey = k;
-        session.set('obysphere.admin', k);
+        // in memory only: never in the URL or the browser's storage
         S.admin = true;
       }
       input.value = '';
@@ -5192,7 +5364,6 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     }
   }
   function adminSignOut() {
-    session.set('obysphere.admin', null);
     S.adminKey = null;
     S.admin = false;
     if (ADMIN_PAGES.includes(S.page)) S.page = 'overview';
@@ -5634,7 +5805,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     try {
       got = (await api(`/api/messages?channel=${encodeURIComponent(name)}&limit=200`)).messages || [];
     } catch {} finally { loadingHistory.delete(name); }
-    const fresh = got.filter((m) => okMessage(m) && m.channel === name && !S.byId.has(m.id));
+    const fresh = got.filter((m) => okMessage(m) && m.channel === name && !S.byId.has(m.id)).map(tidy);
     if (!fresh.length) return;
     for (const m of fresh) S.byId.set(m.id, m);
     S.messages = S.messages.concat(fresh).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
@@ -5643,10 +5814,18 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
 
   const who = (id) => `<span class="who">${esc(obyLower(agent(id)))}</span>`;
+  // who wrote a message: the handle and owner's name your console pinned for its id (m.fromPinned),
+  // whatever the relay's list calls that id now; the list's record when there's no pin (your own)
+  const sender = (m) => {
+    const a = agent(m.from);
+    const f = m.fromPinned;
+    return f && typeof f.name === 'string' && f.name ? { ...a, name: f.name, owner: typeof f.owner === 'string' && f.owner ? f.owner : a.owner } : a;
+  };
+  const whoWrote = (m) => `<span class="who">${esc(obyLower(sender(m)))}</span>`;
   function messageHtml(m, prev) {
     if (m.kind === 'system') return `<p class="sys" id="${esc(m.id)}">${esc(systemText(m))} · ${esc(time(m.ts))}</p>`;
     if (m.deleted) return goneHtml(m); // deleting messages
-    const a = agent(m.from);
+    const a = sender(m);
     const mine = isMe(a);
     const mt = m.meta || {};
     const you = mine && !mt.local && !mt.error;
@@ -5654,11 +5833,11 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const cause = m.cause ? S.byId.get(m.cause) : null;
     let did = '';
     if (m.to.length) did = `asks ${m.to.map(who).join(', ')}`;
-    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${who(parent.from)}</button>`;
-    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${who(cause.from)}</button>`;
+    else if (parent) did = `<button class="jump" data-jump="${esc(parent.id)}">answers ${whoWrote(parent)}</button>`;
+    if (cause) did += `, <button class="jump" data-jump="${esc(cause.id)}">while answering ${whoWrote(cause)}</button>`;
     const cont = prev && !prev.deleted && prev.kind === 'post' && m.kind === 'post' && prev.from === m.from && Date.parse(m.ts) - Date.parse(prev.ts) < 5 * 60e3;
     let state = '';
-    if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(ownerName(a))}’s machine</p>`;
+    if (mt.error) state = `<p class="room-state is-refused">Couldn’t answer on ${esc(machineOf(a))}</p>`;
     else if (mt.declined) state = `<p class="room-state">${esc(ownerName(a))} declined</p>`;
     else if (mt.answeredBy === 'owner') state = `<p class="room-state">Written by ${esc(ownerName(a))}</p>`;
     else if (mt.local) {
@@ -5674,11 +5853,15 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     if (m.sealed && m.open) state += m.verified === false
       ? `<p class="room-state is-refused">${lock()}Its signature didn’t verify: treat it as forged</p>`
       : S.sphere?.policy?.sealed ? '' : `<p class="room-state">${lock()}Sealed end to end</p>`;
-    const t = `<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
+    // your console says so (m.unsealed): a plain message where your Oby seals
+    if (m.unsealed) state += `<p class="room-state is-refused">Not sealed: the relay could have written it</p>`;
+    // the relay calls its sender by another handle or owner now than the one first seen for it
+    if (m.fromUnsure) state += `<p class="room-state is-refused">Not sure who this is: ${esc(m.fromUnsure)}</p>`;
+    const t =`<time class="msg-time" title="${esc(m.ts)}">${esc(time(m.ts))}</time>` + delHtml(m);
     if (you) {
       return `<div class="msg is-you" id="${esc(m.id)}">
         ${did ? `<p class="room-about">You ${did.replace(/^asks /, 'asked ')}</p>` : ''}
-        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${foot(t)}</div>
+        <div class="msg-end">${closed ? sealedHtml(m) : m.text ? `<p class="msg-bubble">${esc(m.text)}</p>` : ''}${files}${m.sealed && m.open && !S.sphere?.policy?.sealed ? `<p class="room-state">${lock()}Sealed end to end</p>` : ''}${m.unsealed ? '<p class="room-state is-refused">Not sealed: the relay could have written it</p>' : ''}${foot(t)}</div>
       </div>`;
     }
     const by = cont ? '' : `<div class="room-who">
@@ -5763,7 +5946,7 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
   }
   function fileHtml(f) {
     const texty = /^(text\/|application\/json)/.test(f.mime) && f.size < 200000;
-    return `<a class="msg-file" href="${fileUrl(f)}" download="${esc(f.name)}" data-dl="${esc(f.id)}" ${texty ? `data-peek="${esc(f.id)}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
+    return `<a class="msg-file" href="${esc(fileUrl(f))}" download="${esc(f.name)}" data-dl="${esc(f.id)}" ${texty ? `data-peek="${esc(f.id)}"` : ''} title="${texty ? 'Click to read it here; ⌥-click to download' : 'Download'}">${fileIcon()}<span>${esc(f.name)}</span><span class="size">${esc(size(f.size))}</span></a>`;
   }
 
   document.addEventListener('click', async (e) => {
@@ -5784,16 +5967,18 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const pk = e.target.closest('[data-peek]');
     if (pk && !e.altKey) {
       e.preventDefault();
+      const id = pk.dataset.peek; // a file id, checked: it goes into a request path and the markup
+      if (!RID.f.test(id)) return;
       const box = pk.closest('.msg-end');
-      const open = box.querySelector(`.file-peek[data-of="${pk.dataset.peek}"]`);
+      const open = [...box.querySelectorAll('.file-peek')].find((x) => x.dataset.of === id);
       if (open) { open.remove(); return; }
-      const r = await fetch(fileUrl({ id: pk.dataset.peek }, true), { headers: headers() });
-      const text = await r.text();
-      pk.closest('.msg-attached').insertAdjacentHTML('afterend', `<pre class="ss-code file-peek" data-of="${pk.dataset.peek}">${esc(text.slice(0, 100000))}</pre>`);
+      const r = await fetch(fileUrl({ id }, true), { headers: headers() });
+      const text = cleanText(await r.text());
+      pk.closest('.msg-attached').insertAdjacentHTML('afterend', `<pre class="ss-code file-peek" data-of="${esc(id)}">${esc(text.slice(0, 100000))}</pre>`);
       return;
     }
     const dl = e.target.closest('a[data-dl]');
-    if (dl && !CONSOLE) {
+    if (dl) {
       e.preventDefault();
       download(dl.dataset.dl, dl.getAttribute('download')).catch((err) => alert(`Couldn't download it: ${err.message}`));
       return;
@@ -6178,7 +6363,8 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
       ['2. Join, choosing the folder their Oby may read', `obysphere join "${link}"${flag} ${who} --about "<what their Oby knows>" --cwd <folder it may read>`],
       ['3. Go online in the background, so others can ask them', 'obysphere start'],
       ['4. Open their console, signed in as them', 'obysphere open'],
-      ['Or with nothing installed: one file, then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
+      // the console's page comes with it, from the same place: the console never uses the Sphere's
+      ['Or with nothing installed: two files (their Oby and its console’s page), then join and go online', `curl -fsSLO https://raw.githubusercontent.com/${REPO}/main/rep.mjs && curl -fsSL --create-dirs -o public/index.html https://raw.githubusercontent.com/${REPO}/main/public/index.html && node rep.mjs join "${link}"${flag} ${who} --cwd <folder it may read> && node rep.mjs ui --serve --open`],
     ];
   }
 
@@ -6594,41 +6780,88 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     $('#skip').addEventListener('click', (e) => { e.preventDefault(); a11yLanding()?.focus(); });
   }
 
-  // ---------------------------------------------------------------- their words: a little Markdown, escaped first
+  // ---------------------------------------------------------------- their words: a little Markdown
+  // Read once, left to right: code blocks first, then each line's kind, then the inline rules on
+  // that line's plain text only, so nothing one rule writes is read again by another. Each piece is
+  // escaped as it's written. Control and direction-override characters go first. A link says where
+  // it goes when its words don't; one to this machine isn't a link. Long runs are bounded, so a
+  // message of 20,000 "[" can't keep the page busy.
+  const MD_LINE = 4000; // a longer line is shown as it is, without inline markup
+  const MD_INLINE = /`([^`\n]{1,2000})`|\[([^\]\n]{1,300})\]\((https?:\/\/[^\s)]{1,2048})\)|(?<![^\s(])(https?:\/\/[^\s<)]{1,2048})|\*\*([^*\n]{1,2000})\*\*|(?<![^\s(])\*([^*\n]{1,2000})\*(?=[\s).,!?:;]|$)|(?<!\S)@([a-z0-9-]{2,32})\b/g;
+  const LOCAL_HOST = /^(localhost|[^:]*\.localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[[0:]*:?1?\])(:\d+)?$/i;
   function md(src) {
-    let s = esc(src);
-    const blocks = [];
-    s = s.replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => { blocks.push(`<pre class="ss-code">${code.replace(/\n$/, '')}</pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+    const s = cleanText(src);
     const names = new Set([...S.agents.values()].map((a) => a.name));
-    const inl = (t) => t
-      .replace(/`([^`\n]+)`/g, '<code class="tok-code">$1</code>')
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<i>$2</i>')
-      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a class="tok-url" href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a class="tok-url" href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
-      .replace(/(^|\s)@([a-z0-9-]{2,32})\b/g, (m0, pre, n) => (names.has(n) ? `${pre}<span class="tok-mention">@${n}</span>` : m0));
     const out = [];
+    // code fences, found by indexOf in one pass: ``` then its info string ([\w-]*) and a newline,
+    // its words up to the next ```. (A regex for it backtracked: 160 KB without a closing fence, a
+    // sealed message's most, took seconds.) A fence that never closes: none after it either.
+    const info = /[\w-]*\n?/y;
+    let at = 0;
+    for (let open = s.indexOf('```'); open >= 0; open = s.indexOf('```', at)) {
+      info.lastIndex = open + 3;
+      info.test(s);
+      const close = s.indexOf('```', info.lastIndex);
+      if (close < 0) break;
+      mdLines(s.slice(at, open), names, out);
+      out.push(`<pre class="ss-code">${esc(s.slice(info.lastIndex, close).replace(/\n$/, ''))}</pre>`);
+      at = close + 3;
+    }
+    mdLines(s.slice(at), names, out);
+    return out.join('');
+  }
+  function mdLines(text, names, out) {
     let list = null;
-    for (const line of s.split('\n')) {
+    for (const line of text.split('\n')) {
       const ul = /^\s*[-*•]\s+(.*)$/.exec(line);
       const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
       if (ul || ol) {
         const tag = ul ? 'ul' : 'ol';
         if (!list || list !== tag) { if (list) out.push(`</${list}>`); out.push(`<${tag}>`); list = tag; }
-        out.push(`<li>${inl((ul || ol)[1])}</li>`);
+        out.push(`<li>${mdInline((ul || ol)[1], names)}</li>`);
         continue;
       }
       if (list) { out.push(`</${list}>`); list = null; }
       if (!line.trim()) continue;
       const h = /^#{1,6}\s+(.*)$/.exec(line);
-      if (h) { out.push(`<h4>${inl(h[1])}</h4>`); continue; }
-      const q = /^&gt;\s?(.*)$/.exec(line);
-      if (q) { out.push(`<blockquote>${inl(q[1])}</blockquote>`); continue; }
-      if (/^\u0000\d+\u0000$/.test(line.trim())) { out.push(line.trim()); continue; }
-      out.push(`<p>${inl(line)}</p>`);
+      if (h) { out.push(`<h4>${mdInline(h[1], names)}</h4>`); continue; }
+      const q = /^>\s?(.*)$/.exec(line);
+      if (q) { out.push(`<blockquote>${mdInline(q[1], names)}</blockquote>`); continue; }
+      out.push(`<p>${mdInline(line, names)}</p>`);
     }
     if (list) out.push(`</${list}>`);
-    return out.join('').replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[i]);
+  }
+  function mdInline(t, names) {
+    if (t.length > MD_LINE) return esc(t);
+    let html = '';
+    let at = 0;
+    for (const m of t.matchAll(MD_INLINE)) {
+      const [all, code, label, href, bare, bold, ital, who] = m;
+      html += esc(t.slice(at, m.index));
+      at = m.index + all.length;
+      if (code !== undefined) html += `<code class="tok-code">${esc(code)}</code>`;
+      else if (href !== undefined) html += mdLink(label, href);
+      else if (bare !== undefined) html += mdLink(null, bare);
+      else if (bold !== undefined) html += `<strong>${mdInline(bold, names)}</strong>`;
+      else if (ital !== undefined) html += `<i>${mdInline(ital, names)}</i>`;
+      else html += names.has(who) ? `<span class="tok-mention">@${esc(who)}</span>` : esc(all);
+    }
+    return html + esc(t.slice(at));
+  }
+  // a link, and where it goes when its words say otherwise ([https://github.com/…](https://evil.example)).
+  // One to this machine (localhost, *.localhost) isn't a link: your console's sign-in goes to any
+  // program there.
+  function mdLink(label, href) {
+    let host = '';
+    try { host = new URL(href).host.toLowerCase(); } catch {}
+    const words = label ?? href;
+    const said = words.trim().toLowerCase();
+    let saidHost = '';
+    try { saidHost = /^https?:\/\//i.test(said) ? new URL(said).host.toLowerCase() : ''; } catch {}
+    const shows = label === null || said === href.toLowerCase() || said === host || saidHost === host;
+    const where = shows ? '' : ` <span class="tok-host">(${esc(host || href)})</span>`;
+    if (!host || LOCAL_HOST.test(host)) return `${esc(words)}${label === null ? '' : ` <span class="tok-host">(${esc(href)})</span>`}`;
+    return `<a class="tok-url" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(words)}</a>${where}`;
   }
 
   // ---------------------------------------------------------------- small helpers

@@ -1,0 +1,12 @@
+# Keeps the pinned actions (by commit) and the Docker base image (by digest) current: a pull
+# request each week, which CI checks like any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

@@ -261,10 +261,11 @@ if (!chromium) {
             const ask = (text) => world.repInBackground(['ask', 'alice', text, '--profile', 'bob', '--wait', '60']);
             const [askYes, askNo, askMine] = [ask(yes), ask(no), ask(mine)];
             // What Bob's ask says: how it ended, when it waits that long, or that it waits for Alice
-            // (a rep.mjs that says so at once, #160); either way Traffic shows how it ended, below
+            // (a rep.mjs that says so at once, #160; outside the fence only her handle, since the second
+            // audit); either way Traffic shows how it ended, below
             const bobGets = async (p, words) => {
               const { out } = await p.exited;
-              assert.ok(out.includes(words) || /asks its owner \("Alice Test"\) before answering; they've been told/.test(out), out);
+              assert.ok(out.includes(words) || /asks its owner(?: \("Alice Test"\))? before answering; they've been told/.test(out), out);
             };
             // an item that waits for you (it has no role of its own)
             const card = (text) => page.locator('[data-pending]').filter({ hasText: text });
@@ -316,6 +317,7 @@ if (!chromium) {
             const asked = await world.rep(['ask', 'alice', question, '--profile', 'carol', '--wait', '60']);
             assert.ok(asked.out.includes(ANSWER), asked.out);
             const session = world.session(world.fake.calls().find((c) => c.prompt.includes(question)));
+            await session.call('github_pr', { repo: 'acme/payments', number: pr }); // an approval covers the commit read in this ask
             assert.match(await session.call('github_review', { repo: 'acme/payments', number: pr, event: 'APPROVE', body: 'Looks right to me.' }), /waits for Alice Test/);
             session.close();
             const writes = world.gh.writes().length;
@@ -328,9 +330,10 @@ if (!chromium) {
             await noSidewaysScroll(page, vp, 'a GitHub item in Waiting for you');
             await card.getByRole('button', { name: 'Approve on GitHub' }).click();
             await card.waitFor({ state: 'detached' });
-            const done = await until(() => world.gh.writes()[writes], 'gh pr review');
-            assert.deepEqual(done.argv.slice(0, 5), ['pr', 'review', String(pr), '--repo=acme/payments', '--approve']);
-            assert.match(done.argv[5], /^--body=Looks right to me\.\n\n— written by Alice Test's Oby, approved by Alice Test$/);
+            const done = await until(() => world.gh.writes()[writes], 'the review, through gh api graphql');
+            assert.deepEqual(done.argv.slice(0, 2), ['api', 'graphql']);
+            assert.ok(done.argv.includes('--raw-field=event=APPROVE') && done.argv.includes(`--raw-field=pr=PR_kwFAKE${pr}`), done.argv.join(' '));
+            assert.match(done.argv.at(-1), /^--raw-field=body=Looks right to me\.\n\n— written by Alice Test's Oby, approved by Alice Test$/);
             // and the ask's thread says so, for Carol
             await switchView(page, 'Conversation');
             await page.getByRole('log').getByText(`Alice Test approved acme/payments#${pr} on GitHub.`).waitFor();
@@ -491,7 +494,7 @@ if (!chromium) {
             const dm = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('c');
             assert.match(dm, /^dm-[0-9a-f]{24}$/);
             assert.ok((await world.rep(['read', dm, '--profile', 'bob'])).out.includes(note), 'Bob reads it from the relay');
-            const hers = await open(`${carol.url}#mode=conversation&c=${dm}`);
+            const hers = await open(`${carol.url}&mode=conversation&c=${dm}`);
             await hers.getByRole('log').waitFor();
             await hers.getByText(/^Everyone in #general sees it/).waitFor(); // #general instead
             for (const name of ['Alice Test and Bob Test', 'Bob Test and Alice Test']) assert.equal(await hasPage(hers, name), false, `no "${name}" in Carol's side panel`);
@@ -575,7 +578,7 @@ if (!chromium) {
             await claim.getByRole('button', { name: 'Close' }).click();
             await claim.waitFor({ state: 'hidden' });
             // and a link straight to Policy opens the Overview
-            await hers.goto(`${alice.url}#mode=console&page=policy`);
+            await hers.goto(`${alice.url}&mode=console&page=policy`);
             await hers.reload();
             await title(hers, sphere.name).waitFor();
             assert.equal(await title(hers, 'Policy').count(), 0);
@@ -617,7 +620,7 @@ if (!chromium) {
 
             // Alice's Oby isn't an admin: her console has no Policy page, and the relay refuses a
             // change sent through her console all the same
-            const hers = await open(`${alice.url}#mode=console&page=policy`);
+            const hers = await open(`${alice.url}&mode=console&page=policy`);
             await title(hers, sphere.name).waitFor();
             assert.equal(await title(hers, 'Policy').count(), 0);
             assert.equal(await hasPage(hers, 'Policy'), false);

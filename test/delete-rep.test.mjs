@@ -12,6 +12,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -81,7 +82,7 @@ describe('your Oby forgets a deleted message', () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   const recent = () => {
     try {
       return fs.readFileSync(path.join(bobDir(), 'notify', 'recent.jsonl'), 'utf8');
@@ -147,7 +148,7 @@ describe('your Oby forgets a deleted message', () => {
         return false;
       }
     }, 8000, 'the console');
-    fetch(uiBase + '/api/stream', { signal: page.signal }).then(async (r) => { for await (const _ of r.body); }).catch(() => {});
+    fetch(uiBase + '/api/stream', { signal: page.signal, headers: consoleAuth(path.join(home, 'bob'), uiBase) }).then(async (r) => { for await (const _ of r.body); }).catch(() => {});
     const bob = spawn(process.execPath, [path.join(ROOT, 'rep.mjs'), 'serve', '--profile', 'bob'], { env: env() });
     procs.push(bob);
     bob.stdout.on('data', (d) => (bobOut += d));
@@ -189,11 +190,11 @@ describe('your Oby forgets a deleted message', () => {
     assert.deepEqual(after.withdrawn.map((x) => [x.id, x.from.name, x.from.owner]), [[w.id, 'alice', 'Alice Test']], 'Waiting for you says alice took it back');
     await waitFor(() => /alice took this ask back: not answered/.test(bobOut), 5000, `bob's log\n${bobOut.slice(-2000)}`);
     assert.ok(!pendingText().includes('PELICAN-23'), 'no words kept to say so');
-    // bob's console passes a delete on only with its header, from its own page
+    // bob's console passes a delete on only with its secret
     const bare = await fetch(`${uiBase}/api/messages/${note.id}`, { method: 'DELETE' });
-    assert.equal(bare.status, 403, 'not without the console header');
+    assert.equal(bare.status, 401, "not without the console's secret");
     // bob's console shows the tombstones
-    const thread = await call('GET', `/api/messages?channel=${dm.name}`, { at: uiBase });
+    const thread = await call('GET', `/api/messages?channel=${dm.name}`, { at: uiBase, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
     assert.ok(thread.messages.find((m) => m.id === note.id).deleted);
     assert.ok(!JSON.stringify(thread).includes('CORMORANT'));
     // and his Oby didn't answer: no reply, no runtime run
@@ -209,7 +210,7 @@ describe('your Oby forgets a deleted message', () => {
     const first = (await call('POST', '/api/messages', { tok: token('alice'), body: { to: [ids.bob], text: 'First: answer this one, HERON-31' } })).message;
     await waitFor(() => fake.calls().some((c) => String(c.prompt).includes('HERON-31')) || /HERON-31/.test(bobOut), 15000, `the first ask to run\n${bobOut.slice(-2000)}`);
     const second = (await call('POST', '/api/messages', { tok: token('alice'), body: { to: [ids.bob], text: 'Second: never mind, EGRET-32' } })).message;
-    await waitFor(() => /EGRET-32/.test(bobOut), 10000, 'the second ask to come in');
+    await waitFor(() => bobOut.includes(second.id), 10000, 'the second ask to come in'); // its id: the log keeps no words
     assert.equal((await call('DELETE', `/api/messages/${second.id}`, { tok: token('alice') })).status, 200);
     // the first is answered; the second, taken back while it waited its turn, never runs
     await waitFor(async () => (await call('GET', `/api/messages/${first.id}`, { tok: token('alice') })).replies.length === 1, 20000, `the first answer\n${bobOut.slice(-2000)}`);

@@ -55,9 +55,9 @@ obysphere join "https://<the Sphere>/#key=<join key>" --name you --owner "Your N
 obysphere start
 ```
 
-- The installer downloads a release, checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. To follow `main` instead of releases: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
+- The installer downloads a release from GitHub with curl, over HTTPS (redirects too), checks it against the release's `SHA256SUMS`, installs it under `~/.local/share/obysphere/` and puts `obysphere` in `~/.local/bin/`. It runs nothing until it has all arrived, so a download cut short installs nothing. To follow `main` instead of releases: `curl -fsSL https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/install.sh | sh -s -- --channel main`.
 - `--cwd` is the one folder your Oby may read when it answers. Without it, `join` uses the folder you're in, and refuses your home folder. `join` also takes `--about "what your Oby knows"`.
-- `obysphere start` runs your Oby in the background (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows): it answers asks on this machine and serves your console, and starts again when you log in. `obysphere open` opens the console; `obysphere status` and `obysphere logs` say how it's doing.
+- `obysphere start` runs your Oby in the background (a LaunchAgent on macOS, a `systemd --user` unit on Linux, a scheduled task on Windows): it answers asks on this machine and serves your console, and starts again when you log in. `obysphere open` opens the console, signed in with a link that works once (a new tab needs a new one); `obysphere status` and `obysphere logs` say how it's doing.
 - On macOS, `obysphere start` also puts the Oby face in your menu bar: whether your Oby runs, is away or can't answer, how many asks wait for you, and a menu to open your console, say you're away or back, start and stop it, and update. It's the same small app that shows notifications, built on your Mac with the Xcode command line tools. `obysphere menubar off` hides it.
 - Joined more than one Sphere? `obysphere profiles use <name>` chooses the one commands and the Claude Code plugin use when you don't say.
 - To use the Sphere from Claude Code or Cursor without the plugin, `obysphere mcp-config` prints the line that adds it.
@@ -70,7 +70,7 @@ A Sphere is one small process with two keys: a **join key**, which goes in your 
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/oby-sphere?utm_medium=integration&utm_source=button&utm_campaign=oby-sphere)
 
-The button deploys a sealed Sphere with its two keys made for you (they're in the service's **Variables**), a volume at `/data` and the health check on `/healthz`. Your invite link is `https://<its domain>/#key=<SPHERE_KEY>`. [Without the button](docs/DEPLOY.md#railway).
+The button deploys a sealed Sphere with its two keys made for you (they're in the service's **Variables**), a volume at `/data` and the health check on `/healthz`. Your invite link is `https://<its domain>/#key=<SPHERE_KEY>`, until an admin rotates the join key; then **Invite member** in the console gives the new one. [Without the button](docs/DEPLOY.md#railway).
 
 **Vercel:** serverless, with Upstash Redis.
 
@@ -186,7 +186,7 @@ The audit log, checked on your machine: `obysphere admin audit export` saves it 
 
 ### Updates
 
-`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel or in Docker, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
+`obysphere update` downloads the newest release, checks it against its `SHA256SUMS`, switches to it and restarts your Oby; `obysphere update --rollback` goes back. It never moves you to an older release unless you say so (`--allow-downgrade`), and the menu bar's *Update to …* takes the release it names, from the stable channel. Your console says when a newer Oby is out, and `obysphere doctor` compares your Oby's version with the Sphere's. The code comes from this repository, never from a Sphere. A Sphere updates where it runs: `obysphere server update` for one on Vercel or in Docker, the rest in [docs/DEPLOY.md](docs/DEPLOY.md#updating-a-sphere).
 
 ## Under the hood
 

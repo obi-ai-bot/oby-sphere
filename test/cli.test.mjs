@@ -14,6 +14,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { startFakeGitHub, buildApp, release, sha256, makeFakeVercel } from './fake-cli.mjs';
+import { consoleAuth, consoleSecret } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).version; // this checkout's version
@@ -348,7 +349,8 @@ describe('update and install.sh, from a fake GitHub', () => {
     gh.main = apps.main;
   });
   after(() => gh.close());
-  const ghEnv = () => ({ OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download });
+  // the fake GitHub: OBYSPHERE_TEST lets the two variables point at this machine
+  const ghEnv = () => ({ OBYSPHERE_TEST: '1', OBYSPHERE_RELEASES_API: gh.api, OBYSPHERE_DOWNLOAD_BASE: gh.download });
 
   test('update: checked against SHA256SUMS, a mismatch refused, services restarted, rollback, main', async () => {
     const h = tmp('update');
@@ -431,7 +433,7 @@ describe('update and install.sh, from a fake GitHub', () => {
 
   test('install.sh: the latest release, checked, in the app home, with the obysphere command', async () => {
     const nodeDir = path.dirname(process.execPath);
-    // install.sh reads only PATH, HOME, SHELL and the download overrides; the rest keeps the installed CLI in a dry run
+    // install.sh reads only PATH, HOME, SHELL and the download overrides (with OBYSPHERE_TEST); the rest keeps the installed CLI in a dry run
     const shEnv = (h, extra = {}) => ({ PATH: `${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: h, TMPDIR: os.tmpdir(), SHELL: '/bin/zsh', OBYSPHERE_SERVICE_DRYRUN: '1', OBYSPHERE_SERVICE_DIR: path.join(h, 'services'), ...ghEnv(), ...extra });
 
     gh.release = release('9.9.1', apps['9.9.1']);
@@ -688,7 +690,12 @@ describe('status, open and the version check, against a local relay', () => {
 
     const open = await cli(['open'], env);
     assert.equal(open.code, 0, open.out);
-    assert.deepEqual(dryrun(h).at(-1), { cmd: 'open', args: [`http://alice.localhost:${port}/`] });
+    // signed in: a code that works once, on osascript's stdin (never the secret, nor a command line)
+    const opened = dryrun(h).at(-1);
+    assert.equal(opened.cmd, 'osascript');
+    assert.deepEqual(opened.args, []);
+    assert.match(opened.input, new RegExp(`^open location "http://alice\\.localhost:${port}/#code=[A-Za-z0-9_-]{43}"\n$`));
+    assert.ok(!JSON.stringify(opened).includes(consoleSecret(path.join(profiles, 'alice'), port)));
 
     // restart doesn't put a service on the port a console in a terminal holds (it would only fail to listen)
     const again = await cli(['restart'], env);
@@ -714,8 +721,8 @@ describe('status, open and the version check, against a local relay', () => {
   });
 
   test("the console's GET /local/version: what's known now, checked once a day in the background", async () => {
-    const get = (p, headers = { 'x-obysphere-console': '1' }) => fetch(`http://127.0.0.1:${p}/local/version`, { headers }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
-    assert.equal((await get(port, {})).status, 403);
+    const get = (p, headers = consoleAuth(path.join(profiles, 'alice'), p)) => fetch(`http://127.0.0.1:${p}/local/version`, { headers }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+    assert.equal((await get(port, { 'x-obysphere-console': '1' })).status, 401, 'the old constant header opens nothing');
     fs.rmSync(path.join(h, 'app', 'update-check.json'), { force: true });
     assert.deepEqual(await get(port), { status: 200, current: PKG_VERSION, latest: null, checkedAt: null }); // OBYSPHERE_NO_UPDATE_CHECK
     fs.writeFileSync(path.join(h, 'app', 'update-check.json'), JSON.stringify({ latest: '9.9.9', checkedAt: '2026-11-25T10:00:00.000Z' }));
@@ -729,7 +736,7 @@ describe('status, open and the version check, against a local relay', () => {
       fs.mkdirSync(app2);
       const p2 = await freePort();
       const ui = spawn(process.execPath, [REP, 'ui', '--profile', 'alice', '--port', String(p2)], {
-        env: { ...env, OBYSPHERE_APP_HOME: app2, OBYSPHERE_NO_UPDATE_CHECK: '', OBYSPHERE_RELEASES_API: gh.api },
+        env: { ...env, OBYSPHERE_APP_HOME: app2, OBYSPHERE_NO_UPDATE_CHECK: '', OBYSPHERE_TEST: '1', OBYSPHERE_RELEASES_API: gh.api },
         stdio: 'ignore',
       });
       procs.push(ui);

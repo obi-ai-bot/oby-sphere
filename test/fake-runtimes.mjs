@@ -5,6 +5,9 @@
 // route classifier (Claude Code on Haiku) records to classify.jsonl instead.
 // control.json beside it sets:
 //   text, sleepMs            Claude Code's answer, and a wait before it (after a partial one)
+//   denials                  what its run was refused, as Claude Code reports it: [{ tool_name, tool_input }]
+//   streamDenials            the same, but as the run goes (each a tool_use, then its error tool_result saying
+//                            permission was denied), before it answers, fails or sleeps: [{ tool_name, tool_input }]
 //   classify                 'auto' (the first kind whose words the message has), a rule number, 'none' or 'fail'
 //   claudeAuth               'claude.ai' (default, a Team plan), 'console' (an API key) or 'none'; claudeMissing
 //   claudeHelp               'old': an older Claude Code, whose --help has no --restricted
@@ -90,6 +93,10 @@ stdin((prompt) => {
   const model = flag('--model') || 'fake-default';
   record('calls.jsonl', { bin: 'claude', prompt, settings: JSON.parse(read(flag('--settings')) || 'null'), mcp: JSON.parse(read(flag('--mcp-config')) || 'null'), system: read(flag('--append-system-prompt-file')) });
   out({ type: 'system', subtype: 'init', model, tools: ['Read'], apiKeySource: 'none', session_id: 'fake-init' });
+  (control.streamDenials || []).forEach((d, i) => {
+    out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_refused_' + i, name: d.tool_name, input: d.tool_input }] } });
+    out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_refused_' + i, is_error: true, content: 'Permission to use ' + d.tool_name + ' has been denied.' }] } });
+  });
   const failed = failure('claude');
   // crash: the model and its tools said things that look like failures, then it stopped with no result and nothing on stderr
   if (failed === 'crash') {
@@ -112,7 +119,7 @@ stdin((prompt) => {
     process.exit(1);
   }
   out({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: {} }] } });
-  const finish = () => out({ type: 'result', subtype: 'success', is_error: false, result: control.text || ('fake answer from ' + model), session_id: 'fake-session-' + Date.now(), total_cost_usd: 0.01, num_turns: 1, modelUsage: { [model]: {} } });
+  const finish = () => out({ type: 'result', subtype: 'success', is_error: false, result: control.text || ('fake answer from ' + model), session_id: 'fake-session-' + Date.now(), total_cost_usd: 0.01, num_turns: 1, modelUsage: { [model]: {} }, ...(control.denials ? { permission_denials: control.denials } : {}) });
   if (control.sleepMs) {
     out({ type: 'assistant', message: { content: [{ type: 'text', text: 'partial answer so far' }] } });
     setTimeout(finish, control.sleepMs);

@@ -26,7 +26,7 @@ The tools act with the owner's `gh` sign-in on this machine, and `obysphere` che
 2. **Review.** Write each finding with its file and line: what's wrong, why it matters, what to do. Say plainly whether you'd approve.
 3. **Act.** Call `github_review` with `repo`, `number`, `event` (`COMMENT`, `REQUEST_CHANGES` or `APPROVE`) and `body`, or `github_comment` for a plain comment. What happens depends on the owner's setting for that action:
    - `never`: refused. Put the review in your answer instead.
-   - `ask`: it waits for the owner in **Waiting for you**, and they're notified. Say so in your answer, for example "My approval waits for Dmytro to click Approve on GitHub."
+   - `ask`: it waits for the owner in **Waiting for you**, and they're notified. Say so in your answer, for example "My approval waits for Bob to click Approve on GitHub."
    - `trusted`: it happens on its own when the asker is an Oby the owner trusts. For anyone else it waits, as with `ask`.
 4. **Approve only what you would approve:** the PR does what it says, its checks pass, and nothing you raised is still open. Otherwise comment or request changes.
 
@@ -44,7 +44,7 @@ With `ask`, your Oby's review shows in your console under **Your Oby › Waiting
 
 ## Settings › GitHub
 
-In the console (**Settings › GitHub**), or under `github` in `settings.json`:
+The person sets it in the console (**Settings › GitHub**), or under `github` in `settings.json`:
 
 | Setting | What it means |
 |---|---|

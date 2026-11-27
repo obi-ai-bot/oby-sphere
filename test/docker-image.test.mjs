@@ -438,6 +438,7 @@ describe('the release workflow publishes the image', () => {
   const job = wf.jobs.image;
   const steps = job.steps;
   const at = (pred) => steps.findIndex(pred);
+  const act = (u) => String(u || '').split('@')[0];
 
   test('only on a v* tag, after the tests and the release, with packages: write for that job alone', () => {
     assert.deepEqual(wf.on, { push: { tags: ['v*'] } }, 'never on a pull request or a push to a branch');
@@ -452,15 +453,17 @@ describe('the release workflow publishes the image', () => {
   });
 
   test('QEMU, Buildx, a login with GITHUB_TOKEN, and one push for linux/amd64 and linux/arm64', () => {
+    // every action pinned to a commit (a moved tag can't change what this job runs), by name here
     const uses = steps.map((s) => s.uses).filter(Boolean);
-    for (const a of ['actions/checkout@v7', 'docker/setup-qemu-action@v4', 'docker/setup-buildx-action@v4', 'docker/login-action@v4', 'docker/build-push-action@v7']) assert.ok(uses.includes(a), a);
-    const login = steps.find((s) => s.uses === 'docker/login-action@v4');
+    for (const u of uses) assert.match(u, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${u} is pinned to a commit`);
+    for (const a of ['actions/checkout', 'docker/setup-qemu-action', 'docker/setup-buildx-action', 'docker/login-action', 'docker/build-push-action']) assert.ok(uses.some((u) => act(u) === a), a);
+    const login = steps.find((s) => act(s.uses) === 'docker/login-action');
     assert.equal(login.with.registry, 'ghcr.io');
     assert.equal(login.with.password, '${{ secrets.GITHUB_TOKEN }}');
     const pushes = steps.filter((s) => s.with?.push === true);
     assert.equal(pushes.length, 1, 'one push');
     const push = pushes[0];
-    assert.equal(push.uses, 'docker/build-push-action@v7');
+    assert.equal(act(push.uses), 'docker/build-push-action');
     assert.deepEqual(push.with.platforms.split(',').sort(), ['linux/amd64', 'linux/arm64']);
     assert.equal(push.with.tags, '${{ steps.meta.outputs.tags }}');
     const labels = push.with.labels.trim().split('\n');
@@ -474,7 +477,7 @@ describe('the release workflow publishes the image', () => {
     assert.match(push.with.annotations, /^index:org\.opencontainers\.image\.source=\$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}$/m, 'the index links the package too');
     // checked before it's pushed: built for this runner, then started and asked /healthz
     const check = at((s) => /\/healthz/.test(s.run || ''));
-    assert.ok(check > 0 && check < at((s) => s === push) && at((s) => s.uses === 'docker/login-action@v4') < at((s) => s === push));
+    assert.ok(check > 0 && check < at((s) => s === push) && at((s) => act(s.uses) === 'docker/login-action') < at((s) => s === push));
     assert.equal(steps[check - 1].with.load, true);
     assert.match(steps[check].run, /--env-file/, 'its test keys are not on a command line');
     assert.equal(JSON.parse(read('package.json')).license, 'Apache-2.0', 'the license the labels name is the repository\'s');

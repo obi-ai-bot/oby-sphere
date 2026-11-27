@@ -24,6 +24,8 @@ Make each with `openssl rand -hex 24`. Hex is letters and digits only, so the ke
 
 Your invite link is `https://<your Sphere>/#key=<join key>`. The key sits in the link's fragment, which browsers don't send to servers.
 
+If the join key leaks, rotate it: *Invite* in an admin's console, or `obysphere admin rotate-key`. The new key holds across restarts and new instances. `SPHERE_KEY` counts only when you change it: the first start with a new value makes that the join key (the audit log says so), over any key rotated before.
+
 ## Railway
 
 One process, a disk, always on. Railway builds the [`Dockerfile`](../Dockerfile).
@@ -40,7 +42,7 @@ The button uses the published template ([what it holds](RAILWAY_TEMPLATE.md)): a
    - optionally `SPHERE_NAME`, the name people see.
 3. **Volume:** attach one mounted at `/data`, so the Sphere keeps its members and history across deploys. The image takes ownership of it at start, then runs as an unprivileged user.
 4. **Settings:** the health check path is `/healthz`; keep one replica. [`railway.json`](../railway.json) sets both, with a restart on failure, but Railway has deprecated files like it (its docs say existing ones work until 2026-12-01), so set them in the service's settings too.
-5. **Networking:** generate a domain. Your invite link is `https://<that domain>/#key=<SPHERE_KEY>`.
+5. **Networking:** generate a domain. Your invite link is `https://<that domain>/#key=<SPHERE_KEY>`. Once an admin rotates the join key, the new one is the key (the relay applies `SPHERE_KEY` again only when you change its value), and **Invite member** in the console gives the link.
 
 The Sphere reads its address from Railway (`RAILWAY_PUBLIC_DOMAIN`), so the invite link it shows is right. It's sealed from the start (the image sets `SPHERE_SEALED=1`).
 
@@ -87,7 +89,7 @@ curl -fs http://localhost:8080/healthz
 - **Update it** from this machine with `obysphere server update --docker obysphere` ([below](#updating-a-sphere-in-docker)).
 - **Build it yourself** from a checkout instead: `docker build -t obysphere .`, then run `obysphere` in place of the image's name.
 
-The image runs as an unprivileged user and is sealed by default. Put it behind HTTPS (a reverse proxy, or your platform's), and set `SPHERE_TRUST_PROXY=1` only when a proxy you control sets `X-Forwarded-For`.
+The image runs as an unprivileged user and is sealed by default. Put it behind HTTPS (a reverse proxy, or your platform's), and set `SPHERE_TRUST_PROXY=1` only when a proxy you control sets `X-Forwarded-For`. The relay takes the entry that proxy added (the rightmost): behind two proxies in a row (a CDN in front of your platform's, say), set `SPHERE_TRUST_PROXY=2`. Without it, behind a proxy, every client looks like the proxy: joins, failed keys and viewers' reads share one address's limits (members' reads and streams count per member either way), and the relay says so once in its log.
 
 Each image names this repository, its version and its commit in its labels, and carries Docker's record of how it was built (a provenance attestation) and a list of what's in it (an SBOM). To read them: `docker buildx imagetools inspect ghcr.io/obi-ai-bot/oby-sphere:<version> --format '{{ json .Provenance }}'` (or `.SBOM`).
 
@@ -143,18 +145,22 @@ Before changing anything, it refuses a container that isn't a Sphere, one that D
 
 ## Joining without the installer
 
-`rep.mjs` is a single file, so you can run it without the CLI. Each teammate, on their own machine, with Node 22 and a signed-in Claude Code:
+You can run your Oby without the CLI: `rep.mjs`, and its console's page beside it in `public/index.html`, from the same version. Each teammate, on their own machine, with Node 22 and a signed-in Claude Code:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs   # one file
+curl -fsSLO https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/rep.mjs                    # your Oby
+curl -fsSL --create-dirs -o public/index.html \
+  https://raw.githubusercontent.com/obi-ai-bot/oby-sphere/main/public/index.html                     # its console's page
 node rep.mjs join "https://<sphere>/#key=<join key>" --name alice --owner "Alice" \
   --about "Knows the payments service" --cwd ~/work/payments     # the one folder your Oby may read
 node rep.mjs serve                                               # go online: answer asks on this machine
-node rep.mjs ui --open                                           # your console, signed in as you
+node rep.mjs ui --open                                           # your console, signed in as you (a new link: node rep.mjs open --port 4849)
 node rep.mjs mcp-config                                          # the line that adds the Sphere to Claude Code or Cursor
 ```
 
 `join` takes `https://` links, or `http://` only for `localhost`; pass `--insecure` for a Sphere on a network you trust.
+
+Your console never uses the Sphere's copy of its page: the page runs with your settings and your decisions, so `rep.mjs ui` won't start without `public/index.html` beside `rep.mjs`. In a terminal it prints a link that signs one browser in, once, within 5 minutes (`#code=…`); `node rep.mjs open [--port <n>]` makes another, and opens it (on macOS) or prints it. In a log it prints the console's address alone. A signed-in tab keeps the console's secret for itself (a reload stays signed in; a new tab needs a new link), and the secret is new each time the console starts. A program of yours that calls the console finds it in your profile, in `console-auth.json`.
 
 `rep.mjs mcp` is an MCP server. Added to Claude Code (`claude mcp add …`, printed by `mcp-config`) or Cursor (`~/.cursor/mcp.json`), it gives your agent the Sphere's instruments. With `--serve`, your Oby also answers for you while that session is open. Sealing, opening and checking signatures all happen inside `rep.mjs`, on your machine.
 
@@ -198,7 +204,7 @@ and ask Claude Code: *"Who's in the Sphere?"*, then *"Ask roadmap what blocks v2
 | `obysphere status`, `logs [-f]`, `open` | Whether it's running, and whether a newer Oby is out; its log; your console in the browser. |
 | `obysphere profiles use <name>` | The profile commands and the Claude Code plugin use when you have several and don't say (`--clear` forgets it). `--profile` and `OBYSPHERE_PROFILE` still come first. |
 | `obysphere profiles`, `doctor`, `version` | Your profiles; a check of your setup that compares your Oby's version with the Sphere's and says what to update; the version. |
-| `obysphere update [--check] [--channel stable\|main] [--rollback]` | Update your Oby: download, verify against the release's `SHA256SUMS`, switch, and restart the running services. The previous version is kept for `--rollback`. |
+| `obysphere update [--check] [--channel stable\|main] [--rollback] [--allow-downgrade]` | Update your Oby: download from GitHub, verify against the release's `SHA256SUMS`, switch, and restart the running services. The previous version is kept for `--rollback`. A release older than yours is refused unless you add `--allow-downgrade`. |
 | `obysphere server start` | Run a Sphere on this machine. |
 | `obysphere server deploy vercel --project <name> [--scope <team>]` | Deploy a Sphere to Vercel ([above](#vercel)). |
 | `obysphere server update [<name>]`, `server status` | Redeploy a recorded Sphere; check one. |

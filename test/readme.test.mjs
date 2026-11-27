@@ -38,6 +38,8 @@ const CONTRACT = {
   away: true,
   // #163: the menu bar icon
   menubar: ['on', 'off'],
+  // security: the check, lockdown, a new token
+  security: true, lockdown: true, token: ['rotate'],
   // #139: deleting your own message
   delete: true,
 };

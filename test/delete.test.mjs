@@ -285,6 +285,9 @@ for (const kind of ['fs', 'redis']) {
       const now = (await call(R.base, 'GET', '/api/agents', { key: KEY })).agents.find((a) => a.name === 'alice').stats;
       assert.equal(now.answered, before.answered - 1);
       assert.equal(now.asksIn, before.asksIn);
+      // deletions in a row: the words leave storage within seconds (the fs store rewrites its log at
+      // most once every 5 s)
+      await until(() => ![91, 92, 93].some((n) => stored().kept.includes(`OTTER-${kind}-${n}`)), 8000);
       const s = stored().kept;
       for (const n of [91, 92, 93]) assert.ok(!s.includes(`OTTER-${kind}-${n}`), `OTTER-${kind}-${n} left storage`);
       assert.equal(await chain(), true);
@@ -443,6 +446,7 @@ for (const kind of ['fs', 'redis']) {
         assert.equal(r.status, 200);
         assert.equal('sealed' in r.message, false, 'nothing that was inside');
       }
+      await until(() => !list.some((m) => text().includes(m.sealed.ct)), 8000); // within seconds (see above)
       for (const m of list) assert.ok(!text().includes(m.sealed.ct), 'the envelope left storage');
       assert.equal((await fetch(`${R.base}/api/files/${fileId}`, { headers: { 'x-sphere-key': KEY } })).status, 404);
       const au = await call(R.base, 'GET', '/api/audit?limit=1000', { key: KEY });

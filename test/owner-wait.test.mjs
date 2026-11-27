@@ -16,6 +16,7 @@ import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -315,7 +316,7 @@ describe('an ask that waits for its owner, end to end', () => {
     const r = await fetch(at + url, { method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined });
     return { status: r.status, ...(await r.json().catch(() => ({}))) };
   };
-  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: { 'x-obysphere-console': '1' } });
+  const local = (method, url, body) => call(method, url, { at: uiBase, body, headers: consoleAuth(path.join(home, 'bob'), uiBase) });
   // bob's settings: Obys he hasn't listed wait for him (the default), and carol waits too, by name
   const setBob = (agents = { carol: 'approve' }) =>
     fs.writeFileSync(
@@ -461,9 +462,10 @@ describe('an ask that waits for its owner, end to end', () => {
     const entry = JSON.parse(fs.readFileSync(path.join(bobDir(), 'pending', `${w.id}.json`), 'utf8'));
     const { waiting } = await messageOf(id);
     assert.deepEqual([waiting.for, waiting.until, waiting.by], ['owner', entry.expiresAt, ids.bob], 'until: when it lapses');
-    assert.equal(r.text, `@bob's Oby asks its owner ("Bob Test") before answering; they've been told. If they don't answer by ${short(entry.expiresAt)}, it lapses. Check later with sphere_check message_id "${id}".`);
+    // the handle only: an owner's name is another member's words, and stays inside a fence
+    assert.equal(r.text, `@bob's Oby asks its owner before answering; they've been told. If they don't answer by ${short(entry.expiresAt)}, it lapses. Check later with sphere_check message_id "${id}".`);
     const c = await alice.tool('sphere_check', { message_id: id });
-    assert.equal(c.text, `No reply yet. @bob's Oby is waiting for its owner's OK ("Bob Test") until ${short(entry.expiresAt)}; if they don't answer by then, it lapses.`);
+    assert.equal(c.text, `No reply yet. @bob's Oby is waiting for its owner's OK until ${short(entry.expiresAt)}; if they don't answer by then, it lapses.`);
     first = { id, w };
   });
 
@@ -534,7 +536,7 @@ describe('an ask that waits for its owner, end to end', () => {
 
     // what alice reads: who didn't answer, the words fenced; her own notification says the same
     const c = await alice.tool('sphere_check', { message_id: lapses.id });
-    assert.ok(c.text.startsWith(`Lapsed: its owner ("Bob Test") didn't answer in time, so @bob's Oby won't answer this ask. Ask again later if it still matters, or ask another Oby.`), c.text);
+    assert.ok(c.text.startsWith(`Lapsed: @bob's owner didn't answer in time, so @bob's Oby won't answer this ask. Ask again later if it still matters, or ask another Oby.`), c.text);
     assert.match(c.text, /"lapsed": true/);
     const told = await waitFor(() => notes().slice(mark).find((l) => l.type === 'answered' && /in time/.test(l.title)), 8000, "alice's notification");
     assert.equal(told.title, "@bob's owner didn't answer in time");

@@ -14,6 +14,7 @@ import net from 'node:net';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { startFakeUpstash } from './fake-upstash.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -482,7 +483,7 @@ describe('the admin command and the console', () => {
     assert.ok(!page.includes(ADMIN));
     const injected = JSON.parse(/window\.OBYSPHERE_CONSOLE=(\{.*?\})<\/script>/.exec(page)[1]);
     assert.ok(!('admin' in injected), 'the page learns admin from /api/info, not from the console');
-    const h = { 'x-obysphere-console': '1' };
+    const h = consoleAuth(path.join(home, 'bob'), ui.base);
     // bob isn't an admin: a key sent along on another call isn't passed on
     assert.equal((await call('GET', '/api/admin/check', { at: ui.base, headers: { ...h, 'x-admin-key': ADMIN } })).status, 403);
     assert.equal((await call('POST', '/api/admin/policy', { at: ui.base, headers: { ...h, 'x-admin-key': ADMIN }, body: { maxDepth: 4 } })).status, 403);
@@ -505,7 +506,7 @@ describe('the admin command and the console', () => {
     const ui = await startUi('carol', { OBYSPHERE_ADMIN_KEY: ADMIN });
     assert.match(ui.log(), /an admin of this Sphere/);
     assert.equal((await call('GET', '/api/info', { token: token('carol') })).me.admin, true);
-    const h = { 'x-obysphere-console': '1' };
+    const h = consoleAuth(path.join(home, 'carol'), ui.base);
     assert.equal((await call('GET', '/api/admin/check', { at: ui.base, headers: h })).via, 'member', 'with its token, not the key');
     const page = await (await fetch(ui.base + '/')).text();
     assert.ok(!page.includes(ADMIN));
@@ -544,8 +545,8 @@ describe("the console page's admin markup", () => {
   const HOSTILE = 'a_x" autofocus onfocus="alert(1)';
   const render = (fn, agents, S) => {
     const ctx = {
-      S: { me: { id: 'a_me' }, admin: true, adminKey: null, sphere: { policy: {} }, ...S },
-      members: () => agents.slice(),
+      S: { me: { id: 'a_me' }, admin: true, adminKey: null, sphere: { policy: {} }, agents: new Map(agents.map((a) => [a.id, a])), ...S },
+      members: () => agents.filter((a) => !a.removed),
       isMe: (a) => a.id === 'a_me',
       ownerName: (a) => a.owner,
       picture: () => '',
@@ -587,5 +588,16 @@ describe("the console page's admin markup", () => {
     assert.ok(!html.includes('onfocus'), 'the id never reaches the markup');
     assert.equal((html.match(/data-remove=/g) || []).length, 1);
     assert.ok(!render('pageMembers', agents, { admin: false }).includes('data-remove'), 'no actions for a member who is not an admin');
+  });
+
+  test("Members: a removed member's handle can be released, by an admin, once", () => {
+    const gone = [...agents, { id: 'a_gone', name: 'dave', owner: 'Dave', removed: true }, { id: 'a_freed', name: 'erin', owner: 'Erin', removed: true, released: true }, { id: HOSTILE + '2', name: 'x', owner: 'X', removed: true }];
+    const html = render('pageMembers', gone);
+    assert.match(html, /<h2 class="set-sec-title">Removed<\/h2>/);
+    assert.match(html, /data-release="a_gone"/);
+    assert.equal((html.match(/data-release=/g) || []).length, 1, 'not one already released, nor an id the relay should never send');
+    assert.ok(!html.includes('onfocus'));
+    assert.ok(!html.includes('data-remove="a_gone"'), 'a removed member is no longer among the members');
+    assert.ok(!render('pageMembers', gone, { admin: false }).includes('Removed'), 'only admins see removed members');
   });
 });

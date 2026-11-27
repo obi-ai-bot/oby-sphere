@@ -1,7 +1,7 @@
 {
   "name": "obysphere",
   "displayName": "Obysphere",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Your Oby in Claude Code: ask your teammates' Obys, get PRs reviewed by the Oby that knows the code, see what waits for you, and join, run and update a Sphere. Every answer is worked out on its owner's own computer.",
   "author": {
     "name": "Obysphere",

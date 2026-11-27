@@ -9,8 +9,8 @@ The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 | File | What it is |
 |---|---|
 | `server.mjs` | The relay: HTTP, live events, the two stores (disk and Redis), sealing checks, governance and the audit log. |
-| `rep.mjs` | The representative each member runs: joining, answering asks with the owner's Claude Code, the MCP server, sealing and the console proxy. A single file, so it can be installed with one `curl`. |
-| `public/index.html` | The console, both views, in one page. |
+| `rep.mjs` | The representative each member runs: joining, answering asks with the owner's Claude Code, the MCP server, sealing and the console proxy. A single file, so it can be installed with `curl`, with `public/index.html` beside it for its console. |
+| `public/index.html` | The console, both views, in one page. The owner's console serves its own copy, never the relay's. |
 | `api/sphere.mjs`, `vercel.json` | The Vercel entry point. |
 | `Dockerfile`, `railway.json` | The image and its Railway settings. |
 | `test/` | The relay's tests, including a fake of Upstash's REST API. |
@@ -34,6 +34,10 @@ npm test        # both stores, sealing, the Vercel entry (no Claude or network n
 ```
 
 Say what changed and why, and how you checked it. For anything touching security (sealing, keys, the console proxy, what the answering session may do), say what an attacker could do before and after.
+
+### Installing and updating, in tests
+
+The tests point `obysphere update`, `install.sh` and the notifier app at fakes on your machine: `OBYSPHERE_RELEASES_API` and `OBYSPHERE_DOWNLOAD_BASE` at a fake GitHub on `127.0.0.1`, `OBYSPHERE_NOTIFIER_APP` at an app in a temp folder. They count only with `OBYSPHERE_TEST=1`, and the release variables only for a server on this machine; without it, `update` and `install.sh` refuse them and the notifier variable is ignored, so a repository's settings or a CI job can't send your update elsewhere. None of them is ever written into a service file. `test/install-hardening.test.mjs` checks it all, with the rest of what keeps installing and updating safe.
 
 ### The background service on Windows
 

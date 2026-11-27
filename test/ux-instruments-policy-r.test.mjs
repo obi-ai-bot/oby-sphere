@@ -18,6 +18,7 @@ import net from 'node:net';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { makeFakeRuntimes } from './fake-runtimes.mjs';
+import { consoleAuth } from './console-auth-helpers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -121,7 +122,7 @@ describe('Make your own names the command the console runs as', () => {
     procs.push(p);
     const ui = `http://127.0.0.1:${port}`;
     await until(async () => (await fetch(ui + '/favicon.svg')).ok, `${profile}'s console`);
-    return async () => (await (await fetch(ui + '/local/instruments', { headers: { 'x-obysphere-console': '1' } })).json()).newCmd;
+    return async () => (await (await fetch(ui + '/local/instruments', { headers: consoleAuth(path.join(home, profile), ui) })).json()).newCmd;
   };
 
   before(async () => {

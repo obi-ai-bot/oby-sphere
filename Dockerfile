@@ -1,7 +1,8 @@
 # The Sphere relay: one small Node process, no dependencies.
 #   docker build -t obysphere .
 #   docker run -p 8080:8080 -v obysphere-data:/data -e SPHERE_ADMIN_KEY=… obysphere
-FROM node:22-alpine
+# pinned to a digest (the multi-platform index); Dependabot proposes the next one
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
 
 # su-exec: start as root only to take ownership of the data volume (Railway and
 # others mount volumes as root), then run the relay as the unprivileged `node` user.
