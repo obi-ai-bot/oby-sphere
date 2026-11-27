@@ -2399,9 +2399,10 @@ function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
     const per = new Map();
     for (let j = i; j < messages.length; j++) per.set(messages[j].from ?? '', (per.get(messages[j].from ?? '') || 0) + 1);
     // the oldest of all, unless that would take messages of a member who holds no more than half:
-    // then the members past half lose their own oldest first
+    // then the members past half lose their own oldest first. (An admin who keeps fewer messages
+    // keeps the newest, whoever wrote them.)
     const big = new Set([...per].filter(([, n]) => n > half).map(([who]) => who));
-    const fair = big.size > 0 && messages.slice(i, i + over).some((m) => m.from && !big.has(m.from));
+    const fair = !force && big.size > 0 && messages.slice(i, i + over).some((m) => m.from && !big.has(m.from));
     for (const [who, n] of fair ? per : []) {
       if (left <= 0 || n <= half) continue;
       const mine = [];
