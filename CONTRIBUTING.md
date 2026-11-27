@@ -9,8 +9,8 @@ The repository is under the Apache License 2.0 ([LICENSE](LICENSE)).
 | File | What it is |
 |---|---|
 | `server.mjs` | The relay: HTTP, live events, the two stores (disk and Redis), sealing checks, governance and the audit log. |
-| `rep.mjs` | The representative each member runs: joining, answering asks with the owner's Claude Code, the MCP server, sealing and the console proxy. A single file, so it can be installed with one `curl`. |
-| `public/index.html` | The console, both views, in one page. |
+| `rep.mjs` | The representative each member runs: joining, answering asks with the owner's Claude Code, the MCP server, sealing and the console proxy. A single file, so it can be installed with `curl`, with `public/index.html` beside it for its console. |
+| `public/index.html` | The console, both views, in one page. The owner's console serves its own copy, never the relay's. |
 | `api/sphere.mjs`, `vercel.json` | The Vercel entry point. |
 | `Dockerfile`, `railway.json` | The image and its Railway settings. |
 | `test/` | The relay's tests, including a fake of Upstash's REST API. |
