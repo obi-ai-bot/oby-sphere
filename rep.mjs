@@ -397,9 +397,10 @@ function help() {
                                          use one a member offers; without one, list them
 
 Profiles live in ${HOME}/<profile>/ (OBYSPHERE_HOME to move them): profile.json
-(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys),
-sealed.json (this profile saw its Sphere sealed: it keeps sealing), seen/ (sealed messages seen
-lately, so a replay isn't taken), settings.json (what your Oby may do; see SETTINGS.md) and, once
+(your token and invite link), keys.json (your private keys), peers.json (others' pinned keys,
+handles and owners' names), sealed.json (this profile saw its Sphere sealed: it keeps sealing),
+envelope.json (its relay took newer envelopes: it never falls back to older ones), seen/ (sealed messages
+seen, so a replay isn't taken), settings.json (what your Oby may do; see SETTINGS.md) and, once
 you check the audit log, audit-heads.json (where the log ended at your last check). Never share them.
 Downloads go to ${DOWNLOADS} (OBYSPHERE_DOWNLOADS).`);
 }
