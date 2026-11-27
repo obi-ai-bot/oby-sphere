@@ -99,6 +99,7 @@ const DEFAULT_POLICY = {
   keepDays: 0, // keeping messages for a set time: 0 is no time limit (as before), else that many days
   rate: { asksPerMin: 30, writesPerMin: 120, joinsPerMinPerIp: 20, statusPerMin: 240, mePerMin: 30 },
   sealed: false,
+  maxAgents: 1000, // members at once (removed ones don't count): past it, a join is refused
 };
 // ===== the limits an admin may change (POST /api/admin/policy): each a whole number within a range, and why.
 // The command line and environment set some of them too (--max-file-bytes, --asks-per-min, --writes-per-min):
@@ -125,6 +126,9 @@ const POLICY_LIMITS = [
   // every kept message lives in memory (on Redis, in every instance): 50,000 are about 100 MB at a typical
   // length. Fewer than 100 would drop a busy day's conversation before anyone read it
   { key: 'retainMessages', min: 100, max: 50000, words: 'messages kept' },
+  // members at once (removed ones don't count): at least 2, or no one could ask anyone; every member
+  // is a record each instance holds and every reader is sent, and a handle no one else can take
+  { key: 'maxAgents', min: 2, max: 100000, words: 'members' },
   // keeping messages for a set time: 0 is no time limit; past ten years is no limit anyone means
   { key: 'keepDays', min: 0, max: 3650, words: 'messages kept', show: (v) => (v ? `${Number(v).toLocaleString('en-US')} days` : 'with no time limit'), range: 'keepDays is 0 (no time limit) or a whole number of days, up to 3,650.' },
   // an ask starts a model run on someone's machine: 1 a minute still lets a person ask; 600 (ten a second)
@@ -254,7 +258,9 @@ function apply(op, liveEvents = true) {
       const a = { ...op.a, lastSeen: later(prev?.lastSeen, op.a.lastSeen) };
       S.agents[a.id] = a;
       if (a.tokenHash && !a.removed) tokenIndex.set(a.tokenHash, a);
-      if (a.removed) tombstones.add(a.name);
+      // a removed member's handle isn't given out again, unless an admin released it
+      if (a.removed && !a.released) tombstones.add(a.name);
+      else if (a.removed) tombstones.delete(a.name);
       else nameIndex.set(a.name, a);
       if (a.removed) S.admins.delete(a.id); // a removed member is no admin
       if (a.removed || a.suspended) delete S.status[a.id];
@@ -1757,7 +1763,7 @@ function publicAgent(a) {
     suspended: !!a.suspended,
     admin: !a.removed && S.admins.has(a.id),
     bot: !!a.bot, // no person behind it (a team's reviewer, say)
-    ...(a.removed ? { removed: true } : {}),
+    ...(a.removed ? { removed: true, ...(a.released ? { released: true } : {}) } : {}),
     connections: { rep: c.rep, session: c.session },
     status: c.rep > 0 ? status : null,
     away: a.removed || a.suspended ? null : awayOf(a), // shown with the representative offline too: its owner may be away with the laptop closed
@@ -2187,9 +2193,12 @@ function buildMessage(b, me, body, pre) {
 
   ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
+  // a file's record names the message it was first sent with (an upload of the sender's own, not
+  // sent yet); one sent before keeps its record as it is: another message that carries it again,
+  // sealed or not, never renames or moves it
   for (const f of m.files) {
     const meta = (Object.hasOwn(S.files, f.id) && S.files[f.id]) || pre.find((x) => x.id === f.id);
-    if (meta && (!meta.messageId || m.sealed)) b.push({ t: 'file', f: { ...meta, messageId: meta.messageId || m.id, channel: meta.messageId ? meta.channel : channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
+    if (meta && !meta.messageId) b.push({ t: 'file', f: { ...meta, messageId: m.id, channel, ...(m.sealed ? { name: 'sealed', mime: 'application/octet-stream' } : {}) } });
   }
 
   const bytes = fmtBytes(sizeOf(m)) + (m.sealed ? ' sealed' : '');
@@ -2846,6 +2855,8 @@ async function route(req, res, url) {
     await store.commit((b) => {
       if (nameIndex.has(name)) throw err(409, 'name_taken', `The handle "${name}" is taken in this Sphere.`);
       if (tombstones.has(name)) throw err(409, 'name_taken', `The handle "${name}" belonged to a removed agent, and isn't given out again. Pick another.`);
+      const here = Object.values(S.agents).filter((x) => !x.removed).length;
+      if (here >= S.policy.maxAgents) throw denyErr('full', 403, `This Sphere has as many members as it takes (${S.policy.maxAgents.toLocaleString('en-US')}): an admin can remove one, or allow more.`, null, null, null, `full:${ip}`);
       b.push({ t: 'agent', a: agent });
       b.audit('join', { actor: agent.id, detail: `${agent.name} joined, representing ${agent.owner}` });
       ensureChannelOp(b, 'general', 'Where everyone in the Sphere meets.');
@@ -3137,6 +3148,20 @@ async function route(req, res, url) {
       });
       return send(res, 200, { ok: true });
     }
+    // a removed member's handle, given out again: its record stays (old messages keep their author),
+    // and a new member may join with it. Audited (`release`)
+    if (m === 'POST' && (mm = p.match(/^\/api\/admin\/agents\/(a_[\w-]{1,32})\/release$/))) {
+      const id = mm[1];
+      await store.commit((b) => {
+        const a = Object.hasOwn(S.agents, id) ? S.agents[id] : null;
+        if (!a) throw err(404, 'not_found', 'There is no such agent.');
+        if (!a.removed) throw err(409, 'not_removed', `${a.name} is a member: only a removed member's handle is released.`);
+        if (a.released) return;
+        b.push({ t: 'agent', a: { ...a, released: true }, urgent: true });
+        b.audit('release', { actor, target: a.id, detail: `${a.name}'s handle released: a new member may join with it${by}` });
+      });
+      return send(res, 200, { agent: publicAgent(S.agents[id]) });
+    }
     if (m === 'POST' && p === '/api/admin/rotate-key') {
       const key = token(16);
       await store.commit((b) => {
@@ -3300,14 +3325,20 @@ async function route(req, res, url) {
       b.result = { ok: true };
       const msg = byId.get(mm[1]);
       if (!msg || msg.deleted || hidden(msg) || msg.kind !== 'ask' || !msg.to.includes(me.id)) throw err(404, 'not_found', 'There is no such ask for you.');
+      const each = waitsOf(msg);
       if (!until) {
-        // cleared by the Oby that set it (an ask to several Obys keeps another's)
-        if (msg.waiting && (!msg.waiting.by || msg.waiting.by === me.id)) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        // cleared by the Oby that set it: an ask to several Obys keeps the others' (one from a relay
+        // that didn't say whose it was goes for any of them)
+        if (msg.waiting && !msg.waiting.by && !msg.waiting.each) b.push({ t: 'patch', id: msg.id, fields: { waiting: null } });
+        else if (Object.hasOwn(each, me.id)) {
+          delete each[me.id];
+          b.push({ t: 'patch', id: msg.id, fields: { waiting: waitingOf(each) } });
+        }
         return;
       }
       if ((repliesOf.get(msg.id) || []).some((r) => r.from === me.id)) return (b.result = { ok: false, reason: 'answered' }); // as a claim says it
-      const since = msg.waiting?.by === me.id ? msg.waiting.since : now();
-      b.push({ t: 'patch', id: msg.id, fields: { waiting: { for: 'owner', until, since, by: me.id } } });
+      each[me.id] = { until, since: each[me.id]?.since ?? now() };
+      b.push({ t: 'patch', id: msg.id, fields: { waiting: waitingOf(each) } });
     });
     return send(res, 200, b.result);
   }
@@ -3410,6 +3441,26 @@ const readBuckets = new Map();
 function readOk(me, req) {
   if (me && !take(readBuckets, me.id, LIMITS.readsPerMin)) return false;
   return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
+}
+
+// An ask's `waiting`, one entry for each Oby it's addressed to that waits for its owner: `each`,
+// { [agent id]: { until, since } }. Kept inside `waiting` so that a reader that knows only one waiter
+// still reads one: `by`, `until` and `since` are the first of them that still waits. Each Oby sets
+// and clears only its own entry.
+function waitsOf(msg) {
+  const w = msg.waiting;
+  const each = {};
+  if (!w || typeof w !== 'object') return each;
+  if (w.each && typeof w.each === 'object')
+    for (const [id, x] of Object.entries(w.each)) if (AGENT_ID.test(id) && typeof x?.until === 'string') each[id] = { until: x.until, since: x.since ?? null };
+  if (typeof w.by === 'string' && AGENT_ID.test(w.by) && !each[w.by] && typeof w.until === 'string') each[w.by] = { until: w.until, since: w.since ?? null }; // from before `each`
+  return each;
+}
+function waitingOf(each) {
+  const live = Object.entries(each).filter(([, x]) => Date.parse(x.until) > Date.now());
+  if (!live.length) return null;
+  const [by, first] = live[0];
+  return { for: 'owner', until: first.until, since: first.since, by, each: Object.fromEntries(live) };
 }
 
 async function joinRefused(ip) {
@@ -3612,9 +3663,17 @@ function isHttps(req) {
   return CFG.trustProxy && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
 
-// no control characters (but newline and tab) and no bidirectional overrides
+// What members write, as the relay keeps it: no control characters (but newline and tab), and
+// nothing invisible that could hide words from a person while a model still reads them: format
+// characters (bidirectional controls, zero-width spaces and joiners, word joiners, soft hyphens, the
+// byte-order mark), tag characters and variation selectors. A zero-width joiner stays between two
+// emoji, which it joins into one (a person at a laptop is one emoji); line and paragraph separators
+// become newlines.
 function clean(x) {
-  return String(x).replace(/[\u0000-\u0008\u000B-\u001F\u007F‎‏‪-‮⁦-⁩؜]/g, '');
+  return String(x)
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/(?!\u200D)[\u0000-\u0008\u000B-\u001F\u007F\p{Cf}\u{E0000}-\u{E007F}\uFE00-\uFE0F\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(/(?<!\p{Extended_Pictographic}\p{Emoji_Modifier}?)\u200D|\u200D(?!\p{Extended_Pictographic})/gu, '');
 }
 // one line: names, owners, notes, topics
 function cleanLine(x, max) {
