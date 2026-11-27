@@ -309,6 +309,10 @@ describe('downloads from GitHub only (finding 2, 11)', () => {
     const r = await cli(['update', '--check'], envFor(h, { OBYSPHERE_RELEASES_API: 'https://[::ffff:7f00:1]:9/api' }));
     assert.equal(r.code, 1);
     assert.match(r.stderr, /refusing to download from https:\/\/\[::ffff:7f00:1\]:9: the app comes from GitHub only/);
+    // nor another repository on GitHub: with the variables set, everything comes from this machine
+    const other = await cli(['update', '--check'], envFor(h, { OBYSPHERE_RELEASES_API: 'https://api.github.com/repos/mallory/evil', OBYSPHERE_DOWNLOAD_BASE: 'https://github.com/mallory/evil' }));
+    assert.equal(other.code, 1);
+    assert.match(other.stderr, /refusing to download from https:\/\/api\.github\.com: the app comes from GitHub only/);
   });
 
   test('every redirect is checked before it is followed', async () => {
@@ -615,6 +619,10 @@ describe('install.sh (finding 4, 7)', () => {
     const far = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_RELEASES_API: 'https://127.0.0.1:9/api' }));
     assert.equal(far.code, 1, far.out);
     assert.match(far.stderr, /refusing to download from https:\/\/127\.0\.0\.1:9\/api: the app comes from GitHub only/);
+    // with them set, both come from this machine: GitHub (another repository there) isn't a test server
+    const both = await run('sh', [INSTALL], shEnv(h, { OBYSPHERE_DOWNLOAD_BASE: 'https://github.com/mallory/evil' }));
+    assert.equal(both.code, 1, both.out);
+    assert.match(both.stderr, /refusing to download from https:\/\/github\.com\/mallory\/evil: the app comes from GitHub only/);
     assert.deepEqual(gh.requests, []);
     assert.deepEqual(fs.readdirSync(h), []);
   });

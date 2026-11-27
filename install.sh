@@ -27,7 +27,7 @@ MAIN_TARBALL="https://codeload.github.com/$REPO/tar.gz/refs/heads/main"
 
 # The code comes from GitHub over https. For tests only, with OBYSPHERE_TEST=1,
 # OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE send it to a server on this machine (plain
-# http); without it they're refused, wherever they were set.
+# http), both of them, and nowhere else; without it they're refused, wherever they were set.
 if [ -n "${OBYSPHERE_RELEASES_API:-}${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
   case "${OBYSPHERE_TEST:-}" in
     1|true|yes|on) ;;
@@ -40,7 +40,7 @@ if [ -n "${OBYSPHERE_RELEASES_API:-}${OBYSPHERE_DOWNLOAD_BASE:-}" ]; then
   fi
   for u in "$RELEASES_API" "$DOWNLOAD_BASE"; do
     case "$u" in
-      https://api.github.com/*|https://github.com/*|http://127.0.0.1:*|http://localhost:*) ;;
+      http://127.0.0.1:*|http://localhost:*) ;;
       *) fail "refusing to download from $u: the app comes from GitHub only" ;;
     esac
   done

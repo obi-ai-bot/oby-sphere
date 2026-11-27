@@ -44,7 +44,8 @@ const TEST = /^(1|true|yes|on)$/i.test(process.env.OBYSPHERE_TEST || '');
 const RELEASES_API = trimSlash(process.env.OBYSPHERE_RELEASES_API || `https://api.github.com/repos/${REPO}`);
 const DOWNLOAD_BASE = trimSlash(process.env.OBYSPHERE_DOWNLOAD_BASE || `https://github.com/${REPO}`);
 const MAIN_TARBALL = process.env.OBYSPHERE_DOWNLOAD_BASE ? `${DOWNLOAD_BASE}/archive/refs/heads/main.tar.gz` : `https://codeload.github.com/${REPO}/tar.gz/refs/heads/main`;
-const NOT_FOR_YOU = (process.env.OBYSPHERE_RELEASES_API || process.env.OBYSPHERE_DOWNLOAD_BASE) && !TEST
+const TEST_SERVER = !!(process.env.OBYSPHERE_RELEASES_API || process.env.OBYSPHERE_DOWNLOAD_BASE);
+const NOT_FOR_YOU = TEST_SERVER && !TEST
   ? 'OBYSPHERE_RELEASES_API and OBYSPHERE_DOWNLOAD_BASE are for tests only (with OBYSPHERE_TEST=1, and a server on this machine), so nothing was downloaded. Unset them, and the app comes from GitHub.'
   : null;
 // where the app may come from: GitHub, over https (tests: this machine too)
@@ -1317,11 +1318,12 @@ function saveCache(latest) {
   return rec;
 }
 
-// GitHub over https, and nothing else (tests: a server on this machine, by its name or address)
+// GitHub over https, and nothing else; with the test variables, a server on this machine (by its
+// name or address) and nothing else, so they can't name another repository on GitHub either
 function checkedUrl(u) {
   const url = new URL(u);
-  if (url.protocol === 'https:' && GITHUB_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password) return url;
-  if (TEST && /^https?:$/.test(url.protocol) && /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\])$/.test(url.hostname)) return url;
+  if (!TEST_SERVER && url.protocol === 'https:' && GITHUB_HOSTS.has(url.hostname) && !url.port && !url.username && !url.password) return url;
+  if (TEST_SERVER && TEST && /^https?:$/.test(url.protocol) && /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\])$/.test(url.hostname)) return url;
   throw new Error(`refusing to download from ${url.origin}: the app comes from GitHub only`);
 }
 // GitHub sends a release's files on to where it keeps them: each redirect is checked before it's followed
