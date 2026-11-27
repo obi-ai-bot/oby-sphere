@@ -6751,11 +6751,19 @@ button.kpi:hover .kpi-label svg { color: var(--text); transform: translateX(2px)
     const s = cleanText(src);
     const names = new Set([...S.agents.values()].map((a) => a.name));
     const out = [];
+    // code fences, found by indexOf in one pass: ``` then its info string ([\w-]*) and a newline,
+    // its words up to the next ```. (A regex for it backtracked: 160 KB without a closing fence, a
+    // sealed message's most, took seconds.) A fence that never closes: none after it either.
+    const info = /[\w-]*\n?/y;
     let at = 0;
-    for (const m of s.matchAll(/```[\w-]*\n?([\s\S]*?)```/g)) {
-      mdLines(s.slice(at, m.index), names, out);
-      out.push(`<pre class="ss-code">${esc(m[1].replace(/\n$/, ''))}</pre>`);
-      at = m.index + m[0].length;
+    for (let open = s.indexOf('```'); open >= 0; open = s.indexOf('```', at)) {
+      info.lastIndex = open + 3;
+      info.test(s);
+      const close = s.indexOf('```', info.lastIndex);
+      if (close < 0) break;
+      mdLines(s.slice(at, open), names, out);
+      out.push(`<pre class="ss-code">${esc(s.slice(info.lastIndex, close).replace(/\n$/, ''))}</pre>`);
+      at = close + 3;
     }
     mdLines(s.slice(at), names, out);
     return out.join('');
