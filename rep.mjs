@@ -11245,7 +11245,8 @@ async function securityReport(p, { scan = true } = {}) {
   const d = s.access.default;
   if (d === 'trust') add('default', 'risk', 'Every Oby is trusted', 'Any member’s Oby gets everything you allow without asking you.', 'Settings › Who can ask: Obys you haven’t listed → Ask me first');
   else if (d === 'answer') add('default', 'warn', 'Any Oby gets answers without you', 'Obys you haven’t listed are answered from your folders without asking you.', 'Settings › Who can ask: Obys you haven’t listed → Ask me first');
-  else add('default', 'ok', 'Obys you haven’t listed wait for you', d === 'decline' ? 'They’re declined.' : 'You decide each of their asks.');
+  else if (d === 'decline') add('default', 'ok', 'Obys you haven’t listed are declined', 'Only the Obys you list in Who can ask get answers.');
+  else add('default', 'ok', 'Obys you haven’t listed wait for you', 'You decide each of their asks.');
   if (trusted.length) add('trusted', 'warn', `You trust ${trusted.length === 1 ? trusted[0] : `${trusted.length} Obys`}`, `${trusted.join(', ')} get${trusted.length === 1 ? 's' : ''} everything you allow below, without asking you.`, 'Trust only Obys whose owners you’d hand your keyboard to');
 
   // what an answer can reach
