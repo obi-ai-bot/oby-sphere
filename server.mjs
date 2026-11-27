@@ -88,8 +88,10 @@ const KEY_MIN = 22; // characters in a join or admin key: about 128 bits when ra
 const ZERO = '0'.repeat(64);
 const CLAIM_MS = 15 * 60e3; // a claim holds this long (a representative gives up on an ask after 10 min)
 const STATUS_MS = 20 * 60e3; // "working" older than this is stale
-const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, bufferedBytes: 1 << 20, authFailsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000 };
+const LIMITS = { streamsPerAgent: 8, streamsPerIp: 32, viewerStreams: 256, streamOpensPerMin: 30, bufferedBytes: 1 << 20, authFailsPerMin: 30, authAuditsPerMin: 30, readsPerMin: 600, readsPerMinPerIp: 3000, readsInFlight: 8, stallMs: 20000, repliesPerAsk: 10 };
 const PAGE_BYTES = 8 * 1024 * 1024; // a read of messages, at most (GET /api/messages; see msgBytes)
+const COMPACT_GAP_MS = 5000; // fs: deletions rewrite messages.jsonl at most this often (see compactSoon)
+const FORCED_GAP_MS = 60e3; // redis: deletions and cuts by time bring a compaction forward at most this often, per instance
 const DEFAULT_POLICY = {
   maxDepth: 3, // how many agent-to-agent hops one question may cause
   maxFileBytes: CFG.store === 'redis' ? 512 * 1024 : 5 * 1024 * 1024,
@@ -208,6 +210,9 @@ const answerRing = ring(1000); // ms from an ask to its first reply
 const toolCounts = dict(); // instrument -> { calls, last, byAgent } (this instance, since it started)
 const seenCalls = new Set();
 const authAudited = new Map(); // client -> when its failed attempts were last audited
+const localFails = new Map(); // client -> its failed attempts, counted here before any round trip to the store
+const localJoins = new Map(); // client -> its joins, likewise
+const streamOpens = new Map(); // agent id -> its streams opened, likewise
 
 // live, this process only
 const live = new Map(); // agent id -> { rep: Set, client: Set }
@@ -346,9 +351,10 @@ function apply(op, liveEvents = true) {
   if (liveEvents) for (const [e, d, who] of ev) broadcast(e, d, who);
 }
 
-// keys are kept only as hashes (a record from an older version gets hashed here)
+// keys are kept only as hashes (a record from an older version gets hashed here). envKeyHash: the
+// hash of the SPHERE_KEY last applied at a start (see init), so a key an admin rotated stays rotated
 function sphereRecord(s) {
-  const out = { name: s.name, createdAt: s.createdAt, keyHash: s.keyHash, adminKeyHash: s.adminKeyHash };
+  const out = { name: s.name, createdAt: s.createdAt, keyHash: s.keyHash, adminKeyHash: s.adminKeyHash, ...(s.envKeyHash ? { envKeyHash: s.envKeyHash } : {}) };
   if (s.key) out.keyHash = sha(String(s.key));
   if (s.adminKey) out.adminKeyHash = sha(String(s.adminKey));
   return out;
@@ -634,6 +640,8 @@ function fsStore() {
   let msgLines = 0;
   let snapTimer = null;
   let snapDirty = false;
+  let compactedAt = 0; // when messages.jsonl was last rewritten
+  let compactTimer = null; // a rewrite a deletion asked for, waiting its turn (see compactSoon)
   const buckets = new Map();
   const reserved = new Map(); // member id -> Map(upload id -> bytes): uploads under way
 
@@ -662,6 +670,9 @@ function fsStore() {
   // still count after a restart). Written a piece at a time, never as one string: a log of any
   // size fits
   function compact() {
+    clearTimeout(compactTimer);
+    compactTimer = null;
+    compactedAt = Date.now();
     const fd = fs.openSync(MSGS + '.tmp', 'w', 0o600);
     let n = 0;
     let piece = [];
@@ -690,6 +701,22 @@ function fsStore() {
     msgOut = fs.createWriteStream(MSGS, { flags: 'a', mode: 0o600 });
     msgLines = n;
   }
+  // Deleting messages: the words leave the disk with a rewrite of messages.jsonl, at once, or when
+  // one ran in the last COMPACT_GAP_MS, that long after it: deletes in a row (each costs a write)
+  // rewrite it once every few seconds, not each time. The deletion's line is in the log meanwhile,
+  // and a start after a crash rewrites it (init)
+  function compactSoon() {
+    if (compactTimer) return;
+    const wait = compactedAt + COMPACT_GAP_MS - Date.now();
+    if (wait <= 0) return compact();
+    compactTimer = setTimeout(() => {
+      try {
+        compact();
+      } catch (e) {
+        console.error('rewriting messages.jsonl:', e.message);
+      }
+    }, wait);
+  }
   function persist(op) {
     switch (op.t) {
       case 'msg':
@@ -698,9 +725,9 @@ function fsStore() {
         return appendLog({ p: op.id, ...op.fields });
       case 'file':
         return appendLog({ f: op.f });
-      case 'delete': // deleting messages: the words leave the disk at once
+      case 'delete': // deleting messages: the words leave the disk within seconds, its files at once
         appendLog({ d: op.id, at: op.at, by: op.by, files: op.files || [] });
-        compact();
+        compactSoon();
         return removeFiles(op.files);
       case 'expire': // a cut: the messages and files it removed leave the disk at once
         appendLog({ x: op.upto ?? null, ...(op.ids ? { ids: op.ids, who: op.who ?? null } : {}), why: op.why, at: op.at, files: op.files || [] });
@@ -766,8 +793,10 @@ function fsStore() {
         } catch {
           whole = false;
         }
-        if (whole) each(last);
-        else {
+        if (whole) {
+          each(last);
+          fs.appendFileSync(file, '\n'); // a crash before its newline: the next record starts a line of its own
+        } else {
           fs.truncateSync(file, at);
           console.log(`  dropped a torn last line in ${path.basename(file)}`);
         }
@@ -797,7 +826,7 @@ function fsStore() {
         const key = CFG.key || token(16);
         const adminKey = CFG.adminKey || 'adm_' + token(24);
         if (!CFG.key || !CFG.adminKey) generated = { key, adminKey };
-        snap = { sphere: { name: CFG.name || 'Obysphere', key, adminKey, createdAt: now() } };
+        snap = { sphere: { name: CFG.name || 'Obysphere', key, adminKey, createdAt: now(), ...(CFG.key ? { envKeyHash: sha(String(CFG.key)) } : {}) } };
       }
       if (legacyKeys && !fs.existsSync(KEYS) && !CFG.adminKey) writeKeysFile(KEYS, snap.sphere.key, snap.sphere.adminKey);
       const plainAdmin = snap.sphere.adminKey;
@@ -829,6 +858,7 @@ function fsStore() {
         console.log(`  migrated ${legacy.length} messages from sphere.json to messages.jsonl`);
       }
 
+      let pending = false; // a deletion or a cut the log holds but no rewrite followed (a crash)
       readLog(MSGS, (line) => {
         msgLines++;
         let o;
@@ -840,8 +870,13 @@ function fsStore() {
         if (o.p) {
           const m = byId.get(o.p);
           if (m) for (const k of ['claimedAt', 'startedAt', 'waiting']) if (k !== 'waiting' || !m.deleted) if (o[k]) m[k] = o[k]; else if (o[k] === null) delete m[k];
-        } else if (o.d) apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
-        else if ('x' in o) apply({ t: 'expire', upto: o.x, ...(Array.isArray(o.ids) ? { ids: o.ids, who: o.who ?? null } : {}), why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+        } else if (o.d) {
+          apply({ t: 'delete', id: o.d, at: o.at, by: o.by, files: [].concat(o.files || []) }, false); // deleting messages (a crash before the rewrite)
+          pending = true;
+        } else if ('x' in o) {
+          apply({ t: 'expire', upto: o.x, ...(Array.isArray(o.ids) ? { ids: o.ids, who: o.who ?? null } : {}), why: o.why, at: o.at, files: [].concat(o.files || []) }, false); // a cut (likewise)
+          pending = true;
+        }
         else if (o.f?.id) apply({ t: 'file', f: o.f }, false);
         else if (o.tally) apply({ ...o.tally, t: 'tally' }, false); // compaction: the counts at the last compaction
         else if (o.id) apply({ t: 'msg', m: o }, false);
@@ -884,7 +919,9 @@ function fsStore() {
         fs.rmSync(SNAP + '.v0.bak', { force: true });
         console.log('  removed sphere.json.v0.bak: its messages are in messages.jsonl');
       }
-      if (msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact(); // past retainMessages: the first cut, at start (init)
+      // past retainMessages: the first cut, at start (init); or a deletion or a cut a crash kept the
+      // words of: they leave the disk now
+      if (pending || msgLines > 2 * S.policy.retainMessages + Object.keys(S.files).length) compact();
       setInterval(() => snapDirty && saveNow(), 15000).unref();
       setInterval(() => {
         const old = Date.now() - 120000;
@@ -1002,6 +1039,7 @@ function fsStore() {
     },
     shutdown(done) {
       saveNow();
+      if (compactTimer) compact(); // a deletion's words leave the disk before the relay stops
       let left = 2;
       const one = () => --left === 0 && done();
       msgOut.end(one);
@@ -1111,6 +1149,9 @@ function redisStore() {
   // looks again
   let countAt = 0;
   let countWait = 0;
+  // a compaction forceAt brought forward: at once, then at most once every FORCED_GAP_MS here, so
+  // deletions in a row don't move the whole state to and from the database each time
+  let forcedAt = 0;
   const snapOld = (ptr) => !(Date.now() - Date.parse(ptr?.at) < CUT_EVERY_MS); // none yet, or an hour old
   const noteAt = (op, pos) => {
     if (op.t === 'msg' && op.m?.id) msgAt.set(op.m.id, pos);
@@ -1367,7 +1408,9 @@ function redisStore() {
   // deletion or a cut must leave the snapshot (forceAt), or a cut by count the log (countAt, hourly)
   function maybeCompact() {
     if (compacting || CFG.compactEvery === Infinity || Date.now() < compactAfter || !compactionReady()) return;
-    if (!(forceAt > base) && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    const forced = forceAt > base && Date.now() - forcedAt >= FORCED_GAP_MS;
+    if (!forced && !(countAt > base && Date.now() >= countWait) && applied - base < Math.max(CFG.compactEvery, snapCount)) return;
+    if (forced) forcedAt = Date.now();
     compacting = true;
     compact()
       .catch((e) => {
@@ -1479,7 +1522,7 @@ function redisStore() {
             if (S.sphere) return;
             b.push({
               t: 'init',
-              sphere: { name: CFG.name || 'Obysphere', keyHash: sha(String(CFG.key)), adminKeyHash: sha(String(CFG.adminKey)), createdAt: now() },
+              sphere: { name: CFG.name || 'Obysphere', keyHash: sha(String(CFG.key)), envKeyHash: sha(String(CFG.key)), adminKeyHash: sha(String(CFG.adminKey)), createdAt: now() },
               policy: { ...DEFAULT_POLICY, sealed: CFG.sealedDefault },
               paused: false,
             });
@@ -1871,7 +1914,9 @@ setInterval(() => {
   for (const [k, c] of S.claims) if (t - Date.parse(c.ts) > CLAIM_MS) S.claims.delete(k);
   for (const [k, at] of authAudited) if (t - at > 120000) authAudited.delete(k);
   for (const [k, r] of denyAudited) if (t - r.at > 120000) denyAudited.delete(k);
-  for (const [k, b] of readBuckets) if (t - b.t > 120000) readBuckets.delete(k);
+  for (const map of [readBuckets, localFails, localJoins, streamOpens]) for (const [k, b] of map) if (t - b.t > 120000) map.delete(k);
+  // failed attempts counted past the minute's audit budget, and none since to say so: said now
+  if (authBudget.over && t - authBudget.at >= 60000) store.commit((b) => b.audit('deny', { detail: `unauthorized: ${authBudgetCarry()}` })).catch((e) => console.error('audit:', e.message));
 }, 60000).unref();
 
 const AGENT_ID = /^a_[A-Za-z0-9_-]{1,32}$/;
@@ -2064,10 +2109,17 @@ function canonical(v) {
   if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
   return JSON.stringify(v ?? null);
 }
+// members' sign keys, as checking a seal needs them: kept while in use, at most 4,096 (the oldest
+// kept goes first), so keys a member publishes and drops don't pile up
 const signKeys = new Map();
 function edKey(x) {
-  if (!signKeys.has(x)) signKeys.set(x, crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' }));
-  return signKeys.get(x);
+  let k = signKeys.get(x);
+  if (!k) {
+    k = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x }, format: 'jwk' });
+    if (signKeys.size >= 4096) signKeys.delete(signKeys.keys().next().value);
+    signKeys.set(x, k);
+  }
+  return k;
 }
 
 // Checks a sealed envelope's shape and sizes, that its readers exist (and include
@@ -2153,7 +2205,7 @@ function buildMessage(b, me, body, pre) {
   if (S.paused) throw denyErr('paused', 503, "The Sphere's operator paused the relay: no new messages until they resume it.", me.id, null, null, `paused:${me.id}`);
 
   const sealedIn = body.sealed ?? null;
-  const text = clean(String(body.text ?? '')).slice(0, 20000);
+  const text = clean(String(body.text ?? '').slice(0, 40000)).slice(0, 20000); // cut before it's cleaned: a 16 MB body isn't
 
   const to = [];
   for (const n of [].concat(body.to || []).slice(0, 64)) {
@@ -2171,6 +2223,10 @@ function buildMessage(b, me, body, pre) {
     if (!parent || hidden(parent)) throw err(404, 'not_found', 'replyTo: there is no such message.');
     if (parent.kind !== 'ask' || !parent.to.includes(me.id)) throw err(400, 'bad_request', 'replyTo must be an ask addressed to you.');
     if (parent.deleted) throw err(410, 'gone', 'Its asker deleted that ask: there is nothing to answer.');
+    // an Oby answers an ask a few times at most (an error and then its answer, its owner's own words):
+    // more would only make every read of the ask larger
+    if ((repliesOf.get(parent.id) || []).filter((r) => r.from === me.id).length >= LIMITS.repliesPerAsk)
+      throw denyErr('too_many_replies', 409, `You replied to that ask ${LIMITS.repliesPerAsk} times already: that's as many as one Oby gives one ask.`, me.id, parent.from, null, `replies:${me.id}`);
     replyTo = parent.id;
   }
   const room = channelAccess(me, channel, to, replyTo); // a private or direct channel: its members only
@@ -2225,6 +2281,7 @@ function buildMessage(b, me, body, pre) {
     if (!text.trim() && !files.length) throw err(400, 'bad_request', 'An empty message: give it text or a file.');
   }
 
+  if (!S.channels[channel]) channelRoom(me, 'channel'); // a post to a new name makes a channel
   ensureChannelOp(b, channel, body.topic || '', me.id);
   for (const meta of pre) b.push({ t: 'file', f: meta });
   // a file's record names the message it was first sent with (an upload of the sender's own, not
@@ -2446,7 +2503,7 @@ function dropMessages(gone) {
 // expire operation and its audit event. A cut by time or count removes a prefix of what's held
 // (named by its newest, `upto`); a share cut, one member's own oldest (`who`, by their `ids`).
 // `c`: what this commit's cuts took so far (messages, files, and the newest message any cut removed).
-function pushCut(b, list, { why, words, who = null, soon = false }, at, c) {
+function pushCut(b, list, { why, words, who = null, soon = false, byIds = false, what: said = null }, at, c) {
   for (const m of list) c.gone.add(m);
   const ids = new Set(list.map((m) => m.id));
   const files = Object.values(S.files).filter((f) => f.messageId && !c.taken.has(f.id) && (ids.has(f.messageId) || !byId.has(f.messageId))).map((f) => f.id);
@@ -2458,10 +2515,29 @@ function pushCut(b, list, { why, words, who = null, soon = false }, at, c) {
   const ref = own ? (c.ref = newerRef(c.ref, own)) : null;
   const n = list.length;
   const k = files.length;
-  const what = why === 'share' ? `${n.toLocaleString('en-US')} of ${S.agents[who]?.name ?? 'the system'}'s messages removed: it held ${words}` : `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed`;
-  b.audit('expire', { ref, target: why === 'share' ? who : null, detail: `${what}${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
-  if (why === 'share') b.push({ t: 'expire', why, ids: [...ids], who, upto: null, at, files });
+  const what = said ?? (why === 'share' ? `${n.toLocaleString('en-US')} of ${S.agents[who]?.name ?? 'the system'}'s messages removed: it held ${words}` : `${n.toLocaleString('en-US')} message${n === 1 ? '' : 's'} ${words} removed`);
+  b.audit('expire', { ref, target: who, detail: `${what}${ref ? `, up to ${ref}` : ''}${k ? ` · ${k} file${k === 1 ? '' : 's'}` : ''}` });
+  if (why === 'share' || byIds) b.push({ t: 'expire', why, ids: [...ids], who, upto: null, at, files, ...(soon ? { soon: true } : {}) });
   else b.push({ t: 'expire', why, upto: list[n - 1].id, at, files, ...(soon ? { soon: true } : {}) });
+}
+
+// Fair cuts: the most messages each member may keep for all of them to fit in `retain`, the newest
+// first (a member holding fewer keeps them all). counts: how many each member holds
+function fairLevel(counts, retain) {
+  let lo = 0;
+  let hi = 0;
+  for (const n of counts) if (n > hi) hi = n;
+  const fits = (l) => {
+    let sum = 0;
+    for (const n of counts) sum += Math.min(n, l);
+    return sum <= retain;
+  };
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 // the newer of two messages by their own audit event (either may be null)
@@ -2475,8 +2551,10 @@ function newerRef(a, b) {
 // once, down to exactly retainMessages; exact: down to exactly retainMessages (before a
 // compaction). policy: the policy the cut is for (a change not applied yet).
 //
-// Fair cuts. A cut by count first takes, from any member holding more than half of the messages
-// kept, its own oldest; then the oldest of all. And a member whose held messages pass its share of
+// Fair cuts. A cut by count takes the oldest first, but never a member's newest `level` messages:
+// the most each member may keep for all of them to fit in retainMessages (one holding fewer keeps
+// them all). System messages keep no one's place, so making channels pushes no one out; a second
+// agent is one more member sharing the level. And a member whose held messages pass its share of
 // bytes (policy.maxAgentBytes, apart from its files) loses its own oldest until they fit. So no
 // member empties everyone else's history, or the relay's memory, by posting.
 function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
@@ -2493,25 +2571,29 @@ function cutOps(b, { force = false, exact = false, policy = S.policy } = {}) {
   const retain = policy.retainMessages;
   const over = messages.length - i - retain;
   if (over > 0 && (force || exact || over > cutSlack(retain))) {
-    let left = over;
-    const half = Math.floor(retain / 2);
-    const per = new Map();
-    for (let j = i; j < messages.length; j++) per.set(messages[j].from ?? '', (per.get(messages[j].from ?? '') || 0) + 1);
-    // the oldest of all, unless that would take messages of a member who holds no more than half:
-    // then the members past half lose their own oldest first. (An admin who keeps fewer messages
-    // keeps the newest, whoever wrote them.)
-    const big = new Set([...per].filter(([, n]) => n > half).map(([who]) => who));
-    const fair = !force && big.size > 0 && messages.slice(i, i + over).some((m) => m.from && !big.has(m.from));
-    for (const [who, n] of fair ? per : []) {
-      if (left <= 0 || n <= half) continue;
-      const mine = [];
-      for (let j = i; j < messages.length && mine.length < Math.min(n - half, left); j++) if ((messages[j].from ?? '') === who) mine.push(messages[j]);
-      pushCut(b, mine, { why: 'share', who: who || null, words: `more than half of the newest ${Number(retain).toLocaleString('en-US')}` }, at, c);
-      left -= mine.length;
+    const left = new Map(); // member id -> how many it still holds
+    for (let j = i; j < messages.length; j++) if (messages[j].from) left.set(messages[j].from, (left.get(messages[j].from) || 0) + 1);
+    // an admin who keeps fewer messages keeps the newest, whoever wrote them: no level
+    const level = force ? 0 : fairLevel([...left.values()], retain);
+    const gone = [];
+    for (let j = i; j < messages.length && gone.length < over; j++) {
+      const m = messages[j];
+      if (m.from && left.get(m.from) <= level) continue;
+      if (m.from) left.set(m.from, left.get(m.from) - 1);
+      gone.push(m);
     }
-    const rest = [];
-    for (let j = i; j < messages.length && rest.length < left; j++) if (!c.gone.has(messages[j])) rest.push(messages[j]);
-    if (rest.length) pushCut(b, rest, { why: 'count', words: `past the newest ${Number(retain).toLocaleString('en-US')}`, soon: force }, at, c);
+    const words = `past the newest ${Number(retain).toLocaleString('en-US')}`;
+    if (gone.length && gone.at(-1) === messages[i + gone.length - 1]) pushCut(b, gone, { why: 'count', words, soon: force }, at, c); // the oldest of all, as they are
+    else if (gone.length) {
+      // not the oldest of all: named by their ids, and the audit event says whose went
+      const lost = new Map();
+      for (const m of gone) lost.set(m.from ?? '', (lost.get(m.from ?? '') || 0) + 1);
+      const most = [...lost].sort((x, y) => y[1] - x[1]);
+      const who = most.find(([id]) => id)?.[0] ?? null;
+      const whose = most.slice(0, 4).map(([id, n]) => `${id ? (S.agents[id]?.name ?? '?') : 'system'} ${n}`).join(', ') + (most.length > 4 ? ', …' : '');
+      const what = `${gone.length.toLocaleString('en-US')} messages ${words} removed, the oldest first but none of a member's newest ${level.toLocaleString('en-US')} (${whose})`;
+      pushCut(b, gone, { why: 'count', words, who, byIds: true, what }, at, c);
+    }
   }
   const cap = policy.maxAgentBytes;
   for (const [who, held] of heldBytes) {
@@ -2563,6 +2645,26 @@ async function maybeCut() {
 // operation carrying the whole record, built from current state, so both stores keep it.
 
 const MAX_MEMBERS = 256; // as many as a sealed message has readers
+// Each channel is a record every instance holds, saves and sends to every reader, kept for good: a
+// member makes at most CHANNELS_PER_MEMBER (public and private; an admin isn't held to it), and a
+// Sphere holds at most CHANNELS_MAX of them and DMS_MAX direct conversations (one per pair)
+const CHANNELS_PER_MEMBER = 50;
+const CHANNELS_MAX = 2000;
+const DMS_MAX = 20000;
+function channelRoom(me, kind) {
+  let mine = 0;
+  let all = 0;
+  let dms = 0;
+  for (const c of Object.values(S.channels)) {
+    if (c.kind === 'dm') dms++;
+    else {
+      all++;
+      if (c.createdBy === me.id) mine++;
+    }
+  }
+  const full = kind === 'dm' ? dms >= DMS_MAX && `This Sphere holds as many direct conversations as it takes (${DMS_MAX.toLocaleString('en-US')}).` : all >= CHANNELS_MAX ? `This Sphere holds as many channels as it takes (${CHANNELS_MAX.toLocaleString('en-US')}).` : mine >= CHANNELS_PER_MEMBER && !isAdmin(me) && `You made ${CHANNELS_PER_MEMBER} channels already: that's as many as one member makes (an admin can make more).`;
+  if (full) throw denyErr('too_many_channels', 409, full, me.id, null, null, `channels:${me.id}`);
+}
 const closedChannels = new Set(); // names of the private and direct channels
 
 // a channel as it's kept: older records (name, topic, createdAt) are public
@@ -2685,6 +2787,7 @@ async function channelRoute(req, res, url, me) {
     await channelGate(me);
     await store.commit((b) => {
       if (S.channels[name]) throw err(409, 'name_taken', `There's already a channel named #${name}.`);
+      channelRoom(me, 'channel');
       const kind = body.private ? 'private' : 'public';
       const members = [me.id, ...want];
       b.push({ t: 'channel', ch: { name, kind, topic: cleanLine(body.topic || '', 200), createdBy: me.id, createdAt: now(), members } });
@@ -2755,6 +2858,7 @@ async function channelRoute(req, res, url, me) {
       await channelGate(me);
       await store.commit((b) => {
         if (S.channels[name]) return;
+        channelRoom(me, 'dm');
         b.push({ t: 'channel', ch: { name, kind: 'dm', topic: '', createdBy: me.id, createdAt: now(), members: [me.id, other.id].sort() } });
         b.audit('channel', { actor: me.id, target: other.id, detail: `${me.name} opened a direct conversation with ${other.name}` });
       });
@@ -2777,6 +2881,7 @@ let readyErr = null;
 let startInfo = null;
 let startedAt = 0;
 let restarting = null;
+let proxyWarned = false;
 const start = () => {
   startedAt = Date.now();
   return init().then(
@@ -2802,6 +2907,10 @@ export async function handle(req, res) {
     url.pathname = p;
   }
   if (isHttps(req)) res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  if (!CFG.trustProxy && !proxyWarned && req.headers['x-forwarded-for']) {
+    proxyWarned = true;
+    console.warn('  Requests come with X-Forwarded-For, but SPHERE_TRUST_PROXY is off: every client behind that proxy counts as one address for joins, failed keys and viewers. Set SPHERE_TRUST_PROXY=1 if a proxy you control sets it.');
+  }
   try {
     await ready;
     // A start that failed (a network blip to Redis on a cold start) is tried again, at most every
@@ -2822,17 +2931,45 @@ export async function handle(req, res) {
 }
 export default handle;
 
-// a wrong token, Sphere key or admin key: counted per client, audited once a minute, then refused
+// a wrong token, Sphere key or admin key: counted per client (here first, then in the store, which
+// every instance shares), audited once a minute per client, then refused
 async function authFailed(req, what) {
   const ip = clientIp(req);
+  take(localFails, ip, LIMITS.authFailsPerMin);
   const ok = await store.rate('authfail', ip, LIMITS.authFailsPerMin);
-  const t = Date.now();
-  if (t - (authAudited.get(ip) || 0) > 60000) {
-    authAudited.set(ip, t);
-    await store.commit((b) => b.audit('deny', { detail: `unauthorized: ${what} from ${ip}${ok ? '' : ', now rate-limited'}` }));
-  }
+  const due = authAuditDue(ip, Date.now());
+  if (due !== null) await store.commit((b) => b.audit('deny', { detail: `unauthorized: ${what} from ${ip}${ok ? '' : ', now rate-limited'}${due}` }));
   if (!ok) throw err(429, 'rate_limited', 'Too many failed attempts from this address. Try again in a minute.');
   throw err(401, 'unauthorized', 'This needs an agent token, the Sphere key or the admin key.');
+}
+// Failed attempts are audited once a minute per client, and at most LIMITS.authAuditsPerMin a minute
+// from all clients together (on Redis, per instance): many addresses (an IPv6 block has thousands)
+// add a few events a minute, not one each. Past the budget they're counted, and the next event
+// audited says how many, from how many addresses. Returns what to add to the event, or null when it
+// isn't audited.
+const authBudget = { at: 0, n: 0, over: 0, from: new Set() };
+function authBudgetCarry() {
+  const words = `${authBudget.over.toLocaleString('en-US')} more failed attempt${authBudget.over === 1 ? '' : 's'} from ${authBudget.from.size.toLocaleString('en-US')} address${authBudget.from.size === 1 ? '' : 'es'} in the minute before, not audited one by one`;
+  authBudget.over = 0;
+  authBudget.from.clear();
+  return words;
+}
+function authAuditDue(ip, t) {
+  if (t - (authAudited.get(ip) || 0) <= 60000) return null;
+  let carry = '';
+  if (t - authBudget.at >= 60000) {
+    if (authBudget.over) carry = ` · ${authBudgetCarry()}`;
+    authBudget.at = t;
+    authBudget.n = 0;
+  }
+  if (authBudget.n >= LIMITS.authAuditsPerMin) {
+    authBudget.over++;
+    if (authBudget.from.size < 100000) authBudget.from.add(ip);
+    return null;
+  }
+  authBudget.n++;
+  authAudited.set(ip, t);
+  return carry + (authBudget.n === LIMITS.authAuditsPerMin ? ' · more failures this minute are counted, and the next one audited says how many' : '');
 }
 
 async function route(req, res, url) {
@@ -2850,25 +2987,27 @@ async function route(req, res, url) {
   if (m === 'POST' && p === '/api/join') {
     const ip = clientIp(req);
     const hdr = req.headers['x-sphere-key'];
-    if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
-      const words = 'Too many join attempts from this address. Try again in a minute.';
-      // audited (at most once a minute per address) only when the caller has the key: refusals of
-      // callers with none, or a wrong one, leave nothing to flood the audit log with (nor cost a read)
+    const words = 'Too many join attempts from this address. Try again in a minute.';
+    // counted here first: past the limit, or past its failed attempts with a key this instance doesn't
+    // know, a caller is refused before the store is read (on Redis, a round trip)
+    if (!take(localJoins, ip, S.policy.rate.joinsPerMinPerIp) || (hdr && !secretOk(hdr, S.sphere.keyHash) && !peek(localFails, ip, LIMITS.authFailsPerMin))) {
       if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
       throw err(429, 'rate_limited', words);
     }
-    // the key in a header is checked before reading anything; a body is small either way. The store
-    // is read first (redis: a key rotated on another instance), but not for a join with no key at all
-    if (hdr) {
-      await store.sync();
-      if (!secretOk(hdr, S.sphere.keyHash)) await joinRefused(ip);
+    // a join with no key at all: refused, not audited, and no round trip to the store
+    let body = hdr ? null : await readJson(req, 16 * 1024);
+    if (body && !body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere.");
+    if (!(await store.rate('join', ip, S.policy.rate.joinsPerMinPerIp))) {
+      // audited (at most once a minute per address) only when the caller has the key: refusals of
+      // callers with a wrong one leave nothing to flood the audit log with
+      if (hdr && secretOk(hdr, S.sphere.keyHash)) await store.commit(() => { throw denyErr('rate_limited', 429, words, null, null, null, `join:${ip}`); });
+      throw err(429, 'rate_limited', words);
     }
-    const body = await readJson(req, 16 * 1024);
-    if (!hdr) {
-      if (!body.key) throw err(401, 'unauthorized', "That key doesn't open this Sphere."); // no credential: refused, not audited
-      await store.sync();
-      if (!secretOk(body.key, S.sphere.keyHash)) await joinRefused(ip);
-    }
+    // the key in a header is checked before reading the body; a body is small either way. The store
+    // is read first (redis: a key rotated on another instance)
+    await store.sync();
+    if (!secretOk(hdr || body.key, S.sphere.keyHash)) await joinRefused(ip);
+    body ??= await readJson(req, 16 * 1024);
     await maybeCut(); // keeping messages: a cut, when one is due
     const name = nameIn(body.name, 'handle');
     if (!name || name.length < 2) throw err(400, 'bad_request', 'A handle has 2 to 32 characters: a-z, 0-9 and -.');
@@ -2906,6 +3045,12 @@ async function route(req, res, url) {
   const adminHdr = req.headers['x-admin-key'];
   const keyHdr = req.headers['x-sphere-key'];
   if (!bearer && !adminHdr && !keyHdr) throw err(401, 'unauthorized', 'This needs an agent token (Authorization: Bearer), the Sphere key (x-sphere-key) or the admin key (x-admin-key).');
+  // a credential this instance doesn't know may be new (made on another instance), so the store is
+  // read for it; but not for a caller past its failed attempts here: that costs no round trip
+  const knownToken = !!bearer && tokenIndex.has(sha(bearer));
+  const knownAdmin = !!adminHdr && secretOk(adminHdr, S.sphere.adminKeyHash);
+  const unknown = (bearer && !knownToken) || (adminHdr && !knownAdmin) || (keyHdr && !knownToken && !knownAdmin && !secretOk(keyHdr, S.sphere.keyHash));
+  if (unknown && !peek(localFails, clientIp(req), LIMITS.authFailsPerMin)) throw err(429, 'rate_limited', 'Too many failed attempts from this address. Try again in a minute.');
   await store.sync(); // redis: apply what other instances wrote first (a token or a key made there too)
   await maybeCut(); // keeping messages: a cut, when one is due
   const me = bearer ? tokenIndex.get(sha(bearer)) || null : null;
@@ -2924,6 +3069,7 @@ async function route(req, res, url) {
     me.lastSeen = now();
     countTool(me, req);
   }
+  req.reader = me ? me.id : 'ip ' + clientIp(req); // whose large answers these are (see send)
   if (m === 'GET' && !readOk(me, req)) throw err(429, 'rate_limited', 'Too many reads: try again in a moment.');
   if (m === 'GET') await store.freshPresence();
 
@@ -2946,10 +3092,7 @@ async function route(req, res, url) {
     }
     list = shown(visible(viewOf(req, me), list));
     const page = slice(list, url.searchParams.get('before'), url.searchParams.get('after'), Math.min(1000, Number(url.searchParams.get('limit')) || 100));
-    // a page is at most PAGE_BYTES of messages (but at least one): its newest. `more` says older
-    // ones in the range wait for a read with `before`
-    let from = page.length;
-    for (let bytes = 0; from > 0 && (from === page.length || bytes + msgBytes(page[from - 1]) <= PAGE_BYTES); ) bytes += msgBytes(page[--from]);
+    const from = pageFrom(page);
     return send(res, 200, { messages: from ? page.slice(from) : page, ...(from ? { more: true } : {}) });
   }
 
@@ -2958,7 +3101,7 @@ async function route(req, res, url) {
     const msg = byId.get(mm[1]);
     const v = viewOf(req, me);
     if (!msg || !sees(v, msg.channel) || hidden(msg)) throw err(404, 'not_found', 'There is no such message.');
-    return send(res, 200, { message: msg, replies: shown(visible(v, repliesOf.get(msg.id) || [])) });
+    return send(res, 200, { message: msg, ...repliesPage(v, msg.id, url.searchParams.get('before')) });
   }
 
   // long-poll: wait up to ?wait= seconds for replies to a message
@@ -2967,8 +3110,9 @@ async function route(req, res, url) {
     const v = viewOf(req, me);
     if (!byId.has(id) || !sees(v, byId.get(id).channel) || hidden(byId.get(id))) throw err(404, 'not_found', 'There is no such message.');
     const wait = Math.min(55, Math.max(0, Number(url.searchParams.get('wait')) || 0));
-    const have = shown(visible(v, repliesOf.get(id) || []));
-    if (have.length || !wait) return send(res, 200, { replies: have });
+    const before = url.searchParams.get('before');
+    const have = repliesPage(v, id, before);
+    if (have.replies.length || !wait || before) return send(res, 200, have);
     return new Promise((resolve) => {
       let done = false;
       const finish = () => {
@@ -2977,7 +3121,17 @@ async function route(req, res, url) {
         clearTimeout(timer);
         waiters.get(id)?.delete(finish);
         if (waiters.get(id)?.size === 0) waiters.delete(id);
-        if (!res.writableEnded) send(res, 200, { replies: shown(visible(v, repliesOf.get(id) || [])) });
+        if (!res.writableEnded) {
+          // who is looking, as they are now: a member suspended, removed, given a new token or made
+          // no longer an admin while it waited sees what a new request would
+          const now = me ? S.agents[me.id] : null;
+          const msg = byId.get(id);
+          const v2 = viewOf(req, now);
+          if (me && (!now || now.removed || now.tokenHash !== me.tokenHash)) send(res, 401, { error: 'This needs an agent token, the Sphere key or the admin key.', code: 'unauthorized' });
+          else if (now?.suspended) send(res, 403, { error: "The Sphere's operator suspended this agent: it can't read or write until they resume it.", code: 'suspended' });
+          else if (!msg || !sees(v2, msg.channel) || hidden(msg)) send(res, 404, { error: 'There is no such message.', code: 'not_found' });
+          else send(res, 200, repliesPage(v2, id, null));
+        }
         resolve();
       };
       const timer = setTimeout(finish, wait * 1000);
@@ -3016,13 +3170,17 @@ async function route(req, res, url) {
     let mine = 0;
     let fromIp = 0;
     let viewers = 0;
+    // a member's streams count against its agent; a viewer's against its address (members behind one
+    // address don't share a limit with a viewer there) and all viewers'
     for (const st of streams) {
       if (me && st.agentId === me.id) mine++;
-      if (st.ip === ip) fromIp++;
+      if (st.role === 'viewer' && st.ip === ip) fromIp++;
       if (st.role === 'viewer') viewers++;
     }
-    if ((me && mine >= LIMITS.streamsPerAgent) || fromIp >= LIMITS.streamsPerIp || (!me && viewers >= LIMITS.viewerStreams))
+    if (me ? mine >= LIMITS.streamsPerAgent : fromIp >= LIMITS.streamsPerIp || viewers >= LIMITS.viewerStreams)
       throw err(429, 'rate_limited', 'Too many open streams: close some and try again.');
+    // each one a member opens and closes says it's online, or in a session, and back: so many a minute
+    if (me && !take(streamOpens, me.id, LIMITS.streamOpensPerMin)) throw err(429, 'rate_limited', 'Too many streams opened: try again in a moment.');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.write('retry: 2000\n\n');
     const st = { res, role, agentId: me?.id, id: token(6), ip, keyHash: !me && !keyAdmin ? sha(String(keyHdr)) : null, admin: !me && keyAdmin, keyAll: keyAdmin, planned: false };
@@ -3211,12 +3369,13 @@ async function route(req, res, url) {
   if (!me) throw err(403, 'forbidden', 'Viewers can only watch.');
 
   if (m === 'POST' && p === '/api/messages') {
-    const body = await readJson(req, MAX_JSON);
-    const t0 = process.hrtime.bigint();
+    // the write rate first: a member past it is refused before its body (up to 16 MB) is read
     if (!(await store.rate('write', me.id, S.policy.rate.writesPerMin)))
       await store.commit(() => {
         throw denyErr('rate_limited', 429, `Too many messages: this Sphere allows ${S.policy.rate.writesPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `write:${me.id}`);
       });
+    const body = await readJson(req, MAX_JSON);
+    const t0 = process.hrtime.bigint();
     if ([].concat(body.to || []).length && !(await store.rate('ask', me.id, S.policy.rate.asksPerMin)))
       await store.commit(() => {
         throw denyErr('rate_limited', 429, `Too many asks: this Sphere allows ${S.policy.rate.asksPerMin} a minute per agent. Try again in a moment.`, me.id, null, null, `ask:${me.id}`);
@@ -3483,11 +3642,16 @@ async function route(req, res, url) {
 }
 
 // Reads change nothing, but each one costs the relay work (a page of messages, the audit log): at
-// most LIMITS.readsPerMin a minute per agent and readsPerMinPerIp per client address, counted in
-// this process (no round trip to the store for it; on Redis, per instance). Not audited.
+// most LIMITS.readsPerMin a minute per agent, and readsPerMinPerIp per client address for a viewer
+// (the join or admin key, no token), counted in this process (no round trip to the store for it; on
+// Redis, per instance). A member's reads count against its own agent only, so members behind one
+// address (an office, a VPN, a proxy the relay isn't told to trust) don't share a limit with
+// whoever else is there. And a reader holds at most LIMITS.readsInFlight large answers it hasn't
+// taken yet (see send). Not audited.
 const readBuckets = new Map();
 function readOk(me, req) {
-  if (me && !take(readBuckets, me.id, LIMITS.readsPerMin)) return false;
+  if ((inFlight.get(req.reader) || 0) >= LIMITS.readsInFlight) return false;
+  if (me) return take(readBuckets, me.id, LIMITS.readsPerMin);
   return take(readBuckets, 'ip ' + clientIp(req), LIMITS.readsPerMinPerIp);
 }
 
@@ -3535,7 +3699,7 @@ function cleanKeys(k) {
   if (!k || typeof k !== 'object') return null;
   if (!b64Len(k.seal, 32) || !b64Len(k.sign, 32)) return null;
   try {
-    edKey(k.sign);
+    crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: k.sign }, format: 'jwk' }); // checked, not kept (see edKey)
     crypto.createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: k.seal }, format: 'jwk' });
   } catch {
     return null;
@@ -3653,6 +3817,27 @@ function take(map, key, perMin) {
   return true;
 }
 
+// whether a bucket of take() has one left, without taking it
+function peek(map, key, perMin) {
+  const b = map.get(key);
+  return !b || Math.min(perMin, b.tokens + ((Date.now() - b.t) * perMin) / 60000) >= 1;
+}
+
+// A read of messages, or of an ask's replies, is at most PAGE_BYTES of them (but at least one): the
+// newest. Where they start in `list`; `more` says older ones wait for a read with `before`
+function pageFrom(list) {
+  let from = list.length;
+  for (let bytes = 0; from > 0 && (from === list.length || bytes + msgBytes(list[from - 1]) <= PAGE_BYTES); ) bytes += msgBytes(list[--from]);
+  return from;
+}
+// an ask's replies this viewer may see, the newest page of them, or of those before `before`
+function repliesPage(v, id, before) {
+  let list = shown(visible(v, repliesOf.get(id) || []));
+  if (before && nOf.has(before)) list = list.slice(0, firstAbove(list, nOf.get(before) - 1));
+  const from = pageFrom(list);
+  return { replies: list.slice(from), ...(from ? { more: true } : {}) };
+}
+
 // messages before/after an id, newest `limit` of them (lists are in time order)
 function slice(list, before, after, limit) {
   let lo = 0;
@@ -3748,9 +3933,10 @@ function clean(x) {
     .map((part, i) => (i % 2 ? part : cleanPart(part)))
     .join('');
 }
-// one line: names, owners, notes, topics
+// one line: names, owners, notes, topics. Cut before it's cleaned (to more than room for what
+// cleaning takes out), so what runs on it is never larger than a line
 function cleanLine(x, max) {
-  return clean(String(x ?? '')).replace(/\s+/g, ' ').trim().slice(0, max);
+  return clean(String(x ?? '').slice(0, 4 * max + 64)).replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 function readJson(req, limit = SMALL_BODY) {
@@ -3780,9 +3966,37 @@ function readJson(req, limit = SMALL_BODY) {
   });
 }
 
+// A large answer is held by the relay until its reader takes it: a reader holds at most
+// LIMITS.readsInFlight of them at once (readOk refuses more), and one that takes less than 64 KB of
+// it in each half of LIMITS.stallMs is dropped. A reader that reads, even slowly, keeps its connection
+const inFlight = new Map(); // reader (an agent id, or 'ip <address>' for a viewer) -> large answers not taken yet
 function send(res, status, obj) {
+  const body = JSON.stringify(obj);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-  res.end(JSON.stringify(obj));
+  const who = res.req?.reader;
+  if (!who || body.length <= 64 * 1024) return res.end(body);
+  inFlight.set(who, (inFlight.get(who) || 0) + 1);
+  let look = null;
+  const taken = () => {
+    if (look === false) return;
+    clearInterval(look);
+    look = false;
+    const n = (inFlight.get(who) || 1) - 1;
+    if (n > 0) inFlight.set(who, n);
+    else inFlight.delete(who);
+  };
+  res.once('finish', taken);
+  res.once('close', taken);
+  res.end(body);
+  const sock = res.socket;
+  if (look === false || !sock) return;
+  let last = Infinity;
+  look = setInterval(() => {
+    const left = sock.writableLength;
+    if (!left || sock.destroyed) return taken();
+    if (last - left < 64 * 1024) sock.destroy(); // stalled: its 'close' counts it taken
+    last = left;
+  }, LIMITS.stallMs / 2).unref();
 }
 
 // scripts only with this response's nonce: markup that got into the page somehow (an on…
@@ -3887,7 +4101,7 @@ function nameIn(x, what) {
 }
 
 function safeName(x) {
-  return path.basename(clean(String(x))).replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'file';
+  return path.basename(clean(path.basename(String(x)).slice(0, 1024))).replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '_').slice(0, 120) || 'file';
 }
 
 function guessMime(name = '') {
@@ -3955,12 +4169,22 @@ async function init() {
   strongEnough('The join key (SPHERE_KEY / --key)', CFG.key);
   strongEnough('The admin key (SPHERE_ADMIN_KEY / --admin-key)', CFG.adminKey);
   const info = await store.init();
-  // what the command line or environment says wins over what's stored (join key, name, limits);
+  // what the command line or environment says wins over what's stored (name, limits);
   // `--sealed` / SPHERE_SEALED only sets the first value: the operator's switch is kept after
   await store.commit((b) => {
     const fields = {};
     if (CFG.name && CFG.name !== S.sphere.name) fields.name = cleanLine(CFG.name, 80);
-    if (CFG.key && sha(String(CFG.key)) !== S.sphere.keyHash) fields.keyHash = sha(String(CFG.key));
+    // the join key in the environment: applied when the operator changed it since it was last applied,
+    // never just because it differs from the stored one (an admin may have rotated the key since: a
+    // restart, a cold start or another instance must not bring a leaked key back). Audited
+    const envKey = CFG.key ? sha(String(CFG.key)) : null;
+    if (envKey && envKey !== S.sphere.envKeyHash) {
+      fields.envKeyHash = envKey;
+      if (envKey !== S.sphere.keyHash) {
+        fields.keyHash = envKey;
+        b.audit('rotate', { actor: 'operator', detail: 'the join key was set from SPHERE_KEY at start: old invite links and viewers on the old key are out; members keep their tokens' });
+      }
+    }
     if (Object.keys(fields).length) b.push({ t: 'sphere', fields });
     const pol = {};
     if (CFG.maxFileBytes && CFG.maxFileBytes !== S.policy.maxFileBytes) pol.maxFileBytes = CFG.maxFileBytes;

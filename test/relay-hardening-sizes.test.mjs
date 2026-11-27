@@ -1,12 +1,15 @@
-// Sizes a member can't push past (security audit, finding 3): a sealed message's ciphertext is at most
-// what a message's words and file keys need; a member whose messages pass its share of bytes
-// has its own oldest ones cut; and a read of messages is paged by bytes, saying there's more.
-// `npm test`.
+// Sizes a member can't push past (security audit, finding 3; second audit, R9 and R35): a sealed
+// message's ciphertext is at most what a message's words and file keys need; a member whose messages
+// pass its share of bytes has its own oldest ones cut; a read of messages is paged by bytes, saying
+// there's more; what a member writes is cut to size before it's cleaned, and a member past its write
+// rate is refused before its body is read; and checking a published key keeps nothing. `npm test`.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { startFakeUpstash } from './fake-upstash.mjs';
-import { KEY, ADMIN, relay, call, audit, tempDir, members, envelope } from './relay-hardening-helpers.mjs';
+import { KEY, ADMIN, SERVER, relay, call, audit, tempDir, members, envelope } from './relay-hardening-helpers.mjs';
 
 let T;
 before(() => (T = tempDir('hardening-sizes')));
@@ -81,3 +84,57 @@ for (const kind of ['fs', 'redis']) {
     }
   });
 }
+
+describe('long writing is cut to size before it is cleaned', () => {
+  const procs = new Set();
+  let R, m;
+  before(async () => {
+    R = await relay({ SPHERE_DATA: path.join(T.dir, 'long'), SPHERE_WRITES_PER_MIN: '100000' }, { tmp: T.dir, procs });
+    m = await members(R.base, ['alice']);
+  });
+  after(() => [...procs].forEach((p) => p.kill()));
+  // millions of combining marks before a non-joiner: cleaning all of it overflowed the stack
+  const run = '\u0628' + '\u064B'.repeat(4_300_000) + '\u200C\u0628';
+
+  test('in the text, a model name or a file name, it is cut, not an error', async () => {
+    const text = await call(R.base, 'POST', '/api/messages', { token: m.alice.token, body: { text: run } });
+    assert.equal(text.status, 200, JSON.stringify(text).slice(0, 200));
+    assert.ok(text.message.text.length <= 20000);
+    const model = await call(R.base, 'POST', '/api/messages', { token: m.alice.token, body: { text: 'hi', meta: { model: run } } });
+    assert.equal(model.status, 200, JSON.stringify(model).slice(0, 200));
+    assert.ok(model.message.meta.model.length <= 80);
+    const file = await call(R.base, 'POST', '/api/messages', { token: m.alice.token, body: { text: 'a file', files: [{ name: run, mime: 'text/plain', data: Buffer.from('x').toString('base64') }] } });
+    assert.equal(file.status, 200, JSON.stringify(file).slice(0, 200));
+    assert.ok(file.message.files[0].name.length <= 120);
+  });
+
+  test('a member past its write rate is refused before its body is read', async () => {
+    const S = await relay({ SPHERE_DATA: path.join(T.dir, 'rate-first'), SPHERE_WRITES_PER_MIN: '10' }, { tmp: T.dir, procs });
+    const { bob } = await members(S.base, ['bob']);
+    for (let i = 0; i < 10; i++) assert.equal((await call(S.base, 'POST', '/api/messages', { token: bob.token, body: { text: `hi ${i}` } })).status, 200);
+    const r = await fetch(S.base + '/api/messages', { method: 'POST', headers: { authorization: `Bearer ${bob.token}`, 'content-type': 'application/json' }, body: 'not json '.repeat(100000) });
+    assert.equal(r.status, 429, 'refused for its rate, not read and found malformed');
+    await S.stop();
+  });
+});
+
+test('checking a key a member publishes keeps nothing; the sign keys kept for checking seals are bounded', () => {
+  // the relay's own functions, from its source: what cleanKeys and edKey keep
+  const src = fs.readFileSync(SERVER, 'utf8');
+  const part = (from, to) => {
+    const a = src.indexOf(from);
+    const b = src.indexOf(to, a);
+    assert.ok(a >= 0 && b > a, `${from} … ${to} in server.mjs`);
+    return src.slice(a, b);
+  };
+  const code = [part('const B64U =', '// canonical JSON'), part('const signKeys =', '// Checks a sealed envelope'), part('function cleanKeys(', '// ======')].join('\n');
+  const { signKeys, edKey, cleanKeys } = new Function('crypto', `${code}\nreturn { signKeys, edKey, cleanKeys };`)(crypto);
+  const pub = () => ({ seal: crypto.generateKeyPairSync('x25519').publicKey.export({ format: 'jwk' }).x, sign: crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x });
+  for (let i = 0; i < 200; i++) assert.ok(cleanKeys(pub()));
+  assert.equal(signKeys.size, 0, 'checking a published key caches nothing');
+  assert.equal(cleanKeys({ seal: 'x', sign: 'y' }), null, 'a bad key is still refused');
+  const k = pub().sign;
+  assert.equal(edKey(k), edKey(k), 'a key in use is kept');
+  for (let i = 0; i < 6000; i++) edKey(crypto.randomBytes(32).toString('base64url'));
+  assert.ok(signKeys.size <= 4096, `${signKeys.size} sign keys kept`);
+});

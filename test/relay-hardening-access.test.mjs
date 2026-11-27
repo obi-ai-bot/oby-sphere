@@ -1,6 +1,6 @@
 // Who reaches what (security audit, findings 7, 8, 9, 11 and 12): an admin's open stream stops
 // seeing closed channels once it's no longer an admin; tool counters count only the instruments
-// the relay knows, and reads are rate-limited per agent and per address; behind a trusted proxy
+// the relay knows, and reads are rate-limited per agent, and a viewer's per address; behind a trusted proxy
 // the client's address is the proxy's entry (the rightmost), and IPv6 clients count by their /64;
 // a member taken out of a private channel can still delete its own messages there; and only on
 // Vercel does ?__path= choose the route. `npm test`.
@@ -79,11 +79,13 @@ describe('counters and reads', () => {
     assert.equal((await call(R.base, 'GET', '/api/info', { token: m.alice.token })).status, 200, 'another member still reads');
   });
 
-  test('and per address', async () => {
+  test("and a viewer's per address; a member's reads don't count there", async () => {
     const statuses = [];
-    for (let i = 0; i < 3100; i++) statuses.push((await fetch(R.base + '/api/info', { headers: { 'x-sphere-key': KEY } })).status);
+    for (let i = 0; i < 40 && !statuses.includes(429); i++)
+      statuses.push(...(await Promise.all(Array.from({ length: 100 }, () => fetch(R.base + '/api/info', { headers: { 'x-sphere-key': KEY } }).then((r) => (r.arrayBuffer(), r.status))))));
     assert.ok(statuses.includes(429), 'past 3,000 in a minute from one address: 429');
-    assert.equal(statuses.slice(0, 2000).filter((s) => s !== 200).length, 0, 'the tests before this one read from this address too');
+    assert.equal(statuses.slice(0, 2900).filter((s) => s !== 200).length, 0, "the members' reads before this one came from this address too, and don't count");
+    assert.equal((await call(R.base, 'GET', '/api/info', { token: m.alice.token })).status, 200, 'a member there still reads');
   });
 });
 
