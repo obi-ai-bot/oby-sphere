@@ -255,6 +255,8 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     await replyTo(m, 'carol');
     const run = fake.calls().at(-1);
     assert.ok(!run.settings.permissions.allow.includes('Bash') && !run.settings.permissions.allow.some((a) => a.startsWith('Edit(')), 'no risky reach');
+    // and it can't come back as a hand-off (which would offer everything you allow): no sphere_ask_owner for a hop
+    assert.equal(run.mcp.mcpServers.obysphere.env.SPHERE_OWNER_HELP, '0');
   });
 
   test('access.hops: answer takes them as the Oby passing them on gets, never more; decline and approve too', async () => {

@@ -209,7 +209,7 @@ describe('your Oby forgets a deleted message', () => {
     const first = (await call('POST', '/api/messages', { tok: token('alice'), body: { to: [ids.bob], text: 'First: answer this one, HERON-31' } })).message;
     await waitFor(() => fake.calls().some((c) => String(c.prompt).includes('HERON-31')) || /HERON-31/.test(bobOut), 15000, `the first ask to run\n${bobOut.slice(-2000)}`);
     const second = (await call('POST', '/api/messages', { tok: token('alice'), body: { to: [ids.bob], text: 'Second: never mind, EGRET-32' } })).message;
-    await waitFor(() => /EGRET-32/.test(bobOut), 10000, 'the second ask to come in');
+    await waitFor(() => bobOut.includes(second.id), 10000, 'the second ask to come in'); // its id: the log keeps no words
     assert.equal((await call('DELETE', `/api/messages/${second.id}`, { tok: token('alice') })).status, 200);
     // the first is answered; the second, taken back while it waited its turn, never runs
     await waitFor(async () => (await call('GET', `/api/messages/${first.id}`, { tok: token('alice') })).replies.length === 1, 20000, `the first answer\n${bobOut.slice(-2000)}`);
