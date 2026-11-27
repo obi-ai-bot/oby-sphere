@@ -399,6 +399,25 @@ describe('what an ask can reach: hops, identity, topics, limits, held answers, l
     for (const d of ['.github/**', '.gitattributes']) assert.ok(deny.includes(`Edit(**/${d})`), d);
   });
 
+  test('shell: read: a folder inside a private place (iCloud Drive, in ~/Library): the sandbox still keeps out the rest of that place', async () => {
+    // bob's home, for this run: Library with Mail beside iCloud Drive, and his folder in iCloud Drive
+    const fakeHome = path.join(tmp, 'icloud-home');
+    const drive = path.join(fakeHome, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+    const folder = path.join(drive, 'notes');
+    for (const d of [folder, path.join(drive, 'taxes'), path.join(fakeHome, 'Library', 'Mail'), path.join(fakeHome, 'Library', 'Mobile Documents', 'iCloud~md~obsidian')]) fs.mkdirSync(d, { recursive: true });
+    setBob({ agents: { carol: 'trust' } }, { machine: { folders: [{ path: folder, write: false }], shell: 'read', web: { fetch: false, search: false }, browser: 'off', mcp: [] } });
+    await startBob({ HOME: fakeHome });
+    try {
+      const { run } = await answered('carol', 'what notes are there?');
+      const denyRead = run.settings.sandbox.filesystem.denyRead;
+      for (const d of [path.join(fakeHome, 'Library', 'Mail'), path.join(fakeHome, 'Library', 'Mobile Documents', 'iCloud~md~obsidian'), path.join(drive, 'taxes')]) assert.ok(denyRead.includes(d), `kept out: ${d}\n${JSON.stringify(denyRead)}`);
+      assert.ok(!denyRead.some((d) => folder === d || folder.startsWith(d + path.sep)), 'his folder, and the way down to it, stay readable');
+    } finally {
+      setBob();
+      await startBob();
+    }
+  });
+
   test("a held ask whose answer can't be sent sends that answer again, never runs the model again, and gives up after a few tries", async () => {
     setBob();
     const heldFile = (id) => path.join(bobDir(), 'held', `${id}.json`);

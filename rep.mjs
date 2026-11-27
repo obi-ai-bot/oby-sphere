@@ -3539,8 +3539,8 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
             ...never.globs,
             HOME,
             ...['.ssh', '.aws', '.gnupg', '.kube', '.docker', '.config/gh', '.netrc', '.git-credentials', '.npmrc', '.pypirc', '.claude.json', '.claude/.credentials.json', ...SECRET_HOME].map((d) => path.join(home, d)),
-            // and the private places, unless one of your folders is inside one (then it's yours to share)
-            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].filter((d) => !m.folders.some((f) => f.path === d || f.path.startsWith(d + path.sep))),
+            // and the private places; one that holds one of your folders, all of it but the way down to it
+            ...[...SANDBOX_HOME_DENY.map((d) => path.join(home, d)), ...(process.env.CLAUDE_CONFIG_DIR ? ['projects', 'history.jsonl'].map((d) => path.join(path.resolve(process.env.CLAUDE_CONFIG_DIR), d)) : [])].flatMap((d) => denyAround(d, m.folders)),
           ],
           denyWrite: m.folders.map((f) => f.path),
         },
@@ -3564,6 +3564,21 @@ function claudeSettings(s, { mcpNames = [], chrome = false } = {}) {
   };
   // a rule naming one of your folders lives in the file only; the rest go on the command line too
   return { file, deny, tools };
+}
+
+// a private place the sandbox keeps out: all of it, or, when one of your folders is inside it, all of
+// it but the way down to your folders (iCloud Drive is in ~/Library: Mail and Messages beside it stay out)
+function denyAround(d, folders) {
+  const inside = folders.filter((f) => f.path === d || f.path.startsWith(d + path.sep));
+  if (!inside.length) return [d];
+  if (inside.some((f) => f.path === d)) return []; // your folder is that place: yours to share
+  let names = [];
+  try {
+    names = fs.readdirSync(d);
+  } catch {
+    return [];
+  }
+  return names.flatMap((n) => denyAround(path.join(d, n), inside));
 }
 
 function runClaude(p, use, { cwd, systemFile, prompt, resume, addDirs, mcpFile, settingsFile, deny, tools, chrome, timeoutMs, auth, signal = null }) {
