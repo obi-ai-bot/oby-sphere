@@ -2302,8 +2302,9 @@ async function startRep(p, { approve: approveAll = false, notify = false, deferM
       log(green('  ● ') + dim(`lockdown lifted${lifted.by ? ` from ${lifted.by}` : ''}: your settings apply again`));
     }
     lockSeen = l;
-    if (!!l === !!was) return;
-    if (l) {
+    const fresh = !!l && (!was || l.at !== was.at); // locked down now (again, if it was lifted and set in between)
+    if (!fresh && !!l === !!was) return;
+    if (fresh) {
       const stopped = [...running].filter((r) => r.started <= Date.parse(l.at));
       for (const r of stopped) r.stop();
       log(yellow('  ⏸ locked down: ') + dim(`${LOCKDOWN_WORDS}${stopped.length ? `; the answer${stopped.length === 1 ? '' : 's'} running ${stopped.length === 1 ? 'was' : 'were'} stopped, and ${stopped.length === 1 ? 'waits' : 'wait'} for you` : ''}`));
