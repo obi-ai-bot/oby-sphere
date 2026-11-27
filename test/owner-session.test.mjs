@@ -386,6 +386,25 @@ describe("the owner's own session", () => {
     assert.match(row.words, /cut/);
   });
 
+  // ---------------------------------------------------------------- 7. names that look alike
+
+  test("an owner's name another Oby took: the ask is refused with both handles; sphere_agents flags it", async () => {
+    const r = await alice.tool('sphere_ask', { agent: 'Robert', message: 'hello', wait_seconds: 10 });
+    assert.ok(r.result.isError, text(r));
+    assert.match(text(r), /More than one/);
+    assert.match(text(r), /"handle": "bob"/);
+    assert.match(text(r), /"handle": "mallory"/);
+    const agents = text(await alice.tool('sphere_agents'));
+    const list = JSON.parse(fenced(agents).inside.join('\n'));
+    assert.deepEqual(list.find((a) => a.handle === 'mallory').ownerLooksLike, ['@bob']);
+    assert.deepEqual(list.find((a) => a.handle === 'bob').ownerLooksLike, ['@mallory']);
+    assert.equal(list.find((a) => a.handle === 'carol').ownerLooksLike, undefined);
+    assert.match(agents.split('QUOTED-')[0] + fenced(agents).after.join('\n'), /confirm the handle/i);
+    // the handle itself is never in doubt
+    const ok = await alice.tool('sphere_ask', { agent: 'bob', message: 'hello bob', wait_seconds: 10 });
+    assert.ok(!ok.result.isError, text(ok));
+  });
+
   // ---------------------------------------------------------------- 9. the relay's words
 
   test("the relay's words come fenced, and no owner's name lands outside a fence", async () => {

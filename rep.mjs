@@ -4126,7 +4126,8 @@ async function toolAgents(api, p) {
   const { agents } = await api.get('/api/agents');
   const here = (agents || []).filter((a) => validAgent(a) && !a.removed);
   if (!here.length) return 'No agents here yet.';
-  return quoted(
+  const alike = lookalikeOwners(here);
+  const list = quoted(
     'The agents in this Sphere',
     here.map((a) => ({
       handle: slug(a.name),
@@ -4138,8 +4139,10 @@ async function toolAgents(api, p) {
       canReceiveSealed: !!a.keys,
       about: cleanLine(a.about, 200),
       instruments: offeredBy(a).length ? offeredBy(a).map((i) => i.name) : undefined, // instruments it offers (sphere_use)
+      ownerLooksLike: alike.get(a.id), // other Obys whose owner's name looks like this one's
     })),
   );
+  return alike.size ? `${list}\n\nSome owners' names look like another member's (ownerLooksLike): before asking one of them, confirm the handle with your owner.` : list;
 }
 
 // ---- whether an agent can answer now, in the words askers read (sphere_agents, sphere_ask,
@@ -4196,19 +4199,45 @@ function agentState(a) {
   return since ? `offline since ${since}` : 'offline';
 }
 
-// one agent, or a clear refusal: a handle first, then a unique owner name
+// One agent, or a clear refusal: a handle first, then an owner's name, whole or first. Every Oby
+// whose owner's name fits counts, so another member can't take an owner's name ("Bob", beside
+// "Bob Test") and be the one asked: more than one, and the ask is refused with their handles.
 function resolveAgent(agents, p, name) {
   const here = agents.filter((a) => validAgent(a) && !a.removed);
   const n = String(name || '').trim().replace(/^@/, '');
   const handle = here.filter((a) => slug(a.name) === slug(n) && slug(n) === n.toLowerCase());
   if (handle.length === 1) return handle[0];
   const list = here.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) }));
-  const owner = here.filter((a) => cleanLine(a.owner, 60).toLowerCase() === n.toLowerCase());
-  const first = here.filter((a) => cleanLine(a.owner, 60).toLowerCase().split(' ')[0] === n.toLowerCase());
-  const pick = owner.length ? owner : first;
+  const wanted = cleanLine(n, 60).toLowerCase();
+  const pick = here.filter((a) => {
+    const owner = cleanLine(a.owner, 60).toLowerCase();
+    return !!wanted && (owner === wanted || owner.split(' ')[0] === wanted);
+  });
   if (pick.length === 1) return pick[0];
-  if (pick.length > 1) throw new Error(`More than one agent matches ${JSON.stringify(n.slice(0, 40))}: ask by handle. ${quoted('Candidates', pick.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) })))}`);
-  throw new Error(`There's no agent ${JSON.stringify(n.slice(0, 40))} here. ${quoted('Agents', list)}`);
+  if (pick.length > 1) throw new Error(`More than one Oby's owner is called ${JSON.stringify(cleanLine(n, 40))}: ask by handle, after your owner says which one they mean. ${quoted('Candidates', pick.map((a) => ({ handle: slug(a.name), owner: cleanLine(a.owner, 60) })))}`);
+  throw new Error(`There's no agent ${JSON.stringify(cleanLine(n, 40))} here. ${quoted('Agents', list)}`);
+}
+
+// owners' names that look like another member's (the same name, or one that's another's first
+// name, once case, accents, look-alike letters and spacing are set aside): sphere_agents flags
+// them, so a person confirms the handle before an ask goes to one of them
+function nameKey(s) {
+  // Cyrillic and Greek letters that look Latin, and digits and marks that look like letters
+  const look = { '\u{430}': 'a', '\u{435}': 'e', '\u{43E}': 'o', '\u{440}': 'p', '\u{441}': 'c', '\u{443}': 'y', '\u{445}': 'x', '\u{456}': 'l', '\u{458}': 'j', '\u{455}': 's', '\u{501}': 'd', '\u{4BB}': 'h', '\u{4CF}': 'l', '\u{3B1}': 'a', '\u{3BF}': 'o', '\u{3C1}': 'p', '\u{3BD}': 'v', '\u{3C4}': 't', '\u{3B9}': 'l', '\u{3BA}': 'k', '0': 'o', '1': 'l', i: 'l', '|': 'l' };
+  return [...cleanLine(s, 60).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()].map((c) => look[c] ?? c).join('').replace(/rn/g, 'm').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+function lookalikeOwners(here) {
+  const keys = new Map(here.map((a) => [a.id, { whole: nameKey(a.owner), first: nameKey(a.owner).split(' ')[0] }]));
+  const out = new Map();
+  for (const a of here)
+    for (const b of here) {
+      if (a.id === b.id) continue;
+      const x = keys.get(a.id);
+      const y = keys.get(b.id);
+      if (!x.whole || !y.whole) continue;
+      if (x.whole === y.whole || x.whole === y.first || x.first === y.whole) out.set(a.id, [...(out.get(a.id) || []), `@${slug(b.name)}`]);
+    }
+  return out;
 }
 
 async function toolAsk(api, p, a, depth, progress, { allowFiles = false } = {}) {
